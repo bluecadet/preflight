@@ -6,18 +6,42 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
-func actionDirForRef(baseDir, ref string) string {
-	return filepath.Join(baseDir, filepath.FromSlash(ref))
+// actionDirForRef returns the on-disk directory for a cached action ref.
+// It returns an error if the resolved path escapes baseDir, which would
+// indicate a path traversal attempt.
+func actionDirForRef(baseDir, ref string) (string, error) {
+	resolved := filepath.Join(baseDir, filepath.FromSlash(ref))
+	if !isSubPath(baseDir, resolved) {
+		return "", fmt.Errorf("action ref %q resolves outside cache directory", ref)
+	}
+	return resolved, nil
 }
 
-func actionFileForRef(baseDir, ref string) string {
-	return filepath.Join(actionDirForRef(baseDir, ref), "action.yml")
+func actionFileForRef(baseDir, ref string) (string, error) {
+	dir, err := actionDirForRef(baseDir, ref)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "action.yml"), nil
+}
+
+// isSubPath reports whether target is within (or equal to) base after cleaning
+// both paths.
+func isSubPath(base, target string) bool {
+	base = filepath.Clean(base)
+	target = filepath.Clean(target)
+	return target == base || strings.HasPrefix(target, base+string(filepath.Separator))
 }
 
 func loadActionFromCache(cacheDir, ref string) (*Action, error) {
-	data, err := os.ReadFile(actionFileForRef(cacheDir, ref))
+	actionFile, err := actionFileForRef(cacheDir, ref)
+	if err != nil {
+		return nil, fmt.Errorf("read cached action %q: %w", ref, err)
+	}
+	data, err := os.ReadFile(actionFile)
 	if err != nil {
 		if errorsIsNotExist(err) {
 			return nil, nil

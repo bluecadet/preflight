@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/knownhosts"
 )
 
 type SSHConfig struct {
@@ -18,6 +19,14 @@ type SSHConfig struct {
 	Username   string
 	Password   string
 	PrivateKey string
+	// KnownHostsFile is the path to a known_hosts file used to verify the
+	// remote host key. When empty the connection proceeds without host key
+	// verification (insecure; only acceptable on isolated networks).
+	KnownHostsFile string
+	// HostKeyAlgorithms restricts the accepted host key algorithms when
+	// KnownHostsFile is set. If nil, all algorithms supported by the
+	// known_hosts file are accepted.
+	HostKeyAlgorithms []string
 }
 
 type sshRunner interface {
@@ -43,10 +52,19 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+	hostKeyCallback := ssh.InsecureIgnoreHostKey() //nolint:gosec // insecure fallback when KnownHostsFile is not configured
+	if cfg.KnownHostsFile != "" {
+		cb, err := knownhosts.New(cfg.KnownHostsFile)
+		if err != nil {
+			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", cfg.KnownHostsFile, err)
+		}
+		hostKeyCallback = cb
+	}
 	clientConfig := &ssh.ClientConfig{
-		User:            cfg.Username,
-		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		User:              cfg.Username,
+		Auth:              authMethods,
+		HostKeyCallback:   hostKeyCallback,
+		HostKeyAlgorithms: cfg.HostKeyAlgorithms,
 	}
 	if cfg.Port == 0 {
 		cfg.Port = 22

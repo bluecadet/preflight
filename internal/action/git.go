@@ -95,9 +95,16 @@ func (r *GitResolver) Fetch(ctx context.Context, ref string) (*FetchResult, erro
 
 	pinnedRef := remote.PinnedRef(sha)
 	srcDir := remote.SourceDir(tmpDir)
-	actionDir := actionDirForRef(r.CacheDir, pinnedRef)
+	actionDir, err := actionDirForRef(r.CacheDir, pinnedRef)
+	if err != nil {
+		return nil, fmt.Errorf("git resolver: %w", err)
+	}
 
-	if _, err := os.Stat(actionFileForRef(r.CacheDir, pinnedRef)); err != nil {
+	cachedFile, err := actionFileForRef(r.CacheDir, pinnedRef)
+	if err != nil {
+		return nil, fmt.Errorf("git resolver: %w", err)
+	}
+	if _, err := os.Stat(cachedFile); err != nil {
 		if !errorsIsNotExist(err) {
 			return nil, fmt.Errorf("git resolver: stat cached action %q: %w", pinnedRef, err)
 		}

@@ -34,7 +34,8 @@ $currentTrigger = ''
 if ($task.Triggers | Where-Object { $_.AtLogOn }) { $currentTrigger = 'onlogon' }
 elseif ($task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskBootTrigger' }) { $currentTrigger = 'startup' }
 elseif ($task.Triggers | Where-Object { $_.CimClass.CimClassName -eq 'MSFT_TaskDailyTrigger' }) { $currentTrigger = 'daily' }
-$needs = $action.Execute -ne 'cmd.exe' -or $action.Arguments -ne ("/c " + $command) -or $currentTrigger -ne $trigger
+# Compare Execute directly against the command path. Arguments are no longer used.
+$needs = $action.Execute -ne $command -or $currentTrigger -ne $trigger
 if ($user -and $task.Principal.UserId -ne $user) {
   $needs = $true
 }
@@ -64,7 +65,9 @@ switch ($triggerName) {
   'startup' { $trigger = New-ScheduledTaskTrigger -AtStartup }
   default { throw "scheduled_task: unsupported trigger $triggerName" }
 }
-$action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ("/c " + [string]$params.command)
+# Use the command path as the direct executable. Do not wrap with cmd.exe /c,
+# which would pass the command through the shell and allow metacharacter injection.
+$action = New-ScheduledTaskAction -Execute ([string]$params.command)
 if ($params.user) {
   Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -User ([string]$params.user) -Force | Out-Null
 } else {

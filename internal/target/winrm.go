@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/masterzen/winrm"
@@ -40,6 +41,7 @@ var defaultWinRMClientFactory winRMClientFactory = func(cfg WinRMConfig) (winRMC
 type WinRMTarget struct {
 	config        WinRMConfig
 	clientFactory winRMClientFactory
+	mu            sync.Mutex
 	client        winRMClient
 }
 
@@ -161,6 +163,8 @@ func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string,
 }
 
 func (t *WinRMTarget) clientForUse() (winRMClient, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	if t.client != nil {
 		return t.client, nil
 	}

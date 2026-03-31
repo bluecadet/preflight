@@ -94,7 +94,9 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 
 	if phase != "plan" {
-		fetchRunner := runner.New(hosts[0].Target, chain, runner.Config{})
+		// Fetch is target-agnostic: it only resolves action refs via the resolver
+		// chain and never calls any method on the target. A nil target is safe here.
+		fetchRunner := runner.New(nil, chain, runner.Config{})
 		if err := fetchRunner.Fetch(ctx, pb); err != nil {
 			return err
 		}
@@ -194,6 +196,8 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 		dryRun = true
 	}
 
+	// TargetName is set from the bundle manifest so the state file and recap
+	// output correctly identify the original target, not the local machine.
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,
 		Renderer:       renderer,

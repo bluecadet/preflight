@@ -768,5 +768,7 @@ func (r *Runner) targetName() string {
 	if hostname, ok := r.config.TargetVars["hostname"].(string); ok && hostname != "" {
 		return hostname
 	}
-	return "localhost"
+	// Return empty string rather than a hardcoded "localhost" to avoid
+	// silently claiming a local identity when no target name is configured.
+	return ""
 }

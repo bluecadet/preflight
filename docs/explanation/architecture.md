@@ -52,18 +52,18 @@ The codebase is intentionally split into a handful of major responsibilities:
 
 | Path | Responsibility |
 | --- | --- |
-| [`cmd/`](/Users/clay/repos/preflight/cmd) | Cobra command surface and host orchestration |
-| [`internal/runner/`](/Users/clay/repos/preflight/internal/runner) | Planning, DAG building, staging, applying, state |
-| [`internal/action/`](/Users/clay/repos/preflight/internal/action) | Playbook loading, action resolution, remote refs, lockfile |
-| [`internal/module/`](/Users/clay/repos/preflight/internal/module) | Built-in module implementations |
-| [`internal/target/`](/Users/clay/repos/preflight/internal/target) | Target interface plus local, WinRM, SSH, and plugin module adapters |
-| [`internal/template/`](/Users/clay/repos/preflight/internal/template) | Variable layering and template rendering |
-| [`internal/inventory/`](/Users/clay/repos/preflight/internal/inventory) | Inventory parsing and selector resolution |
-| [`internal/facts/`](/Users/clay/repos/preflight/internal/facts) | Fact gathering and normalization |
-| [`internal/output/`](/Users/clay/repos/preflight/internal/output) | Text, TUI, and JSON renderers |
-| [`internal/plugins/`](/Users/clay/repos/preflight/internal/plugins) | Plugin discovery and registry construction |
-| [`internal/bundle/`](/Users/clay/repos/preflight/internal/bundle) | Staged bundle format and extraction |
-| [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/plugin/sdk) | Go plugin author SDK |
+| [`cmd/`](../../cmd) | Cobra command surface and host orchestration |
+| [`internal/runner/`](../../internal/runner) | Planning, DAG building, staging, applying, state |
+| [`internal/action/`](../../internal/action) | Playbook loading, action resolution, remote refs, lockfile |
+| [`internal/module/`](../../internal/module) | Built-in module implementations |
+| [`internal/target/`](../../internal/target) | Target interface plus local, WinRM, SSH, and plugin module adapters |
+| [`internal/template/`](../../internal/template) | Variable layering and template rendering |
+| [`internal/inventory/`](../../internal/inventory) | Inventory parsing and selector resolution |
+| [`internal/facts/`](../../internal/facts) | Fact gathering and normalization |
+| [`internal/output/`](../../internal/output) | Text, TUI, and JSON renderers |
+| [`internal/plugins/`](../../internal/plugins) | Plugin discovery and registry construction |
+| [`internal/bundle/`](../../internal/bundle) | Staged bundle format and extraction |
+| [`pkg/plugin/sdk/`](../../pkg/plugin/sdk) | Go plugin author SDK |
 
 ## Why The Phases Are Explicit
 

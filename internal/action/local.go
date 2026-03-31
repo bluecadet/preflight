@@ -38,6 +38,13 @@ func (r *LocalResolver) Resolve(ctx context.Context, ref string) (*Action, error
 		return nil, nil
 	}
 
+	// Reject refs containing path traversal before any other processing.
+	for _, seg := range strings.Split(ref, "/") {
+		if seg == ".." {
+			return nil, fmt.Errorf("local resolver: ref %q contains path traversal", ref)
+		}
+	}
+
 	// Skip refs that look like remote hostnames (contain a '.' in the first path
 	// segment) or contain '@' version specifiers.
 	first := strings.SplitN(ref, "/", 2)[0]
@@ -45,7 +52,11 @@ func (r *LocalResolver) Resolve(ctx context.Context, ref string) (*Action, error
 		return nil, nil
 	}
 
-	path := filepath.Join(r.BaseDir, filepath.FromSlash(ref), "action.yml")
+	actionDir := filepath.Join(r.BaseDir, filepath.FromSlash(ref))
+	if !isSubPath(r.BaseDir, actionDir) {
+		return nil, fmt.Errorf("local resolver: ref %q escapes base directory", ref)
+	}
+	path := filepath.Join(actionDir, "action.yml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {

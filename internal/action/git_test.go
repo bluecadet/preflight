@@ -136,7 +136,11 @@ tasks:
 	if result.Entry.Pinned != pinnedRef {
 		t.Fatalf("Pinned: got %q want %q", result.Entry.Pinned, pinnedRef)
 	}
-	if _, err := os.Stat(filepath.Join(actionDirForRef(cacheDir, pinnedRef), "files", "config.txt")); err != nil {
+	cachedDir, err := actionDirForRef(cacheDir, pinnedRef)
+	if err != nil {
+		t.Fatalf("actionDirForRef: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cachedDir, "files", "config.txt")); err != nil {
 		t.Fatalf("expected cached sibling file: %v", err)
 	}
 
@@ -205,7 +209,10 @@ func TestFetchRefsRecursesThroughNestedRemoteUses(t *testing.T) {
 
 func writeCachedAction(t *testing.T, cacheDir, ref, yaml string) {
 	t.Helper()
-	dir := actionDirForRef(cacheDir, ref)
+	dir, err := actionDirForRef(cacheDir, ref)
+	if err != nil {
+		t.Fatalf("actionDirForRef(%q): %v", ref, err)
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", dir, err)
 	}

@@ -11,8 +11,8 @@ type DAG struct {
 }
 
 // BuildDAG constructs a DAG from the given tasks. DependsOn values are resolved
-// by task name. Returns an error if a dependency references an unknown task name
-// or if there is a cycle.
+// by task name. Returns an error if a dependency references an unknown task name,
+// if two tasks share the same name, or if there is a cycle.
 func BuildDAG(tasks []*PlanTask) (*DAG, error) {
 	d := &DAG{
 		tasks:    make(map[string]*PlanTask, len(tasks)),
@@ -23,6 +23,9 @@ func BuildDAG(tasks []*PlanTask) (*DAG, error) {
 	// Index tasks by ID and name.
 	for _, t := range tasks {
 		d.tasks[t.ID] = t
+		if existing, dup := d.nameToID[t.Name]; dup {
+			return nil, fmt.Errorf("duplicate task name %q: task IDs %s and %s", t.Name, existing, t.ID)
+		}
 		d.nameToID[t.Name] = t.ID
 		d.edges[t.ID] = nil // initialise even if no deps
 	}

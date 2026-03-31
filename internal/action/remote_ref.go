@@ -45,6 +45,11 @@ func ParseRemoteRef(ref string) (*RemoteRef, error) {
 			return nil, fmt.Errorf("remote ref %q contains an empty repository path segment", ref)
 		}
 	}
+	for _, segment := range segments[3:] {
+		if segment == ".." || strings.ContainsAny(segment, `/\`) {
+			return nil, fmt.Errorf("remote ref %q contains an invalid action path segment %q", ref, segment)
+		}
+	}
 
 	parsed := &RemoteRef{
 		Original:   ref,

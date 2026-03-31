@@ -18,9 +18,6 @@ import (
 	"github.com/bluecadet/preflight/internal/target"
 )
 
-// ---- Helpers ----------------------------------------------------------------
-
-// mockTarget is a Target that records calls and returns a preset status.
 type mockTarget struct {
 	results []target.Result // in order; last result is reused if list is exhausted
 	calls   []mockCall
@@ -63,7 +60,6 @@ func (m *mockTarget) Info(_ context.Context) (target.TargetInfo, error) {
 	return target.TargetInfo{}, nil
 }
 
-// recordingRenderer captures events for assertions.
 type recordingRenderer struct {
 	events []output.Event
 }
@@ -71,8 +67,6 @@ type recordingRenderer struct {
 func (r *recordingRenderer) Emit(e output.Event) { r.events = append(r.events, e) }
 func (r *recordingRenderer) Close()              {}
 
-// emptyChain is a resolver chain that never finds anything (for playbooks with
-// no action refs).
 type emptyChain struct{}
 
 func (emptyChain) Resolve(_ context.Context, ref string) (*action.Action, error) { return nil, nil }
@@ -82,7 +76,6 @@ func emptyResolver() action.Chain {
 	return action.Chain{emptyChain{}}
 }
 
-// newShellPlaybook builds a minimal playbook with a single shell task.
 func newShellPlaybook(name string) *action.Playbook {
 	return &action.Playbook{
 		Name: name,
@@ -106,9 +99,6 @@ func ageGenerateIdentity(dir string) (*age.X25519Identity, error) {
 	return identity, nil
 }
 
-// ---- Tests ------------------------------------------------------------------
-
-// 1. Plan phase: parse a simple playbook with one shell task, verify ExecutionPlan.
 func TestPlanSingleTask(t *testing.T) {
 	r := New(&mockTarget{}, emptyResolver(), Config{})
 	pb := newShellPlaybook("test play")
@@ -197,7 +187,6 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	}
 }
 
-// 2. DAG: two tasks where B depends_on A — TopologicalOrder puts A before B.
 func TestDAGDependsOnOrder(t *testing.T) {
 	taskA := &PlanTask{ID: "task-0", Name: "task-a"}
 	taskB := &PlanTask{ID: "task-1", Name: "task-b", DependsOn: []string{"task-a"}}
@@ -216,7 +205,6 @@ func TestDAGDependsOnOrder(t *testing.T) {
 	}
 }
 
-// 3. DAG: circular dependency returns error.
 func TestDAGCycleDetection(t *testing.T) {
 	taskA := &PlanTask{ID: "task-0", Name: "task-a", DependsOn: []string{"task-b"}}
 	taskB := &PlanTask{ID: "task-1", Name: "task-b", DependsOn: []string{"task-a"}}
@@ -227,7 +215,6 @@ func TestDAGCycleDetection(t *testing.T) {
 	}
 }
 
-// 4. Apply: mock target that always returns StatusOK — renderer receives task_result events.
 func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusOK}},
@@ -246,7 +233,6 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 		t.Fatalf("Apply error: %v", err)
 	}
 
-	// Expect at least one task_result event and a play_end event.
 	var taskResults, playEnds int
 	for _, e := range rec.events {
 		switch e.Type {
@@ -264,7 +250,6 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	}
 }
 
-// 5. Apply with dryRun=true — verify target.Execute called with dryRun=true.
 func TestApplyDryRun(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusChanged}},
@@ -349,7 +334,6 @@ func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
 	}
 }
 
-// 6. State: Record + Save + Load round-trip.
 func TestStateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "state.json")
@@ -370,7 +354,6 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatalf("Save error: %v", err)
 	}
 
-	// Verify file exists.
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("state file not written: %v", err)
 	}
@@ -404,7 +387,6 @@ func (r *staticResolver) Resolve(_ context.Context, _ string) (*action.Action, e
 }
 func (r *staticResolver) Name() string { return "static" }
 
-// 7. LoadState returns empty State when file is missing (not an error).
 func TestLoadStateMissing(t *testing.T) {
 	s, err := LoadState("/nonexistent/path/state.json")
 	if err != nil {
@@ -510,10 +492,10 @@ func TestRunFetchAndStagePhases(t *testing.T) {
 	}
 	dir := t.TempDir()
 	err = New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
-		BundleOutputDir: dir,
+		Phase:            "stage",
+		BundleOutputDir:  dir,
 		BundleBinaryPath: exe,
-		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
+		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
 	}).Run(context.Background(), playbook)
 	if err != nil {
 		t.Fatalf("stage phase: expected nil, got %v", err)
@@ -643,5 +625,39 @@ func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
 	}
 	if len(mt.calls) != 0 {
 		t.Fatalf("expected no target execution during fetch phase, got %#v", mt.calls)
+	}
+}
+
+func TestTargetNameNeverReturnsLocalhost(t *testing.T) {
+	// When no TargetName is configured and TargetVars is empty, targetName()
+	// must not return "localhost" — that would silently claim a local identity.
+	r := &Runner{config: Config{}}
+	got := r.targetName()
+	if got == "localhost" {
+		t.Errorf("targetName() returned %q with no config; expected empty string or another sentinel, not %q", got, "localhost")
+	}
+
+	// Verify it returns empty string specifically.
+	if got != "" {
+		t.Errorf("targetName() = %q, want %q when unconfigured", got, "")
+	}
+}
+
+func TestTargetNamePrefersExplicitConfig(t *testing.T) {
+	r := &Runner{config: Config{TargetName: "exhibit-01"}}
+	if got := r.targetName(); got != "exhibit-01" {
+		t.Errorf("targetName() = %q, want %q", got, "exhibit-01")
+	}
+}
+
+func TestTargetNameFallsBackToTargetVars(t *testing.T) {
+	r := &Runner{config: Config{TargetVars: map[string]any{"name": "kiosk-pc"}}}
+	if got := r.targetName(); got != "kiosk-pc" {
+		t.Errorf("targetName() = %q, want %q", got, "kiosk-pc")
+	}
+
+	r2 := &Runner{config: Config{TargetVars: map[string]any{"hostname": "gallery-01"}}}
+	if got := r2.targetName(); got != "gallery-01" {
+		t.Errorf("targetName() = %q, want %q", got, "gallery-01")
 	}
 }
