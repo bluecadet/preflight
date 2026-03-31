@@ -498,20 +498,39 @@ func TestApplySavesStateWithParamHashes(t *testing.T) {
 	}
 }
 
-func TestRunFetchAndStagePhasesReturnNotImplemented(t *testing.T) {
+func TestRunFetchAndStagePhases(t *testing.T) {
 	playbook := newShellPlaybook("phase-test")
 	if err := New(&mockTarget{}, emptyResolver(), Config{Phase: "fetch"}).Run(context.Background(), playbook); err != nil {
 		t.Fatalf("fetch phase: expected nil, got %v", err)
 	}
 
-	err := New(&mockTarget{}, emptyResolver(), Config{Phase: "stage"}).Run(context.Background(), playbook)
-	if err == nil {
-		t.Fatal("stage phase: expected error, got nil")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("stage phase: expected not implemented error, got %v", err)
+	dir := t.TempDir()
+	err = New(&mockTarget{}, emptyResolver(), Config{
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		BundleBinaryPath: exe,
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
+	}).Run(context.Background(), playbook)
+	if err != nil {
+		t.Fatalf("stage phase: expected nil, got %v", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, "*.zip"))
+	if err != nil {
+		t.Fatalf("Glob bundle output: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one staged bundle, got %d", len(matches))
 	}
 }
+
+type noopModule struct{}
+
+func (noopModule) Check(_ context.Context, _ map[string]any) (bool, error) { return false, nil }
+func (noopModule) Apply(_ context.Context, _ map[string]any) error         { return nil }
 
 type fetchableResolver struct {
 	actions map[string]*action.Action

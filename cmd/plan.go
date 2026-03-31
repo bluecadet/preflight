@@ -59,17 +59,18 @@ func runPlan(cmd *cobra.Command, args []string) error {
 
 	for idx, host := range hosts {
 		cfg := runner.Config{
-			DryRun:        false,
-			Tags:          tags,
-			SkipTags:      skipTags,
-			ProjectVars:   projectCfg.Vars,
-			InventoryVars: host.Vars,
-			Vars:          vars,
-			TargetVars:    host.TargetVars,
-			TargetName:    host.Name,
-			Phase:         "plan",
-			Renderer:      renderer,
-			Secrets:       secretsResolver,
+			DryRun:         false,
+			Tags:           tags,
+			SkipTags:       skipTags,
+			ProjectVars:    projectCfg.Vars,
+			InventoryVars:  host.Vars,
+			Vars:           vars,
+			TargetVars:     host.TargetVars,
+			TargetName:     host.Name,
+			Phase:          "plan",
+			Renderer:       renderer,
+			Secrets:        secretsResolver,
+			ModuleRegistry: registry,
 		}
 
 		r := runner.New(host.Target, chain, cfg)

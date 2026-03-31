@@ -13,9 +13,10 @@ const pluginPrefix = "preflight-plugin-"
 
 // DiscoveryOptions controls plugin scan order.
 type DiscoveryOptions struct {
-	BinaryDir     string
-	WorkingDir    string
-	PreferredDirs []string
+	BinaryDir           string
+	WorkingDir          string
+	PreferredDirs       []string
+	DisableFallbackDirs bool
 }
 
 // DiscoveredPlugin is one plugin executable found during scanning.
@@ -155,6 +156,10 @@ func discoverDirs(opts DiscoveryOptions) ([]string, error) {
 
 	for _, dir := range opts.PreferredDirs {
 		appendDir(dir)
+	}
+
+	if opts.DisableFallbackDirs {
+		return dirs, nil
 	}
 
 	if opts.BinaryDir != "" {

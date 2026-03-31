@@ -2,8 +2,11 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -11,8 +14,10 @@ import (
 	"unicode"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
 )
@@ -250,7 +255,169 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 	if plan == nil {
 		return fmt.Errorf("stage: nil execution plan")
 	}
-	return fmt.Errorf("stage phase not implemented in local-only mode")
+
+	if r.config.BundleOutputDir == "" {
+		return fmt.Errorf("stage: bundle output directory is not configured")
+	}
+
+	info, err := r.target.Info(ctx)
+	if err != nil {
+		return fmt.Errorf("stage: target info: %w", err)
+	}
+
+	if err := r.validateStagePlan(plan); err != nil {
+		return err
+	}
+
+	planBytes, err := json.MarshalIndent(plan, "", "  ")
+	if err != nil {
+		return fmt.Errorf("stage: marshal plan: %w", err)
+	}
+
+	binaryPath := r.config.BundleBinaryPath
+	if binaryPath == "" {
+		return fmt.Errorf("stage: bundle runtime binary path is not configured")
+	}
+	binaryData, err := os.ReadFile(binaryPath)
+	if err != nil {
+		return fmt.Errorf("stage: read runtime binary %q: %w", binaryPath, err)
+	}
+
+	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan)
+	if err != nil {
+		return err
+	}
+
+	files := []bundle.FileSpec{
+		{
+			Path: bundle.PlanPath,
+			Mode: 0o644,
+			Data: planBytes,
+		},
+		{
+			Path: filepath.ToSlash(filepath.Join("runtime", filepath.Base(binaryPath))),
+			Mode: 0o755,
+			Data: binaryData,
+		},
+	}
+	files = append(files, pluginFiles...)
+
+	lockEntries := []action.LockEntry(nil)
+	if r.config.Lockfile != nil {
+		lockEntries = make([]action.LockEntry, 0, len(r.config.Lockfile.Actions))
+		for _, entry := range r.config.Lockfile.Actions {
+			lockEntries = append(lockEntries, entry)
+		}
+		slices.SortFunc(lockEntries, func(a, b action.LockEntry) int {
+			switch {
+			case a.Ref < b.Ref:
+				return -1
+			case a.Ref > b.Ref:
+				return 1
+			default:
+				return 0
+			}
+		})
+	}
+
+	manifest := &bundle.Manifest{
+		FormatVersion: 1,
+		CreatedAt:     time.Now().UTC(),
+		PlaybookName:  plan.PlaybookName,
+		TargetName:    r.targetName(),
+		TargetOS:      info.OSVersion,
+		TargetArch:    info.Arch,
+		RuntimeBinary: filepath.ToSlash(filepath.Join("runtime", filepath.Base(binaryPath))),
+		Build: bundle.BuildInfo{
+			Version: r.config.Version,
+			Commit:  r.config.Commit,
+			Date:    r.config.BuildDate,
+		},
+		Modules:     moduleInfos,
+		LockEntries: lockEntries,
+	}
+
+	bundlePath := filepath.Join(r.config.BundleOutputDir, bundle.BundleFileName(plan.PlaybookName, r.targetName(), info.OSVersion, info.Arch))
+	if err := bundle.Write(bundlePath, manifest, files); err != nil {
+		return fmt.Errorf("stage: %w", err)
+	}
+	return nil
+}
+
+func (r *Runner) validateStagePlan(plan *ExecutionPlan) error {
+	if len(plan.Tasks) == 0 {
+		return nil
+	}
+
+	for _, task := range plan.Tasks {
+		if r.config.ModuleRegistry != nil {
+			if _, ok := r.config.ModuleRegistry[task.Module]; !ok {
+				return fmt.Errorf("stage: task %q references unknown module %q", task.Name, task.Module)
+			}
+		}
+		preview, err := PreviewTask(task, r.config.TargetVars)
+		if err != nil {
+			return fmt.Errorf("stage: preview task %q: %w", task.Name, err)
+		}
+		if containsSecretValue(preview.Params) {
+			return fmt.Errorf("stage: task %q depends on secret values that cannot be embedded in a staged bundle", preview.Name)
+		}
+	}
+	return nil
+}
+
+func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
+	used := make(map[string]struct{})
+	for _, task := range plan.Tasks {
+		used[task.Module] = struct{}{}
+	}
+
+	pluginIndex := make(map[string]plugins.LoadedPlugin, len(r.config.BundlePlugins))
+	for _, plugin := range r.config.BundlePlugins {
+		pluginIndex[plugin.Name] = plugin
+	}
+
+	moduleNames := make([]string, 0, len(used))
+	for name := range used {
+		moduleNames = append(moduleNames, name)
+	}
+	slices.Sort(moduleNames)
+
+	modules := make([]bundle.ModuleInfo, 0, len(moduleNames))
+	files := make([]bundle.FileSpec, 0, len(moduleNames))
+	for _, name := range moduleNames {
+		if plugin, ok := pluginIndex[name]; ok {
+			data, err := os.ReadFile(plugin.Path)
+			if err != nil {
+				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)
+			}
+			entryPath := filepath.ToSlash(filepath.Join("plugins", filepath.Base(plugin.Path)))
+			files = append(files, bundle.FileSpec{
+				Path: entryPath,
+				Mode: 0o755,
+				Data: data,
+			})
+			modules = append(modules, bundle.ModuleInfo{
+				Name:    name,
+				Kind:    "plugin",
+				Path:    entryPath,
+				Version: plugin.Version,
+			})
+			continue
+		}
+
+		if r.config.ModuleRegistry != nil {
+			if _, ok := r.config.ModuleRegistry[name]; !ok {
+				return nil, nil, fmt.Errorf("stage: task references unknown module %q", name)
+			}
+		}
+		modules = append(modules, bundle.ModuleInfo{
+			Name: name,
+			Kind: "builtin",
+		})
+	}
+
+	return modules, files, nil
 }
 
 // Apply executes the task graph against the target.

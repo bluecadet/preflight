@@ -102,12 +102,44 @@ func currentBinaryDir() string {
 	return filepath.Dir(exe)
 }
 
+func currentBinaryPath() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return os.Args[0]
+	}
+	return exe
+}
+
 func buildModuleRegistry(projectDir string, preferredPluginDirs ...string) (target.ModuleRegistry, []plugins.LoadedPlugin, error) {
+	return buildModuleRegistryWithOptions(projectDir, false, preferredPluginDirs...)
+}
+
+func buildModuleRegistryWithOptions(projectDir string, exclusive bool, preferredPluginDirs ...string) (target.ModuleRegistry, []plugins.LoadedPlugin, error) {
 	return plugins.BuildRegistry(module.Registry(), plugins.Options{
-		BinaryDir:     currentBinaryDir(),
-		WorkingDir:    projectDir,
-		PreferredDirs: preferredPluginDirs,
+		BinaryDir:              currentBinaryDir(),
+		WorkingDir:             projectDir,
+		PreferredDirs:          preferredPluginDirs,
+		ExclusivePreferredDirs: exclusive,
 	})
+}
+
+func loadProjectLockfile(projectDir string) (*action.Lockfile, error) {
+	if projectDir == "" {
+		return &action.Lockfile{Actions: make(map[string]action.LockEntry)}, nil
+	}
+	return action.LoadLockfile(filepath.Join(projectDir, action.LockfileName))
+}
+
+func bundleOutputDir(cmd *cobra.Command, projectDir string) string {
+	p, _ := cmd.Flags().GetString("bundle-output-dir")
+	if p != "" {
+		return p
+	}
+	if projectDir != "" {
+		return filepath.Join(projectDir, "dist", "bundles")
+	}
+	cwd, _ := os.Getwd()
+	return filepath.Join(cwd, "dist", "bundles")
 }
 
 func playbookDir(playbookPath string) (string, error) {

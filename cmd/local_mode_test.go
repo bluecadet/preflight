@@ -139,19 +139,57 @@ func TestRunPlaybookFetchPhaseReturnsNil(t *testing.T) {
 	}
 }
 
-func TestRunPlaybookStagePhaseReturnsNotImplemented(t *testing.T) {
+func TestRunPlaybookStagePhaseWritesBundle(t *testing.T) {
 	playbookPath := writeTestPlaybook(t)
 	cmd := newTestCommand()
 	if err := cmd.Flags().Set("phase", "stage"); err != nil {
 		t.Fatalf("Set phase: %v", err)
 	}
 
-	err := runApply(cmd, []string{playbookPath})
-	if err == nil {
-		t.Fatal("expected stage error, got nil")
+	if err := runApply(cmd, []string{playbookPath}); err != nil {
+		t.Fatalf("expected stage to succeed, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "not implemented") {
-		t.Fatalf("expected not implemented error, got %v", err)
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(playbookPath), "dist", "bundles", "*.zip"))
+	if err != nil {
+		t.Fatalf("Glob bundle output: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one staged bundle, got %d", len(matches))
+	}
+}
+
+func TestRunApplyBundleRoundTrip(t *testing.T) {
+	playbookPath := writeTestPlaybook(t)
+	stageCmd := newTestCommand()
+	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
+		t.Fatalf("Set phase: %v", err)
+	}
+	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+		t.Fatalf("stage bundle: %v", err)
+	}
+
+	matches, err := filepath.Glob(filepath.Join(filepath.Dir(playbookPath), "dist", "bundles", "*.zip"))
+	if err != nil {
+		t.Fatalf("Glob bundle output: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one staged bundle, got %d", len(matches))
+	}
+
+	applyCmd := newTestCommand()
+	statePath := filepath.Join(filepath.Dir(playbookPath), "state", "bundle.json")
+	if err := applyCmd.Flags().Set("bundle", matches[0]); err != nil {
+		t.Fatalf("Set bundle: %v", err)
+	}
+	if err := applyCmd.Flags().Set("state-file", statePath); err != nil {
+		t.Fatalf("Set state-file: %v", err)
+	}
+	if err := runApply(applyCmd, nil); err != nil {
+		t.Fatalf("apply bundle: %v", err)
+	}
+
+	if _, err := os.Stat(statePath); err != nil {
+		t.Fatalf("expected bundle apply state file, got %v", err)
 	}
 }
 
@@ -168,6 +206,8 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().Int("concurrency", 0, "")
 	cmd.Flags().String("timeout", "", "")
 	cmd.Flags().String("phase", "", "")
+	cmd.Flags().String("bundle-output-dir", "", "")
+	cmd.Flags().String("bundle", "", "")
 	cmd.Flags().String("state-file", "", "")
 	cmd.Flags().String("inventory", "", "")
 	cmd.SetContext(context.Background())

@@ -98,10 +98,11 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	vars := parseVars(varFlags)
 
 	cfg := runner.Config{
-		ProjectVars: projectCfg.Vars,
-		Vars:        vars,
-		Phase:       "plan",
-		Secrets:     secretsResolver,
+		ProjectVars:    projectCfg.Vars,
+		Vars:           vars,
+		Phase:          "plan",
+		Secrets:        secretsResolver,
+		ModuleRegistry: registry,
 	}
 
 	r := runner.New(tgt, chain, cfg)

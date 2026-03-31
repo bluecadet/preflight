@@ -44,23 +44,21 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 
-	names := make([]string, 0, len(plugins))
-	index := make(map[string]sdk.PluginStatus, len(plugins))
-	for _, plugin := range plugins {
-		names = append(names, plugin.Name)
-		index[plugin.Name] = plugin
-	}
-	sort.Strings(names)
+	sort.Slice(plugins, func(i, j int) bool {
+		if plugins[i].Name == plugins[j].Name {
+			return plugins[i].Path < plugins[j].Path
+		}
+		return plugins[i].Name < plugins[j].Name
+	})
 
 	fmt.Printf("%-24s %-12s %-8s %s\n", "NAME", "VERSION", "STATUS", "PATH")
 	fmt.Printf("%-24s %-12s %-8s %s\n", "----", "-------", "------", "----")
-	for _, name := range names {
-		plugin := index[name]
+	for _, plugin := range plugins {
 		status := "ready"
 		if !plugin.Initialized {
 			status = "error"
 		}
-		fmt.Printf("%-24s %-12s %-8s %s\n", name, plugin.Version, status, plugin.Path)
+		fmt.Printf("%-24s %-12s %-8s %s\n", plugin.Name, plugin.Version, status, plugin.Path)
 	}
 
 	return nil

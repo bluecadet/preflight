@@ -19,9 +19,10 @@ type LoadedPlugin struct {
 
 // Options controls plugin discovery and registration.
 type Options struct {
-	BinaryDir     string
-	WorkingDir    string
-	PreferredDirs []string
+	BinaryDir              string
+	WorkingDir             string
+	PreferredDirs          []string
+	ExclusivePreferredDirs bool
 }
 
 // BuildRegistry merges built-in modules with discovered plugins. Plugin names
@@ -31,9 +32,10 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 	maps.Copy(registry, base)
 
 	discovered, err := sdk.Inspect(sdk.DiscoveryOptions{
-		BinaryDir:     opts.BinaryDir,
-		WorkingDir:    opts.WorkingDir,
-		PreferredDirs: opts.PreferredDirs,
+		BinaryDir:           opts.BinaryDir,
+		WorkingDir:          opts.WorkingDir,
+		PreferredDirs:       opts.PreferredDirs,
+		DisableFallbackDirs: opts.ExclusivePreferredDirs,
 	})
 	if err != nil {
 		return nil, nil, err

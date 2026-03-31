@@ -88,6 +88,14 @@
           "type": "string",
           "description": "Reference to another action, mutually exclusive with module fields"
         },
+        "module": {
+          "type": "string",
+          "description": "Explicit module name, including plugin-backed modules"
+        },
+        "params": {
+          "type": "object",
+          "description": "Parameters passed to the explicit module"
+        },
         "with": {
           "type": "object",
           "description": "Input values passed to the referenced action"
