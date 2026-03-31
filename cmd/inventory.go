@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/claytercek/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/spf13/cobra"
 )
 

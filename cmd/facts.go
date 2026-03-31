@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/claytercek/preflight/internal/facts"
-	"github.com/claytercek/preflight/internal/module"
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/facts"
+	"github.com/bluecadet/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/spf13/cobra"
 )
 

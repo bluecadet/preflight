@@ -1,6 +1,6 @@
 package main
 
-import "github.com/claytercek/preflight/cmd"
+import "github.com/bluecadet/preflight/cmd"
 
 // Set by GoReleaser via -ldflags.
 var (

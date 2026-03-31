@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/claytercek/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/spf13/cobra"
 )
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"os"
 
-	"github.com/claytercek/preflight/internal/action"
-	"github.com/claytercek/preflight/internal/module"
-	"github.com/claytercek/preflight/internal/output"
-	"github.com/claytercek/preflight/internal/runner"
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/runner"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/spf13/cobra"
 )
 

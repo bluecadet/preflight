@@ -3,7 +3,7 @@ package module
 import (
 	"fmt"
 
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // Registry returns a map of all built-in module names to their implementations.

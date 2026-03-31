@@ -1,4 +1,4 @@
-module github.com/claytercek/preflight
+module github.com/bluecadet/preflight
 
 go 1.25.3
 

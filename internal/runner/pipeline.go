@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/claytercek/preflight/internal/action"
-	"github.com/claytercek/preflight/internal/output"
-	"github.com/claytercek/preflight/internal/target"
-	"github.com/claytercek/preflight/internal/template"
+	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 // ExecutionPlan is the result of the Plan phase: a flat, ordered list of tasks

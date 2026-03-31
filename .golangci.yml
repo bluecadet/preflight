@@ -18,7 +18,7 @@ linters-settings:
   gofmt:
     simplify: true
   goimports:
-    local-prefixes: github.com/claytercek/preflight
+    local-prefixes: github.com/bluecadet/preflight
 
 issues:
   exclude-rules:

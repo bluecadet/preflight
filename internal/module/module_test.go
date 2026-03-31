@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/claytercek/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/module"
 )
 
 func TestRegistry_NotEmpty(t *testing.T) {

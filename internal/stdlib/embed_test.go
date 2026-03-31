@@ -3,7 +3,7 @@ package stdlib_test
 import (
 	"testing"
 
-	"github.com/claytercek/preflight/internal/stdlib"
+	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
 func TestEmbeddedActions(t *testing.T) {

@@ -13,7 +13,7 @@ Thanks for your interest in contributing. This document covers how to get set up
 **Clone and build:**
 
 ```bash
-git clone https://github.com/claytercek/preflight
+git clone https://github.com/bluecadet/preflight
 cd preflight
 go build -o dist/preflight .      # local build for development
 ```

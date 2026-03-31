@@ -6,7 +6,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 func addWindowsModules(reg target.ModuleRegistry) {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/claytercek/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/inventory"
 )
 
 const sampleInventory = `

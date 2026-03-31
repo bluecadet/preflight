@@ -3,7 +3,7 @@ package facts_test
 import (
 	"testing"
 
-	"github.com/claytercek/preflight/internal/facts"
+	"github.com/bluecadet/preflight/internal/facts"
 )
 
 func TestAsMap_OSKeys(t *testing.T) {

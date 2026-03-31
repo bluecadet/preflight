@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // TaskResult records the outcome of a single task execution.

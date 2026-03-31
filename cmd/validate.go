@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/claytercek/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/action"
 	"github.com/spf13/cobra"
 )
 

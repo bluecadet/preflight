@@ -1,9 +1,9 @@
 # Preflight installer for Windows
-# Usage: irm https://raw.githubusercontent.com/claytercek/preflight/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$repo = "claytercek/preflight"
+$repo = "bluecadet/preflight"
 $installDir = "$env:LOCALAPPDATA\preflight"
 
 # Detect architecture

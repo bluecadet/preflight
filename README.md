@@ -82,7 +82,7 @@ tasks:
 **macOS / Linux:**
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/claytercek/preflight/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
 ```
 
 Installs to `/usr/local/bin` by default. Override with `PREFLIGHT_INSTALL_DIR=/your/path`.
@@ -90,7 +90,7 @@ Installs to `/usr/local/bin` by default. Override with `PREFLIGHT_INSTALL_DIR=/y
 **Windows (PowerShell):**
 
 ```powershell
-irm https://raw.githubusercontent.com/claytercek/preflight/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
 ```
 
 Installs to `%LOCALAPPDATA%\preflight\` and adds it to your user PATH.

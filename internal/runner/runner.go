@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/claytercek/preflight/internal/action"
-	"github.com/claytercek/preflight/internal/output"
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // Config holds the options that control runner behavior.

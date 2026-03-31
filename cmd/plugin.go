@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/claytercek/preflight/pkg/plugin/sdk"
+	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 	"github.com/spf13/cobra"
 )
 

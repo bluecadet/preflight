@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // mockModule is a configurable Module for testing.

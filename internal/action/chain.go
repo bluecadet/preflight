@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/claytercek/preflight/internal/stdlib"
+	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
 // DefaultChain builds the standard resolver chain:

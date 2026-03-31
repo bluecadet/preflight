@@ -9,8 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/claytercek/preflight/internal/action"
-	"github.com/claytercek/preflight/internal/stdlib"
+	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/spf13/cobra"
 )
 

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/claytercek/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // Gatherer collects facts from a target.

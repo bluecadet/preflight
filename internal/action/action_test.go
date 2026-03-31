@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/claytercek/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/action"
 )
 
 const sampleAction = `

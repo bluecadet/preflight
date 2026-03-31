@@ -1,10 +1,10 @@
 #!/bin/sh
 # Preflight installer for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/claytercek/preflight/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
 
 set -e
 
-REPO="claytercek/preflight"
+REPO="bluecadet/preflight"
 INSTALL_DIR="${PREFLIGHT_INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and architecture
