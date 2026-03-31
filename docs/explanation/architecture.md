@@ -37,12 +37,11 @@ The runner is intentionally target-agnostic. It does not hardcode "run this on l
 
 That design supports:
 
-- local execution today
-- WinRM and SSH targets in the architecture
+- local execution
+- WinRM and SSH targets
 - future agent-based or staged execution without rewriting the planner
 
-> [!NOTE]
-> The abstraction is already in place, but the current CLI commands still create a local target for playbook execution. The architecture is ahead of the command wiring here.
+The current implementation keeps the runner single-target on purpose. Inventory selection, per-host variable merging, and host concurrency live in a thin orchestration layer above the runner. That split keeps the planner and DAG executor simple while still allowing one command to operate on many hosts.
 
 ## The Pipeline: Plan, Fetch, Stage, Apply
 
@@ -79,13 +78,40 @@ The tradeoff is deliberate: stdlib actions are versioned with the binary, not in
 
 ## Variables And Templates
 
-Variables are merged in layers so local overrides stay predictable. In the current runner plan path, the merge order is:
+Variables are merged in layers so overrides stay predictable. For inventory-backed execution, the effective precedence is:
 
 ```text
-project vars -> playbook vars -> CLI --var flags
+project vars
+  -> inventory group vars
+    -> inventory host vars
+      -> playbook vars
+        -> CLI --var flags
 ```
 
-Inventory structures also support `all`, group, and host variable scopes. Template rendering then turns those values into concrete task parameters before execution.
+Template rendering now happens in two stages:
+
+- During `plan`, Preflight expands actions and preserves unresolved `facts.*` expressions so the phase stays pure.
+- During `check` and `apply`, Preflight gathers per-host facts and safe target metadata, then performs final template rendering before module execution.
+
+That split is what allows a plan to stay free of target I/O while still supporting `facts.*` and `target.*` in real executions.
+
+## Why Remote Execution Sits Above The Runner
+
+The command layer resolves inventory selectors first, then prepares one host execution context per resolved machine. Each host context carries:
+
+- merged inventory vars
+- safe `target.*` metadata
+- resolved transport credentials
+- a concrete `Target`
+- a derived per-host state path
+
+The command then fetches action dependencies once, fans out host work with the configured concurrency limit, and instantiates one runner per host.
+
+This design trades a little orchestration code for clearer boundaries:
+
+- the runner stays focused on one plan and one target
+- target transports stay isolated behind `internal/target`
+- host-level concurrency stays outside the task DAG executor
 
 ## What To Keep In Mind As The Project Grows
 

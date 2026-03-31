@@ -4,24 +4,30 @@ This page describes the current command surface implemented in `cmd/`.
 
 ## Global Flags
 
-These flags are registered on the root command and are available everywhere, even when some subcommands do not use them yet.
-
 | Flag | Short | Description |
 | --- | --- | --- |
-| `--target` | `-t` | Target host(s) or group(s) from inventory |
-| `--var` | `-e` | Set a variable as `key=value` |
-| `--tags` |  | Only run tasks with these tags |
-| `--skip-tags` |  | Skip tasks with these tags |
-| `--check` |  | Dry-run mode |
-| `--diff` |  | Show diffs for file changes |
-| `--verbose` | `-v` | Verbose output |
-| `--output` |  | Output format: `text`, `json`, or `jsonl` |
-| `--concurrency` |  | Max number of targets to operate on in parallel |
-| `--timeout` |  | Overall execution timeout |
-| `--phase` |  | Run only up to `plan`, `fetch`, `stage`, or `apply` |
+| `--target` | `-t` | Host or group selectors from inventory. Repeat the flag to combine selectors. |
+| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` for inventory-backed commands. |
+| `--var` | `-e` | Set a variable as `key=value`. Later values win. |
+| `--tags` |  | Run only tasks with these tags. |
+| `--skip-tags` |  | Skip tasks with these tags. |
+| `--check` |  | Dry-run mode. |
+| `--diff` |  | Show diffs for file changes. |
+| `--verbose` | `-v` | Verbose output. |
+| `--output` |  | Output format: `text`, `json`, or `jsonl`. |
+| `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
+| `--timeout` |  | Overall run timeout, for example `30m` or `1h`. |
+| `--phase` |  | Run only up to `plan`, `fetch`, `stage`, or `apply`. |
 
-> [!NOTE]
-> M1 is local-only. `--target` accepts only `local` or `localhost`, `--concurrency` accepts only `0` or `1`, and `--phase fetch|stage` returns a not-implemented error.
+## Target Selection
+
+`--target` resolves selectors in order.
+
+- A selector can be a host name, a group name, or `all`.
+- Repeating `--target` builds a union of matches.
+- Hosts are deduplicated by name, and the first match wins.
+- Omitting `--target` keeps local execution behavior.
+- Using only `local` or `localhost` keeps local execution behavior and does not require `inventory.yml`.
 
 ## Top-Level Commands
 
@@ -29,16 +35,22 @@ These flags are registered on the root command and are available everywhere, eve
 
 Apply a playbook.
 
+Examples:
+
 ```bash
 preflight apply playbooks/lobby.yml
+preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
 ### `preflight check <playbook>`
 
 Dry-run a playbook without applying changes.
 
+Examples:
+
 ```bash
 preflight check playbooks/lobby.yml
+preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
 ```
 
 ### `preflight diff <playbook>`
@@ -53,9 +65,18 @@ preflight diff playbooks/lobby.yml
 
 Resolve and print the execution plan.
 
+Examples:
+
 ```bash
 preflight plan playbooks/lobby.yml
+preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
+
+Notes:
+
+- `plan` stays a pure planning phase and does not contact targets.
+- When `--target` resolves multiple hosts, output is grouped by host.
+- Fact-dependent template expressions stay unresolved in the printed preview until execution time.
 
 ### `preflight validate <playbook>`
 
@@ -69,12 +90,20 @@ preflight validate playbooks/lobby.yml
 
 Gather facts and print JSON.
 
+Examples:
+
 ```bash
 preflight facts
 preflight facts local
+preflight facts --target lobby --inventory inventory.yml
+preflight facts lobby-pc-01 --inventory inventory.yml
 ```
 
-Passing any non-local target returns an error in local-only mode.
+Behavior:
+
+- Use either a positional target or `--target`, not both.
+- One resolved host prints a single facts object.
+- Multiple resolved hosts print an object keyed by host name.
 
 ## `action` Commands
 
@@ -107,7 +136,7 @@ Flags:
 
 | Flag | Description |
 | --- | --- |
-| `--inventory` | Path to inventory file. Defaults to `./inventory.yml` |
+| `--inventory` | Path to inventory file. Defaults to `./inventory.yml`. |
 
 ## `plugin` Commands
 
@@ -156,7 +185,7 @@ Flags:
 
 ### `preflight state show`
 
-Print the last applied state file as JSON.
+Print the selected state file as JSON.
 
 ### `preflight state diff <playbook>`
 
@@ -166,7 +195,13 @@ Flags:
 
 | Flag | Description |
 | --- | --- |
-| `--state-file` | Path to the state file. Defaults to `state/provision.json` |
+| `--state-file` | Path to the state file. Defaults to `state/provision.json`. |
+
+Notes:
+
+- Local applies write `state/provision.json` by default.
+- Inventory-backed applies write per-host state files under `state/targets/<host>.json`.
+- To inspect a remote host state file, pass `--state-file state/targets/<host>.json`.
 
 ## Output Formats
 

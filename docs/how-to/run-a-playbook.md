@@ -7,8 +7,10 @@ Use this guide when you already have a playbook and want to validate it, inspect
 - An installed `preflight` binary
 - A `preflight.yml` file if you rely on project vars or secrets
 - A playbook file
+- An `inventory.yml` file if you want to target remote hosts or groups
 
 If you need the CLI first, follow [Install Preflight](./install-preflight.md).
+If you want an end-to-end remote example, follow [Run a playbook against remote hosts](./remote-execution.md).
 
 
 ## Validate Before Running
@@ -23,6 +25,7 @@ Use `plan` to inspect the flattened task list:
 
 ```bash
 preflight plan playbooks/lobby.yml
+preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
 ## Dry-Run A Playbook
@@ -58,8 +61,20 @@ preflight apply playbooks/lobby.yml \
 Variable precedence during planning is:
 
 ```text
-project vars -> playbook vars -> --var flags
+project vars -> inventory group vars -> inventory host vars -> playbook vars -> --var flags
 ```
+
+## Choose Hosts From Inventory
+
+Use `--target` to select one host, one group, or several selectors:
+
+```bash
+preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+preflight apply playbooks/lobby.yml --target lobby --target gallery --inventory inventory.yml
+```
+
+Selectors are resolved in order, then merged into a deduplicated host set.
 
 ## Filter By Tags
 
@@ -91,7 +106,7 @@ Current behavior:
 | --- | --- |
 | `plan` | Implemented |
 | `fetch` | Implemented for remote action download and lockfile updates |
-| `stage` | Explicitly not implemented in local-only mode |
+| `stage` | Explicitly not implemented |
 | `apply` | Implemented |
 
 ## Choose An Output Format
@@ -111,6 +126,16 @@ Example:
 preflight apply playbooks/lobby.yml --output jsonl
 ```
 
+## Control Host Parallelism
+
+Use `--concurrency` to cap how many hosts execute at once:
+
+```bash
+preflight apply playbooks/lobby.yml --target all --inventory inventory.yml --concurrency 5
+```
+
+`0` means unlimited host concurrency.
+
 ## Inspect The Recorded State
 
 After an apply, inspect the stored state:
@@ -121,6 +146,13 @@ preflight state diff playbooks/lobby.yml
 ```
 
 `state diff` compares the current plan to the recorded `state/provision.json` file.
+
+For inventory-backed runs, apply writes per-host state files under `state/targets/<host>.json`. Inspect one directly with:
+
+```bash
+preflight state show --state-file state/targets/lobby-pc-01.json
+preflight state diff playbooks/lobby.yml --state-file state/targets/lobby-pc-01.json
+```
 
 ## Troubleshooting
 
@@ -135,6 +167,16 @@ Preflight resolves actions in this order:
 
 Remote refs are resolved offline from the cache and `preflight.lock`. If a remote ref is missing, run `preflight action fetch <ref>` or `preflight apply <playbook>` to populate the cache first.
 
-### `--target` is local-only in M1
+### A host is missing from the run
 
-The global `--target` flag is accepted for interface parity, but `apply`, `check`, `plan`, and `diff` reject anything except a single `local` or `localhost` target in M1.
+Check the selector and inventory path first:
+
+```bash
+preflight inventory list --inventory inventory.yml
+```
+
+Remember that repeated `--target` flags build a union and deduplicate by host name.
+
+### `plan` output still shows `{{ facts... }}`
+
+That is expected. `plan` stays a pure phase and does not contact hosts. Final fact-dependent rendering happens during `check` and `apply`.

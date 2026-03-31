@@ -10,14 +10,14 @@ preflight apply playbooks/lobby.yml
 
 ## Overview
 
-Preflight is a declarative, idempotent configuration management tool built for managing fleets of Windows PCs — kiosk displays, interactive exhibits, gallery hardware. It takes inspiration from Ansible but is designed around Windows-native primitives and a single redistributable binary that needs no Python, no agent, and no network access at runtime.
+Preflight is a declarative, idempotent configuration management tool built for managing fleets of Windows PCs — kiosk displays, interactive exhibits, gallery hardware. It takes inspiration from Ansible but is designed around Windows-native primitives and a single redistributable binary that needs no Python, no target-side agent, and no extra runtime dependencies on the managed hosts.
 
 **Key properties:**
 
 - **Single binary.** Drop `preflight.exe` on any Windows machine and it runs. No installer, no runtime dependencies, no Python.
 - **Idempotent by design.** Every built-in module implements a `Check()` contract. The runner always checks current state before making any change. Running the same playbook twice is safe.
 - **Dry-run first-class.** `--check` mode calls `Check()` on every task and reports what would change without modifying the system. `diff` compares the current plan to recorded state.
-- **Truthful local-only runtime.** M1 is explicitly local-only: remote targets, remote fetch, and staged bundles fail fast instead of pretending to work.
+- **Inventory-backed execution.** The CLI can resolve inventory groups and hosts, render plans per host, gather facts at execution time, and run against WinRM or SSH targets.
 - **Structured output.** `--output json` / `--output jsonl` for CI integration and log pipelines.
 
 ---
@@ -140,8 +140,10 @@ Additional docs live in [`docs/`](docs/):
 - [Install Preflight](docs/how-to/install-preflight.md)
 - [Quickstart](docs/tutorials/quickstart.md)
 - [Run a playbook](docs/how-to/run-a-playbook.md)
+- [Run a playbook against remote hosts](docs/how-to/remote-execution.md)
 - [Manage secrets](docs/how-to/manage-secrets.md)
 - [Secrets and `age`](docs/explanation/secrets-and-age.md)
+- [Architecture](docs/explanation/architecture.md)
 - [CLI reference](docs/reference/cli.md)
 - [YAML reference](docs/reference/yaml.md)
 
@@ -154,6 +156,7 @@ Additional docs live in [`docs/`](docs/):
 ```bash
 preflight apply playbooks/lobby.yml
 preflight apply playbooks/gallery.yml --var content_root=D:\\content
+preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
 ### Dry-run / check mode
@@ -173,9 +176,10 @@ preflight diff playbooks/lobby.yml
 
 ```bash
 preflight plan playbooks/lobby.yml
+preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
-Resolves the full execution plan and prints it — no connection to targets required.
+Resolves the execution plan and prints it. With inventory-backed runs, the output is grouped by resolved host. Fact-dependent expressions stay unresolved until execution time.
 
 ### Validate configuration
 
@@ -190,9 +194,10 @@ Parses and validates playbook, inventory, and action schemas without executing a
 ```bash
 preflight facts                    # local machine
 preflight facts local
+preflight facts --target lobby --inventory inventory.yml
 ```
 
-Returns a JSON object of system facts (OS version, disk layout, environment) used in `when:` conditions.
+Returns system facts (OS version, disk layout, environment) used in `when:` conditions. For multiple resolved hosts, the output is a JSON object keyed by host name.
 
 ### Manage actions
 
@@ -214,9 +219,10 @@ preflight secret edit autologin-password
 
 ```bash
 preflight state show
+preflight state show --state-file state/targets/lobby-pc-01.json
 ```
 
-Prints the result of the last apply from `state/provision.json`.
+Prints the recorded state file. Local applies default to `state/provision.json`. Inventory-backed applies write per-host state files under `state/targets/<host>.json`.
 
 ---
 
@@ -359,10 +365,12 @@ Preflight processes every playbook through four explicit phases:
 |---|---|
 | **Plan** | Parse playbook, resolve cached action refs, expand into a flat task DAG, validate inputs. Pure computation — no network or target I/O. |
 | **Fetch** | Download remote actions into the local cache and update `preflight.lock`. |
-| **Stage** | Reserved for future artifact bundles. In M1 it returns an explicit not-implemented error. |
+| **Stage** | Reserved for future artifact bundles. It currently returns an explicit not-implemented error. |
 | **Apply** | Fetch remote dependencies, build the execution plan, then execute the task graph. For each task: `Check()`, skip if already correct, `Apply()` if change needed, record result. |
 
 Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
+
+For inventory-backed runs, the CLI resolves the selected hosts first, fetches shared action dependencies once, then creates one single-target runner per host. That keeps planning and task execution target-agnostic while still allowing host-level concurrency and per-host state files.
 
 ---
 
@@ -370,7 +378,8 @@ Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
 
 | Flag | Description |
 |---|---|
-| `-t, --target` | Local-only in M1; accepts only `local` or `localhost` |
+| `-t, --target` | Select inventory hosts or groups; repeat to combine selectors |
+| `--inventory` | Inventory file path for inventory-backed commands |
 | `-e, --var key=value` | Override a variable |
 | `--tags tag1,tag2` | Only run tasks with these tags |
 | `--skip-tags tag1` | Skip tasks with these tags |
@@ -378,8 +387,8 @@ Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
 | `--diff` | Show file diffs |
 | `-v, --verbose` | Verbose output |
 | `--output text\|json\|jsonl` | Output format |
-| `--concurrency N` | Local-only in M1; `0` and `1` are accepted, values above `1` error |
-| `--timeout duration` | Execution timeout |
+| `--concurrency N` | Max number of hosts to execute in parallel; `0` means unlimited |
+| `--timeout duration` | Overall execution timeout |
 | `--phase` | Run only up to this phase |
 
 ---

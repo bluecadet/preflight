@@ -9,14 +9,12 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs in mus
 | Get your first playbook running locally | [Quickstart](./tutorials/quickstart.md) |
 | Install the CLI | [Install Preflight](./how-to/install-preflight.md) |
 | Apply or dry-run a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
+| Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
 | Manage repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
 | Understand `age` and why secrets are encrypted | [Secrets and age](./explanation/secrets-and-age.md) |
 | Look up commands and flags | [CLI reference](./reference/cli.md) |
 | Look up YAML file shapes | [YAML reference](./reference/yaml.md) |
 | Understand how Preflight is structured | [Architecture](./explanation/architecture.md) |
-
-> [!IMPORTANT]
-> These docs are written against the current repository state. A few concepts in `README.md` are ahead of the implementation, so this docs set calls out planned behavior separately from what works today.
 
 ## Core Ideas
 
@@ -39,20 +37,20 @@ Plan -> Fetch -> Stage -> Apply
 
 ## What Works Today
 
-- Local playbook parsing, planning, and execution
+- Local and inventory-backed playbook parsing, planning, and execution
 - Embedded and local action resolution
 - Repo-backed `age` secrets
-- Inventory parsing and listing
+- Inventory parsing, selection, and listing
 - Plugin discovery
 - Structured output in `text`, `json`, and `jsonl`
+- WinRM and SSH target transports
 
 ## Still Planned Or Stubbed
 
 - Remote action fetch into cache
 - Stage bundle assembly
-- Remote target execution from CLI commands
-- Windows-native module registration beyond the currently implemented cross-platform set
+- Broader transport parity across every module and platform combination
 
 ## Start Here
 
-The fastest path is the [Quickstart](./tutorials/quickstart.md), then the [CLI reference](./reference/cli.md) for day-to-day lookup.
+The fastest path is the [Quickstart](./tutorials/quickstart.md), then [Run a playbook](./how-to/run-a-playbook.md) for local usage or [Run a playbook against remote hosts](./how-to/remote-execution.md) for inventory-backed execution.

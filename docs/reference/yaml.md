@@ -77,6 +77,15 @@ groups:
 > [!TIP]
 > Variable merging in inventory is `all` group vars, then group vars, then host vars.
 
+### Selector Resolution
+
+Inventory-backed commands resolve selectors from `--target` using these rules:
+
+- A selector may be a host name, a group name, or `all`.
+- Repeating `--target` builds a union of matches.
+- Hosts are deduplicated by name.
+- The first match wins when the same host is selected more than once.
+
 ## `playbook.yml`
 
 Playbooks are top-level execution documents.
@@ -116,6 +125,18 @@ tasks:
 > [!NOTE]
 > Imports are merged depth-first, in listed order, before the importing playbook's own tasks. Import paths are resolved relative to the playbook file that declares them.
 
+### Variable Precedence At Runtime
+
+For inventory-backed execution, later entries win:
+
+```text
+project vars
+  -> inventory group vars
+    -> inventory host vars
+      -> playbook vars
+        -> CLI --var flags
+```
+
 ## Task Shape
 
 Each task must have a `name`. It can either:
@@ -134,6 +155,19 @@ Each task must have a `name`. It can either:
 | `depends_on` | string[] | Dependencies by task name |
 | `ignore_errors` | bool | Continue on failure |
 | `tags` | string[] | Task tags |
+
+### Template Context
+
+Task templates can read from these namespaces:
+
+| Namespace | What it contains |
+| --- | --- |
+| `vars.*` | Merged variables for the selected host |
+| `facts.*` | Gathered host facts, available during execution |
+| `target.*` | Safe target metadata: `name`, `hostname`, `address`, `transport`, `port` |
+| `env.*` | Gathered target environment variables during execution |
+
+`plan` stays a pure phase, so fact-dependent expressions may remain unresolved in plan output until execution time.
 
 > [!WARNING]
 > A task cannot set both `uses` and an inline module. It also cannot set more than one inline module block.
