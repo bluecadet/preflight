@@ -51,7 +51,7 @@ Preflight models execution as distinct phases:
 | Phase | Responsibility | Current state |
 | --- | --- | --- |
 | Plan | Parse YAML, resolve actions, expand tasks, resolve variables, validate DAG | Implemented |
-| Fetch | Download remote actions into cache | Stub |
+| Fetch | Download remote actions into cache and pin them in `preflight.lock` | Implemented |
 | Stage | Assemble a self-contained artifact bundle | Stub |
 | Apply | Execute the task graph against a target | Implemented |
 

@@ -52,7 +52,7 @@ Actions are resolved from a chain of sources:
 4. Remote Git          github.com/myorg/actions/signage@v2.1
 ```
 
-Remote action refs are part of the public reference format, but remote fetch is not implemented in the current local-only milestone.
+Remote action refs can be fetched into the local cache with `preflight action fetch` or automatically during `preflight apply` / `--phase fetch`. The project `preflight.lock` file records the exact commit SHA used for each fetched ref.
 
 ### Playbooks
 
@@ -357,10 +357,10 @@ Preflight processes every playbook through four explicit phases:
 
 | Phase | What it does |
 |---|---|
-| **Plan** | Parse playbook, resolve action refs, expand into a flat task DAG, validate inputs. Pure computation — no I/O against targets. |
-| **Fetch** | Reserved for remote action download. In M1 it returns an explicit not-implemented error. |
+| **Plan** | Parse playbook, resolve cached action refs, expand into a flat task DAG, validate inputs. Pure computation — no network or target I/O. |
+| **Fetch** | Download remote actions into the local cache and update `preflight.lock`. |
 | **Stage** | Reserved for future artifact bundles. In M1 it returns an explicit not-implemented error. |
-| **Apply** | Execute the task graph. For each task: `Check()`, skip if already correct, `Apply()` if change needed, record result. |
+| **Apply** | Fetch remote dependencies, build the execution plan, then execute the task graph. For each task: `Check()`, skip if already correct, `Apply()` if change needed, record result. |
 
 Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
 

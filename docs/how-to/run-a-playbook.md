@@ -90,7 +90,7 @@ Current behavior:
 | Phase | Status |
 | --- | --- |
 | `plan` | Implemented |
-| `fetch` | Explicitly not implemented in local-only mode |
+| `fetch` | Implemented for remote action download and lockfile updates |
 | `stage` | Explicitly not implemented in local-only mode |
 | `apply` | Implemented |
 
@@ -129,11 +129,11 @@ preflight state diff playbooks/lobby.yml
 Preflight resolves actions in this order:
 
 1. Embedded stdlib
-2. `./actions` relative to the playbook directory
+2. `./actions` relative to the project root
 3. `~/.preflight/actions`
 4. Git resolver
 
-The Git resolver exists in the chain, but remote fetch is not implemented yet.
+Remote refs are resolved offline from the cache and `preflight.lock`. If a remote ref is missing, run `preflight action fetch <ref>` or `preflight apply <playbook>` to populate the cache first.
 
 ### `--target` is local-only in M1
 

@@ -95,7 +95,7 @@ preflight action info myorg/display-config
 
 ### `preflight action fetch <ref>`
 
-Reserved for remote fetch. The command exists, but currently prints a not-yet-implemented message.
+Fetch a remote action ref into `~/.preflight/actions`, resolve it to an exact commit SHA, and create or update `./preflight.lock` in the current project directory. Nested remote `uses:` dependencies are fetched recursively.
 
 ## `inventory` Commands
 
