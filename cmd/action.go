@@ -115,7 +115,7 @@ func listLocalActions(dir string) ([]string, error) {
 func runActionInfo(cmd *cobra.Command, args []string) error {
 	ref := args[0]
 	cwd, _ := os.Getwd()
-	chain := action.DefaultChain(cwd)
+	chain := newActionChain(cwd)
 
 	a, err := chain.Resolve(context.Background(), ref)
 	if err != nil {
@@ -172,6 +172,26 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 }
 
 func runActionFetch(_ *cobra.Command, args []string) error {
-	fmt.Printf("git fetch not yet implemented (ref: %s)\n", args[0])
+	ref := args[0]
+	if _, err := action.ParseRemoteRef(ref); err != nil {
+		return fmt.Errorf("action fetch: %w", err)
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("action fetch: get working directory: %w", err)
+	}
+
+	entries, err := action.FetchRefs(context.Background(), newActionChain(cwd), []string{ref})
+	if err != nil {
+		return fmt.Errorf("action fetch: %w", err)
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Ref < entries[j].Ref
+	})
+	for _, entry := range entries {
+		fmt.Printf("Fetched %s -> %s\n", entry.Ref, entry.SHA)
+	}
 	return nil
 }

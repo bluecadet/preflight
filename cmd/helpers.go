@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
 )
+
+var newActionChain = action.DefaultChain
 
 // parseVars converts a slice of "key=value" strings into a map.
 // Values without "=" are stored as empty strings.
@@ -85,5 +88,48 @@ func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *con
 	}
 
 	secretsResolver := buildSecretsResolver(projectDir, projectCfg)
-	return pb, projectDir, projectCfg, secretsResolver, action.DefaultChain(projectDir), nil
+	return pb, projectDir, projectCfg, secretsResolver, newActionChain(projectDir), nil
+}
+
+func playbookDir(playbookPath string) (string, error) {
+	abs, err := filepath.Abs(playbookPath)
+	if err != nil {
+		return "", err
+	}
+	start := filepath.Dir(abs)
+	dir, err := discoverProjectDir(start)
+	if err != nil {
+		return "", fmt.Errorf("resolve project dir for %q: %w", playbookPath, err)
+	}
+	return dir, nil
+}
+
+func discoverProjectDir(start string) (string, error) {
+	current := filepath.Clean(start)
+	for {
+		if hasProjectMarker(current) {
+			return current, nil
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			return start, nil
+		}
+		current = parent
+	}
+}
+
+func hasProjectMarker(dir string) bool {
+	markers := []string{
+		filepath.Join(dir, config.FileName),
+		filepath.Join(dir, action.LockfileName),
+		filepath.Join(dir, "actions"),
+		filepath.Join(dir, ".git"),
+	}
+	for _, marker := range markers {
+		if _, err := os.Stat(marker); err == nil {
+			return true
+		}
+	}
+	return false
 }

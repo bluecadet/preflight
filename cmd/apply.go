@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -59,7 +58,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	renderer := output.New(outFmt, os.Stdout)
 	defer renderer.Close()
 
-	pb, _, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return err
 	}
@@ -74,6 +73,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		Tags:        tags,
 		SkipTags:    skipTags,
 		Concurrency: concurrency,
+		ProjectDir:  projectDir,
 		ProjectVars: projectCfg.Vars,
 		Vars:        vars,
 		Phase:       phase,
@@ -84,13 +84,4 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 
 	r := runner.New(tgt, chain, cfg)
 	return r.Run(ctx, pb)
-}
-
-// playbookDir returns the directory containing the playbook file.
-func playbookDir(playbookPath string) (string, error) {
-	abs, err := filepath.Abs(playbookPath)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Dir(abs), nil
 }

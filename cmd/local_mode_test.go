@@ -78,24 +78,31 @@ func TestRunPlanTimeoutReturnsDeadlineExceeded(t *testing.T) {
 	}
 }
 
-func TestRunPlaybookFetchAndStagePhasesReturnNotImplemented(t *testing.T) {
+func TestRunPlaybookFetchPhaseReturnsNil(t *testing.T) {
 	playbookPath := writeTestPlaybook(t)
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("phase", "fetch"); err != nil {
+		t.Fatalf("Set phase: %v", err)
+	}
 
-	for _, phase := range []string{"fetch", "stage"} {
-		t.Run(phase, func(t *testing.T) {
-			cmd := newTestCommand()
-			if err := cmd.Flags().Set("phase", phase); err != nil {
-				t.Fatalf("Set phase: %v", err)
-			}
+	if err := runApply(cmd, []string{playbookPath}); err != nil {
+		t.Fatalf("expected nil for fetch phase, got %v", err)
+	}
+}
 
-			err := runApply(cmd, []string{playbookPath})
-			if err == nil {
-				t.Fatal("expected phase error, got nil")
-			}
-			if !strings.Contains(err.Error(), "not implemented") {
-				t.Fatalf("expected not implemented error, got %v", err)
-			}
-		})
+func TestRunPlaybookStagePhaseReturnsNotImplemented(t *testing.T) {
+	playbookPath := writeTestPlaybook(t)
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("phase", "stage"); err != nil {
+		t.Fatalf("Set phase: %v", err)
+	}
+
+	err := runApply(cmd, []string{playbookPath})
+	if err == nil {
+		t.Fatal("expected stage error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("expected not implemented error, got %v", err)
 	}
 }
 

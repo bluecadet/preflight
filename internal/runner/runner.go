@@ -16,6 +16,7 @@ type Config struct {
 	Tags        []string
 	SkipTags    []string
 	Concurrency int
+	ProjectDir  string
 	ProjectVars map[string]any
 	Vars        map[string]any // from --var CLI flags
 	Phase       string         // "plan", "fetch", "stage", "apply" (empty = all)
@@ -55,22 +56,27 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
 		})
 	}
 
+	if r.config.Phase == "plan" {
+		_, err := r.Plan(ctx, playbook)
+		if err != nil {
+			r.emitError(fmt.Errorf("plan phase failed: %w", err))
+		}
+		return err
+	}
+
+	if err := r.Fetch(ctx, playbook); err != nil {
+		r.emitError(fmt.Errorf("fetch phase failed: %w", err))
+		return err
+	}
+
 	plan, err := r.Plan(ctx, playbook)
 	if err != nil {
 		r.emitError(fmt.Errorf("plan phase failed: %w", err))
 		return err
 	}
 
-	if r.config.Phase == "plan" {
-		return nil
-	}
-
 	if r.config.Phase == "fetch" {
-		err := r.Fetch(ctx, plan)
-		if err != nil {
-			r.emitError(fmt.Errorf("fetch phase failed: %w", err))
-		}
-		return err
+		return nil
 	}
 
 	if r.config.Phase == "stage" {

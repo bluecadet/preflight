@@ -29,7 +29,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	projectDir, _ := playbookDir(playbookPath)
-	chain := action.DefaultChain(projectDir)
+	chain := newActionChain(projectDir)
 
 	ctx := context.Background()
 

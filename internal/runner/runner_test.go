@@ -493,14 +493,129 @@ func TestApplySavesStateWithParamHashes(t *testing.T) {
 
 func TestRunFetchAndStagePhasesReturnNotImplemented(t *testing.T) {
 	playbook := newShellPlaybook("phase-test")
-	for _, phase := range []string{"fetch", "stage"} {
-		r := New(&mockTarget{}, emptyResolver(), Config{Phase: phase})
-		err := r.Run(context.Background(), playbook)
-		if err == nil {
-			t.Fatalf("phase %q: expected error, got nil", phase)
-		}
-		if !strings.Contains(err.Error(), "not implemented") {
-			t.Fatalf("phase %q: expected not implemented error, got %v", phase, err)
-		}
+	if err := New(&mockTarget{}, emptyResolver(), Config{Phase: "fetch"}).Run(context.Background(), playbook); err != nil {
+		t.Fatalf("fetch phase: expected nil, got %v", err)
+	}
+
+	err := New(&mockTarget{}, emptyResolver(), Config{Phase: "stage"}).Run(context.Background(), playbook)
+	if err == nil {
+		t.Fatal("stage phase: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("stage phase: expected not implemented error, got %v", err)
+	}
+}
+
+type fetchableResolver struct {
+	actions map[string]*action.Action
+	fetched map[string]bool
+	calls   []string
+}
+
+func (r *fetchableResolver) Name() string { return "fetchable" }
+
+func (r *fetchableResolver) Resolve(_ context.Context, ref string) (*action.Action, error) {
+	a, ok := r.actions[ref]
+	if !ok {
+		return nil, nil
+	}
+	if !r.fetched[ref] {
+		return nil, &action.RemoteCacheMissError{Ref: ref}
+	}
+	return a, nil
+}
+
+func (r *fetchableResolver) Fetch(_ context.Context, ref string) (*action.FetchResult, error) {
+	r.calls = append(r.calls, ref)
+	a, ok := r.actions[ref]
+	if !ok {
+		return nil, nil
+	}
+	if r.fetched == nil {
+		r.fetched = make(map[string]bool)
+	}
+	r.fetched[ref] = true
+	return &action.FetchResult{
+		Entry:  action.LockEntry{Ref: ref, SHA: "sha-" + ref, Pinned: ref},
+		Action: a,
+	}, nil
+}
+
+func TestRunFetchesRemoteDependenciesBeforePlanningAndApply(t *testing.T) {
+	rootRef := "github.com/acme/actions/root@v1"
+	childRef := "github.com/acme/actions/child@v1"
+	resolver := &fetchableResolver{
+		actions: map[string]*action.Action{
+			rootRef: {
+				Name: "root",
+				Tasks: []action.Task{{
+					Name: "child",
+					Uses: childRef,
+				}},
+			},
+			childRef: {
+				Name: "child",
+				Tasks: []action.Task{{
+					Name:  "echo",
+					Shell: map[string]any{"cmd": "echo hello"},
+				}},
+			},
+		},
+		fetched: make(map[string]bool),
+	}
+
+	playbook := &action.Playbook{
+		Name: "remote",
+		Tasks: []action.Task{{
+			Name: "root",
+			Uses: rootRef,
+		}},
+	}
+
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
+	r := New(mt, action.Chain{resolver}, Config{})
+	if err := r.Run(context.Background(), playbook); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(resolver.calls) != 2 {
+		t.Fatalf("expected 2 fetch calls, got %d", len(resolver.calls))
+	}
+	if resolver.calls[0] != rootRef || resolver.calls[1] != childRef {
+		t.Fatalf("unexpected fetch order: %#v", resolver.calls)
+	}
+	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
+		t.Fatalf("expected one shell execution, got %#v", mt.calls)
+	}
+}
+
+func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
+	rootRef := "github.com/acme/actions/root@v1"
+	resolver := &fetchableResolver{
+		actions: map[string]*action.Action{
+			rootRef: {
+				Name: "root",
+				Tasks: []action.Task{{
+					Name:  "echo",
+					Shell: map[string]any{"cmd": "echo hello"},
+				}},
+			},
+		},
+		fetched: make(map[string]bool),
+	}
+
+	playbook := &action.Playbook{
+		Name:  "remote",
+		Tasks: []action.Task{{Name: "root", Uses: rootRef}},
+	}
+	mt := &mockTarget{}
+	r := New(mt, action.Chain{resolver}, Config{Phase: "fetch"})
+	if err := r.Run(context.Background(), playbook); err != nil {
+		t.Fatalf("Run(fetch): %v", err)
+	}
+	if len(resolver.calls) != 1 {
+		t.Fatalf("expected 1 fetch call, got %d", len(resolver.calls))
+	}
+	if len(mt.calls) != 0 {
+		t.Fatalf("expected no target execution during fetch phase, got %#v", mt.calls)
 	}
 }
