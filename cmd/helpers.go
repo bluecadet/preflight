@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"os"
 	"strings"
 
 	"github.com/claytercek/preflight/internal/output"
@@ -23,13 +24,17 @@ func parseVars(varFlags []string) map[string]interface{} {
 }
 
 // getOutputFormat reads the --output flag and returns the corresponding Format.
+// When the flag is not set (or is the default "text"), AutoDetect is called to
+// automatically use FormatTUI when running interactively.
 func getOutputFormat(cmd *cobra.Command) output.Format {
 	f, _ := cmd.Flags().GetString("output")
 	switch output.Format(f) {
 	case output.FormatJSON, output.FormatJSONL:
 		return output.Format(f)
+	case output.FormatTUI:
+		return output.FormatTUI
 	default:
-		return output.FormatText
+		return output.AutoDetect(os.Stdout)
 	}
 }
 
