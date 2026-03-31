@@ -79,16 +79,32 @@ tasks:
 
 ## Installation
 
-Download the latest release binary for your platform from the [releases page](../../releases).
+**macOS / Linux:**
 
-For cross-compiling from source:
+```sh
+curl -fsSL https://raw.githubusercontent.com/claytercek/preflight/main/install.sh | sh
+```
+
+Installs to `/usr/local/bin` by default. Override with `PREFLIGHT_INSTALL_DIR=/your/path`.
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/claytercek/preflight/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\preflight\` and adds it to your user PATH.
+
+Or download a specific release manually from the [releases page](../../releases).
+
+### Build from source
 
 ```bash
 # Windows (primary target)
 GOOS=windows GOARCH=amd64 go build -o dist/preflight-windows-amd64.exe .
 GOOS=windows GOARCH=arm64 go build -o dist/preflight-windows-arm64.exe .
 
-# Local (macOS/Linux, for testing non-Windows code paths)
+# macOS / Linux
 go build -o dist/preflight .
 ```
 

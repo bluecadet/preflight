@@ -47,6 +47,18 @@ jobs:
           - goos: windows
             goarch: arm64
             output: preflight-windows-arm64.exe
+          - goos: darwin
+            goarch: amd64
+            output: preflight-darwin-amd64
+          - goos: darwin
+            goarch: arm64
+            output: preflight-darwin-arm64
+          - goos: linux
+            goarch: amd64
+            output: preflight-linux-amd64
+          - goos: linux
+            goarch: arm64
+            output: preflight-linux-arm64
     steps:
       - uses: actions/checkout@v4
 

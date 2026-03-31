@@ -5,11 +5,13 @@ before:
     - go mod tidy
 
 builds:
-  - id: preflight-windows
+  - id: preflight
     env:
       - CGO_ENABLED=0
     goos:
       - windows
+      - darwin
+      - linux
     goarch:
       - amd64
       - arm64
@@ -22,9 +24,12 @@ builds:
 archives:
   - id: preflight
     builds:
-      - preflight-windows
+      - preflight
     name_template: "preflight-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
-    format: zip
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    formats: [tar.gz]
     files:
       - LICENSE
       - README.md
