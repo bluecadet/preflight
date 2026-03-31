@@ -124,15 +124,15 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		return state.LastApplied.Format("2006-01-02 15:04:05 UTC")
 	}())
 
-	fmt.Printf("%-10s %-40s %s\n", "STATUS", "TASK", "RECORDED STATUS")
-	fmt.Printf("%-10s %-40s %s\n", "----------", "----------------------------------------", "---------------")
+	fmt.Printf("%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
+	fmt.Printf("%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
 
 	for _, comparison := range comparisons {
 		recordedStatus := "(not recorded)"
-		if comparison.Status == runner.ComparisonStatusRemoved || comparison.Status == runner.ComparisonStatusKnown || comparison.Status == runner.ComparisonStatusChanged {
+		if comparison.Status != runner.ComparisonStatusNew {
 			recordedStatus = string(comparison.RecordedStatus)
 		}
-		fmt.Printf("%-10s %-40s %s\n", comparison.Status, comparison.TaskName, recordedStatus)
+		fmt.Printf("%-12s %-28s %-16s %s\n", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
 	}
 
 	return nil

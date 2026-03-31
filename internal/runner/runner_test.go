@@ -126,8 +126,11 @@ func TestPlanSingleTask(t *testing.T) {
 	if plan.Tasks[0].Module != "shell" {
 		t.Errorf("expected module %q, got %q", "shell", plan.Tasks[0].Module)
 	}
-	if plan.Tasks[0].ID != "task-0" {
-		t.Errorf("expected ID %q, got %q", "task-0", plan.Tasks[0].ID)
+	if plan.Tasks[0].ID == "" {
+		t.Fatal("expected stable task ID to be populated")
+	}
+	if strings.Contains(plan.Tasks[0].ID, "task-0") {
+		t.Fatalf("expected non-positional task ID, got %q", plan.Tasks[0].ID)
 	}
 }
 
@@ -353,7 +356,7 @@ func TestStateRoundTrip(t *testing.T) {
 
 	s := &State{
 		LastApplied: time.Now().Truncate(time.Second),
-		Results:     make(map[string]TaskResult),
+		Tasks:       make(map[string]TaskSnapshot),
 	}
 	s.Record(TaskResult{
 		TaskID:    "task-0",
@@ -377,12 +380,12 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Fatalf("LoadState error: %v", err)
 	}
 
-	if len(loaded.Results) != 1 {
-		t.Fatalf("expected 1 result, got %d", len(loaded.Results))
+	if len(loaded.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(loaded.Tasks))
 	}
-	got := loaded.Results["task-0"]
-	if got.TaskID != "task-0" {
-		t.Errorf("task ID mismatch: got %q", got.TaskID)
+	got := loaded.Tasks["task-0"]
+	if got.TaskKey != "task-0" {
+		t.Errorf("task key mismatch: got %q", got.TaskKey)
 	}
 	if got.Status != target.StatusOK {
 		t.Errorf("status mismatch: got %q", got.Status)
@@ -410,16 +413,16 @@ func TestLoadStateMissing(t *testing.T) {
 	if s == nil {
 		t.Fatal("expected non-nil State")
 	}
-	if len(s.Results) != 0 {
-		t.Errorf("expected empty Results, got %d", len(s.Results))
+	if len(s.Tasks) != 0 {
+		t.Errorf("expected empty Tasks, got %d", len(s.Tasks))
 	}
 }
 
 func TestComparePlannedTasksNoStateMarksAllNew(t *testing.T) {
 	comparisons := ComparePlannedTasks([]PlannedTaskState{
-		{TaskID: "task-0", TaskName: "one", ParamHash: "a"},
-		{TaskID: "task-1", TaskName: "two", ParamHash: "b"},
-	}, &State{Results: map[string]TaskResult{}})
+		{TaskKey: "task-a", TaskName: "one", ParamHash: "a", TaskHash: "hash-a"},
+		{TaskKey: "task-b", TaskName: "two", ParamHash: "b", TaskHash: "hash-b"},
+	}, &State{Tasks: map[string]TaskSnapshot{}})
 
 	if len(comparisons) != 2 {
 		t.Fatalf("expected 2 comparisons, got %d", len(comparisons))
@@ -433,23 +436,23 @@ func TestComparePlannedTasksNoStateMarksAllNew(t *testing.T) {
 
 func TestComparePlannedTasksMarksKnownChangedAndRemoved(t *testing.T) {
 	state := &State{
-		Results: map[string]TaskResult{
-			"task-0": {TaskID: "task-0", TaskName: "known task", ParamHash: "same", Status: target.StatusOK},
-			"task-1": {TaskID: "task-1", TaskName: "changed task", ParamHash: "old", Status: target.StatusChanged},
-			"task-2": {TaskID: "task-2", TaskName: "removed task", ParamHash: "gone", Status: target.StatusFailed},
+		Tasks: map[string]TaskSnapshot{
+			"task-0": {TaskKey: "task-0", TaskName: "known task", ParamHash: "same", TaskHash: "same", Status: target.StatusOK},
+			"task-1": {TaskKey: "task-1", TaskName: "changed task", ParamHash: "old", TaskHash: "old", Status: target.StatusChanged},
+			"task-2": {TaskKey: "task-2", TaskName: "removed task", ParamHash: "gone", TaskHash: "gone", Status: target.StatusFailed},
 		},
 	}
 
 	comparisons := ComparePlannedTasks([]PlannedTaskState{
-		{TaskID: "task-0", TaskName: "known task", ParamHash: "same"},
-		{TaskID: "task-1", TaskName: "changed task", ParamHash: "new"},
+		{TaskKey: "task-0", TaskName: "known task", ParamHash: "same", TaskHash: "same"},
+		{TaskKey: "task-1", TaskName: "changed task", ParamHash: "new", TaskHash: "new"},
 	}, state)
 
 	if len(comparisons) != 3 {
 		t.Fatalf("expected 3 comparisons, got %d", len(comparisons))
 	}
-	if comparisons[0].Status != ComparisonStatusKnown {
-		t.Fatalf("expected first comparison to be KNOWN, got %s", comparisons[0].Status)
+	if comparisons[0].Status != ComparisonStatusUnchanged {
+		t.Fatalf("expected first comparison to be UNCHANGED, got %s", comparisons[0].Status)
 	}
 	if comparisons[1].Status != ComparisonStatusChanged {
 		t.Fatalf("expected second comparison to be CHANGED, got %s", comparisons[1].Status)
@@ -486,7 +489,7 @@ func TestApplySavesStateWithParamHashes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadState returned error: %v", err)
 	}
-	recorded := state.Results["task-0"]
+	recorded := state.Tasks["task-0"]
 	if recorded.ParamHash == "" {
 		t.Fatal("expected saved state to include param hash")
 	}

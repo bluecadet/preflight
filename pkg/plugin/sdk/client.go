@@ -12,13 +12,13 @@ import (
 
 // Client is the runner-side handle for a running plugin process.
 type Client struct {
-	name string
+	name    string
 	version string
-	cmd  *exec.Cmd
-	enc  *json.Encoder
-	dec  *json.Decoder
-	mu   sync.Mutex
-	seq  atomic.Int64
+	cmd     *exec.Cmd
+	enc     *json.Encoder
+	dec     *json.Decoder
+	mu      sync.Mutex
+	seq     atomic.Int64
 }
 
 // NewClient starts the plugin at executablePath, sends an "initialize" request,

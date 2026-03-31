@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/facts"
@@ -51,14 +53,14 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 	vars := varStore.Merge()
 
 	var planTasks []*PlanTask
-	idx := 0
+	scope := newExpansionScope()
 
 	for i := range playbook.Tasks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, vars, &planTasks, &idx, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -75,7 +77,24 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 	}, nil
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, idx *int, label string) error {
+type expansionScope struct {
+	counts map[string]int
+}
+
+func newExpansionScope() *expansionScope {
+	return &expansionScope{counts: make(map[string]int)}
+}
+
+func (s *expansionScope) next(base string) string {
+	s.counts[base]++
+	count := s.counts[base]
+	if count == 1 {
+		return base
+	}
+	return base + "-" + strconv.Itoa(count)
+}
+
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -84,13 +103,15 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
+	segment := scope.next(taskLineageSegment(task))
+	currentLineage := append(append([]string{}, lineage...), segment)
+
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, *idx, vars)
+		pt, err := buildPlanTask(task, currentLineage, vars)
 		if err != nil {
 			return err
 		}
 		*planTasks = append(*planTasks, pt)
-		(*idx)++
 		return nil
 	}
 
@@ -104,10 +125,11 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 		return fmt.Errorf("prepare action %q inputs: %w", task.Uses, err)
 	}
 
+	childScope := newExpansionScope()
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childVars, planTasks, idx, childLabel); err != nil {
+		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, childLabel); err != nil {
 			return err
 		}
 	}
@@ -146,8 +168,8 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, idx int, vars map[string]any) (*PlanTask, error) {
-	id := fmt.Sprintf("task-%d", idx)
+func buildPlanTask(t *action.Task, lineage []string, vars map[string]any) (*PlanTask, error) {
+	id := strings.Join(lineage, "/")
 	rawParams := cloneMap(t.Params)
 	templateVars := cloneMap(vars)
 
@@ -162,6 +184,46 @@ func buildPlanTask(t *action.Task, idx int, vars map[string]any) (*PlanTask, err
 		Tags:         t.Tags,
 		IgnoreErrors: t.IgnoreErrors,
 	}, nil
+}
+
+func taskLineageSegment(task *action.Task) string {
+	kind := task.Uses
+	if kind == "" {
+		kind = task.Module
+	}
+	if kind == "" {
+		kind = "task"
+	}
+	name := task.Name
+	if name == "" {
+		name = kind
+	}
+	return sanitizeLineageSegment(kind + "-" + name)
+}
+
+func sanitizeLineageSegment(s string) string {
+	if s == "" {
+		return "task"
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	lastDash := false
+	for _, r := range strings.ToLower(s) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "task"
+	}
+	return out
 }
 
 // Fetch downloads remote action refs not yet in cache.
@@ -209,7 +271,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	}
 
 	state := &State{
-		Results: make(map[string]TaskResult),
+		Tasks: make(map[string]TaskSnapshot),
 	}
 
 	// Track outcome counts for the play recap.
@@ -227,13 +289,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
-			state.Record(TaskResult{
-				TaskID:    pt.ID,
-				TaskName:  pt.Name,
-				Status:    target.StatusSkipped,
-				Timestamp: time.Now(),
-				ParamHash: ParamHash(pt.Params),
-			})
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -250,13 +306,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if depFailed && !pt.IgnoreErrors {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed")
-			state.Record(TaskResult{
-				TaskID:    pt.ID,
-				TaskName:  pt.Name,
-				Status:    target.StatusSkipped,
-				Timestamp: time.Now(),
-				ParamHash: ParamHash(pt.Params),
-			})
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -270,13 +320,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 			if !ok {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false")
-				state.Record(TaskResult{
-					TaskID:    pt.ID,
-					TaskName:  pt.Name,
-					Status:    target.StatusSkipped,
-					Timestamp: time.Now(),
-					ParamHash: ParamHash(pt.Params),
-				})
+				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
 				succeeded[pt.ID] = false
 				continue
@@ -287,13 +331,11 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if err != nil {
 			return fmt.Errorf("apply: task %q: render params: %w", pt.Name, err)
 		}
-		paramHash := ParamHash(params)
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
 			params, err = r.config.Secrets.ResolveMap(ctx, params)
 			if err != nil {
 				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 			}
-			paramHash = ParamHash(params)
 		}
 
 		// Execute the task against the target.
@@ -301,13 +343,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
-				state.Record(TaskResult{
-					TaskID:    pt.ID,
-					TaskName:  taskName,
-					Status:    target.StatusFailed,
-					Timestamp: time.Now(),
-					ParamHash: paramHash,
-				})
+				state.RecordTask(newTaskSnapshot(pt, taskName, params, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
 				continue
@@ -320,13 +356,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
-		state.Record(TaskResult{
-			TaskID:    pt.ID,
-			TaskName:  taskName,
-			Status:    result.Status,
-			Timestamp: time.Now(),
-			ParamHash: paramHash,
-		})
+		state.RecordTask(newTaskSnapshot(pt, taskName, params, result.Status, result.Message, dag))
 
 		r.emitTaskResult(pt, result.Status, result.Message)
 
@@ -414,6 +444,40 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 		Status:   string(status),
 		Message:  message,
 	})
+}
+
+func newTaskSnapshot(pt *PlanTask, taskName string, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
+	dependsOn := make([]string, 0, len(pt.DependsOn))
+	if dag != nil {
+		for _, depName := range pt.DependsOn {
+			if depID, ok := dag.nameToID[depName]; ok {
+				dependsOn = append(dependsOn, depID)
+			}
+		}
+	}
+	slices.Sort(dependsOn)
+
+	paramHash := ParamHash(params)
+	summary := SummarizeParams(params)
+
+	return TaskSnapshot{
+		TaskKey:      pt.ID,
+		TaskName:     taskName,
+		Module:       pt.Module,
+		DependsOn:    dependsOn,
+		ParamHash:    paramHash,
+		ParamSummary: summary,
+		TaskHash: hashValue(map[string]any{
+			"task_key":   pt.ID,
+			"task_name":  taskName,
+			"module":     pt.Module,
+			"depends_on": dependsOn,
+			"param_hash": paramHash,
+		}),
+		Status:    status,
+		Message:   message,
+		Timestamp: time.Now(),
+	}
 }
 
 type executionContext struct {
