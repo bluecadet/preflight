@@ -1,0 +1,29 @@
+name: preflight/autologin
+version: "1.0.0"
+description: Configure Windows automatic login
+author: preflight
+
+inputs:
+  username:
+    type: string
+    required: true
+    description: Username to auto-login as
+  password:
+    type: string
+    required: true
+    description: Password for the auto-login user
+  domain:
+    type: string
+    default: "."
+    description: Domain name (use . for local accounts)
+
+tasks:
+  - name: Enable auto-login
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+      values:
+        AutoAdminLogon: "1"
+        DefaultUserName: "{{ vars.username }}"
+        DefaultPassword: "{{ vars.password }}"
+        DefaultDomainName: "{{ vars.domain }}"
+      ensure: present
