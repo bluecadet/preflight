@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bluecadet/preflight/internal/action"
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/internal/action"
 )
 
 var validateCmd = &cobra.Command{

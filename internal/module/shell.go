@@ -15,7 +15,7 @@ import (
 //   - working_dir: working directory for the command
 type ShellModule struct{}
 
-func (m *ShellModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *ShellModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	creates, err := paramString(params, "creates", "")
 	if err != nil {
 		return false, err
@@ -33,7 +33,7 @@ func (m *ShellModule) Check(_ context.Context, params map[string]interface{}) (b
 	return true, nil
 }
 
-func (m *ShellModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *ShellModule) Apply(_ context.Context, params map[string]any) error {
 	cmdName, err := paramStringRequired(params, "cmd")
 	if err != nil {
 		return err

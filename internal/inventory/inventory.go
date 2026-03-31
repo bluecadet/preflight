@@ -1,6 +1,9 @@
 package inventory
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+)
 
 // Transport is the connection protocol to use for a target host.
 type Transport string
@@ -21,13 +24,13 @@ type Host struct {
 	Password   string
 	PrivateKey string
 	HTTPS      bool
-	Vars       map[string]interface{}
+	Vars       map[string]any
 }
 
 // Group is a named set of hosts sharing common variables.
 type Group struct {
 	Name  string
-	Vars  map[string]interface{}
+	Vars  map[string]any
 	Hosts []Host
 }
 
@@ -92,25 +95,19 @@ func (inv *Inventory) AllHosts() []Host {
 // mergedHost returns a copy of h with allVars, groupVars, and host vars merged
 // (later wins). The "all" group vars are applied first, then groupVars, then
 // the host's own Vars.
-func (inv *Inventory) mergedHost(h Host, groupVars map[string]interface{}) Host {
-	merged := make(map[string]interface{})
+func (inv *Inventory) mergedHost(h Host, groupVars map[string]any) Host {
+	merged := make(map[string]any)
 
 	// Apply "all" group vars first.
 	if all, ok := inv.Groups["all"]; ok {
-		for k, v := range all.Vars {
-			merged[k] = v
-		}
+		maps.Copy(merged, all.Vars)
 	}
 
 	// Apply group vars.
-	for k, v := range groupVars {
-		merged[k] = v
-	}
+	maps.Copy(merged, groupVars)
 
 	// Apply host-level vars last (highest precedence).
-	for k, v := range h.Vars {
-		merged[k] = v
-	}
+	maps.Copy(merged, h.Vars)
 
 	copy := h
 	copy.Vars = merged

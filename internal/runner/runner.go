@@ -15,8 +15,8 @@ type Config struct {
 	Tags        []string
 	SkipTags    []string
 	Concurrency int
-	Vars        map[string]interface{} // from --var CLI flags
-	Phase       string                 // "plan", "fetch", "stage", "apply" (empty = all)
+	Vars        map[string]any // from --var CLI flags
+	Phase       string         // "plan", "fetch", "stage", "apply" (empty = all)
 	Renderer    output.Renderer
 }
 

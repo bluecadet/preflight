@@ -6,8 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/internal/inventory"
 )
 
 var inventoryCmd = &cobra.Command{

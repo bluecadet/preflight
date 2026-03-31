@@ -12,17 +12,17 @@ type mockModule struct{}
 
 func (mockModule) Name() string { return "mock" }
 
-func (mockModule) Check(_ map[string]interface{}) (CheckResult, error) {
+func (mockModule) Check(_ map[string]any) (CheckResult, error) {
 	return CheckResult{
 		Changed: false,
-		State:   map[string]interface{}{"status": "ok"},
+		State:   map[string]any{"status": "ok"},
 	}, nil
 }
 
-func (mockModule) Apply(_ map[string]interface{}) (ApplyResult, error) {
+func (mockModule) Apply(_ map[string]any) (ApplyResult, error) {
 	return ApplyResult{
 		Changed: true,
-		State:   map[string]interface{}{"status": "applied"},
+		State:   map[string]any{"status": "applied"},
 	}, nil
 }
 
@@ -44,7 +44,7 @@ func runServe(t *testing.T, m Module, reqJSON string) rpcResponse {
 	if err != nil {
 		t.Fatalf("write request: %v", err)
 	}
-	pw.Close()
+	_ = pw.Close()
 
 	<-done
 

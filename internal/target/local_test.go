@@ -16,11 +16,11 @@ type mockModule struct {
 	applyCalled bool
 }
 
-func (m *mockModule) Check(_ context.Context, _ map[string]interface{}) (bool, error) {
+func (m *mockModule) Check(_ context.Context, _ map[string]any) (bool, error) {
 	return m.needsChange, m.checkErr
 }
 
-func (m *mockModule) Apply(_ context.Context, _ map[string]interface{}) error {
+func (m *mockModule) Apply(_ context.Context, _ map[string]any) error {
 	m.applyCalled = true
 	return m.applyErr
 }

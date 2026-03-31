@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/action"
@@ -16,7 +18,7 @@ import (
 type ExecutionPlan struct {
 	PlaybookName string
 	Tasks        []*PlanTask
-	Vars         map[string]interface{}
+	Vars         map[string]any
 }
 
 // PlanTask is a single task entry in the execution plan.
@@ -24,7 +26,7 @@ type PlanTask struct {
 	ID           string // unique ID, e.g. "task-0", "task-1"
 	Name         string
 	Module       string
-	Params       map[string]interface{}
+	Params       map[string]any
 	DependsOn    []string
 	When         string
 	Tags         []string
@@ -35,13 +37,9 @@ type PlanTask struct {
 // variables. Returns an ExecutionPlan. Pure computation — no I/O against targets.
 func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
 	// Merge variables: playbook vars first, then CLI --var flags (CLI wins).
-	vars := make(map[string]interface{})
-	for k, v := range playbook.Vars {
-		vars[k] = v
-	}
-	for k, v := range r.config.Vars {
-		vars[k] = v
-	}
+	vars := make(map[string]any)
+	maps.Copy(vars, playbook.Vars)
+	maps.Copy(vars, r.config.Vars)
 
 	eng := template.New(vars)
 
@@ -166,9 +164,9 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if !r.taskMatchesTags(pt) {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
 			state.Record(TaskResult{
-				TaskID:   pt.ID,
-				TaskName: pt.Name,
-				Status:   target.StatusSkipped,
+				TaskID:    pt.ID,
+				TaskName:  pt.Name,
+				Status:    target.StatusSkipped,
 				Timestamp: time.Now(),
 			})
 			skippedCount++
@@ -188,9 +186,9 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if depFailed && !pt.IgnoreErrors {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed")
 			state.Record(TaskResult{
-				TaskID:   pt.ID,
-				TaskName: pt.Name,
-				Status:   target.StatusSkipped,
+				TaskID:    pt.ID,
+				TaskName:  pt.Name,
+				Status:    target.StatusSkipped,
 				Timestamp: time.Now(),
 			})
 			skippedCount++
@@ -207,9 +205,9 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			if !ok {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false")
 				state.Record(TaskResult{
-					TaskID:   pt.ID,
-					TaskName: pt.Name,
-					Status:   target.StatusSkipped,
+					TaskID:    pt.ID,
+					TaskName:  pt.Name,
+					Status:    target.StatusSkipped,
 					Timestamp: time.Now(),
 				})
 				skippedCount++
@@ -224,9 +222,9 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
 				state.Record(TaskResult{
-					TaskID:   pt.ID,
-					TaskName: pt.Name,
-					Status:   target.StatusFailed,
+					TaskID:    pt.ID,
+					TaskName:  pt.Name,
+					Status:    target.StatusFailed,
 					Timestamp: time.Now(),
 				})
 				failedCount++
@@ -296,13 +294,8 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	if len(r.config.Tags) > 0 {
 		matched := false
 		for _, wantTag := range r.config.Tags {
-			for _, taskTag := range pt.Tags {
-				if wantTag == taskTag {
-					matched = true
-					break
-				}
-			}
-			if matched {
+			if slices.Contains(pt.Tags, wantTag) {
+				matched = true
 				break
 			}
 		}
@@ -313,10 +306,8 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 
 	// If --skip-tags specified, task must have none of the skip tags.
 	for _, skipTag := range r.config.SkipTags {
-		for _, taskTag := range pt.Tags {
-			if skipTag == taskTag {
-				return false
-			}
+		if slices.Contains(pt.Tags, skipTag) {
+			return false
 		}
 	}
 

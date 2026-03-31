@@ -17,22 +17,22 @@ var exprRe = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 // Unknown keys resolve to an empty string by default. An error is returned
 // only when the expression syntax is invalid (e.g. an empty path segment).
 type Engine struct {
-	vars   map[string]interface{}
+	vars   map[string]any
 	env    map[string]string
-	target map[string]interface{}
-	facts  map[string]interface{}
+	target map[string]any
+	facts  map[string]any
 }
 
 // New creates an Engine pre-loaded with the merged variable map.
-func New(vars map[string]interface{}) *Engine {
+func New(vars map[string]any) *Engine {
 	if vars == nil {
-		vars = make(map[string]interface{})
+		vars = make(map[string]any)
 	}
 	return &Engine{
 		vars:   vars,
 		env:    make(map[string]string),
-		target: make(map[string]interface{}),
-		facts:  make(map[string]interface{}),
+		target: make(map[string]any),
+		facts:  make(map[string]any),
 	}
 }
 
@@ -46,7 +46,7 @@ func (e *Engine) WithEnv(env map[string]string) *Engine {
 }
 
 // WithTarget attaches target-info fields and returns the engine.
-func (e *Engine) WithTarget(target map[string]interface{}) *Engine {
+func (e *Engine) WithTarget(target map[string]any) *Engine {
 	if target != nil {
 		e.target = target
 	}
@@ -54,7 +54,7 @@ func (e *Engine) WithTarget(target map[string]interface{}) *Engine {
 }
 
 // WithFacts attaches gathered facts and returns the engine.
-func (e *Engine) WithFacts(facts map[string]interface{}) *Engine {
+func (e *Engine) WithFacts(facts map[string]any) *Engine {
 	if facts != nil {
 		e.facts = facts
 	}
@@ -112,9 +112,9 @@ func (e *Engine) RenderBool(s string) (bool, error) {
 
 // RenderMap renders all string values in m and returns a new map.
 // Non-string values are passed through unchanged.
-// Nested map[string]interface{} values are recursively rendered.
-func (e *Engine) RenderMap(m map[string]interface{}) (map[string]interface{}, error) {
-	result := make(map[string]interface{}, len(m))
+// Nested map[string]any values are recursively rendered.
+func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
+	result := make(map[string]any, len(m))
 	for k, v := range m {
 		switch val := v.(type) {
 		case string:
@@ -123,7 +123,7 @@ func (e *Engine) RenderMap(m map[string]interface{}) (map[string]interface{}, er
 				return nil, fmt.Errorf("template: key %q: %w", k, err)
 			}
 			result[k] = rendered
-		case map[string]interface{}:
+		case map[string]any:
 			nested, err := e.RenderMap(val)
 			if err != nil {
 				return nil, err
@@ -147,7 +147,7 @@ func (e *Engine) evalExpr(expr string) (string, error) {
 	namespace := parts[0]
 	rest := parts[1:]
 
-	var root interface{}
+	var root any
 	switch namespace {
 	case "vars":
 		root = mapToIface(e.vars)
@@ -171,7 +171,7 @@ func (e *Engine) evalExpr(expr string) (string, error) {
 }
 
 // dotLookup traverses a nested map structure following the given path segments.
-func dotLookup(root interface{}, path []string) (interface{}, error) {
+func dotLookup(root any, path []string) (any, error) {
 	if len(path) == 0 {
 		return root, nil
 	}
@@ -180,7 +180,7 @@ func dotLookup(root interface{}, path []string) (interface{}, error) {
 		return nil, fmt.Errorf("template: empty path segment")
 	}
 	switch m := root.(type) {
-	case map[string]interface{}:
+	case map[string]any:
 		val, ok := m[key]
 		if !ok {
 			return nil, fmt.Errorf("template: key %q not found", key)
@@ -200,10 +200,10 @@ func dotLookup(root interface{}, path []string) (interface{}, error) {
 	}
 }
 
-func mapToIface(m map[string]interface{}) interface{} {
+func mapToIface(m map[string]any) any {
 	return m
 }
 
-func envToIface(m map[string]string) interface{} {
+func envToIface(m map[string]string) any {
 	return m
 }

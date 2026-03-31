@@ -15,7 +15,7 @@ type WinRMTarget struct {
 	HTTPS    bool
 }
 
-func (t *WinRMTarget) Execute(_ context.Context, _ string, _ string, _ map[string]interface{}, _ bool) (Result, error) {
+func (t *WinRMTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ bool) (Result, error) {
 	return Result{}, fmt.Errorf("winrm: not yet implemented")
 }
 

@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/target"
-	"github.com/spf13/cobra"
 )
 
 var factsCmd = &cobra.Command{

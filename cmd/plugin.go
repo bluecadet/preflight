@@ -5,8 +5,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 var pluginCmd = &cobra.Command{

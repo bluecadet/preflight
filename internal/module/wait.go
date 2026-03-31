@@ -15,7 +15,7 @@ import (
 //   - timeout: duration string (default "5m")
 type WaitModule struct{}
 
-func (m *WaitModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *WaitModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	condition, err := paramStringRequired(params, "condition")
 	if err != nil {
 		return false, err
@@ -33,7 +33,7 @@ func (m *WaitModule) Check(_ context.Context, params map[string]interface{}) (bo
 	return !met, nil
 }
 
-func (m *WaitModule) Apply(ctx context.Context, params map[string]interface{}) error {
+func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 	condition, err := paramStringRequired(params, "condition")
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func checkCondition(condition, tgt string) (bool, error) {
 		if err != nil {
 			return false, nil //nolint:nilerr // connection refused = not yet open
 		}
-		conn.Close()
+		_ = conn.Close()
 		return true, nil
 
 	case "service_running":

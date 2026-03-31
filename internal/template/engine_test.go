@@ -5,7 +5,7 @@ import (
 )
 
 func TestRender_SimpleVar(t *testing.T) {
-	e := New(map[string]interface{}{
+	e := New(map[string]any{
 		"foo": "bar",
 	})
 	got, err := e.Render("{{ vars.foo }}")
@@ -18,8 +18,8 @@ func TestRender_SimpleVar(t *testing.T) {
 }
 
 func TestRender_NestedVar(t *testing.T) {
-	e := New(map[string]interface{}{
-		"nested": map[string]interface{}{
+	e := New(map[string]any{
+		"nested": map[string]any{
 			"key": "value",
 		},
 	})
@@ -49,7 +49,7 @@ func TestRender_EnvVar(t *testing.T) {
 // an empty string (no error). This is intentional — playbook authors sometimes
 // add optional variables that may not be set in every environment.
 func TestRender_UnknownVar(t *testing.T) {
-	e := New(map[string]interface{}{})
+	e := New(map[string]any{})
 	got, err := e.Render("{{ vars.missing }}")
 	if err != nil {
 		t.Fatalf("unexpected error for unknown var: %v", err)
@@ -60,7 +60,7 @@ func TestRender_UnknownVar(t *testing.T) {
 }
 
 func TestRender_MultipleExpressions(t *testing.T) {
-	e := New(map[string]interface{}{
+	e := New(map[string]any{
 		"name": "world",
 	}).WithEnv(map[string]string{"GREETING": "hello"})
 	got, err := e.Render("{{ env.GREETING }}, {{ vars.name }}!")
@@ -86,9 +86,9 @@ func TestRender_NoPlaceholders(t *testing.T) {
 
 func TestRender_TargetAndFacts(t *testing.T) {
 	e := New(nil).
-		WithTarget(map[string]interface{}{"hostname": "pc-01"}).
-		WithFacts(map[string]interface{}{
-			"os": map[string]interface{}{"build": "19041"},
+		WithTarget(map[string]any{"hostname": "pc-01"}).
+		WithFacts(map[string]any{
+			"os": map[string]any{"build": "19041"},
 		})
 
 	got, err := e.Render("host={{ target.hostname }} build={{ facts.os.build }}")
@@ -127,7 +127,7 @@ func TestRenderBool(t *testing.T) {
 }
 
 func TestRenderBool_ViaVar(t *testing.T) {
-	e := New(map[string]interface{}{"flag": "true"})
+	e := New(map[string]any{"flag": "true"})
 	got, err := e.RenderBool("{{ vars.flag }}")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -138,11 +138,11 @@ func TestRenderBool_ViaVar(t *testing.T) {
 }
 
 func TestRenderMap(t *testing.T) {
-	e := New(map[string]interface{}{
+	e := New(map[string]any{
 		"dest": "/opt/app",
 		"mode": "0755",
 	})
-	input := map[string]interface{}{
+	input := map[string]any{
 		"path":    "{{ vars.dest }}",
 		"mode":    "{{ vars.mode }}",
 		"version": 42, // non-string — passed through unchanged
@@ -163,9 +163,9 @@ func TestRenderMap(t *testing.T) {
 }
 
 func TestRenderMap_Nested(t *testing.T) {
-	e := New(map[string]interface{}{"val": "x"})
-	input := map[string]interface{}{
-		"outer": map[string]interface{}{
+	e := New(map[string]any{"val": "x"})
+	input := map[string]any{
+		"outer": map[string]any{
 			"inner": "{{ vars.val }}",
 		},
 	}
@@ -173,7 +173,7 @@ func TestRenderMap_Nested(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	outer, ok := got["outer"].(map[string]interface{})
+	outer, ok := got["outer"].(map[string]any)
 	if !ok {
 		t.Fatalf("outer is not a map: %T", got["outer"])
 	}

@@ -4,21 +4,22 @@ import (
 	"os"
 	"strings"
 
-	"github.com/bluecadet/preflight/internal/output"
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 // parseVars converts a slice of "key=value" strings into a map.
 // Values without "=" are stored as empty strings.
-func parseVars(varFlags []string) map[string]interface{} {
-	result := make(map[string]interface{}, len(varFlags))
+func parseVars(varFlags []string) map[string]any {
+	result := make(map[string]any, len(varFlags))
 	for _, kv := range varFlags {
-		idx := strings.IndexByte(kv, '=')
-		if idx < 0 {
-			result[kv] = ""
+		key, value, found := strings.Cut(kv, "=")
+		if !found {
+			result[key] = ""
 			continue
 		}
-		result[kv[:idx]] = kv[idx+1:]
+		result[key] = value
 	}
 	return result
 }

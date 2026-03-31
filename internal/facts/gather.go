@@ -156,7 +156,7 @@ func isWindowsTarget(osVersion string) bool {
 // gatherWindowsDisks runs a PowerShell command against the target to obtain
 // filesystem drive information.
 func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) {
-	result, err := g.target.Execute(ctx, "facts.disks", "powershell", map[string]interface{}{
+	result, err := g.target.Execute(ctx, "facts.disks", "powershell", map[string]any{
 		"script": "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json",
 	}, true /* dryRun=true means we only read, never change */)
 	if err != nil {
@@ -187,7 +187,7 @@ func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
 
 // gatherWindowsEnv collects environment variables via PowerShell.
 func (g *Gatherer) gatherWindowsEnv(ctx context.Context) (map[string]string, error) {
-	result, err := g.target.Execute(ctx, "facts.env", "powershell", map[string]interface{}{
+	result, err := g.target.Execute(ctx, "facts.env", "powershell", map[string]any{
 		"script": `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`,
 	}, true)
 	if err != nil {
@@ -198,7 +198,7 @@ func (g *Gatherer) gatherWindowsEnv(ctx context.Context) (map[string]string, err
 		return map[string]string{}, nil
 	}
 
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := json.Unmarshal([]byte(result.Message), &raw); err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsEnv: parse: %w", err)
 	}

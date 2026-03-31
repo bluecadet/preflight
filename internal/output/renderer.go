@@ -101,24 +101,22 @@ func (r *TextRenderer) Emit(event Event) {
 	case EventPlayStart:
 		title := fmt.Sprintf("PLAY [%s]", event.PlayName)
 		line := fillLine(title, "*", lineWidth)
-		fmt.Fprintln(r.w, r.colorize(ansiBold, line))
-		fmt.Fprintln(r.w)
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
+		_, _ = fmt.Fprintln(r.w)
 
 	case EventTaskResult:
 		label := fmt.Sprintf("TASK [%s]", event.TaskName)
 		// Build dots then status
 		statusStr := r.statusColored(event.Status, event.Message)
 		dotsNeeded := lineWidth - len(label) - len(event.Status) - 3
-		if dotsNeeded < 1 {
-			dotsNeeded = 1
-		}
+		dotsNeeded = max(dotsNeeded, 1)
 		dots := strings.Repeat(".", dotsNeeded)
-		fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
+		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
 
 	case EventPlayEnd:
 		title := "PLAY RECAP"
 		line := fillLine(title, "*", lineWidth)
-		fmt.Fprintln(r.w, r.colorize(ansiBold, line))
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		target := event.Target
 		if target == "" {
 			target = "localhost"
@@ -130,15 +128,15 @@ func (r *TextRenderer) Emit(event Event) {
 			event.FailedCount,
 			event.SkippedCount,
 		)
-		fmt.Fprintln(r.w, recap)
-		fmt.Fprintln(r.w)
+		_, _ = fmt.Fprintln(r.w, recap)
+		_, _ = fmt.Fprintln(r.w)
 
 	case EventError:
 		msg := event.Message
 		if event.Error != nil {
 			msg = event.Error.Error()
 		}
-		fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
 	}
 }
 

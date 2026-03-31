@@ -16,9 +16,9 @@ import (
 
 // mockTarget is a Target that records calls and returns a preset status.
 type mockTarget struct {
-	results  []target.Result // in order; last result is reused if list is exhausted
-	calls    []mockCall
-	execErr  error
+	results []target.Result // in order; last result is reused if list is exhausted
+	calls   []mockCall
+	execErr error
 }
 
 type mockCall struct {
@@ -27,7 +27,7 @@ type mockCall struct {
 	DryRun bool
 }
 
-func (m *mockTarget) Execute(_ context.Context, taskID, module string, _ map[string]interface{}, dryRun bool) (target.Result, error) {
+func (m *mockTarget) Execute(_ context.Context, taskID, module string, _ map[string]any, dryRun bool) (target.Result, error) {
 	m.calls = append(m.calls, mockCall{TaskID: taskID, Module: module, DryRun: dryRun})
 	if m.execErr != nil {
 		return target.Result{}, m.execErr
@@ -44,10 +44,12 @@ func (m *mockTarget) Execute(_ context.Context, taskID, module string, _ map[str
 	return r, nil
 }
 
-func (m *mockTarget) CopyFile(_ context.Context, _, _ string) error       { return nil }
+func (m *mockTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }
 func (m *mockTarget) ReadFile(_ context.Context, _ string) ([]byte, error) { return nil, nil }
 func (m *mockTarget) Reachable(_ context.Context) (bool, error)            { return true, nil }
-func (m *mockTarget) Info(_ context.Context) (target.TargetInfo, error)    { return target.TargetInfo{}, nil }
+func (m *mockTarget) Info(_ context.Context) (target.TargetInfo, error) {
+	return target.TargetInfo{}, nil
+}
 
 // recordingRenderer captures events for assertions.
 type recordingRenderer struct {
@@ -55,14 +57,14 @@ type recordingRenderer struct {
 }
 
 func (r *recordingRenderer) Emit(e output.Event) { r.events = append(r.events, e) }
-func (r *recordingRenderer) Close()               {}
+func (r *recordingRenderer) Close()              {}
 
 // emptyChain is a resolver chain that never finds anything (for playbooks with
 // no action refs).
 type emptyChain struct{}
 
 func (emptyChain) Resolve(_ context.Context, ref string) (*action.Action, error) { return nil, nil }
-func (emptyChain) Name() string                                                    { return "empty" }
+func (emptyChain) Name() string                                                  { return "empty" }
 
 func emptyResolver() action.Chain {
 	return action.Chain{emptyChain{}}
@@ -75,7 +77,7 @@ func newShellPlaybook(name string) *action.Playbook {
 		Tasks: []action.Task{
 			{
 				Name:  "run echo",
-				Shell: map[string]interface{}{"cmd": "echo hello"},
+				Shell: map[string]any{"cmd": "echo hello"},
 			},
 		},
 	}

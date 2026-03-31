@@ -11,7 +11,7 @@ type OSFacts struct {
 
 // DiskFacts holds disk space information for a single drive.
 type DiskFacts struct {
-	Path    string  // e.g. "C:"
+	Path    string // e.g. "C:"
 	TotalGB float64
 	FreeGB  float64
 	UsedGB  float64
@@ -25,12 +25,12 @@ type Facts struct {
 	Hostname string
 }
 
-// AsMap converts Facts to a nested map[string]interface{} for use in templates.
+// AsMap converts Facts to a nested map[string]any for use in templates.
 // Keys: facts.os.name, facts.os.build, facts.os.version, facts.os.arch,
 //
 //	facts.hostname, facts.disks (list), facts.env.*
-func (f *Facts) AsMap() map[string]interface{} {
-	osMap := map[string]interface{}{
+func (f *Facts) AsMap() map[string]any {
+	osMap := map[string]any{
 		"name":     f.OS.Name,
 		"version":  f.OS.Version,
 		"build":    f.OS.Build,
@@ -38,22 +38,22 @@ func (f *Facts) AsMap() map[string]interface{} {
 		"hostname": f.OS.Hostname,
 	}
 
-	disks := make([]map[string]interface{}, len(f.Disks))
+	disks := make([]map[string]any, len(f.Disks))
 	for i, d := range f.Disks {
-		disks[i] = map[string]interface{}{
-			"path":    d.Path,
+		disks[i] = map[string]any{
+			"path":     d.Path,
 			"total_gb": d.TotalGB,
 			"free_gb":  d.FreeGB,
 			"used_gb":  d.UsedGB,
 		}
 	}
 
-	env := make(map[string]interface{}, len(f.Env))
+	env := make(map[string]any, len(f.Env))
 	for k, v := range f.Env {
 		env[k] = v
 	}
 
-	return map[string]interface{}{
+	return map[string]any{
 		"os":       osMap,
 		"disks":    disks,
 		"env":      env,

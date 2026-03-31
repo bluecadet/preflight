@@ -59,9 +59,9 @@ func NewClient(executablePath string) (*Client, error) {
 func (c *Client) Name() string { return c.name }
 
 // Check calls the plugin's check method.
-func (c *Client) Check(args map[string]interface{}) (CheckResult, error) {
+func (c *Client) Check(args map[string]any) (CheckResult, error) {
 	var result CheckResult
-	params := map[string]interface{}{"args": args}
+	params := map[string]any{"args": args}
 	if err := c.call("check", params, &result); err != nil {
 		return CheckResult{}, err
 	}
@@ -72,9 +72,9 @@ func (c *Client) Check(args map[string]interface{}) (CheckResult, error) {
 }
 
 // Apply calls the plugin's apply method.
-func (c *Client) Apply(args map[string]interface{}) (ApplyResult, error) {
+func (c *Client) Apply(args map[string]any) (ApplyResult, error) {
 	var result ApplyResult
-	params := map[string]interface{}{"args": args}
+	params := map[string]any{"args": args}
 	if err := c.call("apply", params, &result); err != nil {
 		return ApplyResult{}, err
 	}
@@ -93,7 +93,7 @@ func (c *Client) Close() error {
 }
 
 // call sends a single JSON-RPC request and decodes the result into out.
-func (c *Client) call(method string, params interface{}, out interface{}) error {
+func (c *Client) call(method string, params any, out any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -105,7 +105,7 @@ func (c *Client) call(method string, params interface{}, out interface{}) error 
 		Method:  method,
 	}
 	if params != nil {
-		if p, ok := params.(map[string]interface{}); ok {
+		if p, ok := params.(map[string]any); ok {
 			req.Params = p
 		}
 	}
@@ -116,7 +116,7 @@ func (c *Client) call(method string, params interface{}, out interface{}) error 
 
 	var resp struct {
 		JSONRPC string          `json:"jsonrpc"`
-		ID      interface{}     `json:"id"`
+		ID      any             `json:"id"`
 		Result  json.RawMessage `json:"result"`
 		Error   *rpcError       `json:"error"`
 	}

@@ -17,7 +17,7 @@ import (
 // on Windows requires registry writes (handled in environment_windows.go).
 type EnvironmentModule struct{}
 
-func (m *EnvironmentModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *EnvironmentModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	name, err := paramStringRequired(params, "name")
 	if err != nil {
 		return false, err
@@ -48,7 +48,7 @@ func (m *EnvironmentModule) Check(_ context.Context, params map[string]interface
 	}
 }
 
-func (m *EnvironmentModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *EnvironmentModule) Apply(_ context.Context, params map[string]any) error {
 	name, err := paramStringRequired(params, "name")
 	if err != nil {
 		return err

@@ -14,7 +14,7 @@ import (
 //   - timeout: seconds before reboot (default 60, Windows only)
 type RebootModule struct{}
 
-func (m *RebootModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *RebootModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	condition, err := paramString(params, "condition", "always")
 	if err != nil {
 		return false, err
@@ -26,7 +26,7 @@ func (m *RebootModule) Check(_ context.Context, params map[string]interface{}) (
 	return false, nil
 }
 
-func (m *RebootModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *RebootModule) Apply(_ context.Context, params map[string]any) error {
 	if runtime.GOOS != "windows" {
 		return fmt.Errorf("reboot: only supported on Windows")
 	}

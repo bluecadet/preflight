@@ -9,9 +9,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/stdlib"
-	"github.com/spf13/cobra"
 )
 
 var actionCmd = &cobra.Command{

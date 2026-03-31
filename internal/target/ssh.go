@@ -14,7 +14,7 @@ type SSHTarget struct {
 	PrivateKey string
 }
 
-func (t *SSHTarget) Execute(_ context.Context, _ string, _ string, _ map[string]interface{}, _ bool) (Result, error) {
+func (t *SSHTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ bool) (Result, error) {
 	return Result{}, fmt.Errorf("ssh: not yet implemented")
 }
 

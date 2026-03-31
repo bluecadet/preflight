@@ -28,7 +28,7 @@ func TestRegistry_CoreModulesPresent(t *testing.T) {
 func TestFileModule_Check_Missing(t *testing.T) {
 	reg := module.Registry()
 	m := reg["file"]
-	needed, err := m.Check(context.Background(), map[string]interface{}{
+	needed, err := m.Check(context.Background(), map[string]any{
 		"dest":   "/nonexistent/path/that/does/not/exist",
 		"ensure": "present",
 	})
@@ -44,7 +44,7 @@ func TestDirectoryModule_Check_Existing(t *testing.T) {
 	dir := t.TempDir()
 	reg := module.Registry()
 	m := reg["directory"]
-	needed, err := m.Check(context.Background(), map[string]interface{}{
+	needed, err := m.Check(context.Background(), map[string]any{
 		"path":   dir,
 		"ensure": "present",
 	})
@@ -61,12 +61,14 @@ func TestShellModule_Check_CreatesExists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.Close()
-	defer os.Remove(f.Name())
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
 
 	reg := module.Registry()
 	m := reg["shell"]
-	needed, err := m.Check(context.Background(), map[string]interface{}{
+	needed, err := m.Check(context.Background(), map[string]any{
 		"cmd":     "echo",
 		"creates": f.Name(),
 	})
@@ -84,9 +86,9 @@ func TestShellModule_Apply(t *testing.T) {
 
 	reg := module.Registry()
 	m := reg["shell"]
-	err := m.Apply(context.Background(), map[string]interface{}{
+	err := m.Apply(context.Background(), map[string]any{
 		"cmd":  "touch",
-		"args": []interface{}{out},
+		"args": []any{out},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

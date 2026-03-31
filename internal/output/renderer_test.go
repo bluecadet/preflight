@@ -121,14 +121,14 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	}
 
 	for i, line := range lines {
-		var m map[string]interface{}
+		var m map[string]any
 		if err := json.Unmarshal([]byte(line), &m); err != nil {
 			t.Errorf("line %d is not valid JSON: %v — %q", i, err, line)
 		}
 	}
 
 	// Check first line fields.
-	var first map[string]interface{}
+	var first map[string]any
 	_ = json.Unmarshal([]byte(lines[0]), &first)
 	if first["type"] != string(EventTaskResult) {
 		t.Errorf("expected type=%q, got %q", EventTaskResult, first["type"])
@@ -144,7 +144,7 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	}
 
 	// play_end should include counts.
-	var second map[string]interface{}
+	var second map[string]any
 	_ = json.Unmarshal([]byte(lines[1]), &second)
 	if second["type"] != string(EventPlayEnd) {
 		t.Errorf("expected type=%q, got %q", EventPlayEnd, second["type"])

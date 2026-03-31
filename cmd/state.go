@@ -7,11 +7,12 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/spf13/cobra"
+
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/target"
-	"github.com/spf13/cobra"
 )
 
 const defaultStatePath = "state/provision.json"

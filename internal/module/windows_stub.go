@@ -21,10 +21,10 @@ func addWindowsModules(reg target.ModuleRegistry) {
 
 type windowsStubModule struct{ name string }
 
-func (m *windowsStubModule) Check(_ context.Context, _ map[string]interface{}) (bool, error) {
+func (m *windowsStubModule) Check(_ context.Context, _ map[string]any) (bool, error) {
 	return false, fmt.Errorf("module %q is only supported on Windows", m.name)
 }
 
-func (m *windowsStubModule) Apply(_ context.Context, _ map[string]interface{}) error {
+func (m *windowsStubModule) Apply(_ context.Context, _ map[string]any) error {
 	return fmt.Errorf("module %q is only supported on Windows", m.name)
 }

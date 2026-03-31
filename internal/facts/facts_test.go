@@ -20,7 +20,7 @@ func TestAsMap_OSKeys(t *testing.T) {
 
 	m := f.AsMap()
 
-	osMap, ok := m["os"].(map[string]interface{})
+	osMap, ok := m["os"].(map[string]any)
 	if !ok {
 		t.Fatal("expected m[\"os\"] to be map")
 	}
@@ -50,7 +50,7 @@ func TestParseWindowsDrives_Array(t *testing.T) {
 		},
 	}
 	m := f.AsMap()
-	disks, ok := m["disks"].([]map[string]interface{})
+	disks, ok := m["disks"].([]map[string]any)
 	if !ok {
 		t.Fatal("expected disks to be []map")
 	}

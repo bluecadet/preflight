@@ -13,20 +13,20 @@ type rawInventory struct {
 }
 
 type rawGroup struct {
-	Vars  map[string]interface{} `yaml:"vars"`
-	Hosts []rawHost              `yaml:"hosts"`
+	Vars  map[string]any `yaml:"vars"`
+	Hosts []rawHost      `yaml:"hosts"`
 }
 
 type rawHost struct {
-	Name       string                 `yaml:"name"`
-	Address    string                 `yaml:"address"`
-	Transport  string                 `yaml:"transport"`
-	Port       int                    `yaml:"port"`
-	Username   string                 `yaml:"username"`
-	Password   string                 `yaml:"password"`
-	PrivateKey string                 `yaml:"private_key"`
-	HTTPS      bool                   `yaml:"https"`
-	Vars       map[string]interface{} `yaml:"vars"`
+	Name       string         `yaml:"name"`
+	Address    string         `yaml:"address"`
+	Transport  string         `yaml:"transport"`
+	Port       int            `yaml:"port"`
+	Username   string         `yaml:"username"`
+	Password   string         `yaml:"password"`
+	PrivateKey string         `yaml:"private_key"`
+	HTTPS      bool           `yaml:"https"`
+	Vars       map[string]any `yaml:"vars"`
 }
 
 // Parse parses inventory YAML data into an Inventory.

@@ -9,10 +9,10 @@ import (
 
 // Input describes a typed input parameter for an action.
 type Input struct {
-	Type        string      `yaml:"type"`        // string, bool, int, path
-	Required    bool        `yaml:"required"`
-	Default     interface{} `yaml:"default"`
-	Description string      `yaml:"description"`
+	Type        string `yaml:"type"` // string, bool, int, path
+	Required    bool   `yaml:"required"`
+	Default     any    `yaml:"default"`
+	Description string `yaml:"description"`
 }
 
 // Output describes a named output emitted by an action.
@@ -25,53 +25,53 @@ type Output struct {
 // function that extracts the params map from the Task.
 var inlineModuleFields = []struct {
 	name   string
-	getter func(*Task) map[string]interface{}
+	getter func(*Task) map[string]any
 }{
-	{"registry", func(t *Task) map[string]interface{} { return t.Registry }},
-	{"service", func(t *Task) map[string]interface{} { return t.Service }},
-	{"file", func(t *Task) map[string]interface{} { return t.File }},
-	{"directory", func(t *Task) map[string]interface{} { return t.Directory }},
-	{"package", func(t *Task) map[string]interface{} { return t.Package }},
-	{"shortcut", func(t *Task) map[string]interface{} { return t.Shortcut }},
-	{"scheduled_task", func(t *Task) map[string]interface{} { return t.ScheduledTask }},
-	{"user", func(t *Task) map[string]interface{} { return t.User }},
-	{"windows_feature", func(t *Task) map[string]interface{} { return t.WindowsFeature }},
-	{"environment", func(t *Task) map[string]interface{} { return t.Environment }},
-	{"firewall_rule", func(t *Task) map[string]interface{} { return t.FirewallRule }},
-	{"powershell", func(t *Task) map[string]interface{} { return t.Powershell }},
-	{"shell", func(t *Task) map[string]interface{} { return t.Shell }},
-	{"reboot", func(t *Task) map[string]interface{} { return t.Reboot }},
-	{"wait", func(t *Task) map[string]interface{} { return t.Wait }},
+	{"registry", func(t *Task) map[string]any { return t.Registry }},
+	{"service", func(t *Task) map[string]any { return t.Service }},
+	{"file", func(t *Task) map[string]any { return t.File }},
+	{"directory", func(t *Task) map[string]any { return t.Directory }},
+	{"package", func(t *Task) map[string]any { return t.Package }},
+	{"shortcut", func(t *Task) map[string]any { return t.Shortcut }},
+	{"scheduled_task", func(t *Task) map[string]any { return t.ScheduledTask }},
+	{"user", func(t *Task) map[string]any { return t.User }},
+	{"windows_feature", func(t *Task) map[string]any { return t.WindowsFeature }},
+	{"environment", func(t *Task) map[string]any { return t.Environment }},
+	{"firewall_rule", func(t *Task) map[string]any { return t.FirewallRule }},
+	{"powershell", func(t *Task) map[string]any { return t.Powershell }},
+	{"shell", func(t *Task) map[string]any { return t.Shell }},
+	{"reboot", func(t *Task) map[string]any { return t.Reboot }},
+	{"wait", func(t *Task) map[string]any { return t.Wait }},
 }
 
 // Task is a single step inside an action or playbook.
 type Task struct {
-	Name         string                 `yaml:"name"`
-	Uses         string                 `yaml:"uses"`
-	With         map[string]interface{} `yaml:"with"`
-	Module       string                 `yaml:"-"` // resolved module name
-	Params       map[string]interface{} `yaml:"-"` // resolved module params
-	When         string                 `yaml:"when"`
-	DependsOn    []string               `yaml:"depends_on"`
-	IgnoreErrors bool                   `yaml:"ignore_errors"`
-	Tags         []string               `yaml:"tags"`
+	Name         string         `yaml:"name"`
+	Uses         string         `yaml:"uses"`
+	With         map[string]any `yaml:"with"`
+	Module       string         `yaml:"-"` // resolved module name
+	Params       map[string]any `yaml:"-"` // resolved module params
+	When         string         `yaml:"when"`
+	DependsOn    []string       `yaml:"depends_on"`
+	IgnoreErrors bool           `yaml:"ignore_errors"`
+	Tags         []string       `yaml:"tags"`
 
 	// Inline module fields — at most one may be non-nil per task.
-	Registry       map[string]interface{} `yaml:"registry"`
-	Service        map[string]interface{} `yaml:"service"`
-	File           map[string]interface{} `yaml:"file"`
-	Directory      map[string]interface{} `yaml:"directory"`
-	Package        map[string]interface{} `yaml:"package"`
-	Shortcut       map[string]interface{} `yaml:"shortcut"`
-	ScheduledTask  map[string]interface{} `yaml:"scheduled_task"`
-	User           map[string]interface{} `yaml:"user"`
-	WindowsFeature map[string]interface{} `yaml:"windows_feature"`
-	Environment    map[string]interface{} `yaml:"environment"`
-	FirewallRule   map[string]interface{} `yaml:"firewall_rule"`
-	Powershell     map[string]interface{} `yaml:"powershell"`
-	Shell          map[string]interface{} `yaml:"shell"`
-	Reboot         map[string]interface{} `yaml:"reboot"`
-	Wait           map[string]interface{} `yaml:"wait"`
+	Registry       map[string]any `yaml:"registry"`
+	Service        map[string]any `yaml:"service"`
+	File           map[string]any `yaml:"file"`
+	Directory      map[string]any `yaml:"directory"`
+	Package        map[string]any `yaml:"package"`
+	Shortcut       map[string]any `yaml:"shortcut"`
+	ScheduledTask  map[string]any `yaml:"scheduled_task"`
+	User           map[string]any `yaml:"user"`
+	WindowsFeature map[string]any `yaml:"windows_feature"`
+	Environment    map[string]any `yaml:"environment"`
+	FirewallRule   map[string]any `yaml:"firewall_rule"`
+	Powershell     map[string]any `yaml:"powershell"`
+	Shell          map[string]any `yaml:"shell"`
+	Reboot         map[string]any `yaml:"reboot"`
+	Wait           map[string]any `yaml:"wait"`
 }
 
 // ResolveModule inspects inline module fields and sets Module + Params.
@@ -127,11 +127,11 @@ func ParseAction(data []byte) (*Action, error) {
 
 // Playbook is the parsed representation of a playbook.yml file.
 type Playbook struct {
-	Name        string                 `yaml:"name"`
-	Description string                 `yaml:"description"`
-	Vars        map[string]interface{} `yaml:"vars"`
-	Import      []string               `yaml:"import"`
-	Tasks       []Task                 `yaml:"tasks"`
+	Name        string         `yaml:"name"`
+	Description string         `yaml:"description"`
+	Vars        map[string]any `yaml:"vars"`
+	Import      []string       `yaml:"import"`
+	Tasks       []Task         `yaml:"tasks"`
 }
 
 // ParsePlaybook parses playbook YAML bytes into a Playbook.

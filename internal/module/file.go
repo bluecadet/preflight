@@ -17,7 +17,7 @@ import (
 //   - permissions: (future) file permissions
 type FileModule struct{}
 
-func (m *FileModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	dest, err := paramStringRequired(params, "dest")
 	if err != nil {
 		return false, err
@@ -72,7 +72,7 @@ func (m *FileModule) Check(_ context.Context, params map[string]interface{}) (bo
 	}
 }
 
-func (m *FileModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 	dest, err := paramStringRequired(params, "dest")
 	if err != nil {
 		return err
@@ -114,7 +114,7 @@ func hashFile(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err
@@ -127,16 +127,19 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("file: open src %q: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("file: open dest %q: %w", dst, err)
 	}
-	defer out.Close()
 
 	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
 		return fmt.Errorf("file: copy %q → %q: %w", src, dst, err)
+	}
+	if err := out.Close(); err != nil {
+		return fmt.Errorf("file: close dest %q: %w", dst, err)
 	}
 	return nil
 }

@@ -56,7 +56,7 @@ Apply(ctx context.Context, params Params) error
 Rules:
 - `Check` must be safe to call repeatedly and must not modify system state.
 - `Apply` must be idempotent — calling it twice must not break anything.
-- Params must be a typed struct, not `map[string]interface{}`.
+- Params must be a typed struct, not `map[string]any`.
 - Add a `_windows.go` / `_stub.go` pair if the module is Windows-only so the binary still compiles on other platforms.
 
 ---

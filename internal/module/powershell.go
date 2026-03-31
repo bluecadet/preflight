@@ -17,7 +17,7 @@ import (
 //   - creates: path that indicates the operation is already done
 type PowershellModule struct{}
 
-func (m *PowershellModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *PowershellModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	creates, err := paramString(params, "creates", "")
 	if err != nil {
 		return false, err
@@ -34,7 +34,7 @@ func (m *PowershellModule) Check(_ context.Context, params map[string]interface{
 	return true, nil
 }
 
-func (m *PowershellModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *PowershellModule) Apply(_ context.Context, params map[string]any) error {
 	script, err := paramString(params, "script", "")
 	if err != nil {
 		return err

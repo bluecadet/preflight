@@ -14,7 +14,7 @@ import (
 //   - permissions: (future) directory permissions
 type DirectoryModule struct{}
 
-func (m *DirectoryModule) Check(_ context.Context, params map[string]interface{}) (bool, error) {
+func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool, error) {
 	path, err := paramStringRequired(params, "path")
 	if err != nil {
 		return false, err
@@ -53,7 +53,7 @@ func (m *DirectoryModule) Check(_ context.Context, params map[string]interface{}
 	}
 }
 
-func (m *DirectoryModule) Apply(_ context.Context, params map[string]interface{}) error {
+func (m *DirectoryModule) Apply(_ context.Context, params map[string]any) error {
 	path, err := paramStringRequired(params, "path")
 	if err != nil {
 		return err

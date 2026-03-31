@@ -75,7 +75,7 @@ func (s *State) Record(result TaskResult) {
 
 // ParamHash computes a SHA256 hash of the params map as a hex string.
 // This is a helper for callers that want to populate TaskResult.ParamHash.
-func ParamHash(params map[string]interface{}) string {
+func ParamHash(params map[string]any) string {
 	data, err := json.Marshal(params)
 	if err != nil {
 		return ""

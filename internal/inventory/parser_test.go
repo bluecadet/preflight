@@ -124,9 +124,13 @@ func TestParseFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.Remove(f.Name())
-	f.WriteString(sampleInventory)
-	f.Close()
+	t.Cleanup(func() { _ = os.Remove(f.Name()) })
+	if _, err := f.WriteString(sampleInventory); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 
 	inv, err := inventory.ParseFile(f.Name())
 	if err != nil {

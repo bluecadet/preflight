@@ -9,18 +9,18 @@ import (
 
 // rpcRequest is the JSON-RPC 2.0 request envelope received from the runner.
 type rpcRequest struct {
-	JSONRPC string                 `json:"jsonrpc"`
-	ID      interface{}            `json:"id"`
-	Method  string                 `json:"method"`
-	Params  map[string]interface{} `json:"params"`
+	JSONRPC string         `json:"jsonrpc"`
+	ID      any            `json:"id"`
+	Method  string         `json:"method"`
+	Params  map[string]any `json:"params"`
 }
 
 // rpcResponse is the JSON-RPC 2.0 response envelope sent back to the runner.
 type rpcResponse struct {
-	JSONRPC string      `json:"jsonrpc"`
-	ID      interface{} `json:"id"`
-	Result  interface{} `json:"result,omitempty"`
-	Error   *rpcError   `json:"error,omitempty"`
+	JSONRPC string    `json:"jsonrpc"`
+	ID      any       `json:"id"`
+	Result  any       `json:"result,omitempty"`
+	Error   *rpcError `json:"error,omitempty"`
 }
 
 // rpcError represents a JSON-RPC 2.0 error object.
@@ -103,14 +103,14 @@ func dispatch(m Module, req rpcRequest) rpcResponse {
 
 // argsFromParams extracts the "args" key from JSON-RPC params, returning an
 // empty map when absent.
-func argsFromParams(params map[string]interface{}) map[string]interface{} {
+func argsFromParams(params map[string]any) map[string]any {
 	if params == nil {
-		return map[string]interface{}{}
+		return map[string]any{}
 	}
 	if raw, ok := params["args"]; ok {
-		if m, ok := raw.(map[string]interface{}); ok {
+		if m, ok := raw.(map[string]any); ok {
 			return m
 		}
 	}
-	return map[string]interface{}{}
+	return map[string]any{}
 }

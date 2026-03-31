@@ -19,19 +19,19 @@ func TestVarStore_DeepMergeNestedMaps(t *testing.T) {
 	s := NewVarStore()
 
 	// Group vars set a nested map with two keys
-	s.Set(LayerGroupVars, "db", map[string]interface{}{
+	s.Set(LayerGroupVars, "db", map[string]any{
 		"host": "db.internal",
 		"port": 5432,
 	})
 	// Host vars override only the port
-	s.Set(LayerHostVars, "db", map[string]interface{}{
+	s.Set(LayerHostVars, "db", map[string]any{
 		"port": 5433,
 	})
 
 	merged := s.Merge()
-	db, ok := merged["db"].(map[string]interface{})
+	db, ok := merged["db"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected map[string]interface{} for db, got %T", merged["db"])
+		t.Fatalf("expected map[string]any for db, got %T", merged["db"])
 	}
 	if db["host"] != "db.internal" {
 		t.Errorf("host: expected db.internal, got %v", db["host"])
@@ -58,7 +58,7 @@ func TestVarStore_MergeOrder(t *testing.T) {
 
 func TestVarStore_SetMap(t *testing.T) {
 	s := NewVarStore()
-	s.SetMap(LayerPlaybook, map[string]interface{}{
+	s.SetMap(LayerPlaybook, map[string]any{
 		"a": 1,
 		"b": "two",
 	})
@@ -105,7 +105,7 @@ func TestVarStore_EmptyLayers(t *testing.T) {
 // sets a scalar for a key that a lower layer set as a map, the scalar wins.
 func TestVarStore_ScalarOverwritesMap(t *testing.T) {
 	s := NewVarStore()
-	s.Set(LayerDefaults, "val", map[string]interface{}{"nested": "x"})
+	s.Set(LayerDefaults, "val", map[string]any{"nested": "x"})
 	s.Set(LayerCLI, "val", "scalar")
 
 	merged := s.Merge()

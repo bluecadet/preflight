@@ -12,10 +12,10 @@ import (
 // The runner always calls Check first and only calls Apply when Check returns true.
 type Module interface {
 	// Check returns true when the system is NOT yet in the desired state.
-	Check(ctx context.Context, params map[string]interface{}) (needsChange bool, err error)
+	Check(ctx context.Context, params map[string]any) (needsChange bool, err error)
 
 	// Apply transitions the system to the desired state.
-	Apply(ctx context.Context, params map[string]interface{}) error
+	Apply(ctx context.Context, params map[string]any) error
 }
 
 // ModuleRegistry maps module names to their implementations.
@@ -36,7 +36,7 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
-func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]interface{}, dryRun bool) (Result, error) {
+func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error) {
 	mod, ok := t.registry[module]
 	if !ok {
 		return Result{}, fmt.Errorf("target/local: unknown module %q", module)

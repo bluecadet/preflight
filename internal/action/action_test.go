@@ -138,7 +138,7 @@ func TestChain_NoMatch(t *testing.T) {
 type nilRes struct{}
 
 func (r *nilRes) Resolve(_ context.Context, _ string) (*action.Action, error) { return nil, nil }
-func (r *nilRes) Name() string                                                  { return "nil" }
+func (r *nilRes) Name() string                                                { return "nil" }
 
 // errRes always returns an error.
 type errRes struct{}
