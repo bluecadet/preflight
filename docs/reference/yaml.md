@@ -142,6 +142,7 @@ project vars
 Each task must have a `name`. It can either:
 
 - reference another action with `uses`
+- call an explicit module with `module` and `params`
 - declare one inline module block
 
 ### Shared Task Fields
@@ -150,11 +151,30 @@ Each task must have a `name`. It can either:
 | --- | --- | --- |
 | `name` | string | Required task label |
 | `uses` | string | Action reference |
+| `module` | string | Explicit module name, including plugin-backed modules |
+| `params` | object | Parameters for `module` |
 | `with` | object | Inputs for `uses` |
 | `when` | string | Template condition |
 | `depends_on` | string[] | Dependencies by task name |
 | `ignore_errors` | bool | Continue on failure |
 | `tags` | string[] | Task tags |
+
+### Explicit Module Tasks
+
+Use `module` plus `params` when you want to call a module by name instead of using an inline module block.
+
+Example:
+
+```yaml
+tasks:
+  - name: Sync signage content
+    module: signage_sync
+    params:
+      source: "\\\\nas01\\signage"
+      destination: "C:\\Signage"
+```
+
+This is the supported way to invoke plugin-backed modules from playbooks and actions.
 
 ### Template Context
 
@@ -170,7 +190,7 @@ Task templates can read from these namespaces:
 `plan` stays a pure phase, so fact-dependent expressions may remain unresolved in plan output until execution time.
 
 > [!WARNING]
-> A task cannot set both `uses` and an inline module. It also cannot set more than one inline module block.
+> A task cannot mix `uses`, `module`, and inline module blocks. Choose exactly one task execution form. A task also cannot set more than one inline module block.
 
 ## Inline Modules In The Schema
 
@@ -217,6 +237,8 @@ The module registry currently includes:
 | `firewall_rule` | Implemented on Windows; stubbed elsewhere |
 
 Windows-only modules remain non-functional on non-Windows hosts, where the registry exposes explicit stubs that fail fast.
+
+Plugin-backed modules are discovered at runtime and therefore are not enumerated in the static schema. Use `module: <plugin-name>` with `params` for those tasks.
 
 ## `action.yml`
 

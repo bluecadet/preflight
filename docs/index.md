@@ -9,11 +9,15 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs in mus
 | Get your first playbook running locally | [Quickstart](./tutorials/quickstart.md) |
 | Install the CLI | [Install Preflight](./how-to/install-preflight.md) |
 | Apply or dry-run a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
+| Stage and apply offline bundles | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
+| Use plugin-backed modules in YAML | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
 | Manage repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
 | Understand `age` and why secrets are encrypted | [Secrets and age](./explanation/secrets-and-age.md) |
 | Look up commands and flags | [CLI reference](./reference/cli.md) |
 | Look up YAML file shapes | [YAML reference](./reference/yaml.md) |
+| Look up plugin behavior and protocol | [Plugin reference](./reference/plugins.md) |
+| Look up the persisted state file | [State reference](./reference/state.md) |
 | Understand how Preflight is structured | [Architecture](./explanation/architecture.md) |
 
 ## Core Ideas

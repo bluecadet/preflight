@@ -95,6 +95,12 @@ If you are changing packaging, release metadata, or installer behavior, do a loc
 goreleaser release --snapshot --clean
 ```
 
+When release plumbing changes, also check that the snapshot output includes:
+
+- platform archives for each supported OS and architecture
+- `preflight_checksums.txt`
+- release metadata embedded into `preflight --version`
+
 CI runs tests, linting, and build jobs. Fixing failures locally is usually much faster than waiting for CI.
 
 ---
@@ -144,6 +150,17 @@ Commands live in `cmd/`. Each command is a file or subdirectory following Cobra 
 
 Keep command implementations thin — they should parse flags, set up context, and delegate to `internal/` packages. Business logic does not belong in `cmd/`.
 
+## Adding Or Updating Plugin Support
+
+Plugin executables are part of the public runtime surface, not just a development convenience.
+
+When changing plugin behavior:
+
+- keep built-in module names reserved
+- preserve the `Check` then `Apply` execution contract
+- update the plugin docs in `docs/how-to/use-plugin-modules.md` and `docs/reference/plugins.md`
+- test both normal execution and staged bundle behavior when the change affects discovery or runtime packaging
+
 ---
 
 ## Code Conventions
@@ -175,6 +192,8 @@ git push origin v1.2.3
 ```
 
 Pushing a `v*` tag triggers the release workflow, which builds Windows, macOS, and Linux archives, generates checksums, signs the checksum artifact with `cosign` using GitHub OIDC, generates a changelog from commit messages, and publishes a GitHub release.
+
+The checksum artifact name is `preflight_checksums.txt`. Installer and smoke-test changes should be verified against that filename and against the release workflow's Linux and Windows install checks.
 
 Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, etc.) — GoReleaser groups the changelog by prefix. Tags named `v1.2.3-beta.1` are automatically marked as pre-releases.
 

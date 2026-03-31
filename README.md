@@ -151,11 +151,15 @@ Additional docs live in [`docs/`](docs/):
 - [Install Preflight](docs/how-to/install-preflight.md)
 - [Quickstart](docs/tutorials/quickstart.md)
 - [Run a playbook](docs/how-to/run-a-playbook.md)
+- [Stage bundles for air-gapped deployment](docs/how-to/air-gapped-deployment.md)
 - [Run a playbook against remote hosts](docs/how-to/remote-execution.md)
+- [Use plugin modules in playbooks](docs/how-to/use-plugin-modules.md)
 - [Manage secrets](docs/how-to/manage-secrets.md)
 - [Secrets and `age`](docs/explanation/secrets-and-age.md)
 - [Architecture](docs/explanation/architecture.md)
 - [CLI reference](docs/reference/cli.md)
+- [Plugin reference](docs/reference/plugins.md)
+- [State reference](docs/reference/state.md)
 - [YAML reference](docs/reference/yaml.md)
 
 ---

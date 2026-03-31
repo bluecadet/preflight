@@ -112,6 +112,8 @@ Current behavior:
 
 Use `preflight apply --bundle <bundle.zip>` to execute a staged bundle without re-resolving the playbook.
 
+If you are preparing a transfer package for an isolated environment, follow [Stage bundles for air-gapped deployment](./air-gapped-deployment.md).
+
 ## Choose An Output Format
 
 Available values:
@@ -150,6 +152,8 @@ preflight state diff playbooks/lobby.yml
 
 `state diff` compares the current plan to the recorded `state/provision.json` file.
 The output distinguishes `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY` tasks.
+
+For the state file structure and diff status definitions, see [State reference](../reference/state.md).
 
 For inventory-backed runs, apply writes per-host state files under `state/targets/<host>.json`. Inspect one directly with:
 

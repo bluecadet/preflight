@@ -172,6 +172,8 @@ List discovered plugins and their initialization status.
 
 Print the resolved path, source directory, reported version, and initialization status for one plugin.
 
+See [Plugin reference](./plugins.md) for discovery, execution, and staging behavior.
+
 Discovery order:
 
 1. Directory alongside the executable
@@ -231,6 +233,8 @@ Notes:
 - Inventory-backed applies write per-host state files under `state/targets/<host>.json`.
 - To inspect a remote host state file, pass `--state-file state/targets/<host>.json`.
 - Diff statuses include `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY`.
+
+See [State reference](./state.md) for the persisted file shape and snapshot fields.
 
 ## Output Formats
 
