@@ -76,7 +76,7 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 			return err
 		}
 		*planTasks = append(*planTasks, pt)
-		*idx = *idx + 1
+		(*idx)++
 		return nil
 	}
 
@@ -115,8 +115,8 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 	}
 	maps.Copy(childVars, renderedWith)
 	for key, value := range renderedWith {
-		if strings.HasSuffix(key, "_from") {
-			childVars[strings.TrimSuffix(key, "_from")] = value
+		if before, ok := strings.CutSuffix(key, "_from"); ok {
+			childVars[before] = value
 		}
 	}
 	for name, input := range resolved.Inputs {

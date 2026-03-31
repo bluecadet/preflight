@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -36,9 +37,7 @@ func (m *mockTarget) Execute(_ context.Context, taskID, module string, params ma
 	var copied map[string]any
 	if params != nil {
 		copied = make(map[string]any, len(params))
-		for k, v := range params {
-			copied[k] = v
-		}
+		maps.Copy(copied, params)
 	}
 	m.calls = append(m.calls, mockCall{TaskID: taskID, Module: module, DryRun: dryRun, Params: copied})
 	if m.execErr != nil {

@@ -157,7 +157,9 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("secret edit: tempdir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	tmpPath := filepath.Join(tmpDir, sanitizeSecretName(name)+".txt")
 	if err := os.WriteFile(tmpPath, plaintext, 0o600); err != nil {

@@ -110,7 +110,9 @@ func (p *RepoProvider) loadIdentities() ([]age.Identity, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open identity file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		_ = f.Close()
+	}()
 	identities, err := age.ParseIdentities(f)
 	if err != nil {
 		return nil, fmt.Errorf("parse identity file: %w", err)
