@@ -79,6 +79,8 @@ tasks:
 
 ## Installation
 
+Most users should install a precompiled release. Building from source is mainly for contributors or for testing unreleased changes.
+
 **macOS / Linux:**
 
 ```sh
@@ -97,7 +99,22 @@ Installs to `%LOCALAPPDATA%\preflight\` and adds it to your user PATH.
 
 Or download a specific release manually from the [releases page](../../releases).
 
+### Verify a release
+
+Releases are published with checksums and a `cosign` Sigstore bundle for the checksum artifact.
+
+For the most controlled install flow:
+
+1. Download the archive for your platform from the release page.
+2. Download the checksum file and its `.sigstore.json` bundle.
+3. Verify the archive checksum against the checksum file.
+4. Verify the checksum file with `cosign verify-blob`.
+
+See [`docs/how-to/install-preflight.md`](docs/how-to/install-preflight.md) for the full verification flow and current archive naming.
+
 ### Build from source
+
+Use this path if you are contributing to Preflight or need a local build from the current branch.
 
 ```bash
 # Windows (primary target)
@@ -115,6 +132,18 @@ make build-windows-amd64
 make build-windows-arm64
 make build-local
 ```
+
+## Documentation
+
+Additional docs live in [`docs/`](docs/):
+
+- [Install Preflight](docs/how-to/install-preflight.md)
+- [Quickstart](docs/tutorials/quickstart.md)
+- [Run a playbook](docs/how-to/run-a-playbook.md)
+- [Manage secrets](docs/how-to/manage-secrets.md)
+- [Secrets and `age`](docs/explanation/secrets-and-age.md)
+- [CLI reference](docs/reference/cli.md)
+- [YAML reference](docs/reference/yaml.md)
 
 ---
 
@@ -316,7 +345,8 @@ Preflight supports repo-backed secrets encrypted with `age`.
 
 - Encrypted secret files are declared in `preflight.yml` under `secrets.entries`.
 - Secret references use `provider:name` syntax. The built-in repo-backed provider is `secret`, so refs look like `secret:autologin-password`.
-- Decryption happens on the operator machine at execution time.
+- Decryption happens on whichever machine is running `preflight` at execution time.
+- If you copy a project to a target PC and run `preflight apply` there, that target PC needs a private age identity matching one of the configured recipients.
 - Plans, runner state, and renderer output do not persist decrypted secret values.
 - Plaintext fields like `password` and `private_key` still work for compatibility, but `*_from` fields are the preferred API.
 

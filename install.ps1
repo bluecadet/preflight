@@ -14,7 +14,9 @@ $release = Invoke-RestMethod "https://api.github.com/repos/$repo/releases/latest
 $version = $release.tag_name
 
 # Find the matching asset
-$assetName = "preflight-$version-windows-$arch.zip"
+$assetOs = "Windows"
+$assetArch = if ($arch -eq "amd64") { "x86_64" } else { "arm64" }
+$assetName = "preflight_${assetOs}_${assetArch}.zip"
 $asset = $release.assets | Where-Object { $_.name -eq $assetName }
 if (-not $asset) {
     Write-Error "Could not find release asset: $assetName"

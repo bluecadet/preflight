@@ -8,16 +8,16 @@ REPO="bluecadet/preflight"
 INSTALL_DIR="${PREFLIGHT_INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and architecture
-OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
+OS="$(uname -s)"
 ARCH="$(uname -m)"
 case "$ARCH" in
-  x86_64)  ARCH="amd64" ;;
-  aarch64|arm64) ARCH="arm64" ;;
+  x86_64|arm64) ;;
+  aarch64) ARCH="arm64" ;;
   *) echo "Unsupported architecture: $ARCH" >&2; exit 1 ;;
 esac
 
 case "$OS" in
-  darwin|linux) ;;
+  Darwin|Linux) ;;
   *) echo "Unsupported OS: $OS" >&2; exit 1 ;;
 esac
 
@@ -28,7 +28,7 @@ if [ -z "$VERSION" ]; then
   exit 1
 fi
 
-ASSET="preflight-${VERSION}-${OS}-${ARCH}.tar.gz"
+ASSET="preflight_${OS}_${ARCH}.tar.gz"
 URL="https://github.com/$REPO/releases/download/$VERSION/$ASSET"
 
 # Download and extract
