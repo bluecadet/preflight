@@ -3,7 +3,6 @@ package action
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,22 +37,9 @@ func (r *CacheResolver) Resolve(_ context.Context, ref string) (*Action, error) 
 	if !strings.Contains(ref, "@") {
 		return nil, nil
 	}
-	actionPath := filepath.Join(r.CacheDir, filepath.FromSlash(ref), "action.yml")
-	data, err := os.ReadFile(actionPath)
+	action, err := loadActionFromCache(r.CacheDir, ref)
 	if err != nil {
-		if errors_is_not_exist(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("cache resolver: read %q: %w", actionPath, err)
+		return nil, fmt.Errorf("cache resolver: %w", err)
 	}
-	return ParseAction(data)
-}
-
-func errors_is_not_exist(err error) bool {
-	return os.IsNotExist(err) || isPathError(err, fs.ErrNotExist)
-}
-
-func isPathError(err error, target error) bool {
-	pe, ok := err.(*os.PathError)
-	return ok && pe.Err == target
+	return action, nil
 }

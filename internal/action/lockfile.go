@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // LockEntry records a pinned action reference.
@@ -45,6 +46,9 @@ func (l *Lockfile) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("lockfile: marshal: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("lockfile: mkdir %q: %w", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("lockfile: write %q: %w", path, err)
 	}
@@ -52,8 +56,17 @@ func (l *Lockfile) Save(path string) error {
 }
 
 // Pin records a pinned SHA for the given ref.
-func (l *Lockfile) Pin(ref, sha string) {
-	l.Actions[ref] = LockEntry{Ref: ref, SHA: sha, Pinned: ref}
+func (l *Lockfile) Pin(ref, sha string) error {
+	parsed, err := ParseRemoteRef(ref)
+	if err != nil {
+		return fmt.Errorf("lockfile: pin %q: %w", ref, err)
+	}
+	l.Actions[ref] = LockEntry{
+		Ref:    ref,
+		SHA:    sha,
+		Pinned: parsed.PinnedRef(sha),
+	}
+	return nil
 }
 
 // Lookup returns the LockEntry for ref, or false if not pinned.
