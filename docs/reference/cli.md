@@ -1,69 +1,74 @@
 # CLI Reference
 
-This page describes the current command surface implemented in `cmd/`.
+This page describes the command surface implemented under [`cmd/`](/Users/clay/repos/preflight/cmd).
 
 ## Global Flags
 
-| Flag | Short | Description |
+These flags are defined on the root command and are available to subcommands where they make sense.
+
+| Flag | Short | Meaning |
 | --- | --- | --- |
-| `--target` | `-t` | Host or group selectors from inventory. Repeat the flag to combine selectors. |
-| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` for inventory-backed commands. |
-| `--var` | `-e` | Set a variable as `key=value`. Later values win. |
-| `--tags` |  | Run only tasks with these tags. |
-| `--skip-tags` |  | Skip tasks with these tags. |
+| `--target` | `-t` | Host or group selector from inventory. Repeat to build a union. |
+| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` when inventory is needed. |
+| `--var key=value` | `-e` | Set a variable override. Later values win. |
+| `--tags` |  | Run only tasks that have any of the listed tags. |
+| `--skip-tags` |  | Skip tasks that have any of the listed tags. |
 | `--check` |  | Dry-run mode. |
-| `--diff` |  | Show diffs for file changes. |
-| `--verbose` | `-v` | Verbose output. |
-| `--output` |  | Output format: `text`, `json`, or `jsonl`. |
+| `--diff` |  | Present on the CLI surface but not currently wired into task execution output. |
+| `--verbose` | `-v` | Reserved verbose flag. |
+| `--output` |  | Output format: `text`, `tui`, `json`, or `jsonl`. |
 | `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
-| `--timeout` |  | Overall run timeout, for example `30m` or `1h`. |
+| `--timeout` |  | Overall run timeout such as `30m` or `1h`. |
 | `--phase` |  | Run only up to `plan`, `fetch`, `stage`, or `apply`. |
 
-## Target Selection
+## Target Selection Rules
 
-`--target` resolves selectors in order.
+When a command supports inventory-backed execution:
 
-- A selector can be a host name, a group name, or `all`.
+- A selector may be a host name, a group name, or `all`.
 - Repeating `--target` builds a union of matches.
-- Hosts are deduplicated by name, and the first match wins.
-- Omitting `--target` keeps local execution behavior.
-- Using only `local` or `localhost` keeps local execution behavior and does not require `inventory.yml`.
+- Hosts are deduplicated by name.
+- Omitting `--target` resolves a local target.
+- Using only `local` or `localhost` also resolves a local target.
 
 ## Top-Level Commands
 
 ### `preflight apply <playbook>`
 
-Apply a playbook.
+Apply a playbook to one local or inventory-backed target set.
 
 Examples:
 
 ```bash
 preflight apply playbooks/lobby.yml
 preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
-preflight apply --bundle dist/bundles/lobby-baseline-localhost-linux-amd64.zip
 ```
 
-Flags:
+Apply a staged bundle instead of resolving a playbook:
 
-| Flag | Description |
+```bash
+preflight apply --bundle dist/bundles/lobby-localhost-windows-amd64.zip
+```
+
+Command-specific flags:
+
+| Flag | Meaning |
 | --- | --- |
-| `--bundle` | Apply from a staged bundle zip instead of resolving a playbook |
-| `--bundle-output-dir` | Output directory when `--phase stage` is used from `apply` |
+| `--bundle` | Apply a staged bundle zip instead of a playbook |
+| `--bundle-output-dir` | Output directory when running the stage phase through `apply` |
 
 ### `preflight check <playbook>`
 
-Dry-run a playbook without applying changes.
-
-Examples:
+Run the same execution pipeline as `apply`, but stop after `Check()` paths and report what would change.
 
 ```bash
 preflight check playbooks/lobby.yml
-preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
 ### `preflight diff <playbook>`
 
-Compare the current plan to the recorded state file.
+Compare the current plan to the selected recorded state file.
 
 ```bash
 preflight diff playbooks/lobby.yml
@@ -71,24 +76,22 @@ preflight diff playbooks/lobby.yml
 
 ### `preflight plan <playbook>`
 
-Resolve and print the execution plan.
-
-Examples:
+Resolve and print the target-specific execution plan without running tasks.
 
 ```bash
 preflight plan playbooks/lobby.yml
 preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
-Notes:
+Behavior notes:
 
-- `plan` stays a pure planning phase and does not contact targets.
-- When `--target` resolves multiple hosts, output is grouped by host.
-- Fact-dependent template expressions stay unresolved in the printed preview until execution time.
+- `plan` does not contact targets.
+- Action expansion and playbook imports are reflected in the printed output.
+- `facts.*` expressions may remain unresolved in preview output.
 
 ### `preflight validate <playbook>`
 
-Parse a playbook and resolve `uses:` references.
+Parse a playbook and resolve direct `uses:` references without executing anything.
 
 ```bash
 preflight validate playbooks/lobby.yml
@@ -97,8 +100,6 @@ preflight validate playbooks/lobby.yml
 ### `preflight facts [target]`
 
 Gather facts and print JSON.
-
-Examples:
 
 ```bash
 preflight facts
@@ -110,36 +111,32 @@ preflight facts lobby-pc-01 --inventory inventory.yml
 Behavior:
 
 - Use either a positional target or `--target`, not both.
-- One resolved host prints a single facts object.
-- Multiple resolved hosts print an object keyed by host name.
+- One resolved host prints one facts object.
+- Multiple hosts print an object keyed by host name.
 
 ### `preflight stage <playbook>`
 
-Assemble one offline bundle zip per resolved target.
-
-Example:
+Assemble one staged bundle zip per resolved target.
 
 ```bash
 preflight stage playbooks/lobby.yml
 ```
 
-Flags:
+Command-specific flags:
 
-| Flag | Description |
+| Flag | Meaning |
 | --- | --- |
-| `--bundle-output-dir` | Output directory for generated bundle zips |
+| `--bundle-output-dir` | Directory for generated bundle zips |
 
 ## `action` Commands
 
 ### `preflight action list`
 
-List embedded and local actions.
+List available embedded and project-local actions.
 
 ### `preflight action info <ref>`
 
 Show action metadata, inputs, outputs, and task count.
-
-Examples:
 
 ```bash
 preflight action info preflight/autologin
@@ -148,19 +145,21 @@ preflight action info myorg/display-config
 
 ### `preflight action fetch <ref>`
 
-Fetch a remote action ref into `~/.preflight/actions`, resolve it to an exact commit SHA, and create or update `./preflight.lock` in the current project directory. Nested remote `uses:` dependencies are fetched recursively.
+Fetch a remote action ref into the user cache, recursively fetch nested remote `uses:` dependencies, and create or update `preflight.lock` in the current project.
+
+```bash
+preflight action fetch github.com/myorg/actions/signage@v2.1
+```
 
 ## `inventory` Commands
 
 ### `preflight inventory list`
 
-List hosts from the inventory file.
+List all hosts from the selected inventory file.
 
-Flags:
-
-| Flag | Description |
-| --- | --- |
-| `--inventory` | Path to inventory file. Defaults to `./inventory.yml`. |
+```bash
+preflight inventory list --inventory inventory.yml
+```
 
 ## `plugin` Commands
 
@@ -170,46 +169,36 @@ List discovered plugins and their initialization status.
 
 ### `preflight plugin info <name>`
 
-Print the resolved path, source directory, reported version, and initialization status for one plugin.
-
-See [Plugin reference](./plugins.md) for discovery, execution, and staging behavior.
-
-Discovery order:
-
-1. Directory alongside the executable
-2. `~/.preflight/plugins`
-3. `./plugins`
-
-Plugin filenames must start with `preflight-plugin-`. On Windows they must end in `.exe`.
+Show one plugin’s path, source directory, version, and initialization result.
 
 ## `secret` Commands
 
 ### `preflight secret list`
 
-List configured secrets from `preflight.yml`.
+List configured repo-backed secrets from `preflight.yml`.
 
 ### `preflight secret encrypt <name>`
 
-Encrypt a plaintext file into the repo-backed store.
+Encrypt a plaintext file into the repo-backed secret store.
 
-Flags:
+Command-specific flags:
 
-| Flag | Description |
+| Flag | Meaning |
 | --- | --- |
 | `--from-file` | Plaintext source file |
-| `--recipient` | Override `age` recipients |
-| `--identity` | Identity file path for future decrypt/edit operations |
+| `--recipient` | Override configured recipients |
+| `--identity` | Override the identity path stored for decrypt/edit flows |
 
 ### `preflight secret edit <name>`
 
-Decrypt a secret to a temp file, open it in your editor, then re-encrypt it.
+Decrypt a configured secret to a temporary file, open it in `$EDITOR`, and re-encrypt it.
 
-Flags:
+Command-specific flags:
 
-| Flag | Description |
+| Flag | Meaning |
 | --- | --- |
 | `--recipient` | Override recipients for re-encryption |
-| `--identity` | Override identity file path for decryption |
+| `--identity` | Override the identity used for decryption |
 
 ## `state` Commands
 
@@ -219,28 +208,25 @@ Print the selected state file as JSON.
 
 ### `preflight state diff <playbook>`
 
-Compare the current plan to the recorded state file.
+Compare the current plan to the selected state file.
 
-Flags:
+Command-specific flags:
 
-| Flag | Description |
+| Flag | Meaning |
 | --- | --- |
-| `--state-file` | Path to the state file. Defaults to `state/provision.json`. |
+| `--state-file` | Override the state file path |
 
-Notes:
+Behavior notes:
 
-- Local applies write `state/provision.json` by default.
-- Inventory-backed applies write per-host state files under `state/targets/<host>.json`.
-- To inspect a remote host state file, pass `--state-file state/targets/<host>.json`.
-- Diff statuses include `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY`.
-
-See [State reference](./state.md) for the persisted file shape and snapshot fields.
+- Local applies default to `state/provision.json`.
+- Inventory-backed applies write `state/targets/<host>.json`.
+- `preflight diff` is a shortcut into the same comparison machinery.
 
 ## Output Formats
 
-| Value | Notes |
+| Value | Behavior |
 | --- | --- |
-| `text` | Default non-TTY renderer |
-| `tui` | Interactive terminal renderer |
-| `json` | JSON event stream |
-| `jsonl` | Same renderer as `json` |
+| `text` | Plain human-readable renderer |
+| `tui` | Interactive terminal UI renderer |
+| `json` | Newline-delimited JSON events |
+| `jsonl` | Same renderer and event shape as `json` |

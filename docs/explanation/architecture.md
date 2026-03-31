@@ -1,123 +1,108 @@
 # Architecture
 
-Preflight separates declaration, resolution, and execution so the same playbook model can eventually run locally, remotely, or in staged offline bundles.
+Preflight is designed for a specific operational niche: Windows exhibit machines that need repeatable configuration, low ceremony, and the option to run in constrained environments.
 
-## Why The Project Is Split Into Modules, Actions, And Playbooks
+The architecture reflects that goal. It favors explicit phases, a target-agnostic runner, and a small number of durable abstractions over a large amount of hidden magic.
 
-The three-layer structure keeps low-level operations small and reusable:
+## The Core Model: Modules, Actions, Playbooks
 
-- **Modules** are the execution primitives. They are compiled into the binary and expose the idempotent `Check()` and `Apply()` contract.
-- **Actions** package reusable YAML task sequences behind named inputs.
-- **Playbooks** describe the desired outcome for a machine or environment.
+Preflight splits configuration into three layers:
 
-This layering matters because each level changes at a different rate:
+- **Modules** are the execution primitives. They are small units of behavior compiled into the binary or supplied by plugins.
+- **Actions** are reusable YAML bundles of tasks with typed inputs.
+- **Playbooks** are the top-level declarations for a machine or environment.
 
-- Module behavior changes with the binary
-- Actions can be shared and versioned
-- Playbooks stay specific to a deployment
+That layering matters because each level changes at a different rate:
 
-## Why Idempotency Is A Hard Contract
+- Module behavior is versioned with the binary.
+- Actions are a sharing and composition surface.
+- Playbooks remain local to an environment or deployment.
 
-Every module is expected to answer a simple question before it changes anything:
+Keeping those concerns separate makes the system easier to evolve without turning every change into a schema break.
 
-```text
-Is work needed?
-```
+## Why Idempotency Is A Contract
 
-That contract drives two important behaviors:
+Every module must implement `Check()` and `Apply()`.
 
-- Dry-run mode is a first-class path rather than a separate simulation engine.
-- Re-running the same playbook should converge toward no-op behavior instead of repeated mutation.
+That is not just a stylistic choice. It is the foundation for:
 
-In the current codebase, the runner always plans first, then executes modules through the `Target` interface, using dry-run mode to stay on the `Check()` side.
+- dry-run mode without a parallel simulation engine
+- safe repeated applies
+- meaningful state snapshots
+- predictable plugin behavior
 
-## Why The Runner Depends On A `Target`
+The runner does not assume that applying twice is harmless. Instead, it requires each module to tell the truth about whether work is needed before it mutates anything.
 
-The runner is intentionally target-agnostic. It does not hardcode "run this on localhost"; instead it operates through `internal/target.Target`.
+## Why The Runner Is Target-Agnostic
 
-That design supports:
+The runner is always constructed with a `Target`. It does not hardcode localhost assumptions.
 
-- local execution
-- WinRM and SSH targets
-- future agent-based or staged execution without rewriting the planner
+That decision protects the long-term shape of the project:
 
-The current implementation keeps the runner single-target on purpose. Inventory selection, per-host variable merging, and host concurrency live in a thin orchestration layer above the runner. That split keeps the planner and DAG executor simple while still allowing one command to operate on many hosts.
+- local execution uses the same pipeline as remote execution
+- WinRM and SSH become transport choices instead of alternate runners
+- staged bundles can execute through the same abstractions
+- plugins fit into the same module contract regardless of transport
 
-## The Pipeline: Plan, Fetch, Stage, Apply
+The command layer resolves hosts and builds target implementations. The runner then receives one target and stays focused on planning and execution for that single context.
 
-Preflight models execution as distinct phases:
+## Package Responsibilities
 
-| Phase | Responsibility | Current state |
-| --- | --- | --- |
-| Plan | Parse YAML, resolve actions, expand tasks, resolve variables, validate DAG | Implemented |
-| Fetch | Download remote actions into cache and pin them in `preflight.lock` | Implemented |
-| Stage | Assemble a self-contained per-target artifact bundle | Implemented |
-| Apply | Execute the task graph against a target | Implemented |
+The codebase is intentionally split into a handful of major responsibilities:
 
-This is more than an implementation detail. It preserves a clean boundary between:
+| Path | Responsibility |
+| --- | --- |
+| [`cmd/`](/Users/clay/repos/preflight/cmd) | Cobra command surface and host orchestration |
+| [`internal/runner/`](/Users/clay/repos/preflight/internal/runner) | Planning, DAG building, staging, applying, state |
+| [`internal/action/`](/Users/clay/repos/preflight/internal/action) | Playbook loading, action resolution, remote refs, lockfile |
+| [`internal/module/`](/Users/clay/repos/preflight/internal/module) | Built-in module implementations |
+| [`internal/target/`](/Users/clay/repos/preflight/internal/target) | Target interface plus local, WinRM, SSH, and plugin module adapters |
+| [`internal/template/`](/Users/clay/repos/preflight/internal/template) | Variable layering and template rendering |
+| [`internal/inventory/`](/Users/clay/repos/preflight/internal/inventory) | Inventory parsing and selector resolution |
+| [`internal/facts/`](/Users/clay/repos/preflight/internal/facts) | Fact gathering and normalization |
+| [`internal/output/`](/Users/clay/repos/preflight/internal/output) | Text, TUI, and JSON renderers |
+| [`internal/plugins/`](/Users/clay/repos/preflight/internal/plugins) | Plugin discovery and registry construction |
+| [`internal/bundle/`](/Users/clay/repos/preflight/internal/bundle) | Staged bundle format and extraction |
+| [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/plugin/sdk) | Go plugin author SDK |
 
-- pure computation
-- dependency acquisition
-- packaging
-- machine mutation
+## Why The Phases Are Explicit
 
-That separation is especially important for museum and gallery deployments where internet access may be limited or unavailable during rollout.
-
-## Resolver Chain And Embedded Standard Library
-
-Action resolution proceeds in a fixed order:
-
-1. Embedded stdlib
-2. Local project actions
-3. User cache
-4. Git resolver
-
-The embedded standard library gives Preflight a dependable baseline that ships with the binary. That means teams can rely on some core actions without bootstrapping a separate package registry.
-
-The tradeoff is deliberate: stdlib actions are versioned with the binary, not independently.
-
-## Variables And Templates
-
-Variables are merged in layers so overrides stay predictable. For inventory-backed execution, the effective precedence is:
+Preflight models four phases:
 
 ```text
-project vars
-  -> inventory group vars
-    -> inventory host vars
-      -> playbook vars
-        -> CLI --var flags
+Plan -> Fetch -> Stage -> Apply
 ```
 
-Template rendering now happens in two stages:
+That separation is about more than code organization.
 
-- During `plan`, Preflight expands actions and preserves unresolved `facts.*` expressions so the phase stays pure.
-- During `check` and `apply`, Preflight gathers per-host facts and safe target metadata, then performs final template rendering before module execution.
+- **Plan** is pure computation and should stay safe to run anywhere.
+- **Fetch** is dependency acquisition and cache pinning.
+- **Stage** is packaging for disconnected or delayed execution.
+- **Apply** is the only phase that should mutate machines.
 
-That split is what allows a plan to stay free of target I/O while still supporting `facts.*` and `target.*` in real executions.
+This is especially valuable in museum and gallery environments, where deployment often crosses network boundaries and operational windows are tight.
 
-## Why Remote Execution Sits Above The Runner
+## Why The Embedded Stdlib Ships With The Binary
 
-The command layer resolves inventory selectors first, then prepares one host execution context per resolved machine. Each host context carries:
+The embedded stdlib gives users a baseline action library without introducing a package registry as a prerequisite.
 
-- merged inventory vars
-- safe `target.*` metadata
-- resolved transport credentials
-- a concrete `Target`
-- a derived per-host state path
+That is why the `preflight/` namespace resolves first and is versioned with the binary. The tradeoff is deliberate:
 
-The command then fetches action dependencies once, fans out host work with the configured concurrency limit, and instantiates one runner per host.
+- users get predictable built-in actions
+- maintainers keep version compatibility simple
+- teams that need independently pinned behavior can still use remote actions and `preflight.lock`
 
-This design trades a little orchestration code for clearer boundaries:
+## Why Plugins Are Executables
 
-- the runner stays focused on one plan and one target
-- target transports stay isolated behind `internal/target`
-- host-level concurrency stays outside the task DAG executor
+Go shared-object plugins are not the right portability story for Windows. Executable plugins speaking JSON-RPC keep the extension model cross-language and Windows-friendly.
 
-## What To Keep In Mind As The Project Grows
+That choice also keeps the built-in module API honest. If an external process can implement the same idempotent contract, then the core abstractions are staying small and composable.
 
-Two themes show up throughout the code:
+## The Design Boundary To Protect
 
-- The public YAML schema is a compatibility boundary.
-- The target abstraction is the long-term scaling boundary.
+Two boundaries matter more than almost anything else as the project grows:
 
-If those stay stable, Preflight can add remote execution, richer Windows-native modules, and staging workflows without forcing users to rewrite their playbooks.
+- the public YAML schema
+- the `Target` abstraction
+
+If those stay stable, Preflight can add richer modules, transports, staging flows, and plugins without forcing users to rewrite their playbooks or abandon the core execution model.

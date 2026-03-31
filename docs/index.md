@@ -1,59 +1,89 @@
-# Preflight
+# Preflight Docs
 
-Preflight is a Windows-first configuration management CLI for exhibit PCs in museum and gallery environments. It is built around a single Go binary, idempotent modules, and a pipeline that separates planning from execution.
+Preflight is a Windows-first configuration management CLI for exhibit PCs. The docs set is organized with Diataxis so readers can move quickly between learning, task execution, exact lookup, and architectural reasoning.
 
-## In This Docs Set
+## Start Here
 
 | If you want to... | Read this |
 | --- | --- |
-| Get your first playbook running locally | [Quickstart](./tutorials/quickstart.md) |
-| Install the CLI | [Install Preflight](./how-to/install-preflight.md) |
-| Apply or dry-run a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
-| Stage and apply offline bundles | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
+| Get a first project working end to end | [Quickstart](./tutorials/quickstart.md) |
+| Install the CLI safely | [Install Preflight](./how-to/install-preflight.md) |
+| Run, dry-run, or inspect a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
-| Use plugin-backed modules in YAML | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
-| Manage repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
-| Understand `age` and why secrets are encrypted | [Secrets and age](./explanation/secrets-and-age.md) |
-| Look up commands and flags | [CLI reference](./reference/cli.md) |
-| Look up YAML file shapes | [YAML reference](./reference/yaml.md) |
-| Look up plugin behavior and protocol | [Plugin reference](./reference/plugins.md) |
-| Look up the persisted state file | [State reference](./reference/state.md) |
-| Understand how Preflight is structured | [Architecture](./explanation/architecture.md) |
+| Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
+| Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
+| Use external plugin modules | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
+| Reuse tasks as a custom action | [Write an action](./how-to/write-an-action.md) |
+| Compare desired state to recorded state | [Inspect state and diffs](./how-to/inspect-state-and-diff.md) |
+
+## Tutorials
+
+- [Quickstart](./tutorials/quickstart.md): create a minimal project, validate it, plan it, dry-run it, and apply it.
+
+## How-To Guides
+
+- [Install Preflight](./how-to/install-preflight.md)
+- [Run a playbook](./how-to/run-a-playbook.md)
+- [Run a playbook against remote hosts](./how-to/remote-execution.md)
+- [Manage secrets](./how-to/manage-secrets.md)
+- [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md)
+- [Use plugin modules in playbooks](./how-to/use-plugin-modules.md)
+- [Write an action](./how-to/write-an-action.md)
+- [Inspect state and diffs](./how-to/inspect-state-and-diff.md)
+
+## Reference
+
+- [CLI reference](./reference/cli.md)
+- [Project config reference](./reference/config.md)
+- [Inventory reference](./reference/inventory.md)
+- [Playbook and action YAML reference](./reference/yaml.md)
+- [Built-in module reference](./reference/modules.md)
+- [Templating and facts reference](./reference/templating.md)
+- [Plugin reference](./reference/plugins.md)
+- [Bundle reference](./reference/bundles.md)
+- [State reference](./reference/state.md)
+
+## Explanation
+
+- [Architecture](./explanation/architecture.md)
+- [Execution model](./explanation/execution-model.md)
+- [Actions, stdlib, and lockfiles](./explanation/actions-and-lockfiles.md)
+- [Targets, transports, and plugins](./explanation/targets-and-transports.md)
+- [Secrets and `age`](./explanation/secrets-and-age.md)
 
 ## Core Ideas
 
-Preflight uses three layers:
+Preflight is built around three layers:
 
-- **Modules** are built-in primitives implemented in Go.
-- **Actions** are reusable YAML bundles of tasks.
-- **Playbooks** are top-level declarations describing what to run.
+- **Modules** are the executable primitives. Built-ins are compiled into the binary, and plugins can add more.
+- **Actions** are reusable YAML bundles of tasks with typed inputs.
+- **Playbooks** are the per-machine or per-environment declarations you actually run.
 
-Execution flows through four phases:
+Execution flows through four explicit phases:
 
 ```text
 Plan -> Fetch -> Stage -> Apply
 ```
 
-- **Plan** expands actions, resolves templates, and builds the task graph.
-- **Fetch** is intended for remote action retrieval.
-- **Stage** assembles offline artifact bundles.
-- **Apply** executes tasks against a `Target`.
+- **Plan** loads playbooks, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
+- **Fetch** acquires remote action refs into the cache and records their pinned SHAs in `preflight.lock`.
+- **Stage** creates a per-target offline bundle that includes the rendered plan, runtime binary, manifest, and referenced plugins.
+- **Apply** gathers facts, renders execution-time templates, runs `Check()` first for every task, and only calls `Apply()` when change is required.
 
-## What Works Today
+## Current Scope
 
-- Local and inventory-backed playbook parsing, planning, and execution
-- Embedded and local action resolution
-- Repo-backed `age` secrets
-- Inventory parsing, selection, and listing
-- Plugin discovery
-- Plugin execution through module tasks
-- Structured output in `text`, `json`, and `jsonl`
+The codebase already supports:
+
+- Local execution and inventory-backed host selection
 - WinRM and SSH target transports
+- Embedded, local, cached, and Git-backed action resolution
+- Repo-backed `age` secrets
+- Staged bundle creation and bundle apply
+- Structured output in `text`, `tui`, `json`, and `jsonl`
+- Plugin discovery plus plugin-backed module execution
 
-## Still Planned Or Stubbed
+Important current limits:
 
-- Broader transport parity across every module and platform combination
-
-## Start Here
-
-The fastest path is the [Quickstart](./tutorials/quickstart.md), then [Run a playbook](./how-to/run-a-playbook.md) for local usage or [Run a playbook against remote hosts](./how-to/remote-execution.md) for inventory-backed execution.
+- SSH currently implements `directory`, `file`, and `shell` tasks; Windows-native modules belong on WinRM targets.
+- The embedded stdlib currently ships one action: `preflight/autologin`.
+- `--diff` exists on the CLI surface but is not yet wired into task execution output.

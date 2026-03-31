@@ -1,26 +1,23 @@
 # Manage Secrets
 
-Use this guide to store project secrets in repo-backed `age` files and reference them from playbooks or actions.
+Use this guide to store sensitive values in repo-backed `age` files and reference them from playbooks, actions, or inventory.
 
-If you want the background first, read [Secrets and age](../explanation/secrets-and-age.md).
+If you want the design rationale first, read [Secrets and `age`](../explanation/secrets-and-age.md).
 
-## Before You Start
+## Prerequisites
 
-You need:
+- The `age` CLI installed locally
+- A project root that contains `preflight.yml`
+- At least one `age` identity that can decrypt the project secrets
 
-- The `age` CLI installed so you can generate a keypair
-- An `age` identity file for decryption
-- One or more `age` recipients for encryption
-- A project root where `preflight.yml` lives
-
-If you are starting from zero, create an identity file first:
+If you are starting from zero, generate an identity:
 
 ```bash
 mkdir -p .age
 age-keygen -o .age/keys.txt
 ```
 
-The generated file includes a public recipient string that starts with `age1...`. Add that recipient to `preflight.yml` so Preflight can encrypt new secrets for you.
+The output includes a public recipient string beginning with `age1...`. That public value goes into `preflight.yml`; the private identity file stays out of version control.
 
 ## 1. Configure Secrets In `preflight.yml`
 
@@ -38,21 +35,13 @@ secrets:
       file: "secrets/autologin-password.age"
 ```
 
-> [!TIP]
-> A common pattern is to commit the encrypted `.age` files to the repo, but keep `.age/keys.txt` out of version control.
+What each field means:
 
-If multiple people or machines need to decrypt the same project secrets, add multiple recipients:
+- `identity` is the private key file Preflight uses to decrypt locally.
+- `recipients` are the public keys used for encryption.
+- `entries` maps logical secret names to encrypted files in the repo.
 
-```yaml
-secrets:
-  identity: ".age/keys.txt"
-  recipients:
-    - "age1developerrecipient..."
-    - "age1operatorrecipient..."
-    - "age1targetrecipient..."
-```
-
-Any matching private identity can decrypt the same encrypted secret file.
+If multiple people or machines need access, add multiple recipients. They can all decrypt the same encrypted file with their own private identities.
 
 ## 2. Encrypt A Secret From A File
 
@@ -63,9 +52,9 @@ preflight secret encrypt autologin-password \
   --from-file ./secrets/autologin-password.txt
 ```
 
-If the secret entry does not already exist, Preflight creates one in `preflight.yml` under `secrets.entries`.
+If the named entry does not already exist, Preflight creates it in `preflight.yml` and defaults the encrypted path to `secrets/<name>.age`.
 
-You can override configured recipients or identity:
+Override recipients or identity when needed:
 
 ```bash
 preflight secret encrypt autologin-password \
@@ -76,30 +65,28 @@ preflight secret encrypt autologin-password \
 
 ## 3. List Configured Secrets
 
-Run:
-
 ```bash
 preflight secret list
 ```
 
-This prints the logical secret name and its encrypted file path.
+This prints the logical name plus the encrypted file path recorded in `preflight.yml`.
 
 ## 4. Edit A Secret Safely
-
-Run:
 
 ```bash
 EDITOR=nvim preflight secret edit autologin-password
 ```
 
-Preflight decrypts the secret to a temporary file, opens your editor, then re-encrypts the updated content.
+Preflight decrypts the secret to a temporary file, opens your editor, then re-encrypts the updated contents.
 
-> [!WARNING]
-> If `EDITOR` is not set, Preflight falls back to `vi`.
+Notes:
 
-## 5. Reference A Secret In YAML
+- If `EDITOR` is not set, Preflight falls back to `vi`.
+- The temporary plaintext file is created outside the repo and cleaned up after the edit flow.
 
-Some task and action inputs support the `_from` pattern. For example:
+## 5. Reference Secrets In YAML
+
+Use the `_from` pattern anywhere the schema supports it:
 
 ```yaml
 tasks:
@@ -110,39 +97,40 @@ tasks:
       password_from: secret:autologin-password
 ```
 
-During execution, the runner resolves secret-backed values before invoking the module.
+Inventory can do the same thing:
 
-## 6. Move A Project To A Target PC
+```yaml
+hosts:
+  - name: lobby-pc-01
+    transport: winrm
+    username: exhibit-admin
+    password_from: secret:winrm-password
+```
 
-If you build out the repo on one machine, then want to run `preflight apply` locally on a target PC, the target needs the files required for local decryption.
+The built-in provider name is `secret`, so repo-backed references use `secret:<name>`.
 
-Move these to the target:
+## 6. Move The Project To Another Machine
+
+If a different machine will run `preflight`, it needs everything required for local decryption:
 
 - the `preflight` binary
-- the project repo or exported project directory
+- the repo or exported project directory
 - `preflight.yml`
-- the encrypted secret files referenced under `secrets.entries`
-- an age identity file that matches one of the configured recipients
+- the encrypted `.age` files referenced by `secrets.entries`
+- one private identity matching one of the configured recipients
 
-The target does **not** need every recipient. It only needs one private identity that can decrypt the secrets.
-
-In practice, that usually means:
-
-- commit `preflight.yml` and encrypted `secrets/*.age` files to the repo
-- do **not** commit the private identity file
-- copy or provision the private identity onto the target separately
-- make sure the identity exists at the path named by `secrets.identity`
+This is the important rule: decryption happens on whichever machine is actually running Preflight.
 
 ## Troubleshooting
 
-### `no secrets.identity configured in preflight.yml`
+### `no recipients configured`
 
-Set `secrets.identity` to a readable age identity file.
+Add `secrets.recipients` to `preflight.yml` or pass one or more `--recipient` flags to `preflight secret encrypt`.
 
-### `no secrets.recipients configured in preflight.yml`
+### `no identity configured`
 
-Add at least one `age` recipient or pass `--recipient`.
+Set `secrets.identity` in `preflight.yml` or pass `--identity` for the current command.
 
-### `secret "<name>" is not defined in preflight.yml`
+### `secret "<name>" is not defined`
 
-Create the entry under `secrets.entries`, or run `secret encrypt` so Preflight can create one for you.
+Create the entry under `secrets.entries`, or run `preflight secret encrypt <name> --from-file ...` so Preflight can create it for you.

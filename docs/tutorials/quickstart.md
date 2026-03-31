@@ -1,33 +1,30 @@
 # Quickstart
 
-This tutorial walks you through a minimal local Preflight project so you can validate, plan, and apply a playbook in one sitting.
-
-> [!NOTE]
-> This path uses the current local execution flow. Inventory-backed remote execution is part of the design, but the CLI currently builds a local target for playbook runs.
+This tutorial gets a minimal Preflight project running in one sitting. You will create a project, validate it, inspect the plan, dry-run it, apply it, and confirm idempotency.
 
 ## Before You Start
 
 You need:
 
-- A `preflight` binary installed
-- A terminal in a working directory where you want to create a project
+- A `preflight` binary installed and on your `PATH`
+- A terminal in an empty working directory
 
-If you have not installed it yet, follow [Install Preflight](../how-to/install-preflight.md).
+If you still need the CLI, follow [Install Preflight](../how-to/install-preflight.md).
 
-Confirm the CLI is available:
+Confirm the binary is available:
 
 ```bash
 preflight --version
 ```
 
-## 1. Create A Project Config
-
-Create a new project directory and add `preflight.yml`:
+## 1. Create A Project Directory
 
 ```bash
 mkdir -p preflight-quickstart/playbooks
 cd preflight-quickstart
 ```
+
+Create `preflight.yml`:
 
 ```yaml
 project: docs-demo
@@ -38,7 +35,7 @@ vars:
   demo_file: "./tmp/demo/hello.txt"
 ```
 
-This file provides project-wide variables that are available to playbooks.
+`preflight.yml` is the project-level config file. In this example it only carries shared variables, but the same file also holds repo-backed secret settings when you need them later.
 
 ## 2. Create A Playbook
 
@@ -54,21 +51,21 @@ tasks:
       path: "{{ vars.demo_dir }}"
       ensure: present
 
-  - name: Write demo file from shell
+  - name: Write demo file
     shell:
       cmd: /bin/sh
       args:
         - -c
-        - echo "Hello from Preflight" > "{{ vars.demo_file }}"
+        - printf 'Hello from Preflight\n' > "{{ vars.demo_file }}"
       creates: "{{ vars.demo_file }}"
 ```
 
-This uses two inline modules:
+This playbook uses two built-in modules:
 
-- `directory` to ensure the folder exists
-- `shell` to create a file only if it is missing
+- `directory` ensures the directory exists.
+- `shell` runs a command, but only when `creates` is missing, which makes the task naturally idempotent.
 
-## 3. Validate The Playbook
+## 3. Validate The Input Files
 
 Run:
 
@@ -82,7 +79,11 @@ Expected result:
 OK
 ```
 
-`validate` parses the playbook and resolves any `uses:` references without executing tasks.
+Why this matters:
+
+- It proves the YAML parses.
+- It catches direct `uses:` resolution errors before you contact any targets.
+- It is the fastest way to catch structural mistakes early.
 
 ## 4. Inspect The Plan
 
@@ -92,7 +93,7 @@ Run:
 preflight plan playbooks/quickstart.yml
 ```
 
-You should see the playbook name and the flattened task list.
+You should see a flattened task list. `plan` is intentionally pure: it expands tasks and renders whatever it can from known variables, but it does not gather facts or mutate the machine.
 
 ## 5. Dry-Run The Changes
 
@@ -102,7 +103,7 @@ Run:
 preflight check playbooks/quickstart.yml
 ```
 
-This exercises each module's `Check()` path without applying changes.
+This drives every task through the `Check()` side of the module contract. Nothing is changed, but you get the same planning, templating, dependency ordering, and task filtering behavior that a real run would use.
 
 ## 6. Apply The Playbook
 
@@ -112,31 +113,36 @@ Run:
 preflight apply playbooks/quickstart.yml
 ```
 
-After the run completes, inspect the results:
+Inspect the results:
 
 ```bash
 cat ./tmp/demo/hello.txt
 preflight state show
 ```
 
-## 7. Re-Run To Confirm Idempotency
+At this point you have both a concrete machine change and a persisted state snapshot under `state/provision.json`.
 
-Run the same command again:
+## 7. Run It Again
+
+Run the same command a second time:
 
 ```bash
 preflight apply playbooks/quickstart.yml
 ```
 
-The second run should report fewer or no changes because the desired state already exists.
+The second run should report fewer or no changes. That is the core promise of Preflight: modules report whether work is needed first, then apply only when necessary.
 
 ## What You Learned
 
-You created:
+You now have a working mental model for the normal flow:
 
-- A project config in `preflight.yml`
-- A playbook with inline modules
-- A local run using `validate`, `plan`, `check`, and `apply`
+1. Define shared project configuration in `preflight.yml`.
+2. Describe desired state in a playbook.
+3. Use `validate` to catch structural issues.
+4. Use `plan` to inspect what will run.
+5. Use `check` to dry-run real execution logic.
+6. Use `apply` to converge the machine and record state.
 
 ## Next Step
 
-Move on to [Run a playbook](../how-to/run-a-playbook.md) for common execution patterns, or use the [YAML reference](../reference/yaml.md) when you need exact field names.
+Move on to [Run a playbook](../how-to/run-a-playbook.md) for everyday execution patterns, or jump to [Playbook and action YAML reference](../reference/yaml.md) when you need exact field names and task shapes.

@@ -1,15 +1,15 @@
 # Use Plugin Modules In Playbooks
 
-Use this guide when you want to run an external plugin as part of a playbook or action.
+Use this guide when you want a playbook or action to call an external executable plugin.
 
 ## Prerequisites
 
 - A plugin executable named `preflight-plugin-<name>` available in a discovered plugin directory
 - A playbook or action that should call the plugin
 
-See [CLI reference](../reference/cli.md) for the `plugin` commands and [Plugin Reference](../reference/plugins.md) for the execution contract.
+For the protocol details, see [Plugin reference](../reference/plugins.md).
 
-## Check That Preflight Can See The Plugin
+## 1. Confirm Discovery And Initialization
 
 List discovered plugins:
 
@@ -23,11 +23,11 @@ Inspect one plugin:
 preflight plugin info signage_sync
 ```
 
-If initialization fails here, fix that first before wiring the plugin into a playbook.
+Fix any initialization error here before you wire the plugin into YAML. Preflight refuses to register plugins that fail startup, collide with built-in module names, or appear more than once under the same logical name.
 
-## Call The Plugin From A Task
+## 2. Call The Plugin From A Task
 
-Use the explicit `module` and `params` task form:
+Use the explicit `module` plus `params` task form:
 
 ```yaml
 tasks:
@@ -38,11 +38,16 @@ tasks:
       destination: "C:\\Signage"
 ```
 
-This works in both `playbook.yml` and `action.yml` tasks.
+This works in both `playbook.yml` and `action.yml`.
 
-## Use Normal Task Controls
+Why the explicit form matters:
 
-Plugin-backed tasks support the same task-level controls as built-in modules:
+- Plugin modules are discovered at runtime, so they are not part of the static YAML schema.
+- `module: <name>` keeps plugin invocation aligned with the same `Check()` then `Apply()` contract used by built-ins.
+
+## 3. Use Normal Task Controls
+
+Plugin-backed tasks still support the normal task-level controls:
 
 - `when`
 - `depends_on`
@@ -62,32 +67,32 @@ tasks:
     tags: ["content"]
 ```
 
-## Stage Plugin Tasks Into Offline Bundles
+## 4. Stage Plugin Tasks Into Offline Bundles
 
-If a staged plan references a plugin task, Preflight includes that plugin executable in the per-target bundle automatically.
+If a staged plan references a plugin task, Preflight includes that plugin executable in the target-specific bundle automatically.
 
 ```bash
 preflight stage playbooks/lobby.yml
 ```
 
-This only succeeds when the plugin can be initialized during staging.
+Staging only succeeds if the plugin can be initialized and copied during the stage step.
 
 ## Troubleshooting
 
 ### The task says the module is unknown
 
-Check the plugin name reported by:
+Use the logical name reported by:
 
 ```bash
 preflight plugin info <name>
 ```
 
-Use that logical name in `module:`.
+That logical name, not necessarily the raw filename, is what belongs in `module:`.
 
-### The plugin name conflicts with a built-in module
+### The plugin conflicts with a built-in module
 
-Rename the plugin. Built-in module names are reserved and cannot be shadowed by plugins.
+Rename the plugin. Built-in names are reserved.
 
 ### The plugin works locally but not in a staged bundle
 
-Make sure the plugin is referenced by the plan you staged and that the staged bundle is the one generated for that target.
+Make sure the staged plan actually references the plugin task and that you are applying the bundle generated for that target. Offline apply only sees the plugin files embedded in the bundle.

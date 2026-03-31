@@ -1,56 +1,66 @@
 # Run A Playbook
 
-Use this guide when you already have a playbook and want to validate it, inspect the plan, or execute it with the right flags.
+Use this guide when you already have a playbook and want to validate it, inspect the plan, dry-run it, or apply it with the right flags.
 
 ## Prerequisites
 
 - An installed `preflight` binary
-- A `preflight.yml` file if you rely on project vars or secrets
 - A playbook file
-- An `inventory.yml` file if you want to target remote hosts or groups
+- A `preflight.yml` file if you rely on shared vars or secrets
+- An `inventory.yml` file if you want to select remote hosts or groups
 
-If you need the CLI first, follow [Install Preflight](./install-preflight.md).
-If you want an end-to-end remote example, follow [Run a playbook against remote hosts](./remote-execution.md).
+If you need an end-to-end onboarding path first, use [Quickstart](../tutorials/quickstart.md).
 
+## Validate Before Execution
 
-## Validate Before Running
-
-Use `validate` to catch parse and action-resolution errors:
+Check that the playbook parses and direct `uses:` references resolve:
 
 ```bash
 preflight validate playbooks/lobby.yml
 ```
 
-Use `plan` to inspect the flattened task list:
+This is the fastest sanity check, but it is intentionally shallow. It does not gather facts, contact targets, or prove that a task will succeed at runtime.
+
+## Inspect The Flattened Plan
+
+Preview the expanded task list:
 
 ```bash
 preflight plan playbooks/lobby.yml
-preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
-## Dry-Run A Playbook
+Add variables at planning time:
 
-Use either command:
+```bash
+preflight plan playbooks/lobby.yml --var content_root=D:\\Exhibits\\Content
+```
+
+Why `plan` matters:
+
+- It shows the order of execution after action expansion and playbook imports.
+- It lets you verify tag filters and rendered task names.
+- It stays pure, so `facts.*` expressions may remain unresolved until `check` or `apply`.
+
+## Dry-Run The Real Execution Path
+
+Use either form:
 
 ```bash
 preflight check playbooks/lobby.yml
 preflight apply playbooks/lobby.yml --check
 ```
 
-Both paths run in dry-run mode.
+Both paths run in dry-run mode. Tasks still go through the normal runner pipeline, including dependency ordering and execution-time rendering, but changes are not applied.
 
-> [!TIP]
-> `preflight diff <playbook>` compares the current plan to the recorded `state/provision.json` file. Use `check` when you want a dry-run execution pass.
+## Apply The Playbook
 
-## Apply A Playbook
-
-Run:
+Run the normal apply:
 
 ```bash
 preflight apply playbooks/lobby.yml
 ```
 
-Add variable overrides with `--var`:
+Override variables from the CLI when needed:
 
 ```bash
 preflight apply playbooks/lobby.yml \
@@ -58,23 +68,15 @@ preflight apply playbooks/lobby.yml \
   --var app_env=production
 ```
 
-Variable precedence during planning is:
+Later variable layers win. For a normal inventory-backed run the precedence is:
 
 ```text
-project vars -> inventory group vars -> inventory host vars -> playbook vars -> --var flags
+preflight.yml vars
+  -> inventory group vars
+    -> inventory host vars
+      -> playbook vars
+        -> --var flags
 ```
-
-## Choose Hosts From Inventory
-
-Use `--target` to select one host, one group, or several selectors:
-
-```bash
-preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
-preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
-preflight apply playbooks/lobby.yml --target lobby --target gallery --inventory inventory.yml
-```
-
-Selectors are resolved in order, then merged into a deduplicated host set.
 
 ## Filter By Tags
 
@@ -90,9 +92,30 @@ Skip selected tasks:
 preflight apply playbooks/lobby.yml --skip-tags reboot
 ```
 
+Tag filtering happens in the runner after the plan has been built, so skipped tasks still appear in the plan but are recorded as skipped during execution.
+
+## Select Inventory Hosts
+
+Pick one host, one group, or several selectors:
+
+```bash
+preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+preflight apply playbooks/lobby.yml --target lobby --target gallery --inventory inventory.yml
+```
+
+Selector rules:
+
+- A selector may be a host name, a group name, or `all`.
+- Repeating `--target` builds a union.
+- Hosts are deduplicated by name.
+- With no `--target`, Preflight uses a local target.
+
+For a complete inventory example, see [Run a playbook against remote hosts](./remote-execution.md).
+
 ## Stop At A Pipeline Phase
 
-Use `--phase` when you want to run only part of the pipeline:
+Use `--phase` when you want only part of the pipeline:
 
 ```bash
 preflight apply playbooks/lobby.yml --phase plan
@@ -103,37 +126,42 @@ preflight stage playbooks/lobby.yml
 
 Current behavior:
 
-| Phase | Status |
+| Phase | What it does |
 | --- | --- |
-| `plan` | Implemented |
-| `fetch` | Implemented for remote action download and lockfile updates |
+| `plan` | Expands the playbook into a target-specific execution plan without mutation |
+| `fetch` | Acquires remote action refs into the cache and updates `preflight.lock` |
 | `stage` | Writes one offline bundle zip per resolved target |
-| `apply` | Implemented |
+| `apply` | Runs the full execution pass |
 
-Use `preflight apply --bundle <bundle.zip>` to execute a staged bundle without re-resolving the playbook.
+Use bundle apply later with:
 
-If you are preparing a transfer package for an isolated environment, follow [Stage bundles for air-gapped deployment](./air-gapped-deployment.md).
+```bash
+preflight apply --bundle dist/bundles/<bundle>.zip
+```
+
+If you are staging for an isolated site, follow [Stage bundles for air-gapped deployment](./air-gapped-deployment.md).
 
 ## Choose An Output Format
 
-Available values:
-
-| Flag | Behavior |
-| --- | --- |
-| `--output text` | Text renderer |
-| `--output json` | Newline-delimited JSON renderer |
-| `--output jsonl` | Same renderer as `json` |
-| `--output tui` | Terminal UI renderer |
-
-Example:
+Examples:
 
 ```bash
+preflight apply playbooks/lobby.yml --output text
+preflight apply playbooks/lobby.yml --output tui
+preflight apply playbooks/lobby.yml --output json
 preflight apply playbooks/lobby.yml --output jsonl
 ```
 
+Notes:
+
+- `text` is the plain renderer.
+- `tui` is the interactive terminal UI renderer.
+- `json` and `jsonl` both emit newline-delimited JSON events.
+- With no explicit flag, interactive terminals auto-select `tui`; non-TTY output falls back to `text`.
+
 ## Control Host Parallelism
 
-Use `--concurrency` to cap how many hosts execute at once:
+Cap concurrent host execution:
 
 ```bash
 preflight apply playbooks/lobby.yml --target all --inventory inventory.yml --concurrency 5
@@ -141,50 +169,53 @@ preflight apply playbooks/lobby.yml --target all --inventory inventory.yml --con
 
 `0` means unlimited host concurrency.
 
-## Inspect The Recorded State
+This setting only affects fan-out across resolved hosts. Inside each host run, task execution still follows the playbook DAG order.
 
-After an apply, inspect the stored state:
+## Inspect Recorded State
+
+Look at the latest recorded state:
 
 ```bash
 preflight state show
+```
+
+Compare the current plan to recorded state:
+
+```bash
+preflight diff playbooks/lobby.yml
 preflight state diff playbooks/lobby.yml
 ```
 
-`state diff` compares the current plan to the recorded `state/provision.json` file.
-The output distinguishes `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY` tasks.
-
-For the state file structure and diff status definitions, see [State reference](../reference/state.md).
-
-For inventory-backed runs, apply writes per-host state files under `state/targets/<host>.json`. Inspect one directly with:
+For per-host inventory-backed state:
 
 ```bash
 preflight state show --state-file state/targets/lobby-pc-01.json
 preflight state diff playbooks/lobby.yml --state-file state/targets/lobby-pc-01.json
 ```
 
+See [Inspect state and diffs](./inspect-state-and-diff.md) for a task-focused workflow.
+
 ## Troubleshooting
 
 ### A `uses:` reference fails to resolve
 
-Preflight resolves actions in this order:
+Action resolution checks these sources in order:
 
 1. Embedded stdlib
-2. `./actions` relative to the project root
+2. `./actions` in the project
 3. `~/.preflight/actions`
-4. Git resolver
+4. Git-backed refs through the resolver chain
 
-Remote refs are resolved offline from the cache and `preflight.lock`. If a remote ref is missing, run `preflight action fetch <ref>` or `preflight apply <playbook>` to populate the cache first.
-
-### A host is missing from the run
-
-Check the selector and inventory path first:
+If a remote ref is missing locally, fetch it first:
 
 ```bash
-preflight inventory list --inventory inventory.yml
+preflight action fetch github.com/myorg/actions/signage@v2.1
 ```
 
-Remember that repeated `--target` flags build a union and deduplicate by host name.
+### `plan` still shows `{{ facts... }}`
 
-### `plan` output still shows `{{ facts... }}`
+That is expected. `plan` does not contact targets. Final fact-dependent rendering happens during `check` and `apply`.
 
-That is expected. `plan` stays a pure phase and does not contact hosts. Final fact-dependent rendering happens during `check` and `apply`.
+### I expected file diffs from `--diff`
+
+The flag exists on the CLI surface, but it is not currently wired into execution output. Use `preflight diff` or `preflight state diff` for implemented comparison behavior today.

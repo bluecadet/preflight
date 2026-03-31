@@ -1,20 +1,26 @@
 # Plugin Reference
 
-This page describes how Preflight discovers, invokes, and stages executable plugins.
+This page describes how Preflight discovers, initializes, executes, and stages executable plugins.
 
 ## Purpose
 
-Plugins extend the module library without using Go shared objects. Each plugin is a standalone executable that speaks JSON-RPC over stdin and stdout.
+Preflight plugins extend the module library without using Go `.so` plugins, which are not a practical fit for Windows. A plugin is a standalone executable that speaks JSON-RPC over stdin and stdout.
+
+The runner treats a plugin-backed module like any other module:
+
+- `Check()` runs first
+- `Apply()` runs only when change is needed
+- dry-run stays on the `Check()` side
 
 ## Discovery
 
-Preflight scans plugin directories in this order:
+Plugins are scanned in this order:
 
 1. The directory alongside the `preflight` binary
 2. `~/.preflight/plugins`
 3. `./plugins` relative to the working directory
 
-For staged bundle apply, Preflight uses the bundle-local `plugins/` directory first and isolates execution to the staged payload.
+During staged bundle apply, Preflight uses the bundle-local `plugins/` directory and can isolate discovery to that payload.
 
 ## File Naming
 
@@ -25,25 +31,32 @@ Examples:
 - `preflight-plugin-signage_sync`
 - `preflight-plugin-signage_sync.exe`
 
-On Windows, the executable must end with `.exe`.
+On Windows, the executable must end in `.exe`.
 
-## Task Invocation
+## Registration Rules
 
-Plugin-backed tasks use the explicit module form:
+Preflight initializes discovered plugins before registering them.
+
+Registration fails when:
+
+- the plugin cannot be started
+- `initialize` fails
+- two plugins resolve to the same logical name
+- a plugin name conflicts with a built-in module name
+
+## YAML Invocation
+
+Use the explicit module task form:
 
 ```yaml
 tasks:
-  - name: Run plugin task
+  - name: Sync signage content
     module: signage_sync
     params:
       source: "\\\\nas01\\signage"
 ```
 
-Preflight treats that plugin exactly like a module task in the runner:
-
-- `Check` runs first
-- `Apply` runs only when `Check` reports that change is needed
-- dry-run stays on the `Check` side
+Plugin-backed modules are discovered at runtime, so they do not appear as static inline-module keys in the JSON schema.
 
 ## JSON-RPC Methods
 
@@ -52,40 +65,39 @@ The runner uses these methods:
 | Method | Purpose |
 | --- | --- |
 | `initialize` | Report plugin name and version |
-| `check` | Return whether change is needed |
+| `check` | Report whether change is needed |
 | `apply` | Perform the change |
 
-The Go SDK for plugin authors lives in `pkg/plugin/sdk`.
+The bundled Go SDK lives in [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/plugin/sdk).
 
-## Initialization Rules
+## Go SDK Contract
 
-Preflight initializes discovered plugins before registering them for execution.
+Plugin authors implement:
 
-Registration fails when:
+- `Name() string`
+- `Check(args map[string]any) (CheckResult, error)`
+- `Apply(args map[string]any) (ApplyResult, error)`
 
-- the plugin cannot be started
-- `initialize` fails
-- two plugins report the same logical name
-- a plugin name conflicts with a built-in module name
+Then call `sdk.Serve(module)` from `main()`.
 
-## Offline Bundles
+## Bundle Behavior
 
-When a staged plan references a plugin-backed module, the bundle includes:
+When a staged plan references a plugin module, the bundle includes:
 
-- the plugin executable
-- module metadata in the bundle manifest
+- the plugin executable under `plugins/`
+- module metadata in `manifest.json`
 
-Staging fails if the referenced plugin cannot be initialized or copied into the bundle.
+Staging fails if the plugin cannot be initialized or copied.
 
 ## Related Commands
 
 | Command | Purpose |
 | --- | --- |
-| `preflight plugin list` | Show discovered plugins and initialization status |
-| `preflight plugin info <name>` | Show one plugin's path, source, version, and initialization state |
+| `preflight plugin list` | List discovered plugins and initialization status |
+| `preflight plugin info <name>` | Show one plugin’s details |
 
 ## Related Docs
 
-- [Use Plugin Modules In Playbooks](../how-to/use-plugin-modules.md)
-- [CLI reference](./cli.md)
-- [YAML reference](./yaml.md)
+- [Use plugin modules in playbooks](../how-to/use-plugin-modules.md)
+- [Bundle reference](./bundles.md)
+- [Targets, transports, and plugins](../explanation/targets-and-transports.md)

@@ -1,86 +1,107 @@
 # Stage Bundles For Air-Gapped Deployment
 
-Use this guide when you want to prepare a playbook on one machine, transfer the result to an isolated environment, and apply it there without re-resolving actions or plugins.
+Use this guide when you want to prepare a run on one machine, transfer the result to an isolated environment, and apply it there without re-reading the original playbook or re-fetching actions.
 
 ## Prerequisites
 
-- A working `preflight` checkout or installed binary on the staging machine
-- A playbook that already runs successfully in a connected environment
-- Any plugin executables required by the playbook available through normal plugin discovery
-- No tasks that require persisting decrypted secret values into the staged bundle
+- A working `preflight` binary on the staging machine
+- A playbook that already plans or applies successfully in a connected environment
+- Any referenced plugin executables discoverable during staging
+- No tasks that would require embedding decrypted secret values into the bundle
 
-## Create The Bundles
+## 1. Stage The Bundles
 
-Run `stage` from the project directory:
+Run:
 
 ```bash
 preflight stage playbooks/lobby.yml
 ```
 
-By default Preflight writes bundles under `dist/bundles/`.
+By default bundles are written under `dist/bundles/`.
 
-You can choose another output directory:
+Choose another output directory if needed:
 
 ```bash
 preflight stage playbooks/lobby.yml --bundle-output-dir ./out/bundles
 ```
 
-## Understand What Gets Written
+Preflight creates one bundle per resolved target, not one site-wide archive.
 
-Preflight writes one zip per resolved target. Each bundle includes:
+## 2. Understand What The Bundle Contains
 
-- a rendered execution plan for one target
-- a bundle manifest with playbook, target, version, module, checksum, and lockfile metadata
-- the Preflight runtime binary used for staging
-- any plugin executables referenced by the plan
+Each bundle is a zip archive that contains:
 
-Bundle filenames include the playbook name, target name, target OS, and target architecture.
+- `manifest.json`
+- `plan.json`
+- the runtime binary under `runtime/`
+- any referenced plugin executables under `plugins/`
 
-## Transfer A Bundle
+The manifest records:
 
-Copy the target-specific zip to the offline machine using your normal transfer process.
+- playbook name
+- target name
+- target OS and architecture
+- build metadata for the staging binary
+- referenced modules
+- checksums
+- lockfile entries for fetched remote actions
 
-If you staged more than one target, make sure each machine receives its own bundle.
+This design keeps staged execution reproducible. The offline machine runs the exact rendered plan that was staged, not a fresh re-plan.
 
-## Apply The Bundle Offline
+## 3. Transfer The Correct Bundle
+
+Copy the target-specific zip to the isolated machine using your normal transfer method.
+
+If you staged more than one target, make sure each machine receives its own bundle. The plan inside the bundle is already target-specific.
+
+## 4. Apply The Bundle Offline
 
 Run:
 
 ```bash
-preflight apply --bundle dist/bundles/lobby-baseline-localhost-linux-amd64.zip
+preflight apply --bundle dist/bundles/<bundle>.zip
 ```
 
-You can still choose a custom state file:
+Choose a custom state file if you want:
 
 ```bash
 preflight apply --bundle ./bundle.zip --state-file ./state/offline.json
 ```
 
-## Know The Current Limits
+Bundle apply reads `plan.json` directly from the archive, extracts the payload to a temporary directory, builds a module registry from the bundled plugins, and then executes the plan locally.
 
-Bundle staging fails when:
+## 5. Know The Important Limits
 
-- a task would require embedding decrypted secret values in the bundle
-- a referenced plugin module does not have a compatible executable available during staging
-- the plan references a module that cannot be resolved at staging time
+Staging fails when:
 
-Offline apply executes the bundled plan directly. It does not fetch actions, re-read the playbook, or rediscover staged plugins from your normal global plugin directories.
+- a task would require embedding a decrypted secret value
+- the plan references an unknown module
+- a referenced plugin cannot be initialized or copied into the bundle
+
+Offline apply does not:
+
+- re-fetch actions
+- re-read the source playbook
+- rediscover plugins from your normal global plugin directories
+
+That isolation is a feature. It keeps the staged artifact self-contained and predictable.
 
 ## Troubleshooting
 
 ### Staging fails because of secrets
 
-Refactor the playbook so the isolated machine can resolve secrets locally at apply time, or remove the secret-dependent task from the staged run.
+The runner refuses to embed secret values into a staged bundle. Move decryption to the offline machine, or refactor the playbook so the staged run does not depend on those secret-bearing parameters.
 
-### Staging fails because of a plugin
+### A plugin works normally but not when staged
 
-Confirm the plugin executable is discoverable before running `stage`:
+Confirm the plugin is discoverable before staging:
 
 ```bash
 preflight plugin list
-preflight plugin info <name>
 ```
 
-### You are not sure which bundle belongs to which machine
+Only plugins actually referenced by the staged plan are copied into the bundle.
 
-Use the bundle filename and the target name in the manifest metadata. Preflight stages one bundle per resolved target, not one site-wide archive.
+### I am not sure which bundle belongs to which host
+
+The filename includes the playbook name, target name, target OS, and target architecture. The same values also appear in `manifest.json`.
