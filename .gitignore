@@ -1,0 +1,4 @@
+dist/
+state/
+*.exe
+!internal/target/
