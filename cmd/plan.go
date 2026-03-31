@@ -1,13 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
@@ -27,6 +25,15 @@ func init() {
 
 func runPlan(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
+	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+		return err
+	}
+
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
+	defer cancel()
 
 	varFlags, _ := cmd.Flags().GetStringArray("var")
 	vars := parseVars(varFlags)
@@ -34,14 +41,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	tags, _ := cmd.Flags().GetStringSlice("tags")
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 
-	pb, err := action.ParsePlaybookFile(playbookPath)
-	if err != nil {
-		return err
-	}
-
-	projectDir, _ := playbookDir(playbookPath)
-	chain := action.DefaultChain(projectDir)
-	projectCfg, err := loadProjectConfig(projectDir)
+	pb, _, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return err
 	}
@@ -61,12 +61,12 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		Vars:        vars,
 		Phase:       "plan",
 		Renderer:    renderer,
-		Secrets:     buildSecretsResolver(projectDir, projectCfg),
+		Secrets:     secretsResolver,
 	}
 
 	r := runner.New(tgt, chain, cfg)
 
-	plan, err := r.Plan(context.Background(), pb)
+	plan, err := r.Plan(ctx, pb)
 	if err != nil {
 		return err
 	}

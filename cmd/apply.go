@@ -1,12 +1,11 @@
 package cmd
 
 import (
-	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
@@ -31,6 +30,15 @@ func runApply(cmd *cobra.Command, args []string) error {
 // runPlaybook is the shared implementation for apply and check.
 func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	playbookPath := getPlaybookPath(args)
+	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+		return err
+	}
+
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
+	defer cancel()
 
 	// Parse global flags.
 	varFlags, _ := cmd.Flags().GetStringArray("var")
@@ -51,16 +59,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	renderer := output.New(outFmt, os.Stdout)
 	defer renderer.Close()
 
-	// Parse the playbook.
-	pb, err := action.ParsePlaybookFile(playbookPath)
-	if err != nil {
-		return err
-	}
-
-	// Build the resolver chain using the directory containing the playbook.
-	projectDir, _ := playbookDir(playbookPath)
-	chain := action.DefaultChain(projectDir)
-	projectCfg, err := loadProjectConfig(projectDir)
+	pb, _, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return err
 	}
@@ -79,31 +78,19 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		Vars:        vars,
 		Phase:       phase,
 		Renderer:    renderer,
-		Secrets:     buildSecretsResolver(projectDir, projectCfg),
+		Secrets:     secretsResolver,
+		StatePath:   stateFilePath(cmd),
 	}
 
 	r := runner.New(tgt, chain, cfg)
-	return r.Run(context.Background(), pb)
+	return r.Run(ctx, pb)
 }
 
 // playbookDir returns the directory containing the playbook file.
 func playbookDir(playbookPath string) (string, error) {
-	abs, err := os.Getwd()
+	abs, err := filepath.Abs(playbookPath)
 	if err != nil {
-		return ".", err
+		return "", err
 	}
-	// If the playbookPath has a directory component, use it.
-	if idx := lastSlash(playbookPath); idx >= 0 {
-		return playbookPath[:idx], nil
-	}
-	return abs, nil
-}
-
-func lastSlash(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '/' || s[i] == '\\' {
-			return i
-		}
-	}
-	return -1
+	return filepath.Dir(abs), nil
 }

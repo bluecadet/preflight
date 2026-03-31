@@ -5,6 +5,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -407,5 +408,99 @@ func TestLoadStateMissing(t *testing.T) {
 	}
 	if len(s.Results) != 0 {
 		t.Errorf("expected empty Results, got %d", len(s.Results))
+	}
+}
+
+func TestComparePlannedTasksNoStateMarksAllNew(t *testing.T) {
+	comparisons := ComparePlannedTasks([]PlannedTaskState{
+		{TaskID: "task-0", TaskName: "one", ParamHash: "a"},
+		{TaskID: "task-1", TaskName: "two", ParamHash: "b"},
+	}, &State{Results: map[string]TaskResult{}})
+
+	if len(comparisons) != 2 {
+		t.Fatalf("expected 2 comparisons, got %d", len(comparisons))
+	}
+	for i, comparison := range comparisons {
+		if comparison.Status != ComparisonStatusNew {
+			t.Fatalf("comparison %d: expected NEW, got %s", i, comparison.Status)
+		}
+	}
+}
+
+func TestComparePlannedTasksMarksKnownChangedAndRemoved(t *testing.T) {
+	state := &State{
+		Results: map[string]TaskResult{
+			"task-0": {TaskID: "task-0", TaskName: "known task", ParamHash: "same", Status: target.StatusOK},
+			"task-1": {TaskID: "task-1", TaskName: "changed task", ParamHash: "old", Status: target.StatusChanged},
+			"task-2": {TaskID: "task-2", TaskName: "removed task", ParamHash: "gone", Status: target.StatusFailed},
+		},
+	}
+
+	comparisons := ComparePlannedTasks([]PlannedTaskState{
+		{TaskID: "task-0", TaskName: "known task", ParamHash: "same"},
+		{TaskID: "task-1", TaskName: "changed task", ParamHash: "new"},
+	}, state)
+
+	if len(comparisons) != 3 {
+		t.Fatalf("expected 3 comparisons, got %d", len(comparisons))
+	}
+	if comparisons[0].Status != ComparisonStatusKnown {
+		t.Fatalf("expected first comparison to be KNOWN, got %s", comparisons[0].Status)
+	}
+	if comparisons[1].Status != ComparisonStatusChanged {
+		t.Fatalf("expected second comparison to be CHANGED, got %s", comparisons[1].Status)
+	}
+	if comparisons[2].Status != ComparisonStatusRemoved {
+		t.Fatalf("expected third comparison to be REMOVED, got %s", comparisons[2].Status)
+	}
+	if comparisons[2].RecordedStatus != target.StatusFailed {
+		t.Fatalf("expected removed task to keep recorded status, got %s", comparisons[2].RecordedStatus)
+	}
+}
+
+func TestApplySavesStateWithParamHashes(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state", "provision.json")
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusChanged}}}
+	r := New(mt, emptyResolver(), Config{StatePath: statePath})
+	plan := &ExecutionPlan{
+		PlaybookName: "state-save",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "shell task",
+			Module: "shell",
+			Params: map[string]any{"cmd": "echo"},
+		}},
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	state, err := LoadState(statePath)
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	recorded := state.Results["task-0"]
+	if recorded.ParamHash == "" {
+		t.Fatal("expected saved state to include param hash")
+	}
+	if recorded.ParamHash != ParamHash(plan.Tasks[0].Params) {
+		t.Fatalf("expected param hash %q, got %q", ParamHash(plan.Tasks[0].Params), recorded.ParamHash)
+	}
+}
+
+func TestRunFetchAndStagePhasesReturnNotImplemented(t *testing.T) {
+	playbook := newShellPlaybook("phase-test")
+	for _, phase := range []string{"fetch", "stage"} {
+		r := New(&mockTarget{}, emptyResolver(), Config{Phase: phase})
+		err := r.Run(context.Background(), playbook)
+		if err == nil {
+			t.Fatalf("phase %q: expected error, got nil", phase)
+		}
+		if !strings.Contains(err.Error(), "not implemented") {
+			t.Fatalf("phase %q: expected not implemented error, got %v", phase, err)
+		}
 	}
 }

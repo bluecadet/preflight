@@ -6,16 +6,16 @@ import (
 
 var diffCmd = &cobra.Command{
 	Use:   "diff <playbook>",
-	Short: "Show what would change if the playbook were applied (read-only check mode)",
+	Short: "Compare the current plan against recorded state",
 	Args:  cobra.ExactArgs(1),
 	RunE:  runDiff,
 }
 
 func init() {
+	diffCmd.Flags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
 	rootCmd.AddCommand(diffCmd)
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
-	// diff is check mode + the --diff flag already set by root; force dry-run.
-	return runPlaybook(cmd, args, true)
+	return runStateComparison("diff", cmd, args)
 }

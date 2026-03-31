@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -25,17 +24,24 @@ func init() {
 }
 
 func runFacts(cmd *cobra.Command, args []string) error {
-	// For now only local target is supported; a future version will look up
-	// the target name in inventory and build the appropriate transport.
-	if len(args) > 0 && args[0] != "local" && args[0] != "localhost" {
-		fmt.Fprintf(os.Stderr, "warning: remote targets not yet implemented; using local\n")
+	if err := validateLocalTargets(cmd); err != nil {
+		return err
 	}
+	if len(args) > 0 && !isLocalTarget(args[0]) {
+		return fmt.Errorf("facts only supports %q or %q in local-only mode", "local", "localhost")
+	}
+
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
+	defer cancel()
 
 	registry := module.Registry()
 	tgt := target.NewLocalTarget(registry)
 
 	g := facts.New(tgt)
-	f, err := g.Gather(context.Background())
+	f, err := g.Gather(ctx)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}

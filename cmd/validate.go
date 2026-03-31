@@ -23,7 +23,7 @@ func init() {
 func runValidate(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
 
-	pb, err := action.ParsePlaybookFile(playbookPath)
+	pb, err := action.LoadPlaybookFile(playbookPath)
 	if err != nil {
 		return fmt.Errorf("playbook parse error: %w", err)
 	}

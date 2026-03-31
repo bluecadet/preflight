@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -65,4 +66,24 @@ func buildSecretsResolver(projectDir string, cfg *config.Config) *secrets.Resolv
 	return secrets.NewResolver(map[string]secrets.Provider{
 		secrets.DefaultProviderName: secrets.NewRepoProvider(projectDir, cfg.Secrets),
 	})
+}
+
+func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *config.Config, *secrets.Resolver, action.Chain, error) {
+	pb, err := action.LoadPlaybookFile(playbookPath)
+	if err != nil {
+		return nil, "", nil, nil, nil, err
+	}
+
+	projectDir, err := playbookDir(playbookPath)
+	if err != nil {
+		return nil, "", nil, nil, nil, err
+	}
+
+	projectCfg, err := loadProjectConfig(projectDir)
+	if err != nil {
+		return nil, "", nil, nil, nil, err
+	}
+
+	secretsResolver := buildSecretsResolver(projectDir, projectCfg)
+	return pb, projectDir, projectCfg, secretsResolver, action.DefaultChain(projectDir), nil
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/target"
@@ -65,23 +63,31 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 }
 
 func runStateDiff(cmd *cobra.Command, args []string) error {
-	playbookPath := getPlaybookPath(args)
-	statePath := stateFilePath(cmd)
+	return runStateComparison("state diff", cmd, args)
+}
 
-	// Load recorded state.
+func runStateComparison(label string, cmd *cobra.Command, args []string) error {
+	playbookPath := getPlaybookPath(args)
+	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+		return err
+	}
+
+	ctx, cancel, err := commandContext(cmd)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+
+	statePath := stateFilePath(cmd)
 	state, err := runner.LoadState(statePath)
 	if err != nil {
-		return fmt.Errorf("state diff: load state: %w", err)
+		return fmt.Errorf("%s: load state: %w", label, err)
 	}
 
-	// Parse playbook and build a plan to get the desired task list.
-	pb, err := action.ParsePlaybookFile(playbookPath)
+	pb, _, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
-		return fmt.Errorf("state diff: parse playbook: %w", err)
+		return fmt.Errorf("%s: %w", label, err)
 	}
-
-	projectDir, _ := playbookDir(playbookPath)
-	chain := action.DefaultChain(projectDir)
 
 	registry := module.Registry()
 	tgt := target.NewLocalTarget(registry)
@@ -90,17 +96,24 @@ func runStateDiff(cmd *cobra.Command, args []string) error {
 	vars := parseVars(varFlags)
 
 	cfg := runner.Config{
-		Vars:  vars,
-		Phase: "plan",
+		ProjectVars: projectCfg.Vars,
+		Vars:        vars,
+		Phase:       "plan",
+		Secrets:     secretsResolver,
 	}
 
 	r := runner.New(tgt, chain, cfg)
-	plan, err := r.Plan(context.Background(), pb)
+	plan, err := r.Plan(ctx, pb)
 	if err != nil {
-		return fmt.Errorf("state diff: plan: %w", err)
+		return fmt.Errorf("%s: plan: %w", label, err)
 	}
 
-	// Compare plan tasks against recorded state.
+	plannedState, err := runner.BuildPlannedTaskState(ctx, plan, secretsResolver)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+	comparisons := runner.ComparePlannedTasks(plannedState, state)
+
 	fmt.Printf("State diff for playbook: %s\n", plan.PlaybookName)
 	fmt.Printf("Last applied: %s\n\n", func() string {
 		if state.LastApplied.IsZero() {
@@ -112,24 +125,12 @@ func runStateDiff(cmd *cobra.Command, args []string) error {
 	fmt.Printf("%-10s %-40s %s\n", "STATUS", "TASK", "RECORDED STATUS")
 	fmt.Printf("%-10s %-40s %s\n", "----------", "----------------------------------------", "---------------")
 
-	for _, pt := range plan.Tasks {
-		recorded, ok := state.Results[pt.ID]
-		if !ok {
-			fmt.Printf("%-10s %-40s %s\n", "NEW", pt.Name, "(not recorded)")
-		} else {
-			fmt.Printf("%-10s %-40s %s\n", "KNOWN", pt.Name, string(recorded.Status))
+	for _, comparison := range comparisons {
+		recordedStatus := "(not recorded)"
+		if comparison.Status == runner.ComparisonStatusRemoved || comparison.Status == runner.ComparisonStatusKnown || comparison.Status == runner.ComparisonStatusChanged {
+			recordedStatus = string(comparison.RecordedStatus)
 		}
-	}
-
-	// Report tasks in state but not in the plan (removed tasks).
-	planIDs := make(map[string]bool)
-	for _, pt := range plan.Tasks {
-		planIDs[pt.ID] = true
-	}
-	for id, result := range state.Results {
-		if !planIDs[id] {
-			fmt.Printf("%-10s %-40s %s\n", "REMOVED", result.TaskName, string(result.Status))
-		}
+		fmt.Printf("%-10s %-40s %s\n", comparison.Status, comparison.TaskName, recordedStatus)
 	}
 
 	return nil

@@ -1,13 +1,17 @@
 package runner
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"slices"
 	"time"
 
+	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -24,6 +28,28 @@ type TaskResult struct {
 type State struct {
 	LastApplied time.Time             `json:"last_applied"`
 	Results     map[string]TaskResult `json:"results"` // keyed by task ID
+}
+
+type ComparisonStatus string
+
+const (
+	ComparisonStatusNew     ComparisonStatus = "NEW"
+	ComparisonStatusChanged ComparisonStatus = "CHANGED"
+	ComparisonStatusKnown   ComparisonStatus = "KNOWN"
+	ComparisonStatusRemoved ComparisonStatus = "REMOVED"
+)
+
+type PlannedTaskState struct {
+	TaskID    string
+	TaskName  string
+	ParamHash string
+}
+
+type TaskComparison struct {
+	Status         ComparisonStatus
+	TaskID         string
+	TaskName       string
+	RecordedStatus target.Status
 }
 
 // LoadState reads a state file from path. If the file does not exist, an empty
@@ -54,6 +80,9 @@ func (s *State) Save(path string) error {
 	if err != nil {
 		return fmt.Errorf("state: marshal: %w", err)
 	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("state: mkdir %q: %w", filepath.Dir(path), err)
+	}
 	// Write to a temp file in the same directory, then rename for atomicity.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
@@ -82,4 +111,91 @@ func ParamHash(params map[string]any) string {
 	}
 	sum := sha256.Sum256(data)
 	return fmt.Sprintf("%x", sum)
+}
+
+func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, resolver *secrets.Resolver) ([]PlannedTaskState, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if plan == nil {
+		return nil, fmt.Errorf("state: nil execution plan")
+	}
+
+	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		params := task.Params
+		if resolver != nil && resolver.HasProviders() {
+			resolved, err := resolver.ResolveMap(ctx, task.Params)
+			if err != nil {
+				return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
+			}
+			params = resolved
+		}
+
+		tasks = append(tasks, PlannedTaskState{
+			TaskID:    task.ID,
+			TaskName:  task.Name,
+			ParamHash: ParamHash(params),
+		})
+	}
+	return tasks, nil
+}
+
+func ComparePlannedTasks(planned []PlannedTaskState, state *State) []TaskComparison {
+	if state == nil {
+		state = &State{Results: make(map[string]TaskResult)}
+	}
+	if state.Results == nil {
+		state.Results = make(map[string]TaskResult)
+	}
+
+	comparisons := make([]TaskComparison, 0, len(planned)+len(state.Results))
+	seen := make(map[string]struct{}, len(planned))
+
+	for _, task := range planned {
+		seen[task.TaskID] = struct{}{}
+		recorded, ok := state.Results[task.TaskID]
+		if !ok {
+			comparisons = append(comparisons, TaskComparison{
+				Status:   ComparisonStatusNew,
+				TaskID:   task.TaskID,
+				TaskName: task.TaskName,
+			})
+			continue
+		}
+
+		status := ComparisonStatusKnown
+		if recorded.ParamHash != task.ParamHash {
+			status = ComparisonStatusChanged
+		}
+		comparisons = append(comparisons, TaskComparison{
+			Status:         status,
+			TaskID:         task.TaskID,
+			TaskName:       task.TaskName,
+			RecordedStatus: recorded.Status,
+		})
+	}
+
+	removedIDs := make([]string, 0, len(state.Results))
+	for taskID := range state.Results {
+		if _, ok := seen[taskID]; ok {
+			continue
+		}
+		removedIDs = append(removedIDs, taskID)
+	}
+	slices.Sort(removedIDs)
+	for _, taskID := range removedIDs {
+		recorded := state.Results[taskID]
+		comparisons = append(comparisons, TaskComparison{
+			Status:         ComparisonStatusRemoved,
+			TaskID:         taskID,
+			TaskName:       recorded.TaskName,
+			RecordedStatus: recorded.Status,
+		})
+	}
+
+	return comparisons
 }

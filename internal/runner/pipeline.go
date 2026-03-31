@@ -37,6 +37,10 @@ type PlanTask struct {
 // Plan resolves all action refs, expands tasks into a flat list, resolves
 // variables. Returns an ExecutionPlan. Pure computation — no I/O against targets.
 func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+
 	// Merge variables: project vars first, then playbook vars, then CLI flags.
 	vars := make(map[string]any)
 	maps.Copy(vars, r.config.ProjectVars)
@@ -47,6 +51,9 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 	idx := 0
 
 	for i := range playbook.Tasks {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		task := &playbook.Tasks[i]
 		if err := r.expandTask(ctx, task, vars, &planTasks, &idx, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
@@ -66,6 +73,10 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 }
 
 func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, idx *int, label string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	if err := task.ResolveModule(); err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
@@ -153,27 +164,33 @@ func buildPlanTask(t *action.Task, idx int, eng *template.Engine) (*PlanTask, er
 }
 
 // Fetch downloads remote action refs not yet in cache.
-// Stub for now — validates that the plan is non-nil.
-func (r *Runner) Fetch(_ context.Context, plan *ExecutionPlan) error {
+func (r *Runner) Fetch(ctx context.Context, plan *ExecutionPlan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if plan == nil {
 		return fmt.Errorf("fetch: nil execution plan")
 	}
-	// TODO: download any remote action refs referenced in the plan.
-	return nil
+	return fmt.Errorf("fetch phase not implemented in local-only mode")
 }
 
 // Stage assembles a self-contained artifact bundle (zip).
-// Stub for now.
-func (r *Runner) Stage(_ context.Context, plan *ExecutionPlan) error {
+func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if plan == nil {
 		return fmt.Errorf("stage: nil execution plan")
 	}
-	// TODO: assemble artifact bundle for air-gapped targets.
-	return nil
+	return fmt.Errorf("stage phase not implemented in local-only mode")
 }
 
 // Apply executes the task graph against the target.
 func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	dag, err := BuildDAG(plan.Tasks)
 	if err != nil {
 		return fmt.Errorf("apply: build DAG: %w", err)
@@ -194,6 +211,10 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	failed := make(map[string]bool)
 
 	for _, pt := range ordered {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
@@ -202,6 +223,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				TaskName:  pt.Name,
 				Status:    target.StatusSkipped,
 				Timestamp: time.Now(),
+				ParamHash: ParamHash(pt.Params),
 			})
 			skippedCount++
 			succeeded[pt.ID] = false
@@ -224,6 +246,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				TaskName:  pt.Name,
 				Status:    target.StatusSkipped,
 				Timestamp: time.Now(),
+				ParamHash: ParamHash(pt.Params),
 			})
 			skippedCount++
 			succeeded[pt.ID] = false
@@ -243,6 +266,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 					TaskName:  pt.Name,
 					Status:    target.StatusSkipped,
 					Timestamp: time.Now(),
+					ParamHash: ParamHash(pt.Params),
 				})
 				skippedCount++
 				succeeded[pt.ID] = false
@@ -251,11 +275,13 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 
 		params := pt.Params
+		paramHash := ParamHash(params)
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
 			params, err = r.config.Secrets.ResolveMap(ctx, pt.Params)
 			if err != nil {
 				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 			}
+			paramHash = ParamHash(params)
 		}
 
 		// Execute the task against the target.
@@ -268,6 +294,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 					TaskName:  pt.Name,
 					Status:    target.StatusFailed,
 					Timestamp: time.Now(),
+					ParamHash: paramHash,
 				})
 				failedCount++
 				failed[pt.ID] = true
@@ -286,6 +313,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			TaskName:  pt.Name,
 			Status:    result.Status,
 			Timestamp: time.Now(),
+			ParamHash: paramHash,
 		})
 
 		r.emitTaskResult(pt, result.Status, result.Message)
@@ -311,6 +339,11 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	}
 
 	state.LastApplied = time.Now()
+	if !r.config.DryRun && r.config.StatePath != "" {
+		if err := state.Save(r.config.StatePath); err != nil {
+			return fmt.Errorf("apply: save state: %w", err)
+		}
+	}
 
 	// Emit play recap.
 	if r.config.Renderer != nil {
