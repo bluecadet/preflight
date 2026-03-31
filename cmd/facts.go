@@ -11,7 +11,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/inventory"
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
@@ -44,7 +43,10 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	registry := module.Registry()
+	registry, _, err := buildModuleRegistry("")
+	if err != nil {
+		return err
+	}
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	var hosts []targeting.ResolvedHost
 	if len(args) == 1 {

@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 // Client is the runner-side handle for a running plugin process.
 type Client struct {
 	name string
+	version string
 	cmd  *exec.Cmd
 	enc  *json.Encoder
 	dec  *json.Decoder
@@ -22,7 +24,13 @@ type Client struct {
 // NewClient starts the plugin at executablePath, sends an "initialize" request,
 // and returns a ready-to-use Client.
 func NewClient(executablePath string) (*Client, error) {
-	cmd := exec.Command(executablePath)
+	return NewClientContext(context.Background(), executablePath)
+}
+
+// NewClientContext starts the plugin with a context, sends an "initialize"
+// request, and returns a ready-to-use Client.
+func NewClientContext(ctx context.Context, executablePath string) (*Client, error) {
+	cmd := exec.CommandContext(ctx, executablePath)
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -51,12 +59,16 @@ func NewClient(executablePath string) (*Client, error) {
 		return nil, fmt.Errorf("plugin initialize: %w", err)
 	}
 	c.name = initResult.Name
+	c.version = initResult.Version
 
 	return c, nil
 }
 
 // Name returns the plugin's self-reported name.
 func (c *Client) Name() string { return c.name }
+
+// Version returns the plugin's self-reported version.
+func (c *Client) Version() string { return c.version }
 
 // Check calls the plugin's check method.
 func (c *Client) Check(args map[string]any) (CheckResult, error) {

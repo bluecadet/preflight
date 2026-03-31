@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/target"
 )
@@ -89,7 +88,10 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
-	registry := module.Registry()
+	registry, _, err := buildModuleRegistry("")
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 	tgt := target.NewLocalTarget(registry)
 
 	varFlags, _ := cmd.Flags().GetStringArray("var")

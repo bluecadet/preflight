@@ -7,7 +7,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/targeting"
@@ -65,7 +64,10 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		return err
 	}
 
-	registry := module.Registry()
+	registry, _, err := buildModuleRegistry(projectDir)
+	if err != nil {
+		return err
+	}
 	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
 	if err != nil {
 		return err

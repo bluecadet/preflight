@@ -49,6 +49,8 @@ type Task struct {
 	Name         string         `yaml:"name"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
+	ModuleName   string         `yaml:"module"`
+	ModuleParams map[string]any `yaml:"params"`
 	Module       string         `yaml:"-"` // resolved module name
 	Params       map[string]any `yaml:"-"` // resolved module params
 	When         string         `yaml:"when"`
@@ -87,6 +89,18 @@ func (t *Task) ResolveModule() error {
 
 	if len(found) > 1 {
 		return fmt.Errorf("task %q: multiple inline module fields set: %v (only one is allowed)", t.Name, found)
+	}
+
+	if t.ModuleName != "" {
+		if t.Uses != "" {
+			return fmt.Errorf("task %q: cannot set both 'uses' and 'module'", t.Name)
+		}
+		if len(found) > 0 {
+			return fmt.Errorf("task %q: cannot set both 'module' and inline module field %q", t.Name, found[0])
+		}
+		t.Module = t.ModuleName
+		t.Params = t.ModuleParams
+		return nil
 	}
 
 	if len(found) == 1 {

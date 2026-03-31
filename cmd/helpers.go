@@ -10,8 +10,11 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
+	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/secrets"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 var newActionChain = action.DefaultChain
@@ -89,6 +92,22 @@ func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *con
 
 	secretsResolver := buildSecretsResolver(projectDir, projectCfg)
 	return pb, projectDir, projectCfg, secretsResolver, newActionChain(projectDir), nil
+}
+
+func currentBinaryDir() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	return filepath.Dir(exe)
+}
+
+func buildModuleRegistry(projectDir string, preferredPluginDirs ...string) (target.ModuleRegistry, []plugins.LoadedPlugin, error) {
+	return plugins.BuildRegistry(module.Registry(), plugins.Options{
+		BinaryDir:     currentBinaryDir(),
+		WorkingDir:    projectDir,
+		PreferredDirs: preferredPluginDirs,
+	})
 }
 
 func playbookDir(playbookPath string) (string, error) {
