@@ -174,6 +174,14 @@ preflight action info preflight/kiosk-mode
 preflight action fetch github.com/myorg/actions/signage@v2.1
 ```
 
+### Manage secrets
+
+```bash
+preflight secret list
+preflight secret encrypt autologin-password --from-file ./secrets/autologin-password.txt --recipient age1...
+preflight secret edit autologin-password
+```
+
 ### Inspect state
 
 ```bash
@@ -214,6 +222,17 @@ vars:
   content_root: "C:\\Exhibits\\content"
   app_root: "C:\\Exhibits\\app"
   fileserver: "\\\\nas01\\exhibits"
+
+secrets:
+  identity: ".age/keys.txt"
+  recipients:
+    - "age1ql3z7hjy54pw5k8kr0jsjrl4f8yl0v0l7x7y9h8n5v9s0k4m5qkq9v9abc"
+  entries:
+    autologin-password:
+      file: "secrets/autologin-password.age"
+    lobby-ssh-key:
+      file: "secrets/lobby-ssh-key.age"
+      type: "file"
 ```
 
 ### inventory.yml
@@ -231,6 +250,8 @@ groups:
       - name: lobby-pc-01
         address: 192.168.1.10
         transport: winrm
+        username: exhibit-admin
+        password_from: secret:autologin-password
       - name: lobby-pc-02
         address: 192.168.1.11
         transport: winrm
@@ -241,7 +262,9 @@ groups:
     hosts:
       - name: gallery2-pc-01
         address: 192.168.1.20
-        transport: winrm
+        transport: ssh
+        username: exhibit
+        private_key_from: secret:lobby-ssh-key
 ```
 
 ### action.yml
@@ -284,6 +307,18 @@ Built-in defaults
 ```
 
 Templates use Jinja2-like syntax: `{{ vars.foo }}`, `{{ facts.os.version }}`.
+
+For secrets, prefer explicit secret references such as `password_from: secret:autologin-password` or `private_key_from: secret:lobby-ssh-key` instead of committing plaintext values.
+
+### Secrets
+
+Preflight supports repo-backed secrets encrypted with `age`.
+
+- Encrypted secret files are declared in `preflight.yml` under `secrets.entries`.
+- Secret references use `provider:name` syntax. The built-in repo-backed provider is `secret`, so refs look like `secret:autologin-password`.
+- Decryption happens on the operator machine at execution time.
+- Plans, runner state, and renderer output do not persist decrypted secret values.
+- Plaintext fields like `password` and `private_key` still work for compatibility, but `*_from` fields are the preferred API.
 
 ---
 
