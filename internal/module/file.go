@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 )
 
 // FileModule manages a file at a destination path.
@@ -97,6 +98,9 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 		if src != "" {
 			return copyFile(src, dest)
 		}
+		if err := ensureParentDir(dest); err != nil {
+			return err
+		}
 		// Create empty file.
 		f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 		if err != nil {
@@ -129,6 +133,10 @@ func copyFile(src, dst string) error {
 	}
 	defer func() { _ = in.Close() }()
 
+	if err := ensureParentDir(dst); err != nil {
+		return err
+	}
+
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("file: open dest %q: %w", dst, err)
@@ -140,6 +148,17 @@ func copyFile(src, dst string) error {
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("file: close dest %q: %w", dst, err)
+	}
+	return nil
+}
+
+func ensureParentDir(path string) error {
+	dir := filepath.Dir(path)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("file: mkdir parent %q: %w", dir, err)
 	}
 	return nil
 }

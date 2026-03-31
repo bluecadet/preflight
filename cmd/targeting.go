@@ -15,6 +15,8 @@ import (
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
+var resolveInventoryHosts = targeting.ResolveHosts
+
 func inventoryFilePath(cmd *cobra.Command, projectDir string) string {
 	invPath, _ := cmd.Flags().GetString("inventory")
 	if invPath != "" {
@@ -48,7 +50,7 @@ func resolveRunHosts(
 		return nil, fmt.Errorf("load inventory %q: %w", invPath, err)
 	}
 
-	hosts, err := targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, stateFilePath(cmd))
+	hosts, err := resolveInventoryHosts(ctx, inv, selectors, registry, resolver, stateFilePath(cmd))
 	if err != nil {
 		return nil, err
 	}

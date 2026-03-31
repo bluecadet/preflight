@@ -43,6 +43,9 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := fetchPlaybookActionRefs(ctx, pb, chain); err != nil {
+		return err
+	}
 
 	registry, _, err := buildModuleRegistry(projectDir)
 	if err != nil {

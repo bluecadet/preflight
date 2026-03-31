@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/facts"
-	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
@@ -43,24 +42,28 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	registry, _, err := buildModuleRegistry("")
-	if err != nil {
-		return err
-	}
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	var hosts []targeting.ResolvedHost
 	if len(args) == 1 {
 		selectors = []string{args[0]}
 	}
 	if len(selectors) == 0 || selectorsAreLocal(selectors) {
+		registry, _, err := buildModuleRegistry("")
+		if err != nil {
+			return err
+		}
 		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}
 	} else {
 		invPath := inventoryFilePath(cmd, "")
-		inv, err := inventory.ParseFile(invPath)
+		inv, projectDir, _, secretsResolver, err := loadInventoryRunContext(invPath)
 		if err != nil {
 			return fmt.Errorf("facts: load inventory %q: %w", invPath, err)
 		}
-		hosts, err = targeting.ResolveHosts(ctx, inv, selectors, registry, nil, stateFilePath(cmd))
+		registry, _, err := buildModuleRegistry(projectDir)
+		if err != nil {
+			return err
+		}
+		hosts, err = resolveInventoryHosts(ctx, inv, selectors, registry, secretsResolver, stateFilePath(cmd))
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}

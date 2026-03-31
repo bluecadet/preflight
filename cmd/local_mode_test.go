@@ -10,6 +10,12 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/secrets"
+	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/targeting"
 )
 
 func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
@@ -193,6 +199,104 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 	}
 }
 
+func TestRunPlanFetchesRemoteActions(t *testing.T) {
+	playbookPath := writeRemoteActionPlaybook(t)
+	resolver := &testRemoteActionResolver{}
+
+	oldChain := newActionChain
+	newActionChain = func(string) action.Chain { return action.Chain{resolver} }
+	defer func() { newActionChain = oldChain }()
+
+	cmd := newTestCommand()
+	if _, err := captureStdout(t, func() error {
+		return runPlan(cmd, []string{playbookPath})
+	}); err != nil {
+		t.Fatalf("runPlan: %v", err)
+	}
+
+	if resolver.fetchCalls != 1 {
+		t.Fatalf("expected one remote fetch, got %d", resolver.fetchCalls)
+	}
+}
+
+func TestRunDiffFetchesRemoteActions(t *testing.T) {
+	playbookPath := writeRemoteActionPlaybook(t)
+	resolver := &testRemoteActionResolver{}
+
+	oldChain := newActionChain
+	newActionChain = func(string) action.Chain { return action.Chain{resolver} }
+	defer func() { newActionChain = oldChain }()
+
+	cmd := newTestCommand()
+	statePath := filepath.Join(t.TempDir(), "state.json")
+	if err := cmd.Flags().Set("state-file", statePath); err != nil {
+		t.Fatalf("Set state-file: %v", err)
+	}
+
+	if _, err := captureStdout(t, func() error {
+		return runDiff(cmd, []string{playbookPath})
+	}); err != nil {
+		t.Fatalf("runDiff: %v", err)
+	}
+
+	if resolver.fetchCalls != 1 {
+		t.Fatalf("expected one remote fetch, got %d", resolver.fetchCalls)
+	}
+}
+
+func TestRunFactsWithInventoryUsesSecretsResolver(t *testing.T) {
+	dir := t.TempDir()
+	inventoryPath := filepath.Join(dir, "inventory.yml")
+	configPath := filepath.Join(dir, "preflight.yml")
+
+	if err := os.WriteFile(inventoryPath, []byte(`
+groups:
+  lab:
+    hosts:
+      - name: kiosk-a
+        transport: winrm
+        username: exhibit
+        password_from: secret:winrm-password
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+	}
+	if err := os.WriteFile(configPath, []byte(`
+secrets:
+  identity: .age/keys.txt
+  entries:
+    winrm-password:
+      file: secrets/winrm-password.age
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", configPath, err)
+	}
+
+	oldResolveHosts := resolveInventoryHosts
+	resolveInventoryHosts = func(_ context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+		if resolver == nil || !resolver.HasProviders() {
+			t.Fatal("expected facts to pass a configured secrets resolver")
+		}
+		if len(selectors) != 1 || selectors[0] != "lab" {
+			t.Fatalf("unexpected selectors: %#v", selectors)
+		}
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, baseStatePath)}, nil
+	}
+	defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("target", "lab"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
+		t.Fatalf("Set inventory: %v", err)
+	}
+
+	if _, err := captureStdout(t, func() error {
+		return runFacts(cmd, nil)
+	}); err != nil {
+		t.Fatalf("runFacts: %v", err)
+	}
+}
+
 func newTestCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().StringSliceP("target", "t", nil, "")
@@ -212,6 +316,30 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("inventory", "", "")
 	cmd.SetContext(context.Background())
 	return cmd
+}
+
+func captureStdout(t *testing.T, fn func() error) (string, error) {
+	t.Helper()
+
+	oldStdout := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = oldStdout }()
+
+	var stdout bytes.Buffer
+	done := make(chan struct{})
+	go func() {
+		_, _ = stdout.ReadFrom(r)
+		close(done)
+	}()
+
+	runErr := fn()
+	_ = w.Close()
+	<-done
+	return stdout.String(), runErr
 }
 
 func writeTestPlaybook(t *testing.T) string {
@@ -261,4 +389,70 @@ groups:
 	}
 
 	return playbookPath, inventoryPath
+}
+
+const testRemoteActionRef = "github.com/acme/actions/signage@v1"
+
+type testRemoteActionResolver struct {
+	fetched    bool
+	fetchCalls int
+}
+
+func (r *testRemoteActionResolver) Name() string { return "test-remote" }
+
+func (r *testRemoteActionResolver) Resolve(_ context.Context, ref string) (*action.Action, error) {
+	if ref != testRemoteActionRef {
+		return nil, nil
+	}
+	if !r.fetched {
+		return nil, &action.RemoteCacheMissError{Ref: ref}
+	}
+	return testRemoteAction(), nil
+}
+
+func (r *testRemoteActionResolver) Fetch(_ context.Context, ref string) (*action.FetchResult, error) {
+	if ref != testRemoteActionRef {
+		return nil, nil
+	}
+	r.fetched = true
+	r.fetchCalls++
+	sha := "0123456789abcdef0123456789abcdef01234567"
+	return &action.FetchResult{
+		Entry: action.LockEntry{
+			Ref:    ref,
+			SHA:    sha,
+			Pinned: "github.com/acme/actions/signage@" + sha,
+		},
+		Action: testRemoteAction(),
+	}, nil
+}
+
+func testRemoteAction() *action.Action {
+	return &action.Action{
+		Name: "remote-signage",
+		Tasks: []action.Task{
+			{
+				Name: "remote echo",
+				Shell: map[string]any{
+					"cmd":  "echo",
+					"args": []any{"hello"},
+				},
+			},
+		},
+	}
+}
+
+func writeRemoteActionPlaybook(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "playbook.yml")
+	if err := os.WriteFile(path, []byte(`
+name: remote-test
+tasks:
+  - name: use remote action
+    uses: github.com/acme/actions/signage@v1
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+	return path
 }

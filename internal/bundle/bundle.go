@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -125,45 +126,53 @@ func Extract(path string) (*ExtractedBundle, error) {
 	}
 	defer reader.Close()
 
+	manifest, err := readManifest(reader.File)
+	if err != nil {
+		return nil, err
+	}
+
 	tempDir, err := os.MkdirTemp("", "preflight-bundle-*")
 	if err != nil {
 		return nil, fmt.Errorf("bundle: temp dir: %w", err)
 	}
 
 	loaded := &ExtractedBundle{
+		Manifest:  manifest,
 		RootDir:   tempDir,
 		PluginDir: filepath.Join(tempDir, "plugins"),
 	}
+	seenChecksums := make(map[string]struct{}, len(manifest.Checksums))
 
 	for _, file := range reader.File {
-		rc, err := file.Open()
-		if err != nil {
-			loaded.Cleanup()
-			return nil, fmt.Errorf("bundle: open entry %q: %w", file.Name, err)
-		}
-		data, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil {
-			loaded.Cleanup()
-			return nil, fmt.Errorf("bundle: read entry %q: %w", file.Name, err)
-		}
-
 		if file.Name == ManifestPath {
-			var manifest Manifest
-			if err := json.Unmarshal(data, &manifest); err != nil {
-				loaded.Cleanup()
-				return nil, fmt.Errorf("bundle: parse manifest: %w", err)
-			}
-			loaded.Manifest = &manifest
 			continue
 		}
 
-		outPath := filepath.Join(tempDir, filepath.FromSlash(file.Name))
+		outPath, err := extractionPath(tempDir, file.Name)
+		if err != nil {
+			loaded.Cleanup()
+			return nil, err
+		}
+
+		data, err := readZipEntry(file)
+		if err != nil {
+			loaded.Cleanup()
+			return nil, err
+		}
+		if err := verifyExtractedChecksum(manifest.Checksums, file.Name, data, seenChecksums); err != nil {
+			loaded.Cleanup()
+			return nil, err
+		}
+
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
 			loaded.Cleanup()
 			return nil, fmt.Errorf("bundle: mkdir %q: %w", filepath.Dir(outPath), err)
 		}
-		if err := os.WriteFile(outPath, data, file.Mode()); err != nil {
+		mode := file.Mode()
+		if mode == 0 {
+			mode = 0o644
+		}
+		if err := os.WriteFile(outPath, data, mode); err != nil {
 			loaded.Cleanup()
 			return nil, fmt.Errorf("bundle: write %q: %w", outPath, err)
 		}
@@ -181,9 +190,9 @@ func Extract(path string) (*ExtractedBundle, error) {
 		}
 	}
 
-	if loaded.Manifest == nil {
+	if err := verifyExpectedChecksums(manifest.Checksums, seenChecksums); err != nil {
 		loaded.Cleanup()
-		return nil, fmt.Errorf("bundle: missing manifest")
+		return nil, err
 	}
 	if loaded.PlanPath == "" {
 		loaded.Cleanup()
@@ -215,6 +224,88 @@ func writeZipFile(zw *zip.Writer, path string, mode os.FileMode, data []byte) er
 	}
 	if _, err := w.Write(data); err != nil {
 		return fmt.Errorf("bundle: write entry %q: %w", path, err)
+	}
+	return nil
+}
+
+func readManifest(files []*zip.File) (*Manifest, error) {
+	for _, file := range files {
+		if file.Name != ManifestPath {
+			continue
+		}
+		data, err := readZipEntry(file)
+		if err != nil {
+			return nil, err
+		}
+		var manifest Manifest
+		if err := json.Unmarshal(data, &manifest); err != nil {
+			return nil, fmt.Errorf("bundle: parse manifest: %w", err)
+		}
+		return &manifest, nil
+	}
+	return nil, fmt.Errorf("bundle: missing manifest")
+}
+
+func readZipEntry(file *zip.File) ([]byte, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return nil, fmt.Errorf("bundle: open entry %q: %w", file.Name, err)
+	}
+	defer rc.Close()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("bundle: read entry %q: %w", file.Name, err)
+	}
+	return data, nil
+}
+
+func extractionPath(root, entryName string) (string, error) {
+	normalized := strings.ReplaceAll(entryName, "\\", "/")
+	cleaned := path.Clean(normalized)
+	switch {
+	case cleaned == ".":
+		return "", fmt.Errorf("bundle: invalid empty entry path")
+	case cleaned == ".." || strings.HasPrefix(cleaned, "../"):
+		return "", fmt.Errorf("bundle: entry %q escapes extraction root", entryName)
+	case strings.HasPrefix(cleaned, "/"):
+		return "", fmt.Errorf("bundle: entry %q uses an absolute path", entryName)
+	case hasWindowsVolumePrefix(cleaned):
+		return "", fmt.Errorf("bundle: entry %q uses an absolute path", entryName)
+	}
+	return filepath.Join(root, filepath.FromSlash(cleaned)), nil
+}
+
+func hasWindowsVolumePrefix(path string) bool {
+	return len(path) >= 2 && path[1] == ':'
+}
+
+func verifyExtractedChecksum(expected map[string]string, name string, data []byte, seen map[string]struct{}) error {
+	if len(expected) == 0 {
+		return nil
+	}
+
+	want, ok := expected[name]
+	if !ok {
+		return fmt.Errorf("bundle: unexpected file %q is missing a checksum entry", name)
+	}
+	got := checksum(data)
+	if got != want {
+		return fmt.Errorf("bundle: checksum mismatch for %q", name)
+	}
+	seen[name] = struct{}{}
+	return nil
+}
+
+func verifyExpectedChecksums(expected map[string]string, seen map[string]struct{}) error {
+	if len(expected) == 0 {
+		return nil
+	}
+	for name := range expected {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		return fmt.Errorf("bundle: missing expected file %q", name)
 	}
 	return nil
 }

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,11 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
+	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
+	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 )
@@ -94,6 +97,32 @@ func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *con
 	return pb, projectDir, projectCfg, secretsResolver, newActionChain(projectDir), nil
 }
 
+func loadInventoryRunContext(inventoryPath string) (*inventory.Inventory, string, *config.Config, *secrets.Resolver, error) {
+	projectDir, err := projectDirForPath(inventoryPath)
+	if err != nil {
+		return nil, "", nil, nil, err
+	}
+
+	projectCfg, err := loadProjectConfig(projectDir)
+	if err != nil {
+		return nil, "", nil, nil, err
+	}
+
+	inv, err := inventory.ParseFile(inventoryPath)
+	if err != nil {
+		return nil, "", nil, nil, err
+	}
+
+	return inv, projectDir, projectCfg, buildSecretsResolver(projectDir, projectCfg), nil
+}
+
+func fetchPlaybookActionRefs(ctx context.Context, pb *action.Playbook, chain action.Chain) error {
+	if pb == nil {
+		return nil
+	}
+	return runner.New(nil, chain, runner.Config{}).Fetch(ctx, pb)
+}
+
 func currentBinaryDir() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -143,16 +172,19 @@ func bundleOutputDir(cmd *cobra.Command, projectDir string) string {
 }
 
 func playbookDir(playbookPath string) (string, error) {
-	abs, err := filepath.Abs(playbookPath)
-	if err != nil {
-		return "", err
-	}
-	start := filepath.Dir(abs)
-	dir, err := discoverProjectDir(start)
+	dir, err := projectDirForPath(playbookPath)
 	if err != nil {
 		return "", fmt.Errorf("resolve project dir for %q: %w", playbookPath, err)
 	}
 	return dir, nil
+}
+
+func projectDirForPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return discoverProjectDir(filepath.Dir(abs))
 }
 
 func discoverProjectDir(start string) (string, error) {

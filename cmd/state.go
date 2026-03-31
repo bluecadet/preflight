@@ -83,12 +83,15 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s: load state: %w", label, err)
 	}
 
-	pb, _, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
+	if err := fetchPlaybookActionRefs(ctx, pb, chain); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 
-	registry, _, err := buildModuleRegistry("")
+	registry, _, err := buildModuleRegistry(projectDir)
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}

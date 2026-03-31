@@ -40,6 +40,50 @@ func TestFileModule_Check_Missing(t *testing.T) {
 	}
 }
 
+func TestFileModule_ApplyCreatesParentDirectories(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	dest := filepath.Join(t.TempDir(), "nested", "deeper", "out.txt")
+
+	if err := m.Apply(context.Background(), map[string]any{
+		"dest":   dest,
+		"ensure": "present",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := os.Stat(dest); err != nil {
+		t.Fatalf("expected created file at %q: %v", dest, err)
+	}
+}
+
+func TestFileModule_ApplyCopyCreatesParentDirectories(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	root := t.TempDir()
+	src := filepath.Join(root, "src.txt")
+	dest := filepath.Join(root, "nested", "copied.txt")
+	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", src, err)
+	}
+
+	if err := m.Apply(context.Background(), map[string]any{
+		"src":    src,
+		"dest":   dest,
+		"ensure": "present",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", dest, err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("expected copied contents, got %q", string(data))
+	}
+}
+
 func TestDirectoryModule_Check_Existing(t *testing.T) {
 	dir := t.TempDir()
 	reg := module.Registry()
