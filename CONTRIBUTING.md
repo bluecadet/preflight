@@ -25,6 +25,15 @@ go test ./...
 go vet ./...
 ```
 
+**Run the linter:**
+
+```bash
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+golangci-lint run
+```
+
+The linter config is in `.golangci.yml`. CI runs the same config, so fixing lint failures locally is faster than waiting for CI.
+
 ---
 
 ## Architecture
@@ -89,8 +98,21 @@ Keep command implementations thin — they should parse flags, set up context, a
 
 1. Fork the repo and create a branch from `main`.
 2. Make your changes. Add tests for new behavior.
-3. Run `go test ./...` and `go vet ./...` — both must pass.
+3. Run `go test ./...`, `go vet ./...`, and `golangci-lint run` — all must pass.
 4. Open a pull request against `main` with a clear description of what you changed and why.
+
+## Releases
+
+Releases are automated via GoReleaser. To cut a release:
+
+```bash
+git tag v1.2.3
+git push origin v1.2.3
+```
+
+Pushing a `v*` tag triggers the release workflow, which builds `windows/amd64` and `windows/arm64` binaries, packages them as ZIPs, generates a changelog from commit messages, and publishes a GitHub release.
+
+Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, etc.) — GoReleaser groups the changelog by prefix. Tags named `v1.2.3-beta.1` are automatically marked as pre-releases.
 
 For significant changes (new modules, schema changes, changes to the action resolution chain), open an issue first to discuss the approach. Breaking changes to `action.yml` or `playbook.yml` schemas are treated with extra care — the schema is the public API.
 

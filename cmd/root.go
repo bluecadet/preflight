@@ -16,7 +16,8 @@ binary with no runtime dependencies.`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
-func Execute() {
+func Execute(version, commit, date string) {
+	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -1,0 +1,88 @@
+name: Bug report
+description: Something isn't working correctly
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear description of what the bug is.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include full output with `--verbose` if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: playbook
+    attributes:
+      label: playbook.yml
+      description: Minimal reproduction playbook. Redact credentials.
+      render: yaml
+
+  - type: textarea
+    id: inventory
+    attributes:
+      label: inventory.yml
+      description: Relevant inventory snippet. Redact credentials.
+      render: yaml
+
+  - type: input
+    id: preflight-version
+    attributes:
+      label: Preflight version
+      placeholder: "preflight --version"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target-os
+    attributes:
+      label: Target OS
+      options:
+        - Windows 11
+        - Windows 10
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operator-os
+    attributes:
+      label: Operator OS
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: go-version
+    attributes:
+      label: Go version
+      description: Only needed if building from source.
+      placeholder: "go version"
