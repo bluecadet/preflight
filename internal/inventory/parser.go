@@ -18,15 +18,17 @@ type rawGroup struct {
 }
 
 type rawHost struct {
-	Name       string         `yaml:"name"`
-	Address    string         `yaml:"address"`
-	Transport  string         `yaml:"transport"`
-	Port       int            `yaml:"port"`
-	Username   string         `yaml:"username"`
-	Password   string         `yaml:"password"`
-	PrivateKey string         `yaml:"private_key"`
-	HTTPS      bool           `yaml:"https"`
-	Vars       map[string]any `yaml:"vars"`
+	Name           string         `yaml:"name"`
+	Address        string         `yaml:"address"`
+	Transport      string         `yaml:"transport"`
+	Port           int            `yaml:"port"`
+	Username       string         `yaml:"username"`
+	Password       string         `yaml:"password"`
+	PasswordFrom   string         `yaml:"password_from"`
+	PrivateKey     string         `yaml:"private_key"`
+	PrivateKeyFrom string         `yaml:"private_key_from"`
+	HTTPS          bool           `yaml:"https"`
+	Vars           map[string]any `yaml:"vars"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -47,15 +49,17 @@ func Parse(data []byte) (*Inventory, error) {
 				return nil, fmt.Errorf("inventory: host in group %q is missing a name", name)
 			}
 			h := Host{
-				Name:       rh.Name,
-				Address:    rh.Address,
-				Transport:  defaultTransport(rh.Transport),
-				Port:       defaultPort(rh.Transport, rh.Port),
-				Username:   rh.Username,
-				Password:   rh.Password,
-				PrivateKey: rh.PrivateKey,
-				HTTPS:      rh.HTTPS,
-				Vars:       rh.Vars,
+				Name:           rh.Name,
+				Address:        rh.Address,
+				Transport:      defaultTransport(rh.Transport),
+				Port:           defaultPort(rh.Transport, rh.Port),
+				Username:       rh.Username,
+				Password:       rh.Password,
+				PasswordFrom:   rh.PasswordFrom,
+				PrivateKey:     rh.PrivateKey,
+				PrivateKeyFrom: rh.PrivateKeyFrom,
+				HTTPS:          rh.HTTPS,
+				Vars:           rh.Vars,
 			}
 			hosts = append(hosts, h)
 		}

@@ -60,6 +60,10 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	// Build the resolver chain using the directory containing the playbook.
 	projectDir, _ := playbookDir(playbookPath)
 	chain := action.DefaultChain(projectDir)
+	projectCfg, err := loadProjectConfig(projectDir)
+	if err != nil {
+		return err
+	}
 
 	// Build the local target.
 	registry := module.Registry()
@@ -71,9 +75,11 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		Tags:        tags,
 		SkipTags:    skipTags,
 		Concurrency: concurrency,
+		ProjectVars: projectCfg.Vars,
 		Vars:        vars,
 		Phase:       phase,
 		Renderer:    renderer,
+		Secrets:     buildSecretsResolver(projectDir, projectCfg),
 	}
 
 	r := runner.New(tgt, chain, cfg)

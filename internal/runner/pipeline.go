@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/action"
@@ -36,52 +37,20 @@ type PlanTask struct {
 // Plan resolves all action refs, expands tasks into a flat list, resolves
 // variables. Returns an ExecutionPlan. Pure computation — no I/O against targets.
 func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
-	// Merge variables: playbook vars first, then CLI --var flags (CLI wins).
+	// Merge variables: project vars first, then playbook vars, then CLI flags.
 	vars := make(map[string]any)
+	maps.Copy(vars, r.config.ProjectVars)
 	maps.Copy(vars, playbook.Vars)
 	maps.Copy(vars, r.config.Vars)
-
-	eng := template.New(vars)
 
 	var planTasks []*PlanTask
 	idx := 0
 
-	// Expand inline tasks from the playbook.
 	for i := range playbook.Tasks {
 		task := &playbook.Tasks[i]
-		if err := task.ResolveModule(); err != nil {
-			return nil, fmt.Errorf("plan: task %d: %w", i, err)
+		if err := r.expandTask(ctx, task, vars, &planTasks, &idx, fmt.Sprintf("task %d", i)); err != nil {
+			return nil, fmt.Errorf("plan: %w", err)
 		}
-
-		// If this task uses an action ref (uses:), resolve and inline it.
-		if task.Uses != "" {
-			resolved, err := r.resolver.Resolve(ctx, task.Uses)
-			if err != nil {
-				return nil, fmt.Errorf("plan: resolve action %q: %w", task.Uses, err)
-			}
-
-			// Inline the action's tasks.
-			for j := range resolved.Tasks {
-				at := &resolved.Tasks[j]
-				if err := at.ResolveModule(); err != nil {
-					return nil, fmt.Errorf("plan: action %q task %d: %w", task.Uses, j, err)
-				}
-				pt, err := buildPlanTask(at, idx, eng)
-				if err != nil {
-					return nil, err
-				}
-				planTasks = append(planTasks, pt)
-				idx++
-			}
-			continue
-		}
-
-		pt, err := buildPlanTask(task, idx, eng)
-		if err != nil {
-			return nil, err
-		}
-		planTasks = append(planTasks, pt)
-		idx++
 	}
 
 	// Validate the DAG (detects cycles and unknown depends_on refs).
@@ -94,6 +63,71 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		Tasks:        planTasks,
 		Vars:         vars,
 	}, nil
+}
+
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, idx *int, label string) error {
+	if err := task.ResolveModule(); err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+
+	if task.Uses == "" {
+		pt, err := buildPlanTask(task, *idx, template.New(vars))
+		if err != nil {
+			return err
+		}
+		*planTasks = append(*planTasks, pt)
+		*idx = *idx + 1
+		return nil
+	}
+
+	resolved, err := r.resolver.Resolve(ctx, task.Uses)
+	if err != nil {
+		return fmt.Errorf("resolve action %q: %w", task.Uses, err)
+	}
+
+	childVars, err := actionInputVars(task, resolved, vars)
+	if err != nil {
+		return fmt.Errorf("prepare action %q inputs: %w", task.Uses, err)
+	}
+
+	for j := range resolved.Tasks {
+		at := &resolved.Tasks[j]
+		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
+		if err := r.expandTask(ctx, at, childVars, planTasks, idx, childLabel); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[string]any) (map[string]any, error) {
+	childVars := make(map[string]any)
+	maps.Copy(childVars, parentVars)
+	for name, input := range resolved.Inputs {
+		if input.Default != nil {
+			childVars[name] = input.Default
+		}
+	}
+	eng := template.New(parentVars)
+	renderedWith, err := eng.RenderMap(task.With)
+	if err != nil {
+		return nil, err
+	}
+	maps.Copy(childVars, renderedWith)
+	for key, value := range renderedWith {
+		if strings.HasSuffix(key, "_from") {
+			childVars[strings.TrimSuffix(key, "_from")] = value
+		}
+	}
+	for name, input := range resolved.Inputs {
+		if !input.Required {
+			continue
+		}
+		if value, ok := childVars[name]; !ok || value == nil || value == "" {
+			return nil, fmt.Errorf("required input %q is missing", name)
+		}
+	}
+	return childVars, nil
 }
 
 // buildPlanTask converts an action.Task to a PlanTask, rendering string params.
@@ -216,8 +250,16 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
+		params := pt.Params
+		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
+			params, err = r.config.Secrets.ResolveMap(ctx, pt.Params)
+			if err != nil {
+				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
+			}
+		}
+
 		// Execute the task against the target.
-		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, pt.Params, r.config.DryRun)
+		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, r.config.DryRun)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())

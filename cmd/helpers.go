@@ -2,11 +2,14 @@ package cmd
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/secrets"
 )
 
 // parseVars converts a slice of "key=value" strings into a map.
@@ -45,4 +48,21 @@ func getPlaybookPath(args []string) string {
 		return ""
 	}
 	return args[0]
+}
+
+func projectConfigPath(projectDir string) string {
+	return filepath.Join(projectDir, config.FileName)
+}
+
+func loadProjectConfig(projectDir string) (*config.Config, error) {
+	return config.LoadOptional(projectConfigPath(projectDir))
+}
+
+func buildSecretsResolver(projectDir string, cfg *config.Config) *secrets.Resolver {
+	if cfg == nil || len(cfg.Secrets.Entries) == 0 {
+		return secrets.NewResolver(nil)
+	}
+	return secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: secrets.NewRepoProvider(projectDir, cfg.Secrets),
+	})
 }

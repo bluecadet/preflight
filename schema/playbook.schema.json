@@ -160,6 +160,7 @@
       "properties": {
         "name": { "type": "string" },
         "password": { "type": "string" },
+        "password_from": { "type": "string" },
         "groups": { "type": "array", "items": { "type": "string" } },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
       }

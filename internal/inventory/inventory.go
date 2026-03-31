@@ -16,15 +16,17 @@ const (
 
 // Host represents a single target machine.
 type Host struct {
-	Name       string
-	Address    string
-	Transport  Transport
-	Port       int
-	Username   string
-	Password   string
-	PrivateKey string
-	HTTPS      bool
-	Vars       map[string]any
+	Name           string
+	Address        string
+	Transport      Transport
+	Port           int
+	Username       string
+	Password       string
+	PasswordFrom   string
+	PrivateKey     string
+	PrivateKeyFrom string
+	HTTPS          bool
+	Vars           map[string]any
 }
 
 // Group is a named set of hosts sharing common variables.

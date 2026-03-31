@@ -41,6 +41,10 @@ func runPlan(cmd *cobra.Command, args []string) error {
 
 	projectDir, _ := playbookDir(playbookPath)
 	chain := action.DefaultChain(projectDir)
+	projectCfg, err := loadProjectConfig(projectDir)
+	if err != nil {
+		return err
+	}
 
 	registry := module.Registry()
 	tgt := target.NewLocalTarget(registry)
@@ -50,12 +54,14 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	defer renderer.Close()
 
 	cfg := runner.Config{
-		DryRun:   false,
-		Tags:     tags,
-		SkipTags: skipTags,
-		Vars:     vars,
-		Phase:    "plan",
-		Renderer: renderer,
+		DryRun:      false,
+		Tags:        tags,
+		SkipTags:    skipTags,
+		ProjectVars: projectCfg.Vars,
+		Vars:        vars,
+		Phase:       "plan",
+		Renderer:    renderer,
+		Secrets:     buildSecretsResolver(projectDir, projectCfg),
 	}
 
 	r := runner.New(tgt, chain, cfg)

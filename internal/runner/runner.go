@@ -6,6 +6,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -15,9 +16,11 @@ type Config struct {
 	Tags        []string
 	SkipTags    []string
 	Concurrency int
+	ProjectVars map[string]any
 	Vars        map[string]any // from --var CLI flags
 	Phase       string         // "plan", "fetch", "stage", "apply" (empty = all)
 	Renderer    output.Renderer
+	Secrets     *secrets.Resolver
 }
 
 // Runner orchestrates the Plan→Fetch→Stage→Apply pipeline.

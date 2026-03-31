@@ -148,3 +148,30 @@ func TestDefaultPort_WinRM(t *testing.T) {
 		t.Errorf("expected default WinRM port 5985, got %d", hosts[0].Port)
 	}
 }
+
+func TestParseSecretReferenceFields(t *testing.T) {
+	data := `
+groups:
+  secure:
+    hosts:
+      - name: secure-host
+        address: 10.0.0.10
+        transport: ssh
+        password_from: secret:winrm-password
+        private_key_from: secret:signage-key
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("secure")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got := hosts[0].PasswordFrom; got != "secret:winrm-password" {
+		t.Fatalf("expected password_from to be preserved, got %q", got)
+	}
+	if got := hosts[0].PrivateKeyFrom; got != "secret:signage-key" {
+		t.Fatalf("expected private_key_from to be preserved, got %q", got)
+	}
+}

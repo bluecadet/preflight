@@ -7,8 +7,12 @@ import (
 	"testing"
 	"time"
 
+	"filippo.io/age"
+
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -25,10 +29,18 @@ type mockCall struct {
 	TaskID string
 	Module string
 	DryRun bool
+	Params map[string]any
 }
 
-func (m *mockTarget) Execute(_ context.Context, taskID, module string, _ map[string]any, dryRun bool) (target.Result, error) {
-	m.calls = append(m.calls, mockCall{TaskID: taskID, Module: module, DryRun: dryRun})
+func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool) (target.Result, error) {
+	var copied map[string]any
+	if params != nil {
+		copied = make(map[string]any, len(params))
+		for k, v := range params {
+			copied[k] = v
+		}
+	}
+	m.calls = append(m.calls, mockCall{TaskID: taskID, Module: module, DryRun: dryRun, Params: copied})
 	if m.execErr != nil {
 		return target.Result{}, m.execErr
 	}
@@ -83,6 +95,17 @@ func newShellPlaybook(name string) *action.Playbook {
 	}
 }
 
+func ageGenerateIdentity(dir string) (*age.X25519Identity, error) {
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "keys.txt"), []byte(identity.String()+"\n"), 0o600); err != nil {
+		return nil, err
+	}
+	return identity, nil
+}
+
 // ---- Tests ------------------------------------------------------------------
 
 // 1. Plan phase: parse a simple playbook with one shell task, verify ExecutionPlan.
@@ -105,6 +128,65 @@ func TestPlanSingleTask(t *testing.T) {
 	}
 	if plan.Tasks[0].ID != "task-0" {
 		t.Errorf("expected ID %q, got %q", "task-0", plan.Tasks[0].ID)
+	}
+}
+
+func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
+	resolver := action.Chain{&staticResolver{
+		action: &action.Action{
+			Name: "preflight/autologin",
+			Inputs: map[string]action.Input{
+				"username":      {Required: true},
+				"password_from": {},
+			},
+			Tasks: []action.Task{
+				{
+					Name: "configure autologin",
+					Registry: map[string]any{
+						"path": "HKLM:\\Software\\Winlogon",
+						"values": map[string]any{
+							"DefaultUserName": "{{ vars.username }}",
+							"DefaultPassword": "{{ vars.password }}",
+							"Site":            "{{ vars.site }}",
+						},
+					},
+				},
+			},
+		},
+	}}
+	r := New(&mockTarget{}, resolver, Config{
+		ProjectVars: map[string]any{"site": "Lobby"},
+	})
+	pb := &action.Playbook{
+		Name: "test",
+		Tasks: []action.Task{
+			{
+				Name: "autologin",
+				Uses: "preflight/autologin",
+				With: map[string]any{
+					"username":      "kiosk",
+					"password_from": "secret:autologin-password",
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
+	}
+	values, ok := plan.Tasks[0].Params["values"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected values map, got %T", plan.Tasks[0].Params["values"])
+	}
+	if values["DefaultPassword"] != "secret:autologin-password" {
+		t.Fatalf("expected secret ref to be preserved in plan, got %#v", values["DefaultPassword"])
+	}
+	if values["Site"] != "Lobby" {
+		t.Fatalf("expected project var to flow into action rendering, got %#v", values["Site"])
 	}
 }
 
@@ -201,6 +283,65 @@ func TestApplyDryRun(t *testing.T) {
 	}
 }
 
+func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+
+	provider := secrets.NewRepoProvider(dir, config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"autologin-password": {File: "secrets/autologin-password.age"},
+		},
+	})
+	if err := provider.Encrypt("autologin-password", []byte("top-secret")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
+	r := New(mt, emptyResolver(), Config{
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "secret-test",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "set secret",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd": "echo",
+				"env": map[string]any{
+					"PASSWORD": "secret:autologin-password",
+				},
+				"password_from": "secret:autologin-password",
+			},
+		}},
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if len(mt.calls) != 1 {
+		t.Fatalf("expected one Execute call, got %d", len(mt.calls))
+	}
+	if mt.calls[0].Params["password"] != "top-secret" {
+		t.Fatalf("expected password param to be resolved, got %#v", mt.calls[0].Params["password"])
+	}
+	env, ok := mt.calls[0].Params["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected env map, got %T", mt.calls[0].Params["env"])
+	}
+	if env["PASSWORD"] != "top-secret" {
+		t.Fatalf("expected nested secret ref to resolve, got %#v", env["PASSWORD"])
+	}
+}
+
 // 6. State: Record + Save + Load round-trip.
 func TestStateRoundTrip(t *testing.T) {
 	dir := t.TempDir()
@@ -246,6 +387,15 @@ func TestStateRoundTrip(t *testing.T) {
 		t.Errorf("param hash mismatch: got %q", got.ParamHash)
 	}
 }
+
+type staticResolver struct {
+	action *action.Action
+}
+
+func (r *staticResolver) Resolve(_ context.Context, _ string) (*action.Action, error) {
+	return r.action, nil
+}
+func (r *staticResolver) Name() string { return "static" }
 
 // 7. LoadState returns empty State when file is missing (not an error).
 func TestLoadStateMissing(t *testing.T) {

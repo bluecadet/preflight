@@ -17,6 +17,40 @@
     "vars": {
       "type": "object",
       "description": "Project-level variables available to all playbooks"
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "type": "string",
+          "description": "Path to an age identity file used to decrypt repo-backed secrets"
+        },
+        "recipients": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "age recipients used when encrypting repo-backed secrets"
+        },
+        "entries": {
+          "type": "object",
+          "description": "Logical secret names mapped to encrypted files",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "file": {
+                "type": "string",
+                "description": "Path to the .age-encrypted secret file"
+              },
+              "type": {
+                "type": "string",
+                "description": "Optional secret kind hint"
+              }
+            },
+            "required": ["file"]
+          }
+        }
+      }
     }
   }
 }
