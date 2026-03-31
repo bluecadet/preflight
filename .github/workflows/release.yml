@@ -31,3 +31,55 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-assets:
+    name: Verify Release Assets
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p dist/release
+          gh release download "$TAG" --dir dist/release
+          test -f dist/release/preflight_checksums.txt
+          test -f dist/release/preflight_checksums.txt.sigstore.json
+          test -f dist/release/preflight_Linux_x86_64.tar.gz
+          test -f dist/release/preflight_Linux_arm64.tar.gz
+          test -f dist/release/preflight_Darwin_x86_64.tar.gz
+          test -f dist/release/preflight_Darwin_arm64.tar.gz
+          test -f dist/release/preflight_Windows_x86_64.zip
+          test -f dist/release/preflight_Windows_arm64.zip
+
+  smoke-install-linux:
+    name: Smoke Install (Linux)
+    needs: verify-assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install via script
+        env:
+          PREFLIGHT_VERSION: ${{ github.ref_name }}
+          PREFLIGHT_INSTALL_DIR: ${{ runner.temp }}/bin
+        run: |
+          sh ./install.sh
+          "${PREFLIGHT_INSTALL_DIR}/preflight" --version
+
+  smoke-install-windows:
+    name: Smoke Install (Windows)
+    needs: verify-assets
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install via script
+        shell: pwsh
+        env:
+          PREFLIGHT_VERSION: ${{ github.ref_name }}
+          PREFLIGHT_INSTALL_DIR: ${{ runner.temp }}\preflight-bin
+        run: |
+          ./install.ps1 -Version $env:PREFLIGHT_VERSION -InstallDir $env:PREFLIGHT_INSTALL_DIR
+          & "$env:PREFLIGHT_INSTALL_DIR\preflight.exe" --version

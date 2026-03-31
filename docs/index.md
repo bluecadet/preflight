@@ -32,7 +32,7 @@ Plan -> Fetch -> Stage -> Apply
 
 - **Plan** expands actions, resolves templates, and builds the task graph.
 - **Fetch** is intended for remote action retrieval.
-- **Stage** is intended for offline artifact bundling.
+- **Stage** assembles offline artifact bundles.
 - **Apply** executes tasks against a `Target`.
 
 ## What Works Today
@@ -42,13 +42,12 @@ Plan -> Fetch -> Stage -> Apply
 - Repo-backed `age` secrets
 - Inventory parsing, selection, and listing
 - Plugin discovery
+- Plugin execution through module tasks
 - Structured output in `text`, `json`, and `jsonl`
 - WinRM and SSH target transports
 
 ## Still Planned Or Stubbed
 
-- Remote action fetch into cache
-- Stage bundle assembly
 - Broader transport parity across every module and platform combination
 
 ## Start Here

@@ -14,8 +14,11 @@ before:
 
 builds:
   - main: ./...
+    binary: preflight
     env:
       - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.commit={{ .Commit }} -X main.date={{ .Date }}
     goos:
       - linux
       - windows
@@ -23,6 +26,9 @@ builds:
     goarch:
       - arm64
       - amd64
+
+checksum:
+  name_template: preflight_checksums.txt
 
 archives:
   - formats: [tar.gz]

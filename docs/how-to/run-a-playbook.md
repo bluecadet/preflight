@@ -98,6 +98,7 @@ Use `--phase` when you want to run only part of the pipeline:
 preflight apply playbooks/lobby.yml --phase plan
 preflight apply playbooks/lobby.yml --phase fetch
 preflight apply playbooks/lobby.yml --phase stage
+preflight stage playbooks/lobby.yml
 ```
 
 Current behavior:
@@ -106,8 +107,10 @@ Current behavior:
 | --- | --- |
 | `plan` | Implemented |
 | `fetch` | Implemented for remote action download and lockfile updates |
-| `stage` | Explicitly not implemented |
+| `stage` | Writes one offline bundle zip per resolved target |
 | `apply` | Implemented |
+
+Use `preflight apply --bundle <bundle.zip>` to execute a staged bundle without re-resolving the playbook.
 
 ## Choose An Output Format
 
@@ -146,6 +149,7 @@ preflight state diff playbooks/lobby.yml
 ```
 
 `state diff` compares the current plan to the recorded `state/provision.json` file.
+The output distinguishes `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY` tasks.
 
 For inventory-backed runs, apply writes per-host state files under `state/targets/<host>.json`. Inspect one directly with:
 

@@ -39,6 +39,15 @@ The runner always calls `Check` first and skips `Apply` if nothing needs to chan
 
 Built-in modules: `registry`, `service`, `file`, `directory`, `package`, `shortcut`, `scheduled_task`, `user`, `windows_feature`, `environment`, `firewall_rule`, `powershell`, `shell`, `reboot`, `wait`.
 
+Tasks can also target modules explicitly, which is how plugin-backed modules are invoked:
+
+```yaml
+- name: Configure a plugin-backed module
+  module: signage_sync
+  params:
+    source: "\\\\nas01\\content"
+```
+
 ### Actions
 
 The middle layer. Parameterized, reusable bundles of tasks defined in YAML. Actions are the unit of sharing and versioning — similar to GitHub Actions or Ansible roles. An action takes typed inputs, runs a sequence of tasks (which can themselves call other actions), and optionally emits outputs.
@@ -88,6 +97,7 @@ curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh
 ```
 
 Installs to `/usr/local/bin` by default. Override with `PREFLIGHT_INSTALL_DIR=/your/path`.
+Pin a release with `PREFLIGHT_VERSION=v1.2.3`.
 
 **Windows (PowerShell):**
 
@@ -96,6 +106,7 @@ irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
 ```
 
 Installs to `%LOCALAPPDATA%\preflight\` and adds it to your user PATH.
+Pin a release with `$env:PREFLIGHT_VERSION = "v1.2.3"` before running the installer.
 
 Or download a specific release manually from the [releases page](../../releases).
 
@@ -170,6 +181,13 @@ preflight apply playbooks/lobby.yml --check
 
 ```bash
 preflight diff playbooks/lobby.yml
+```
+
+### Stage bundles for offline apply
+
+```bash
+preflight stage playbooks/lobby.yml
+preflight apply --bundle dist/bundles/lobby-baseline-localhost-linux-amd64.zip
 ```
 
 ### Plan without executing
@@ -365,7 +383,7 @@ Preflight processes every playbook through four explicit phases:
 |---|---|
 | **Plan** | Parse playbook, resolve cached action refs, expand into a flat task DAG, validate inputs. Pure computation — no network or target I/O. |
 | **Fetch** | Download remote actions into the local cache and update `preflight.lock`. |
-| **Stage** | Reserved for future artifact bundles. It currently returns an explicit not-implemented error. |
+| **Stage** | Assemble a per-target offline bundle containing the rendered plan, runtime binary, plugin executables, and lock metadata. |
 | **Apply** | Fetch remote dependencies, build the execution plan, then execute the task graph. For each task: `Check()`, skip if already correct, `Apply()` if change needed, record result. |
 
 Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
@@ -412,6 +430,8 @@ Preflight supports external plugins that extend the module library. Plugins are 
 3. `./plugins/` in the project directory
 
 The `pkg/plugin/sdk` package provides a Go SDK for plugin authors that handles protocol boilerplate.
+
+Plugins are executable modules, not just discovered binaries. Use `module: <plugin-name>` in playbooks or actions, inspect them with `preflight plugin list` and `preflight plugin info <name>`, and stage them into offline bundles automatically when referenced by a plan.
 
 ---
 

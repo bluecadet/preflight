@@ -40,7 +40,15 @@ Examples:
 ```bash
 preflight apply playbooks/lobby.yml
 preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight apply --bundle dist/bundles/lobby-baseline-localhost-linux-amd64.zip
 ```
+
+Flags:
+
+| Flag | Description |
+| --- | --- |
+| `--bundle` | Apply from a staged bundle zip instead of resolving a playbook |
+| `--bundle-output-dir` | Output directory when `--phase stage` is used from `apply` |
 
 ### `preflight check <playbook>`
 
@@ -105,6 +113,22 @@ Behavior:
 - One resolved host prints a single facts object.
 - Multiple resolved hosts print an object keyed by host name.
 
+### `preflight stage <playbook>`
+
+Assemble one offline bundle zip per resolved target.
+
+Example:
+
+```bash
+preflight stage playbooks/lobby.yml
+```
+
+Flags:
+
+| Flag | Description |
+| --- | --- |
+| `--bundle-output-dir` | Output directory for generated bundle zips |
+
 ## `action` Commands
 
 ### `preflight action list`
@@ -142,7 +166,11 @@ Flags:
 
 ### `preflight plugin list`
 
-List discovered plugins.
+List discovered plugins and their initialization status.
+
+### `preflight plugin info <name>`
+
+Print the resolved path, source directory, reported version, and initialization status for one plugin.
 
 Discovery order:
 
@@ -202,6 +230,7 @@ Notes:
 - Local applies write `state/provision.json` by default.
 - Inventory-backed applies write per-host state files under `state/targets/<host>.json`.
 - To inspect a remote host state file, pass `--state-file state/targets/<host>.json`.
+- Diff statuses include `NEW`, `CHANGED`, `UNCHANGED`, `REMOVED`, and `STATUS-ONLY`.
 
 ## Output Formats
 
