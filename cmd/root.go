@@ -26,6 +26,7 @@ func Execute(version, commit, date string) {
 
 func init() {
 	rootCmd.PersistentFlags().StringSliceP("target", "t", nil, "target host(s) or group(s) from inventory")
+	rootCmd.PersistentFlags().String("inventory", "", "path to inventory file (default: ./inventory.yml)")
 	rootCmd.PersistentFlags().StringArrayP("var", "e", nil, "set a variable (key=value)")
 	rootCmd.PersistentFlags().StringSlice("tags", nil, "only run tasks with these tags")
 	rootCmd.PersistentFlags().StringSlice("skip-tags", nil, "skip tasks with these tags")

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"runtime"
 )
 
@@ -100,4 +101,21 @@ func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 		OSVersion: runtime.GOOS,
 		Arch:      runtime.GOARCH,
 	}, nil
+}
+
+// RunPowerShell executes a PowerShell script on the local machine.
+func (t *LocalTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
+	if runtime.GOOS != "windows" {
+		return "", fmt.Errorf("target/local: powershell is only available on Windows")
+	}
+	out, err := exec.CommandContext(ctx, "powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", script,
+	).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("target/local: powershell failed: %w\noutput: %s", err, string(out))
+	}
+	return string(out), nil
 }

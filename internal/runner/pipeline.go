@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
@@ -28,6 +29,7 @@ type PlanTask struct {
 	Name         string
 	Module       string
 	Params       map[string]any
+	TemplateVars map[string]any
 	DependsOn    []string
 	When         string
 	Tags         []string
@@ -41,11 +43,12 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		return nil, err
 	}
 
-	// Merge variables: project vars first, then playbook vars, then CLI flags.
-	vars := make(map[string]any)
-	maps.Copy(vars, r.config.ProjectVars)
-	maps.Copy(vars, playbook.Vars)
-	maps.Copy(vars, r.config.Vars)
+	varStore := template.NewVarStore()
+	varStore.SetMap(template.LayerProject, r.config.ProjectVars)
+	varStore.SetMap(template.LayerGroupVars, r.config.InventoryVars)
+	varStore.SetMap(template.LayerPlaybook, playbook.Vars)
+	varStore.SetMap(template.LayerCLI, r.config.Vars)
+	vars := varStore.Merge()
 
 	var planTasks []*PlanTask
 	idx := 0
@@ -82,7 +85,7 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 	}
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, *idx, template.New(vars))
+		pt, err := buildPlanTask(task, *idx, vars)
 		if err != nil {
 			return err
 		}
@@ -119,7 +122,7 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 			childVars[name] = input.Default
 		}
 	}
-	eng := template.New(parentVars)
+	eng := template.New(parentVars).WithPreserveUnknown()
 	renderedWith, err := eng.RenderMap(task.With)
 	if err != nil {
 		return nil, err
@@ -141,21 +144,19 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 	return childVars, nil
 }
 
-// buildPlanTask converts an action.Task to a PlanTask, rendering string params.
-func buildPlanTask(t *action.Task, idx int, eng *template.Engine) (*PlanTask, error) {
+// buildPlanTask converts an action.Task to a PlanTask while preserving raw
+// templates for later per-target rendering.
+func buildPlanTask(t *action.Task, idx int, vars map[string]any) (*PlanTask, error) {
 	id := fmt.Sprintf("task-%d", idx)
-
-	// Render params through the template engine.
-	renderedParams, err := eng.RenderMap(t.Params)
-	if err != nil {
-		return nil, fmt.Errorf("plan: task %q params: %w", t.Name, err)
-	}
+	rawParams := cloneMap(t.Params)
+	templateVars := cloneMap(vars)
 
 	return &PlanTask{
 		ID:           id,
 		Name:         t.Name,
 		Module:       t.Module,
-		Params:       renderedParams,
+		Params:       rawParams,
+		TemplateVars: templateVars,
 		DependsOn:    t.DependsOn,
 		When:         t.When,
 		Tags:         t.Tags,
@@ -202,7 +203,10 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	}
 
 	ordered := dag.TopologicalOrder()
-	eng := template.New(plan.Vars)
+	execCtx, err := r.buildExecutionContext(ctx)
+	if err != nil {
+		return err
+	}
 
 	state := &State{
 		Results: make(map[string]TaskResult),
@@ -260,7 +264,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		// Evaluate when: condition.
 		if pt.When != "" {
-			ok, err := eng.RenderBool(pt.When)
+			ok, err := renderTaskWhen(pt, execCtx)
 			if err != nil {
 				return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 			}
@@ -279,10 +283,13 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
-		params := pt.Params
+		params, taskName, err := renderTaskParams(pt, execCtx)
+		if err != nil {
+			return fmt.Errorf("apply: task %q: render params: %w", pt.Name, err)
+		}
 		paramHash := ParamHash(params)
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
-			params, err = r.config.Secrets.ResolveMap(ctx, pt.Params)
+			params, err = r.config.Secrets.ResolveMap(ctx, params)
 			if err != nil {
 				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 			}
@@ -296,7 +303,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
 				state.Record(TaskResult{
 					TaskID:    pt.ID,
-					TaskName:  pt.Name,
+					TaskName:  taskName,
 					Status:    target.StatusFailed,
 					Timestamp: time.Now(),
 					ParamHash: paramHash,
@@ -315,7 +322,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		state.Record(TaskResult{
 			TaskID:    pt.ID,
-			TaskName:  pt.Name,
+			TaskName:  taskName,
 			Status:    result.Status,
 			Timestamp: time.Now(),
 			ParamHash: paramHash,
@@ -355,6 +362,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		r.config.Renderer.Emit(output.Event{
 			Type:         output.EventPlayEnd,
 			PlayName:     plan.PlaybookName,
+			Target:       r.targetName(),
 			OKCount:      okCount,
 			ChangedCount: changedCount,
 			FailedCount:  failedCount,
@@ -402,7 +410,132 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 	r.config.Renderer.Emit(output.Event{
 		Type:     output.EventTaskResult,
 		TaskName: pt.Name,
+		Target:   r.targetName(),
 		Status:   string(status),
 		Message:  message,
 	})
+}
+
+type executionContext struct {
+	target map[string]any
+	facts  map[string]any
+	env    map[string]string
+}
+
+func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, error) {
+	targetVars := cloneMap(r.config.TargetVars)
+	info, err := r.target.Info(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("apply: target info: %w", err)
+	}
+
+	if targetVars == nil {
+		targetVars = make(map[string]any)
+	}
+	if _, ok := targetVars["hostname"]; !ok && info.Hostname != "" {
+		targetVars["hostname"] = info.Hostname
+	}
+	if _, ok := targetVars["name"]; !ok && info.Hostname != "" {
+		targetVars["name"] = info.Hostname
+	}
+
+	gatherer := facts.New(r.target)
+	collected, err := gatherer.Gather(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("apply: gather facts: %w", err)
+	}
+
+	return &executionContext{
+		target: targetVars,
+		facts:  collected.AsMap(),
+		env:    collected.Env,
+	}, nil
+}
+
+func renderTaskWhen(task *PlanTask, execCtx *executionContext) (bool, error) {
+	if task.When == "" {
+		return true, nil
+	}
+
+	eng := template.New(task.TemplateVars).
+		WithTarget(execCtx.target).
+		WithFacts(execCtx.facts).
+		WithEnv(execCtx.env)
+	return eng.RenderBool(task.When)
+}
+
+func renderTaskParams(task *PlanTask, execCtx *executionContext) (map[string]any, string, error) {
+	eng := template.New(task.TemplateVars).
+		WithTarget(execCtx.target).
+		WithFacts(execCtx.facts).
+		WithEnv(execCtx.env)
+
+	params, err := eng.RenderMap(task.Params)
+	if err != nil {
+		return nil, "", err
+	}
+
+	name := task.Name
+	if task.Name != "" {
+		name, err = eng.Render(task.Name)
+		if err != nil {
+			return nil, "", err
+		}
+	}
+
+	return params, name, nil
+}
+
+func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
+	preview := *task
+	preview.TemplateVars = cloneMap(task.TemplateVars)
+	preview.Params = cloneMap(task.Params)
+
+	eng := template.New(task.TemplateVars).WithTarget(targetVars).WithPreserveUnknown()
+
+	if preview.Name != "" {
+		name, err := eng.Render(preview.Name)
+		if err != nil {
+			return nil, err
+		}
+		preview.Name = name
+	}
+
+	if preview.When != "" {
+		when, err := eng.Render(preview.When)
+		if err != nil {
+			return nil, err
+		}
+		preview.When = when
+	}
+
+	params, err := eng.RenderMap(task.Params)
+	if err != nil {
+		return nil, err
+	}
+	preview.Params = params
+
+	return &preview, nil
+}
+
+func cloneMap(src map[string]any) map[string]any {
+	if src == nil {
+		return nil
+	}
+	dst := make(map[string]any, len(src))
+	maps.Copy(dst, src)
+	return dst
+}
+
+func (r *Runner) targetName() string {
+	if r.config.TargetName != "" {
+		return r.config.TargetName
+	}
+	if name, ok := r.config.TargetVars["name"].(string); ok && name != "" {
+		return name
+	}
+	if hostname, ok := r.config.TargetVars["hostname"].(string); ok && hostname != "" {
+		return hostname
+	}
+	return "localhost"
 }

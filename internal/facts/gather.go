@@ -172,18 +172,23 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 		return nil, err
 	}
 
-	result, err := g.target.Execute(ctx, "facts.disks", "powershell", map[string]any{
-		"script": "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json",
-	}, true /* dryRun=true means we only read, never change */)
+	runner, ok := g.target.(interface {
+		RunPowerShell(context.Context, string) (string, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("facts: gatherWindowsDisks: target does not support powershell execution")
+	}
+
+	stdout, err := runner.RunPowerShell(ctx, "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json")
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsDisks: execute: %w", err)
 	}
 
-	if result.Message == "" {
+	if stdout == "" {
 		return []DiskFacts{}, nil
 	}
 
-	return parseWindowsDrives([]byte(result.Message))
+	return parseWindowsDrives([]byte(stdout))
 }
 
 // gatherEnv collects environment variables from the target.
@@ -211,19 +216,24 @@ func (g *Gatherer) gatherWindowsEnv(ctx context.Context) (map[string]string, err
 		return nil, err
 	}
 
-	result, err := g.target.Execute(ctx, "facts.env", "powershell", map[string]any{
-		"script": `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`,
-	}, true)
+	runner, ok := g.target.(interface {
+		RunPowerShell(context.Context, string) (string, error)
+	})
+	if !ok {
+		return nil, fmt.Errorf("facts: gatherWindowsEnv: target does not support powershell execution")
+	}
+
+	stdout, err := runner.RunPowerShell(ctx, `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`)
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsEnv: execute: %w", err)
 	}
 
-	if result.Message == "" {
+	if stdout == "" {
 		return map[string]string{}, nil
 	}
 
 	var raw map[string]any
-	if err := json.Unmarshal([]byte(result.Message), &raw); err != nil {
+	if err := json.Unmarshal([]byte(stdout), &raw); err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsEnv: parse: %w", err)
 	}
 

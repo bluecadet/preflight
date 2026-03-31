@@ -23,7 +23,6 @@ var inventoryListCmd = &cobra.Command{
 }
 
 func init() {
-	inventoryCmd.PersistentFlags().String("inventory", "", "path to inventory file (default: ./inventory.yml)")
 	inventoryCmd.AddCommand(inventoryListCmd)
 	rootCmd.AddCommand(inventoryCmd)
 }

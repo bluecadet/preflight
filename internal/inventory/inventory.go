@@ -3,6 +3,7 @@ package inventory
 import (
 	"fmt"
 	"maps"
+	"slices"
 )
 
 // Transport is the connection protocol to use for a target host.
@@ -38,7 +39,8 @@ type Group struct {
 
 // Inventory holds all groups and their hosts.
 type Inventory struct {
-	Groups map[string]Group
+	Groups     map[string]Group
+	GroupOrder []string
 }
 
 // HostsForTarget returns the hosts for the given target, which may be a group
@@ -59,7 +61,8 @@ func (inv *Inventory) HostsForTarget(target string) ([]Host, error) {
 	}
 
 	// Check if it's a host name.
-	for _, g := range inv.Groups {
+	for _, groupName := range inv.orderedGroups() {
+		g := inv.Groups[groupName]
 		if g.Name == "all" {
 			continue
 		}
@@ -79,7 +82,8 @@ func (inv *Inventory) AllHosts() []Host {
 	seen := map[string]bool{}
 	var hosts []Host
 
-	for name, g := range inv.Groups {
+	for _, name := range inv.orderedGroups() {
+		g := inv.Groups[name]
 		if name == "all" {
 			continue
 		}
@@ -92,6 +96,33 @@ func (inv *Inventory) AllHosts() []Host {
 		}
 	}
 	return hosts
+}
+
+// SelectTargets resolves a list of target selectors into a deduplicated list of
+// hosts. Selectors are processed in order and the first occurrence of a host
+// wins.
+func (inv *Inventory) SelectTargets(selectors []string) ([]Host, error) {
+	if len(selectors) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[string]bool)
+	var result []Host
+	for _, selector := range selectors {
+		hosts, err := inv.HostsForTarget(selector)
+		if err != nil {
+			return nil, err
+		}
+		for _, host := range hosts {
+			if seen[host.Name] {
+				continue
+			}
+			seen[host.Name] = true
+			result = append(result, host)
+		}
+	}
+
+	return result, nil
 }
 
 // mergedHost returns a copy of h with allVars, groupVars, and host vars merged
@@ -114,4 +145,17 @@ func (inv *Inventory) mergedHost(h Host, groupVars map[string]any) Host {
 	copy := h
 	copy.Vars = merged
 	return copy
+}
+
+func (inv *Inventory) orderedGroups() []string {
+	if len(inv.GroupOrder) > 0 {
+		return inv.GroupOrder
+	}
+
+	names := make([]string, 0, len(inv.Groups))
+	for name := range inv.Groups {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
 }

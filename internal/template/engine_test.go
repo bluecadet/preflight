@@ -59,6 +59,21 @@ func TestRender_UnknownVar(t *testing.T) {
 	}
 }
 
+func TestRender_PreserveUnknown(t *testing.T) {
+	e := New(map[string]any{
+		"known": "value",
+	}).WithPreserveUnknown()
+
+	got, err := e.Render("{{ vars.known }} {{ facts.os.build }} {{ target.hostname }}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "value {{ facts.os.build }} {{ target.hostname }}"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
 func TestRender_MultipleExpressions(t *testing.T) {
 	e := New(map[string]any{
 		"name": "world",

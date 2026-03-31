@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -8,7 +10,7 @@ import (
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
-	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/targeting"
 )
 
 var applyCmd = &cobra.Command{
@@ -55,7 +57,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.New(outFmt, os.Stdout)
+	renderer := output.Synchronized(output.New(outFmt, os.Stdout))
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
@@ -63,25 +65,64 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		return err
 	}
 
-	// Build the local target.
 	registry := module.Registry()
-	tgt := target.NewLocalTarget(registry)
-
-	// Build runner config.
-	cfg := runner.Config{
-		DryRun:      dryRun,
-		Tags:        tags,
-		SkipTags:    skipTags,
-		Concurrency: concurrency,
-		ProjectDir:  projectDir,
-		ProjectVars: projectCfg.Vars,
-		Vars:        vars,
-		Phase:       phase,
-		Renderer:    renderer,
-		Secrets:     secretsResolver,
-		StatePath:   stateFilePath(cmd),
+	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
+	if err != nil {
+		return err
 	}
 
-	r := runner.New(tgt, chain, cfg)
-	return r.Run(ctx, pb)
+	if phase != "plan" {
+		fetchRunner := runner.New(hosts[0].Target, chain, runner.Config{})
+		if err := fetchRunner.Fetch(ctx, pb); err != nil {
+			return err
+		}
+	}
+	if phase == "fetch" {
+		return nil
+	}
+
+	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+		cfg := runner.Config{
+			DryRun:        dryRun,
+			Tags:          tags,
+			SkipTags:      skipTags,
+			Concurrency:   concurrency,
+			ProjectDir:    projectDir,
+			ProjectVars:   projectCfg.Vars,
+			InventoryVars: host.Vars,
+			Vars:          vars,
+			TargetVars:    host.TargetVars,
+			TargetName:    host.Name,
+			Phase:         phase,
+			Renderer:      renderer,
+			Secrets:       secretsResolver,
+			StatePath:     host.StatePath,
+		}
+
+		if renderer != nil {
+			renderer.Emit(output.Event{
+				Type:     output.EventPlayStart,
+				PlayName: pb.Name,
+				Target:   host.Name,
+			})
+		}
+
+		r := runner.New(host.Target, chain, cfg)
+		plan, err := r.Plan(runCtx, pb)
+		if err != nil {
+			return fmt.Errorf("plan for %s: %w", host.Name, err)
+		}
+
+		if phase == "stage" {
+			if err := r.Stage(runCtx, plan); err != nil {
+				return fmt.Errorf("stage for %s: %w", host.Name, err)
+			}
+			return nil
+		}
+
+		if err := r.Apply(runCtx, plan); err != nil {
+			return fmt.Errorf("apply for %s: %w", host.Name, err)
+		}
+		return nil
+	})
 }

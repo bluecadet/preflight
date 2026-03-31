@@ -12,17 +12,20 @@ import (
 
 // Config holds the options that control runner behavior.
 type Config struct {
-	DryRun      bool
-	Tags        []string
-	SkipTags    []string
-	Concurrency int
-	ProjectDir  string
-	ProjectVars map[string]any
-	Vars        map[string]any // from --var CLI flags
-	Phase       string         // "plan", "fetch", "stage", "apply" (empty = all)
-	Renderer    output.Renderer
-	Secrets     *secrets.Resolver
-	StatePath   string
+	DryRun        bool
+	Tags          []string
+	SkipTags      []string
+	Concurrency   int
+	ProjectDir    string
+	ProjectVars   map[string]any
+	InventoryVars map[string]any
+	Vars          map[string]any // from --var CLI flags
+	TargetVars    map[string]any
+	TargetName    string
+	Phase         string // "plan", "fetch", "stage", "apply" (empty = all)
+	Renderer      output.Renderer
+	Secrets       *secrets.Resolver
+	StatePath     string
 }
 
 // Runner orchestrates the Plan→Fetch→Stage→Apply pipeline.

@@ -126,9 +126,13 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, resolver *s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		params := task.Params
+		preview, err := PreviewTask(task, nil)
+		if err != nil {
+			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
+		}
+		params := preview.Params
 		if resolver != nil && resolver.HasProviders() {
-			resolved, err := resolver.ResolveMap(ctx, task.Params)
+			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
 				return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 			}

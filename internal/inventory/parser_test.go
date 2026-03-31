@@ -42,6 +42,12 @@ func TestParse_Groups(t *testing.T) {
 	if _, ok := inv.Groups["gallery"]; !ok {
 		t.Error("expected gallery group")
 	}
+	if len(inv.GroupOrder) != 3 {
+		t.Fatalf("expected 3 ordered groups, got %d", len(inv.GroupOrder))
+	}
+	if inv.GroupOrder[0] != "all" || inv.GroupOrder[1] != "lobby" || inv.GroupOrder[2] != "gallery" {
+		t.Fatalf("unexpected group order: %#v", inv.GroupOrder)
+	}
 }
 
 func TestHostsForTarget_Group(t *testing.T) {
@@ -173,5 +179,31 @@ groups:
 	}
 	if got := hosts[0].PrivateKeyFrom; got != "secret:signage-key" {
 		t.Fatalf("expected private_key_from to be preserved, got %q", got)
+	}
+}
+
+func TestSelectTargets_DedupesInSelectorOrder(t *testing.T) {
+	inv, err := inventory.Parse([]byte(sampleInventory))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	hosts, err := inv.SelectTargets([]string{"lobby-pc-02", "lobby", "gallery"})
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+
+	got := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		got = append(got, host.Name)
+	}
+	want := []string{"lobby-pc-02", "lobby-pc-01", "gallery-pc-01"}
+	if len(got) != len(want) {
+		t.Fatalf("got %d hosts, want %d (%v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("host[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
+		}
 	}
 }

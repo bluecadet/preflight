@@ -2,35 +2,1073 @@ package target
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/masterzen/winrm"
 )
 
-// WinRMTarget communicates with a remote Windows machine via WinRM.
-// All methods are stubs pending full implementation.
-type WinRMTarget struct {
+type WinRMConfig struct {
 	Host     string
 	Port     int
 	Username string
 	Password string
 	HTTPS    bool
+	Insecure bool
+	Timeout  time.Duration
 }
 
-func (t *WinRMTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ bool) (Result, error) {
-	return Result{}, fmt.Errorf("winrm: not yet implemented")
+type winRMClient interface {
+	RunPSWithContext(ctx context.Context, command string) (string, string, int, error)
+	RunCmdWithContext(ctx context.Context, command string) (string, string, int, error)
 }
 
-func (t *WinRMTarget) CopyFile(_ context.Context, _, _ string) error {
-	return fmt.Errorf("winrm: not yet implemented")
+type winRMClientFactory func(WinRMConfig) (winRMClient, error)
+
+var defaultWinRMClientFactory winRMClientFactory = func(cfg WinRMConfig) (winRMClient, error) {
+	endpoint := winrm.NewEndpoint(cfg.Host, cfg.Port, cfg.HTTPS, cfg.Insecure, nil, nil, nil, cfg.Timeout)
+	return winrm.NewClient(endpoint, cfg.Username, cfg.Password)
 }
 
-func (t *WinRMTarget) ReadFile(_ context.Context, _ string) ([]byte, error) {
-	return nil, fmt.Errorf("winrm: not yet implemented")
+// WinRMTarget communicates with a remote Windows machine via WinRM.
+type WinRMTarget struct {
+	config        WinRMConfig
+	clientFactory winRMClientFactory
+	client        winRMClient
 }
 
-func (t *WinRMTarget) Reachable(_ context.Context) (bool, error) {
-	return false, fmt.Errorf("winrm: not yet implemented")
+func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
+	if cfg.Port == 0 {
+		if cfg.HTTPS {
+			cfg.Port = 5986
+		} else {
+			cfg.Port = 5985
+		}
+	}
+	return &WinRMTarget{
+		config:        cfg,
+		clientFactory: defaultWinRMClientFactory,
+	}
 }
 
-func (t *WinRMTarget) Info(_ context.Context) (TargetInfo, error) {
-	return TargetInfo{}, fmt.Errorf("winrm: not yet implemented")
+func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error) {
+	needsChange, checkOutput, err := t.checkModule(ctx, module, params)
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+	if !needsChange {
+		msg := "already in desired state"
+		if checkOutput != "" {
+			msg = checkOutput
+		}
+		return Result{TaskID: taskID, Status: StatusOK, Message: msg}, nil
+	}
+	if dryRun {
+		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
+	}
+	applyOutput, err := t.applyModule(ctx, module, params)
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+	msg := "change applied"
+	if strings.TrimSpace(applyOutput) != "" {
+		msg = strings.TrimSpace(applyOutput)
+	}
+	return Result{TaskID: taskID, Status: StatusChanged, Message: msg}, nil
 }
+
+func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return fmt.Errorf("winrm: read src %q: %w", src, err)
+	}
+	if err := t.copyBytes(ctx, data, dst); err != nil {
+		return fmt.Errorf("winrm: copy %q -> %q: %w", src, dst, err)
+	}
+	return nil
+}
+
+func (t *WinRMTarget) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	script, err := powershellJSONVar("path", path)
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := t.runPS(ctx, script+`
+if (-not (Test-Path -LiteralPath $path)) {
+  throw "file not found: $path"
+}
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+`)
+	if err != nil {
+		return nil, err
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	if err != nil {
+		return nil, fmt.Errorf("winrm: decode remote file %q: %w", path, err)
+	}
+	return decoded, nil
+}
+
+func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
+	_, err := t.runCmd(ctx, "echo preflight")
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (t *WinRMTarget) Info(ctx context.Context) (TargetInfo, error) {
+	stdout, err := t.runPS(ctx, `
+$os = Get-CimInstance Win32_OperatingSystem
+$arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+[pscustomobject]@{
+  hostname = $env:COMPUTERNAME
+  version  = [string]$os.Version
+  build    = [string]$os.BuildNumber
+  arch     = $arch
+} | ConvertTo-Json -Compress
+`)
+	if err != nil {
+		return TargetInfo{}, err
+	}
+
+	var payload struct {
+		Hostname string `json:"hostname"`
+		Version  string `json:"version"`
+		Build    string `json:"build"`
+		Arch     string `json:"arch"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
+		return TargetInfo{}, fmt.Errorf("winrm: parse target info: %w", err)
+	}
+
+	return TargetInfo{
+		Hostname:  payload.Hostname,
+		OSVersion: payload.Version,
+		OSBuild:   payload.Build,
+		Arch:      normalizeWindowsArch(payload.Arch),
+	}, nil
+}
+
+func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
+	return t.runPS(ctx, script)
+}
+
+func (t *WinRMTarget) clientForUse() (winRMClient, error) {
+	if t.client != nil {
+		return t.client, nil
+	}
+	if t.clientFactory == nil {
+		t.clientFactory = defaultWinRMClientFactory
+	}
+	client, err := t.clientFactory(t.config)
+	if err != nil {
+		return nil, fmt.Errorf("winrm: create client: %w", err)
+	}
+	t.client = client
+	return client, nil
+}
+
+func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) {
+	client, err := t.clientForUse()
+	if err != nil {
+		return "", err
+	}
+	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
+	if err != nil {
+		return "", fmt.Errorf("winrm powershell failed: %w", err)
+	}
+	if code != 0 {
+		return "", fmt.Errorf("winrm powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error) {
+	client, err := t.clientForUse()
+	if err != nil {
+		return "", err
+	}
+	stdout, stderr, code, err := client.RunCmdWithContext(ctx, command)
+	if err != nil {
+		return "", fmt.Errorf("winrm command failed: %w", err)
+	}
+	if code != 0 {
+		return "", fmt.Errorf("winrm command exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func (t *WinRMTarget) copyBytes(ctx context.Context, data []byte, dst string) error {
+	script, err := powershellJSONVar("path", dst)
+	if err != nil {
+		return err
+	}
+	if _, err := t.runPS(ctx, script+`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($path, @())
+`); err != nil {
+		return err
+	}
+
+	const chunkSize = 24 * 1024
+	for start := 0; start < len(data); start += chunkSize {
+		end := start + chunkSize
+		if end > len(data) {
+			end = len(data)
+		}
+		encoded := base64.StdEncoding.EncodeToString(data[start:end])
+		appendScript, err := powershellJSONVar("path", dst)
+		if err != nil {
+			return err
+		}
+		if _, err := t.runPS(ctx, appendScript+fmt.Sprintf(`
+$bytes = [Convert]::FromBase64String('%s')
+$stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+try {
+  $stream.Write($bytes, 0, $bytes.Length)
+} finally {
+  $stream.Dispose()
+}
+`, encoded)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (t *WinRMTarget) checkModule(ctx context.Context, module string, params map[string]any) (bool, string, error) {
+	switch module {
+	case "directory":
+		return t.checkDirectory(ctx, params)
+	case "file":
+		return t.checkFile(ctx, params)
+	case "shell":
+		return t.checkCreates(ctx, params, "shell")
+	case "powershell":
+		return t.checkPowershell(ctx, params)
+	case "environment":
+		return t.checkEnvironment(ctx, params)
+	case "wait":
+		return t.checkWait(ctx, params)
+	case "reboot":
+		return t.checkReboot(ctx, params)
+	case "registry":
+		return t.checkBooleanScript(ctx, params, registryCheckScript)
+	case "service":
+		return t.checkBooleanScript(ctx, params, serviceCheckScript)
+	case "package":
+		return t.checkBooleanScript(ctx, params, packageCheckScript)
+	case "shortcut":
+		return t.checkBooleanScript(ctx, params, shortcutCheckScript)
+	case "scheduled_task":
+		return t.checkBooleanScript(ctx, params, scheduledTaskCheckScript)
+	case "user":
+		return t.checkBooleanScript(ctx, params, userCheckScript)
+	case "windows_feature":
+		return t.checkBooleanScript(ctx, params, windowsFeatureCheckScript)
+	case "firewall_rule":
+		return t.checkBooleanScript(ctx, params, firewallRuleCheckScript)
+	default:
+		return false, "", fmt.Errorf("winrm: unknown module %q", module)
+	}
+}
+
+func (t *WinRMTarget) applyModule(ctx context.Context, module string, params map[string]any) (string, error) {
+	switch module {
+	case "directory":
+		return "", t.applyDirectory(ctx, params)
+	case "file":
+		return "", t.applyFile(ctx, params)
+	case "shell":
+		return t.applyShell(ctx, params)
+	case "powershell":
+		return t.applyPowershell(ctx, params)
+	case "environment":
+		return "", t.applyEnvironment(ctx, params)
+	case "wait":
+		return "", t.applyWait(ctx, params)
+	case "reboot":
+		return "", t.applyReboot(ctx, params)
+	case "registry":
+		return t.runScript(ctx, params, registryApplyScript)
+	case "service":
+		return t.runScript(ctx, params, serviceApplyScript)
+	case "package":
+		return t.applyPackage(ctx, params)
+	case "shortcut":
+		return t.runScript(ctx, params, shortcutApplyScript)
+	case "scheduled_task":
+		return t.runScript(ctx, params, scheduledTaskApplyScript)
+	case "user":
+		return t.runScript(ctx, params, userApplyScript)
+	case "windows_feature":
+		return t.runScript(ctx, params, windowsFeatureApplyScript)
+	case "firewall_rule":
+		return t.runScript(ctx, params, firewallRuleApplyScript)
+	default:
+		return "", fmt.Errorf("winrm: unknown module %q", module)
+	}
+}
+
+func (t *WinRMTarget) checkDirectory(ctx context.Context, params map[string]any) (bool, string, error) {
+	script, err := powershellJSONVar("params", params)
+	if err != nil {
+		return false, "", err
+	}
+	out, err := t.runPS(ctx, script+`
+$path = [string]$params.path
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Write-Output ([bool](Test-Path -LiteralPath $path))
+  exit 0
+}
+if (-not (Test-Path -LiteralPath $path)) {
+  Write-Output 'true'
+  exit 0
+}
+$item = Get-Item -LiteralPath $path
+Write-Output ([bool](-not $item.PSIsContainer))
+`)
+	if err != nil {
+		return false, "", err
+	}
+	value, err := parseWindowsBool(out)
+	return value, "", err
+}
+
+func (t *WinRMTarget) applyDirectory(ctx context.Context, params map[string]any) error {
+	_, err := t.runScript(ctx, params, `
+$path = [string]$params.path
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Remove-Item -LiteralPath $path -Force -Recurse -ErrorAction SilentlyContinue
+  exit 0
+}
+New-Item -ItemType Directory -Path $path -Force | Out-Null
+`)
+	return err
+}
+
+func (t *WinRMTarget) checkFile(ctx context.Context, params map[string]any) (bool, string, error) {
+	dest, ok := params["dest"].(string)
+	if !ok || dest == "" {
+		return false, "", fmt.Errorf("winrm file: required param %q is missing", "dest")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	src, _ := params["src"].(string)
+
+	script, err := powershellJSONVar("dest", dest)
+	if err != nil {
+		return false, "", err
+	}
+	out, err := t.runPS(ctx, script+`
+if (-not (Test-Path -LiteralPath $dest)) {
+  Write-Output 'missing'
+  exit 0
+}
+$item = Get-Item -LiteralPath $dest
+if ($item.PSIsContainer) {
+  throw "destination is a directory: $dest"
+}
+$hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Output ("present:" + $hash)
+`)
+	if err != nil {
+		if ensure == "absent" && strings.Contains(err.Error(), "missing") {
+			return false, "", nil
+		}
+		return false, "", err
+	}
+	trimmed := strings.TrimSpace(out)
+	switch ensure {
+	case "absent":
+		return trimmed != "missing", "", nil
+	case "present":
+		if trimmed == "missing" {
+			return true, "", nil
+		}
+		if src == "" {
+			return false, "", nil
+		}
+		localHash, err := hashLocalFile(src)
+		if err != nil {
+			return false, "", err
+		}
+		remoteHash := strings.TrimPrefix(trimmed, "present:")
+		return localHash != remoteHash, "", nil
+	default:
+		return false, "", fmt.Errorf("winrm file: unknown ensure value %q", ensure)
+	}
+}
+
+func (t *WinRMTarget) applyFile(ctx context.Context, params map[string]any) error {
+	dest, ok := params["dest"].(string)
+	if !ok || dest == "" {
+		return fmt.Errorf("winrm file: required param %q is missing", "dest")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	src, _ := params["src"].(string)
+
+	switch ensure {
+	case "absent":
+		_, err := t.runScript(ctx, map[string]any{"dest": dest}, `
+Remove-Item -LiteralPath $params.dest -Force -ErrorAction SilentlyContinue
+`)
+		return err
+	case "present":
+		if src != "" {
+			return t.CopyFile(ctx, src, dest)
+		}
+		_, err := t.runScript(ctx, map[string]any{"dest": dest}, `
+$dir = Split-Path -Parent $params.dest
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($params.dest, @())
+`)
+		return err
+	default:
+		return fmt.Errorf("winrm file: unknown ensure value %q", ensure)
+	}
+}
+
+func (t *WinRMTarget) checkCreates(ctx context.Context, params map[string]any, label string) (bool, string, error) {
+	creates, _ := params["creates"].(string)
+	if creates == "" {
+		return true, "", nil
+	}
+	out, err := t.runScript(ctx, map[string]any{"creates": creates}, `
+Write-Output ([bool](Test-Path -LiteralPath $params.creates))
+`)
+	if err != nil {
+		return false, "", fmt.Errorf("%s: %w", label, err)
+	}
+	ok, err := parseWindowsBool(out)
+	if err != nil {
+		return false, "", err
+	}
+	return !ok, "", nil
+}
+
+func (t *WinRMTarget) checkPowershell(ctx context.Context, params map[string]any) (bool, string, error) {
+	return t.checkCreates(ctx, params, "powershell")
+}
+
+func (t *WinRMTarget) applyPowershell(ctx context.Context, params map[string]any) (string, error) {
+	if script, _ := params["script"].(string); script != "" {
+		return t.runPS(ctx, script)
+	}
+	file, _ := params["file"].(string)
+	if file == "" {
+		return "", fmt.Errorf("powershell: one of 'script' or 'file' is required")
+	}
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return "", fmt.Errorf("powershell: read %q: %w", file, err)
+	}
+	args, err := paramStringSlice(params, "args")
+	if err != nil {
+		return "", err
+	}
+	script, err := powershellJSONVar("script", string(data))
+	if err != nil {
+		return "", err
+	}
+	scriptArgs, err := powershellJSONVar("scriptArgs", args)
+	if err != nil {
+		return "", err
+	}
+	return t.runPS(ctx, script+`
+`+scriptArgs+`
+$block = [ScriptBlock]::Create($script)
+& $block @scriptArgs
+`)
+}
+
+func (t *WinRMTarget) applyShell(ctx context.Context, params map[string]any) (string, error) {
+	cmd, ok := params["cmd"].(string)
+	if !ok || cmd == "" {
+		return "", fmt.Errorf("shell: required param %q is missing", "cmd")
+	}
+	args, err := paramStringSlice(params, "args")
+	if err != nil {
+		return "", err
+	}
+	workingDir, _ := params["working_dir"].(string)
+
+	script, err := powershellJSONVar("cmd", cmd)
+	if err != nil {
+		return "", err
+	}
+	psArgs, err := powershellJSONVar("args", args)
+	if err != nil {
+		return "", err
+	}
+	wd, err := powershellJSONVar("workingDir", workingDir)
+	if err != nil {
+		return "", err
+	}
+	return t.runPS(ctx, script+`
+`+psArgs+`
+`+wd+`
+if ($workingDir) {
+  Set-Location -LiteralPath $workingDir
+}
+& $cmd @args
+`)
+}
+
+func (t *WinRMTarget) checkEnvironment(ctx context.Context, params map[string]any) (bool, string, error) {
+	name, ok := params["name"].(string)
+	if !ok || name == "" {
+		return false, "", fmt.Errorf("environment: required param %q is missing", "name")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	scope, _ := params["scope"].(string)
+	if scope == "" {
+		scope = "Machine"
+	}
+	value, _ := params["value"].(string)
+
+	script, err := powershellJSONVar("name", name)
+	if err != nil {
+		return false, "", err
+	}
+	psScope, err := powershellJSONVar("scope", normalizeEnvScope(scope))
+	if err != nil {
+		return false, "", err
+	}
+	psValue, err := powershellJSONVar("value", value)
+	if err != nil {
+		return false, "", err
+	}
+	out, err := t.runPS(ctx, script+`
+`+psScope+`
+`+psValue+`
+$current = [System.Environment]::GetEnvironmentVariable($name, $scope)
+if (`+fmt.Sprintf("%q", ensure)+` -eq 'absent') {
+  Write-Output ([bool]($current -ne $null -and $current -ne ''))
+} else {
+  Write-Output ([bool]($current -ne $value))
+}
+`)
+	if err != nil {
+		return false, "", err
+	}
+	needs, err := parseWindowsBool(out)
+	return needs, "", err
+}
+
+func (t *WinRMTarget) applyEnvironment(ctx context.Context, params map[string]any) error {
+	name, _ := params["name"].(string)
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	scope, _ := params["scope"].(string)
+	if scope == "" {
+		scope = "Machine"
+	}
+	value, _ := params["value"].(string)
+
+	_, err := t.runScript(ctx, map[string]any{
+		"name":   name,
+		"value":  value,
+		"scope":  normalizeEnvScope(scope),
+		"ensure": ensure,
+	}, `
+if ($params.ensure -eq 'absent') {
+  [System.Environment]::SetEnvironmentVariable($params.name, $null, $params.scope)
+  exit 0
+}
+[System.Environment]::SetEnvironmentVariable($params.name, [string]$params.value, $params.scope)
+`)
+	return err
+}
+
+func (t *WinRMTarget) checkWait(ctx context.Context, params map[string]any) (bool, string, error) {
+	condition, _ := params["condition"].(string)
+	targetValue, _ := params["target"].(string)
+	met, err := t.waitCondition(ctx, condition, targetValue)
+	if err != nil {
+		return false, "", err
+	}
+	return !met, "", nil
+}
+
+func (t *WinRMTarget) applyWait(ctx context.Context, params map[string]any) error {
+	condition, _ := params["condition"].(string)
+	targetValue, _ := params["target"].(string)
+	timeoutStr, _ := params["timeout"].(string)
+	if timeoutStr == "" {
+		timeoutStr = "5m"
+	}
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		return fmt.Errorf("wait: invalid timeout %q: %w", timeoutStr, err)
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		met, err := t.waitCondition(ctx, condition, targetValue)
+		if err != nil {
+			return err
+		}
+		if met {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("wait: timeout after %s waiting for condition %q on %q", timeoutStr, condition, targetValue)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func (t *WinRMTarget) waitCondition(ctx context.Context, condition, targetValue string) (bool, error) {
+	out, err := t.runScript(ctx, map[string]any{
+		"condition": condition,
+		"target":    targetValue,
+	}, `
+switch ($params.condition) {
+  'file_exists' {
+    Write-Output ([bool](Test-Path -LiteralPath $params.target))
+  }
+  'port_open' {
+    $parts = $params.target.Split(':')
+    if ($parts.Length -lt 2) { throw "wait: port_open target must be host:port" }
+    $host = $parts[0]
+    $port = [int]$parts[1]
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+      $async = $client.BeginConnect($host, $port, $null, $null)
+      $connected = $async.AsyncWaitHandle.WaitOne(2000, $false)
+      if ($connected -and $client.Connected) {
+        $client.EndConnect($async) | Out-Null
+        Write-Output 'true'
+      } else {
+        Write-Output 'false'
+      }
+    } finally {
+      $client.Close()
+    }
+  }
+  'service_running' {
+    $svc = Get-Service -Name $params.target -ErrorAction SilentlyContinue
+    Write-Output ([bool]($svc -and $svc.Status -eq 'Running'))
+  }
+  default {
+    throw "wait: unknown condition $($params.condition)"
+  }
+}
+`)
+	if err != nil {
+		return false, err
+	}
+	return parseWindowsBool(out)
+}
+
+func (t *WinRMTarget) checkReboot(_ context.Context, _ map[string]any) (bool, string, error) {
+	return true, "", nil
+}
+
+func (t *WinRMTarget) applyReboot(ctx context.Context, params map[string]any) error {
+	timeout := 300
+	switch raw := params["timeout"].(type) {
+	case int:
+		timeout = raw
+	case int64:
+		timeout = int(raw)
+	case float64:
+		timeout = int(raw)
+	}
+	_, err := t.runCmd(ctx, fmt.Sprintf("shutdown /r /t %d", timeout))
+	return err
+}
+
+func (t *WinRMTarget) checkBooleanScript(ctx context.Context, params map[string]any, body string) (bool, string, error) {
+	out, err := t.runScript(ctx, params, body)
+	if err != nil {
+		return false, "", err
+	}
+	value, err := parseWindowsBool(out)
+	return value, "", err
+}
+
+func (t *WinRMTarget) applyPackage(ctx context.Context, params map[string]any) (string, error) {
+	source, _ := params["source"].(string)
+	if source != "" {
+		tempName := filepath.Base(source)
+		remotePath := filepath.Join(os.TempDir(), "preflight", tempName)
+		if err := t.CopyFile(ctx, source, remotePath); err != nil {
+			return "", err
+		}
+		params = cloneParams(params)
+		params["source"] = remotePath
+	}
+	return t.runScript(ctx, params, packageApplyScript)
+}
+
+func (t *WinRMTarget) runScript(ctx context.Context, params map[string]any, body string) (string, error) {
+	script, err := powershellJSONVar("params", params)
+	if err != nil {
+		return "", err
+	}
+	return t.runPS(ctx, script+"\n"+body)
+}
+
+func powershellJSONVar(name string, value any) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode %s: %w", name, err)
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	return fmt.Sprintf(
+		"$%s = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')) | ConvertFrom-Json",
+		name,
+		encoded,
+	), nil
+}
+
+func parseWindowsBool(out string) (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(out)) {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
+	}
+}
+
+func normalizeWindowsArch(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "64-bit":
+		return "amd64"
+	case "32-bit":
+		return "386"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
+}
+
+func normalizeEnvScope(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "user":
+		return "User"
+	default:
+		return "Machine"
+	}
+}
+
+func hashLocalFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("hash %q: %w", path, err)
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum), nil
+}
+
+func paramStringSlice(params map[string]any, key string) ([]string, error) {
+	value, ok := params[key]
+	if !ok || value == nil {
+		return nil, nil
+	}
+	switch typed := value.(type) {
+	case []string:
+		return typed, nil
+	case []any:
+		result := make([]string, 0, len(typed))
+		for i, item := range typed {
+			text, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%s[%d] must be a string, got %T", key, i, item)
+			}
+			result = append(result, text)
+		}
+		return result, nil
+	default:
+		return nil, fmt.Errorf("%s must be a string list, got %T", key, value)
+	}
+}
+
+func cloneParams(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(params))
+	for key, value := range params {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+const registryCheckScript = `
+$path = [string]$params.path
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Write-Output (Test-Path -LiteralPath $path)
+  exit 0
+}
+if (-not (Test-Path -LiteralPath $path)) {
+  Write-Output 'true'
+  exit 0
+}
+$needs = $false
+if ($params.values) {
+  $item = Get-ItemProperty -LiteralPath $path
+  foreach ($prop in $params.values.PSObject.Properties) {
+    $currentProp = $item.PSObject.Properties[$prop.Name]
+    if ($null -eq $currentProp) {
+      $needs = $true
+      break
+    }
+    if ([string]$currentProp.Value -ne [string]$prop.Value) {
+      $needs = $true
+      break
+    }
+  }
+}
+Write-Output $needs
+`
+
+const registryApplyScript = `
+$path = [string]$params.path
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+  exit 0
+}
+New-Item -Path $path -Force | Out-Null
+if ($params.values) {
+  foreach ($prop in $params.values.PSObject.Properties) {
+    New-ItemProperty -LiteralPath $path -Name $prop.Name -Value $prop.Value -Force | Out-Null
+  }
+}
+`
+
+const serviceCheckScript = `
+$name = [string]$params.name
+$desiredState = if ($params.state) { [string]$params.state } else { '' }
+$desiredStartup = if ($params.startup_type) { [string]$params.startup_type } else { '' }
+$filterName = $name.Replace("'", "''")
+$service = Get-CimInstance Win32_Service -Filter ("Name='" + $filterName + "'")
+if ($null -eq $service) {
+  throw "service not found: $name"
+}
+$needs = $false
+if ($desiredState -eq 'disabled') {
+  if ($service.State -ne 'Stopped' -or $service.StartMode -ne 'Disabled') {
+    $needs = $true
+  }
+} else {
+  if ($desiredState -eq 'running' -and $service.State -ne 'Running') {
+    $needs = $true
+  }
+  if ($desiredState -eq 'stopped' -and $service.State -ne 'Stopped') {
+    $needs = $true
+  }
+  if ($desiredStartup) {
+    $startupMap = @{ automatic = 'Auto'; manual = 'Manual'; disabled = 'Disabled' }
+    if ($startupMap[$desiredStartup] -ne $service.StartMode) {
+      $needs = $true
+    }
+  }
+}
+Write-Output $needs
+`
+
+const serviceApplyScript = `
+$name = [string]$params.name
+$desiredState = if ($params.state) { [string]$params.state } else { '' }
+$desiredStartup = if ($params.startup_type) { [string]$params.startup_type } else { '' }
+if ($desiredState -eq 'disabled') {
+  Stop-Service -Name $name -Force -ErrorAction SilentlyContinue
+  Set-Service -Name $name -StartupType Disabled
+  exit 0
+}
+if ($desiredStartup) {
+  $startupMap = @{ automatic = 'Automatic'; manual = 'Manual'; disabled = 'Disabled' }
+  Set-Service -Name $name -StartupType $startupMap[$desiredStartup]
+}
+if ($desiredState -eq 'running') {
+  Start-Service -Name $name
+}
+if ($desiredState -eq 'stopped') {
+  Stop-Service -Name $name -Force
+}
+`
+
+const packageCheckScript = `
+$productId = if ($params.product_id) { [string]$params.product_id } else { '' }
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if (-not $productId) {
+  Write-Output 'true'
+  exit 0
+}
+$installed = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq $productId }
+if ($ensure -eq 'absent') {
+  Write-Output ([bool]($installed))
+  exit 0
+}
+Write-Output ([bool](-not $installed))
+`
+
+const packageApplyScript = `
+$source = [string]$params.source
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+$args = @()
+if ($params.args) {
+  foreach ($item in $params.args) {
+    $args += [string]$item
+  }
+}
+if ($ensure -eq 'absent') {
+  if ($params.product_id) {
+    Start-Process msiexec.exe -ArgumentList @('/x', [string]$params.product_id, '/qn') -Wait -NoNewWindow
+  }
+  exit 0
+}
+if (-not $source) { throw "package source is required" }
+$extension = [IO.Path]::GetExtension($source).ToLowerInvariant()
+if ($extension -eq '.msi') {
+  Start-Process msiexec.exe -ArgumentList (@('/i', $source, '/qn') + $args) -Wait -NoNewWindow
+} else {
+  Start-Process -FilePath $source -ArgumentList $args -Wait -NoNewWindow
+}
+`
+
+const shortcutCheckScript = `
+$destination = [string]$params.destination
+Write-Output ([bool](-not (Test-Path -LiteralPath $destination)))
+`
+
+const shortcutApplyScript = `
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut([string]$params.destination)
+$shortcut.TargetPath = [string]$params.target
+if ($params.args) { $shortcut.Arguments = [string]$params.args }
+if ($params.icon) { $shortcut.IconLocation = [string]$params.icon }
+$shortcut.Save()
+`
+
+const scheduledTaskCheckScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+$task = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+if ($ensure -eq 'absent') {
+  Write-Output ([bool]($task))
+  exit 0
+}
+Write-Output ([bool](-not $task))
+`
+
+const scheduledTaskApplyScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Unregister-ScheduledTask -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+  exit 0
+}
+$action = New-ScheduledTaskAction -Execute ([string]$params.command)
+$trigger = New-ScheduledTaskTrigger -AtStartup
+Register-ScheduledTask -TaskName $name -Action $action -Trigger $trigger -Force | Out-Null
+`
+
+const userCheckScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+$user = Get-LocalUser -Name $name -ErrorAction SilentlyContinue
+if ($ensure -eq 'absent') {
+  Write-Output ([bool]($user))
+  exit 0
+}
+Write-Output ([bool](-not $user))
+`
+
+const userApplyScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Remove-LocalUser -Name $name -ErrorAction SilentlyContinue
+  exit 0
+}
+if (-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) {
+  $secure = ConvertTo-SecureString ([string]$params.password) -AsPlainText -Force
+  New-LocalUser -Name $name -Password $secure | Out-Null
+}
+`
+
+const windowsFeatureCheckScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+$feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction SilentlyContinue
+if (-not $feature) { throw "windows feature not found: $name" }
+if ($ensure -eq 'absent') {
+  Write-Output ([bool]($feature.State -ne 'Disabled'))
+  exit 0
+}
+Write-Output ([bool]($feature.State -ne 'Enabled'))
+`
+
+const windowsFeatureApplyScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Disable-WindowsOptionalFeature -Online -FeatureName $name -NoRestart | Out-Null
+  exit 0
+}
+Enable-WindowsOptionalFeature -Online -FeatureName $name -NoRestart | Out-Null
+`
+
+const firewallRuleCheckScript = `
+$name = [string]$params.name
+$rule = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Write-Output ([bool]($rule))
+  exit 0
+}
+Write-Output ([bool](-not $rule))
+`
+
+const firewallRuleApplyScript = `
+$name = [string]$params.name
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
+  exit 0
+}
+$ports = $null
+if ($params.ports) {
+  if ($params.ports -is [System.Array]) {
+    $ports = (($params.ports | ForEach-Object { [string]$_ }) -join ',')
+  } else {
+    $ports = [string]$params.ports
+  }
+}
+$protocol = if ($params.protocol) { [string]$params.protocol } else { 'tcp' }
+New-NetFirewallRule -DisplayName $name -Direction ([string]$params.direction) -Action ([string]$params.action) -Protocol $protocol -LocalPort $ports | Out-Null
+`

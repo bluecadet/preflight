@@ -21,6 +21,8 @@ type Engine struct {
 	env    map[string]string
 	target map[string]any
 	facts  map[string]any
+
+	preserveUnknown bool
 }
 
 // New creates an Engine pre-loaded with the merged variable map.
@@ -61,6 +63,14 @@ func (e *Engine) WithFacts(facts map[string]any) *Engine {
 	return e
 }
 
+// WithPreserveUnknown keeps unknown expressions intact instead of replacing
+// them with an empty string. This is useful during pure planning when facts
+// or target metadata may not be available yet.
+func (e *Engine) WithPreserveUnknown() *Engine {
+	e.preserveUnknown = true
+	return e
+}
+
 // Render evaluates all {{ expression }} placeholders in s and returns the
 // resulting string. Unknown variable paths resolve to an empty string.
 func (e *Engine) Render(s string) (string, error) {
@@ -75,10 +85,16 @@ func (e *Engine) Render(s string) (string, error) {
 			return match
 		}
 		expr := strings.TrimSpace(inner[1])
-		val, err := e.evalExpr(expr)
+		val, resolved, err := e.evalExpr(expr)
 		if err != nil {
 			renderErr = err
 			return match
+		}
+		if !resolved {
+			if e.preserveUnknown {
+				return match
+			}
+			return ""
 		}
 		return val
 	})
@@ -138,10 +154,10 @@ func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
 
 // evalExpr resolves a dot-path expression such as "vars.foo.bar" against the
 // engine's context. Returns empty string for unknown paths.
-func (e *Engine) evalExpr(expr string) (string, error) {
+func (e *Engine) evalExpr(expr string) (string, bool, error) {
 	parts := strings.Split(expr, ".")
 	if len(parts) == 0 || parts[0] == "" {
-		return "", fmt.Errorf("template: empty expression")
+		return "", false, fmt.Errorf("template: empty expression")
 	}
 
 	namespace := parts[0]
@@ -159,15 +175,15 @@ func (e *Engine) evalExpr(expr string) (string, error) {
 		root = mapToIface(e.facts)
 	default:
 		// Unknown namespace — return empty string (not an error).
-		return "", nil
+		return "", false, nil
 	}
 
 	val, err := dotLookup(root, rest)
 	if err != nil {
 		// Unresolvable path — return empty string.
-		return "", nil
+		return "", false, nil
 	}
-	return fmt.Sprintf("%v", val), nil
+	return fmt.Sprintf("%v", val), true, nil
 }
 
 // dotLookup traverses a nested map structure following the given path segments.

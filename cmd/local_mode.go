@@ -10,9 +10,6 @@ import (
 )
 
 func validateLocalOnlyRunFlags(cmd *cobra.Command) error {
-	if err := validateLocalTargets(cmd); err != nil {
-		return err
-	}
 	if err := validateConcurrency(cmd); err != nil {
 		return err
 	}
@@ -32,10 +29,10 @@ func validateLocalTargets(cmd *cobra.Command) error {
 
 func validateConcurrency(cmd *cobra.Command) error {
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
-	if concurrency <= 1 {
+	if concurrency >= 0 {
 		return nil
 	}
-	return fmt.Errorf("--concurrency values greater than 1 are not supported in local-only mode")
+	return fmt.Errorf("--concurrency must be greater than or equal to 0")
 }
 
 func validatePhase(cmd *cobra.Command) error {

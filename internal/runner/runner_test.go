@@ -178,9 +178,13 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	if len(plan.Tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
 	}
-	values, ok := plan.Tasks[0].Params["values"].(map[string]any)
+	preview, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask returned error: %v", err)
+	}
+	values, ok := preview.Params["values"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected values map, got %T", plan.Tasks[0].Params["values"])
+		t.Fatalf("expected values map, got %T", preview.Params["values"])
 	}
 	if values["DefaultPassword"] != "secret:autologin-password" {
 		t.Fatalf("expected secret ref to be preserved in plan, got %#v", values["DefaultPassword"])

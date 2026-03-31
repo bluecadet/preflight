@@ -33,13 +33,19 @@ type rawHost struct {
 
 // Parse parses inventory YAML data into an Inventory.
 func Parse(data []byte) (*Inventory, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
+		return nil, fmt.Errorf("inventory: parse error: %w", err)
+	}
+
 	var raw rawInventory
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("inventory: parse error: %w", err)
 	}
 
 	inv := &Inventory{
-		Groups: make(map[string]Group, len(raw.Groups)),
+		Groups:     make(map[string]Group, len(raw.Groups)),
+		GroupOrder: inventoryGroupOrder(&root),
 	}
 
 	for name, rg := range raw.Groups {
@@ -72,6 +78,33 @@ func Parse(data []byte) (*Inventory, error) {
 	}
 
 	return inv, nil
+}
+
+func inventoryGroupOrder(root *yaml.Node) []string {
+	if root == nil || len(root.Content) == 0 {
+		return nil
+	}
+
+	doc := root.Content[0]
+	if doc.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		key := doc.Content[i]
+		value := doc.Content[i+1]
+		if key.Value != "groups" || value.Kind != yaml.MappingNode {
+			continue
+		}
+
+		order := make([]string, 0, len(value.Content)/2)
+		for j := 0; j+1 < len(value.Content); j += 2 {
+			order = append(order, value.Content[j].Value)
+		}
+		return order
+	}
+
+	return nil
 }
 
 // ParseFile reads and parses an inventory YAML file.
