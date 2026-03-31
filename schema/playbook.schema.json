@@ -1,0 +1,240 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preflight.dev/schema/playbook.schema.json",
+  "title": "Playbook",
+  "description": "Schema for preflight playbook.yml files",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Human-readable playbook name"
+    },
+    "description": {
+      "type": "string",
+      "description": "Playbook description"
+    },
+    "vars": {
+      "type": "object",
+      "description": "Playbook-level variable overrides"
+    },
+    "import": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Other playbook files to merge before this one's tasks"
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Ordered list of tasks",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable label used in output and depends_on references"
+        },
+        "uses": {
+          "type": "string",
+          "description": "Action reference, e.g. preflight/kiosk-mode, ./actions/local, github.com/org/name@v1"
+        },
+        "with": {
+          "type": "object",
+          "description": "Input values passed to the referenced action"
+        },
+        "when": {
+          "type": "string",
+          "description": "Template condition expression, e.g. {{ vars.enabled }}"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Task names this task depends on"
+        },
+        "ignore_errors": {
+          "type": "boolean",
+          "description": "Continue execution even if this task fails"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for filtering task execution"
+        },
+        "registry": { "$ref": "#/$defs/moduleRegistry" },
+        "service": { "$ref": "#/$defs/moduleService" },
+        "file": { "$ref": "#/$defs/moduleFile" },
+        "directory": { "$ref": "#/$defs/moduleDirectory" },
+        "package": { "$ref": "#/$defs/modulePackage" },
+        "shortcut": { "$ref": "#/$defs/moduleShortcut" },
+        "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
+        "user": { "$ref": "#/$defs/moduleUser" },
+        "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
+        "environment": { "$ref": "#/$defs/moduleEnvironment" },
+        "firewall_rule": { "$ref": "#/$defs/moduleFirewallRule" },
+        "powershell": { "$ref": "#/$defs/modulePowershell" },
+        "shell": { "$ref": "#/$defs/moduleShell" },
+        "reboot": { "$ref": "#/$defs/moduleReboot" },
+        "wait": { "$ref": "#/$defs/moduleWait" }
+      }
+    },
+    "moduleRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "values": { "type": "object" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleService": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "state": { "type": "string", "enum": ["running", "stopped", "disabled"] },
+        "startup_type": { "type": "string", "enum": ["automatic", "manual", "disabled"] }
+      }
+    },
+    "moduleFile": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "src": { "type": "string" },
+        "dest": { "type": "string" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" },
+        "owner": { "type": "string" },
+        "permissions": { "type": "string" }
+      }
+    },
+    "moduleDirectory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" },
+        "owner": { "type": "string" },
+        "permissions": { "type": "string" }
+      }
+    },
+    "modulePackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "source": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "product_id": { "type": "string" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleShortcut": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "target": { "type": "string" },
+        "destination": { "type": "string" },
+        "args": { "type": "string" },
+        "icon": { "type": "string" }
+      }
+    },
+    "moduleScheduledTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "command": { "type": "string" },
+        "trigger": { "type": "string" },
+        "user": { "type": "string" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleUser": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "password": { "type": "string" },
+        "groups": { "type": "array", "items": { "type": "string" } },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleWindowsFeature": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "value": { "type": "string" },
+        "scope": { "type": "string", "enum": ["machine", "user"], "default": "machine" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleFirewallRule": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "direction": { "type": "string", "enum": ["inbound", "outbound"] },
+        "action": { "type": "string", "enum": ["allow", "block"] },
+        "protocol": { "type": "string", "enum": ["tcp", "udp", "any"], "default": "tcp" },
+        "ports": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" },
+            { "type": "array", "items": { "oneOf": [{ "type": "integer" }, { "type": "string" }] } }
+          ]
+        },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "modulePowershell": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "script": { "type": "string" },
+        "file": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "creates": { "type": "string" }
+      }
+    },
+    "moduleShell": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cmd": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "creates": { "type": "string" },
+        "working_dir": { "type": "string" }
+      }
+    },
+    "moduleReboot": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "condition": { "type": "string", "enum": ["always", "if_needed"], "default": "if_needed" },
+        "timeout": { "type": "integer", "default": 300 }
+      }
+    },
+    "moduleWait": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "condition": { "type": "string", "enum": ["port_open", "file_exists", "service_running"] },
+        "timeout": { "type": "integer", "default": 60 }
+      }
+    }
+  }
+}

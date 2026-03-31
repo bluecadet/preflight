@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preflight.dev/schema/config.schema.json",
+  "title": "Config",
+  "description": "Schema for preflight.yml project configuration files",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "string",
+      "description": "Project name identifier"
+    },
+    "environment": {
+      "type": "string",
+      "description": "Deployment environment, e.g. production, staging"
+    },
+    "vars": {
+      "type": "object",
+      "description": "Project-level variables available to all playbooks"
+    }
+  }
+}

@@ -1,0 +1,483 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preflight.dev/schema/action.schema.json",
+  "title": "Action",
+  "description": "Schema for preflight action.yml files",
+  "type": "object",
+  "required": ["name", "tasks"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Namespaced action name, e.g. org/action-name",
+      "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._/-]+$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Semantic version, e.g. 1.2.0",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"
+    },
+    "description": {
+      "type": "string"
+    },
+    "author": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object",
+      "description": "Map of named input definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/inputDef"
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "description": "Map of named output definitions",
+      "additionalProperties": {
+        "$ref": "#/$defs/outputDef"
+      }
+    },
+    "tasks": {
+      "type": "array",
+      "description": "Ordered list of tasks",
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    }
+  },
+  "$defs": {
+    "inputDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "bool", "int", "path"]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "default": {},
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "outputDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable label used in output and depends_on references"
+        },
+        "uses": {
+          "type": "string",
+          "description": "Reference to another action, mutually exclusive with module fields"
+        },
+        "with": {
+          "type": "object",
+          "description": "Input values passed to the referenced action"
+        },
+        "when": {
+          "type": "string",
+          "description": "Template condition expression, e.g. {{ vars.enabled }}"
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Task names this task depends on"
+        },
+        "ignore_errors": {
+          "type": "boolean",
+          "description": "Continue execution even if this task fails"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Tags for filtering task execution"
+        },
+        "registry": { "$ref": "#/$defs/moduleRegistry" },
+        "service": { "$ref": "#/$defs/moduleService" },
+        "file": { "$ref": "#/$defs/moduleFile" },
+        "directory": { "$ref": "#/$defs/moduleDirectory" },
+        "package": { "$ref": "#/$defs/modulePackage" },
+        "shortcut": { "$ref": "#/$defs/moduleShortcut" },
+        "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
+        "user": { "$ref": "#/$defs/moduleUser" },
+        "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
+        "environment": { "$ref": "#/$defs/moduleEnvironment" },
+        "firewall_rule": { "$ref": "#/$defs/moduleFirewallRule" },
+        "powershell": { "$ref": "#/$defs/modulePowershell" },
+        "shell": { "$ref": "#/$defs/moduleShell" },
+        "reboot": { "$ref": "#/$defs/moduleReboot" },
+        "wait": { "$ref": "#/$defs/moduleWait" }
+      }
+    },
+    "moduleRegistry": {
+      "type": "object",
+      "description": "Manage Windows registry keys and values",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Registry key path, e.g. HKLM:\\SOFTWARE\\MyApp"
+        },
+        "values": {
+          "type": "object",
+          "description": "Map of value name to value data"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleService": {
+      "type": "object",
+      "description": "Manage Windows services",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Service name"
+        },
+        "state": {
+          "type": "string",
+          "enum": ["running", "stopped", "disabled"]
+        },
+        "startup_type": {
+          "type": "string",
+          "enum": ["automatic", "manual", "disabled"],
+          "description": "Service startup type"
+        }
+      }
+    },
+    "moduleFile": {
+      "type": "object",
+      "description": "Manage files",
+      "additionalProperties": false,
+      "properties": {
+        "src": {
+          "type": "string",
+          "description": "Source path"
+        },
+        "dest": {
+          "type": "string",
+          "description": "Destination path"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        },
+        "owner": {
+          "type": "string",
+          "description": "File owner"
+        },
+        "permissions": {
+          "type": "string",
+          "description": "File permissions"
+        }
+      }
+    },
+    "moduleDirectory": {
+      "type": "object",
+      "description": "Manage directories",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Directory path"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "permissions": {
+          "type": "string"
+        }
+      }
+    },
+    "modulePackage": {
+      "type": "object",
+      "description": "Manage installed packages (MSI/EXE)",
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "type": "string",
+          "description": "Path or UNC path to MSI or EXE installer"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional installer arguments"
+        },
+        "product_id": {
+          "type": "string",
+          "description": "MSI product GUID for idempotency check"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleShortcut": {
+      "type": "object",
+      "description": "Manage Windows shortcuts (.lnk)",
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Target executable or file path"
+        },
+        "destination": {
+          "type": "string",
+          "description": "Path where the shortcut file will be created"
+        },
+        "args": {
+          "type": "string",
+          "description": "Arguments for the shortcut target"
+        },
+        "icon": {
+          "type": "string",
+          "description": "Path to icon file"
+        }
+      }
+    },
+    "moduleScheduledTask": {
+      "type": "object",
+      "description": "Manage Windows scheduled tasks",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Task name"
+        },
+        "command": {
+          "type": "string",
+          "description": "Command to run"
+        },
+        "trigger": {
+          "type": "string",
+          "description": "Task trigger (e.g. daily, onlogon)"
+        },
+        "user": {
+          "type": "string",
+          "description": "User account to run the task as"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleUser": {
+      "type": "object",
+      "description": "Manage local Windows user accounts",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Username"
+        },
+        "password": {
+          "type": "string",
+          "description": "User password"
+        },
+        "groups": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Groups to add the user to"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleWindowsFeature": {
+      "type": "object",
+      "description": "Manage Windows features/roles",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Windows feature name"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleEnvironment": {
+      "type": "object",
+      "description": "Manage environment variables",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Environment variable name"
+        },
+        "value": {
+          "type": "string",
+          "description": "Environment variable value"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["machine", "user"],
+          "default": "machine",
+          "description": "Scope of the environment variable"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleFirewallRule": {
+      "type": "object",
+      "description": "Manage Windows Firewall rules",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Firewall rule name"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["inbound", "outbound"]
+        },
+        "action": {
+          "type": "string",
+          "enum": ["allow", "block"]
+        },
+        "protocol": {
+          "type": "string",
+          "enum": ["tcp", "udp", "any"],
+          "default": "tcp"
+        },
+        "ports": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" },
+            { "type": "array", "items": { "oneOf": [{ "type": "integer" }, { "type": "string" }] } }
+          ],
+          "description": "Port number(s) or range(s)"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "modulePowershell": {
+      "type": "object",
+      "description": "Run PowerShell scripts",
+      "additionalProperties": false,
+      "properties": {
+        "script": {
+          "type": "string",
+          "description": "Inline PowerShell script"
+        },
+        "file": {
+          "type": "string",
+          "description": "Path to a PowerShell script file"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments to pass to the script"
+        },
+        "creates": {
+          "type": "string",
+          "description": "Registry key or file path; skip if it already exists (idempotency hint)"
+        }
+      }
+    },
+    "moduleShell": {
+      "type": "object",
+      "description": "Run shell commands",
+      "additionalProperties": false,
+      "properties": {
+        "cmd": {
+          "type": "string",
+          "description": "Command to run"
+        },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Arguments to pass to the command"
+        },
+        "creates": {
+          "type": "string",
+          "description": "File path; skip if it already exists (idempotency hint)"
+        },
+        "working_dir": {
+          "type": "string",
+          "description": "Working directory for the command"
+        }
+      }
+    },
+    "moduleReboot": {
+      "type": "object",
+      "description": "Reboot the target machine",
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "type": "string",
+          "enum": ["always", "if_needed"],
+          "default": "if_needed"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Timeout in seconds to wait for reboot",
+          "default": 300
+        }
+      }
+    },
+    "moduleWait": {
+      "type": "object",
+      "description": "Wait for a condition to be true",
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "type": "string",
+          "enum": ["port_open", "file_exists", "service_running"],
+          "description": "Condition type to wait for"
+        },
+        "timeout": {
+          "type": "integer",
+          "description": "Maximum seconds to wait",
+          "default": 60
+        }
+      }
+    }
+  }
+}

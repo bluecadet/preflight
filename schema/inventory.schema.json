@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preflight.dev/schema/inventory.schema.json",
+  "title": "Inventory",
+  "description": "Schema for preflight inventory.yml files",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "groups": {
+      "type": "object",
+      "description": "Map of group name to group definition",
+      "additionalProperties": {
+        "$ref": "#/$defs/group"
+      }
+    }
+  },
+  "$defs": {
+    "group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vars": {
+          "type": "object",
+          "description": "Variables applied to all hosts in this group"
+        },
+        "hosts": {
+          "type": "array",
+          "description": "List of hosts in this group",
+          "items": {
+            "$ref": "#/$defs/host"
+          }
+        }
+      }
+    },
+    "host": {
+      "type": "object",
+      "required": ["name"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Unique host identifier"
+        },
+        "address": {
+          "type": "string",
+          "description": "IP address or hostname"
+        },
+        "transport": {
+          "type": "string",
+          "enum": ["winrm", "ssh", "local"],
+          "description": "Connection transport"
+        },
+        "port": {
+          "type": "integer",
+          "description": "Connection port (defaults vary by transport: WinRM=5985/5986, SSH=22)"
+        },
+        "username": {
+          "type": "string",
+          "description": "Username for authentication"
+        },
+        "password": {
+          "type": "string",
+          "description": "Password for authentication"
+        },
+        "private_key": {
+          "type": "string",
+          "description": "Path to SSH private key file"
+        },
+        "https": {
+          "type": "boolean",
+          "description": "Use HTTPS/TLS for WinRM connection",
+          "default": false
+        },
+        "vars": {
+          "type": "object",
+          "description": "Host-specific variable overrides"
+        }
+      }
+    }
+  }
+}
