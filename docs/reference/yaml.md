@@ -88,7 +88,7 @@ Playbooks are top-level execution documents.
 | `name` | string | Human-readable playbook name |
 | `description` | string | Optional description |
 | `vars` | object | Playbook-level variable overrides |
-| `import` | string[] | Declared schema field for imported playbooks |
+| `import` | string[] | Other playbooks to merge before local tasks |
 | `tasks` | task[] | Ordered task list |
 
 ### Example
@@ -114,7 +114,7 @@ tasks:
 ```
 
 > [!NOTE]
-> `import` is part of the current schema and parser shape, but the planner does not yet merge imported playbooks during execution.
+> Imports are merged depth-first, in listed order, before the importing playbook's own tasks. Import paths are resolved relative to the playbook file that declares them.
 
 ## Task Shape
 
@@ -173,9 +173,16 @@ The module registry currently includes:
 | `environment` | Implemented |
 | `wait` | Implemented |
 | `reboot` | Implemented |
-| Windows-only modules such as `registry` and `service` | Planned, not yet registered |
+| `registry` | Implemented on Windows; stubbed elsewhere |
+| `service` | Implemented on Windows; stubbed elsewhere |
+| `package` | Implemented on Windows; stubbed elsewhere |
+| `shortcut` | Implemented on Windows; stubbed elsewhere |
+| `scheduled_task` | Implemented on Windows; stubbed elsewhere |
+| `user` | Implemented on Windows; stubbed elsewhere |
+| `windows_feature` | Implemented on Windows; stubbed elsewhere |
+| `firewall_rule` | Implemented on Windows; stubbed elsewhere |
 
-This difference matters when writing examples: the schema shows intended surface area, while the runtime registry shows what can execute today.
+Windows-only modules remain non-functional on non-Windows hosts, where the registry exposes explicit stubs that fail fast.
 
 ## `action.yml`
 

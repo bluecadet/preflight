@@ -21,7 +21,7 @@ These flags are registered on the root command and are available everywhere, eve
 | `--phase` |  | Run only up to `plan`, `fetch`, `stage`, or `apply` |
 
 > [!NOTE]
-> Some flags are forward-looking. For example, `--target`, `--concurrency`, and `--timeout` express the intended interface, but current playbook execution still runs against a local target.
+> M1 is local-only. `--target` accepts only `local` or `localhost`, `--concurrency` accepts only `0` or `1`, and `--phase fetch|stage` returns a not-implemented error.
 
 ## Top-Level Commands
 
@@ -43,7 +43,7 @@ preflight check playbooks/lobby.yml
 
 ### `preflight diff <playbook>`
 
-Run the playbook in read-only mode.
+Compare the current plan to the recorded state file.
 
 ```bash
 preflight diff playbooks/lobby.yml
@@ -74,7 +74,7 @@ preflight facts
 preflight facts local
 ```
 
-If you pass a remote target name today, Preflight warns and still gathers local facts.
+Passing any non-local target returns an error in local-only mode.
 
 ## `action` Commands
 

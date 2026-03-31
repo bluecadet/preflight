@@ -37,7 +37,7 @@ preflight apply playbooks/lobby.yml --check
 Both paths run in dry-run mode.
 
 > [!TIP]
-> `preflight diff <playbook>` currently routes through the same dry-run execution path. It is useful as a read-only check command, but there is not yet a separate diff engine for file content changes.
+> `preflight diff <playbook>` compares the current plan to the recorded `state/provision.json` file. Use `check` when you want a dry-run execution pass.
 
 ## Apply A Playbook
 
@@ -90,8 +90,8 @@ Current behavior:
 | Phase | Status |
 | --- | --- |
 | `plan` | Implemented |
-| `fetch` | Stubbed validation step |
-| `stage` | Stubbed validation step |
+| `fetch` | Explicitly not implemented in local-only mode |
+| `stage` | Explicitly not implemented in local-only mode |
 | `apply` | Implemented |
 
 ## Choose An Output Format
@@ -135,6 +135,6 @@ Preflight resolves actions in this order:
 
 The Git resolver exists in the chain, but remote fetch is not implemented yet.
 
-### `--target` does not change where the playbook runs
+### `--target` is local-only in M1
 
-The global `--target` flag exists on the CLI, but current playbook execution commands construct a local target. Use the flag cautiously until inventory-backed target selection is wired into `apply`, `check`, and `plan`.
+The global `--target` flag is accepted for interface parity, but `apply`, `check`, `plan`, and `diff` reject anything except a single `local` or `localhost` target in M1.

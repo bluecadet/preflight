@@ -3,7 +3,7 @@
 Configuration management CLI for Windows exhibit PCs in museum and gallery environments. Compiles to a single static binary with no runtime dependencies.
 
 ```
-preflight apply playbooks/lobby.yml --target lobby
+preflight apply playbooks/lobby.yml
 ```
 
 ---
@@ -16,8 +16,8 @@ Preflight is a declarative, idempotent configuration management tool built for m
 
 - **Single binary.** Drop `preflight.exe` on any Windows machine and it runs. No installer, no runtime dependencies, no Python.
 - **Idempotent by design.** Every built-in module implements a `Check()` contract. The runner always checks current state before making any change. Running the same playbook twice is safe.
-- **Dry-run first-class.** `--check` mode calls `Check()` on every task and reports what would change — it never modifies the system. `diff` shows you the specific changes.
-- **Offline-capable.** The standard library ships embedded in the binary. Remote action refs are fetched once and cached. A staged bundle can be applied with no network access at all.
+- **Dry-run first-class.** `--check` mode calls `Check()` on every task and reports what would change without modifying the system. `diff` compares the current plan to recorded state.
+- **Truthful local-only runtime.** M1 is explicitly local-only: remote targets, remote fetch, and staged bundles fail fast instead of pretending to work.
 - **Structured output.** `--output json` / `--output jsonl` for CI integration and log pipelines.
 
 ---
@@ -52,7 +52,7 @@ Actions are resolved from a chain of sources:
 4. Remote Git          github.com/myorg/actions/signage@v2.1
 ```
 
-Remote sources are fetched once and pinned by exact Git SHA in `preflight.lock`.
+Remote action refs are part of the public reference format, but remote fetch is not implemented in the current local-only milestone.
 
 ### Playbooks
 
@@ -153,8 +153,7 @@ Additional docs live in [`docs/`](docs/):
 
 ```bash
 preflight apply playbooks/lobby.yml
-preflight apply playbooks/lobby.yml --target lobby-pc-01
-preflight apply playbooks/gallery.yml --target gallery --var content_root=D:\\content
+preflight apply playbooks/gallery.yml --var content_root=D:\\content
 ```
 
 ### Dry-run / check mode
@@ -167,7 +166,7 @@ preflight apply playbooks/lobby.yml --check
 ### See what would change
 
 ```bash
-preflight diff playbooks/lobby.yml --target lobby-pc-01
+preflight diff playbooks/lobby.yml
 ```
 
 ### Plan without executing
@@ -190,7 +189,7 @@ Parses and validates playbook, inventory, and action schemas without executing a
 
 ```bash
 preflight facts                    # local machine
-preflight facts lobby-pc-01        # remote target
+preflight facts local
 ```
 
 Returns a JSON object of system facts (OS version, disk layout, environment) used in `when:` conditions.
@@ -359,8 +358,8 @@ Preflight processes every playbook through four explicit phases:
 | Phase | What it does |
 |---|---|
 | **Plan** | Parse playbook, resolve action refs, expand into a flat task DAG, validate inputs. Pure computation — no I/O against targets. |
-| **Fetch** | Download remote action refs not in cache. Network-heavy; runs once for N targets. |
-| **Stage** | Assemble a self-contained bundle (ZIP) that can be pushed to air-gapped targets. |
+| **Fetch** | Reserved for remote action download. In M1 it returns an explicit not-implemented error. |
+| **Stage** | Reserved for future artifact bundles. In M1 it returns an explicit not-implemented error. |
 | **Apply** | Execute the task graph. For each task: `Check()`, skip if already correct, `Apply()` if change needed, record result. |
 
 Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
@@ -371,7 +370,7 @@ Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
 
 | Flag | Description |
 |---|---|
-| `-t, --target` | Target host(s) or group(s) from inventory |
+| `-t, --target` | Local-only in M1; accepts only `local` or `localhost` |
 | `-e, --var key=value` | Override a variable |
 | `--tags tag1,tag2` | Only run tasks with these tags |
 | `--skip-tags tag1` | Skip tasks with these tags |
@@ -379,7 +378,7 @@ Run only up to a specific phase with `--phase plan|fetch|stage|apply`.
 | `--diff` | Show file diffs |
 | `-v, --verbose` | Verbose output |
 | `--output text\|json\|jsonl` | Output format |
-| `--concurrency N` | Max parallel targets (0 = unlimited) |
+| `--concurrency N` | Local-only in M1; `0` and `1` are accepted, values above `1` error |
 | `--timeout duration` | Execution timeout |
 | `--phase` | Run only up to this phase |
 
