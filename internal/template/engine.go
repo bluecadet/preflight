@@ -128,28 +128,38 @@ func (e *Engine) RenderBool(s string) (bool, error) {
 
 // RenderMap renders all string values in m and returns a new map.
 // Non-string values are passed through unchanged.
-// Nested map[string]any values are recursively rendered.
+// Nested maps and list items are recursively rendered.
 func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
 	result := make(map[string]any, len(m))
 	for k, v := range m {
-		switch val := v.(type) {
-		case string:
-			rendered, err := e.Render(val)
-			if err != nil {
-				return nil, fmt.Errorf("template: key %q: %w", k, err)
-			}
-			result[k] = rendered
-		case map[string]any:
-			nested, err := e.RenderMap(val)
-			if err != nil {
-				return nil, err
-			}
-			result[k] = nested
-		default:
-			result[k] = v
+		rendered, err := e.renderValue(v)
+		if err != nil {
+			return nil, fmt.Errorf("template: key %q: %w", k, err)
 		}
+		result[k] = rendered
 	}
 	return result, nil
+}
+
+func (e *Engine) renderValue(v any) (any, error) {
+	switch val := v.(type) {
+	case string:
+		return e.Render(val)
+	case map[string]any:
+		return e.RenderMap(val)
+	case []any:
+		out := make([]any, len(val))
+		for i := range val {
+			rendered, err := e.renderValue(val[i])
+			if err != nil {
+				return nil, fmt.Errorf("template: index %d: %w", i, err)
+			}
+			out[i] = rendered
+		}
+		return out, nil
+	default:
+		return v, nil
+	}
 }
 
 // evalExpr resolves a dot-path expression such as "vars.foo.bar" against the

@@ -196,3 +196,57 @@ func TestRenderMap_Nested(t *testing.T) {
 		t.Errorf("inner: got %v, want x", outer["inner"])
 	}
 }
+
+func TestRenderMap_ListItems(t *testing.T) {
+	e := New(map[string]any{
+		"exe":     `C:\Program Files\App\run.exe`,
+		"ac":      "0",
+		"dc":      "15",
+		"profile": "machine",
+	})
+	input := map[string]any{
+		"settings": []any{
+			map[string]any{
+				"subgroup": "SUB_VIDEO",
+				"setting":  "VIDEOIDLE",
+				"ac_value": "{{ vars.ac }}",
+				"dc_value": "{{ vars.dc }}",
+			},
+		},
+		"command": []any{"{{ vars.exe }}", "--profile", "{{ vars.profile }}"},
+	}
+
+	got, err := e.RenderMap(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	settings, ok := got["settings"].([]any)
+	if !ok {
+		t.Fatalf("settings is not a list: %T", got["settings"])
+	}
+	if len(settings) != 1 {
+		t.Fatalf("expected 1 setting, got %d", len(settings))
+	}
+	setting, ok := settings[0].(map[string]any)
+	if !ok {
+		t.Fatalf("settings[0] is not a map: %T", settings[0])
+	}
+	if setting["ac_value"] != "0" || setting["dc_value"] != "15" {
+		t.Fatalf("unexpected rendered settings: %#v", setting)
+	}
+
+	command, ok := got["command"].([]any)
+	if !ok {
+		t.Fatalf("command is not a list: %T", got["command"])
+	}
+	want := []string{`C:\Program Files\App\run.exe`, "--profile", "machine"}
+	if len(command) != len(want) {
+		t.Fatalf("expected %d command items, got %d", len(want), len(command))
+	}
+	for i := range want {
+		if command[i] != want[i] {
+			t.Fatalf("command[%d] = %#v, want %#v", i, command[i], want[i])
+		}
+	}
+}
