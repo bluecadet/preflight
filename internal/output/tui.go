@@ -3,40 +3,16 @@ package output
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-)
-
-const (
-	maxTaskLogLines = 200
-	maxTaskLogBytes = 32 * 1024
-)
-
-var (
-	tuiColorOK       = lipgloss.Color("42")
-	tuiColorChanged  = lipgloss.Color("214")
-	tuiColorFailed   = lipgloss.Color("196")
-	tuiColorSkipped  = lipgloss.Color("244")
-	tuiColorInfo     = lipgloss.Color("81")
-	tuiColorDim      = lipgloss.Color("241")
-	tuiColorBorder   = lipgloss.Color("63")
-	tuiColorSelected = lipgloss.Color("229")
-
-	tuiBaseStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	tuiTitleStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
-	tuiSubtleStyle     = lipgloss.NewStyle().Foreground(tuiColorDim)
-	tuiPanelStyle      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(tuiColorBorder).Padding(0, 1)
-	tuiFocusedPanel    = tuiPanelStyle.Copy().BorderForeground(tuiColorSelected)
-	tuiSelectedRow     = lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("230"))
-	tuiHelpStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
-	tuiSpinnerStyle    = lipgloss.NewStyle().Foreground(tuiColorInfo)
-	tuiStatusOKStyle   = lipgloss.NewStyle().Foreground(tuiColorOK).Bold(true)
-	tuiStatusChgStyle  = lipgloss.NewStyle().Foreground(tuiColorChanged).Bold(true)
-	tuiStatusFailStyle = lipgloss.NewStyle().Foreground(tuiColorFailed).Bold(true)
-	tuiStatusSkipStyle = lipgloss.NewStyle().Foreground(tuiColorSkipped).Bold(true)
 )
 
 type taskLogLine struct {
@@ -63,27 +39,85 @@ type phaseView struct {
 }
 
 type hostView struct {
-	name       string
-	playName   string
-	phases     []phaseView
-	tasks      map[string]*taskView
-	taskOrder  []string
-	totalTasks int
-	recap      recapCounts
-	done       bool
+	name         string
+	playName     string
+	phases       []phaseView
+	tasks        map[string]*taskView
+	taskOrder    []string
+	totalTasks   int
+	recap        recapCounts
+	done         bool
+	selectedTask int
 }
 
 type recapCounts struct {
 	ok, changed, failed, skipped int
 }
 
-type focusPane int
+type runKeyMap struct {
+	Up       key.Binding
+	Down     key.Binding
+	Left     key.Binding
+	Right    key.Binding
+	Enter    key.Binding
+	Collapse key.Binding
+	Failed   key.Binding
+	Help     key.Binding
+	Quit     key.Binding
+}
 
-const (
-	focusHosts focusPane = iota
-	focusTasks
-	focusLogs
-)
+func newRunKeyMap() runKeyMap {
+	return runKeyMap{
+		Up: key.NewBinding(
+			key.WithKeys("up", "k"),
+			key.WithHelp("↑/k", "task up"),
+		),
+		Down: key.NewBinding(
+			key.WithKeys("down", "j"),
+			key.WithHelp("↓/j", "task down"),
+		),
+		Left: key.NewBinding(
+			key.WithKeys("left", "h"),
+			key.WithHelp("←/h", "prev host"),
+		),
+		Right: key.NewBinding(
+			key.WithKeys("right", "l"),
+			key.WithHelp("→/l", "next host"),
+		),
+		Enter: key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", "details"),
+		),
+		Collapse: key.NewBinding(
+			key.WithKeys("c"),
+			key.WithHelp("c", "collapse done"),
+		),
+		Failed: key.NewBinding(
+			key.WithKeys("f"),
+			key.WithHelp("f", "failed only"),
+		),
+		Help: key.NewBinding(
+			key.WithKeys("?"),
+			key.WithHelp("?", "help"),
+		),
+		Quit: key.NewBinding(
+			key.WithKeys("q"),
+			key.WithHelp("q", "quit"),
+		),
+	}
+}
+
+func (k runKeyMap) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Enter, k.Collapse, k.Failed, k.Help, k.Quit}
+}
+
+func (k runKeyMap) FullHelp() [][]key.Binding {
+	return [][]key.Binding{
+		{k.Up, k.Down, k.Left, k.Right},
+		{k.Enter, k.Collapse, k.Failed},
+		{k.Help, k.Quit},
+	}
+}
 
 type tuiEventMsg struct {
 	event Event
@@ -93,18 +127,21 @@ type tuiDoneMsg struct{}
 
 type tuiModel struct {
 	spinner           spinner.Model
+	progress          progress.Model
+	help              help.Model
+	keys              runKeyMap
 	events            chan Event
 	interrupt         func()
+	command           string
+	interactive       bool
 	hosts             map[string]*hostView
 	hostOrder         []string
 	globalPhases      []phaseView
 	errors            []string
 	selectedHost      int
-	selectedTask      int
 	width             int
 	height            int
-	focus             focusPane
-	showLogPane       bool
+	viewport          viewport.Model
 	collapseCompleted bool
 	failedOnly        bool
 	showHelp          bool
@@ -116,15 +153,26 @@ func newTUIModel(events chan Event, options Options) tuiModel {
 		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(tuiSpinnerStyle),
 	)
+	p := progress.New()
+	h := tuiNewHelp()
+	keys := newRunKeyMap()
+	command := options.Command
+	if command == "" {
+		command = "run"
+	}
 	return tuiModel{
 		spinner:     s,
+		progress:    p,
+		help:        h,
+		keys:        keys,
 		events:      events,
 		interrupt:   options.Interrupt,
+		command:     command,
+		interactive: options.Input != nil,
 		hosts:       make(map[string]*hostView),
-		width:       120,
-		height:      30,
-		focus:       focusHosts,
-		showLogPane: true,
+		width:       defaultTUIWidth,
+		height:      defaultTUIHeight,
+		viewport:    viewport.New(defaultTUIWidth, defaultTUIHeight-6),
 	}
 }
 
@@ -145,8 +193,9 @@ func (m tuiModel) waitForEvent() tea.Cmd {
 func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
+		m.width = max(40, msg.Width)
+		m.height = max(14, msg.Height)
+		m.syncViewport()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -163,7 +212,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tuiDoneMsg:
 		m.done = true
-		return m, tea.Quit
+		if !m.interactive {
+			return m, tea.Quit
+		}
+		m.syncViewport()
+		return m, nil
 	}
 
 	return m, nil
@@ -177,19 +230,12 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, tea.Quit
 	case "q":
-		if m.done {
+		if m.done || !m.interactive {
 			return m, tea.Quit
 		}
 		return m, nil
 	case "?":
 		m.showHelp = !m.showHelp
-	case "tab":
-		m.focus = m.nextFocus()
-	case "l":
-		m.showLogPane = !m.showLogPane
-		if !m.showLogPane && m.focus == focusLogs {
-			m.focus = focusTasks
-		}
 	case "c":
 		m.collapseCompleted = !m.collapseCompleted
 	case "f":
@@ -198,73 +244,82 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if task := m.currentTask(); task != nil {
 			task.expanded = !task.expanded
 		}
-	case "up":
-		m.moveSelection(-1)
-	case "down":
-		m.moveSelection(1)
-	case "left":
-		if m.focus > focusHosts {
-			m.focus--
+	case "up", "k":
+		if host := m.currentHost(); host != nil {
+			host.selectedTask--
 		}
-	case "right":
-		if m.focus < m.maxFocus() {
-			m.focus++
+	case "down", "j":
+		if host := m.currentHost(); host != nil {
+			host.selectedTask++
+		}
+	case "left", "h":
+		m.selectedHost--
+	case "right", "l":
+		m.selectedHost++
+	default:
+		if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
+			digit := int(msg.Runes[0] - '1')
+			if digit >= 0 && digit < len(m.hostOrder) {
+				m.selectedHost = digit
+			}
 		}
 	}
 
 	m.clampSelection()
+	m.syncViewport()
 	return m, nil
 }
 
-func (m tuiModel) nextFocus() focusPane {
-	max := m.maxFocus()
-	next := m.focus + 1
-	if next > max {
-		return focusHosts
-	}
-	return next
-}
+func (m *tuiModel) syncViewport() {
+	header := m.renderHeader()
+	tabs := m.renderTabs()
+	footer := m.renderFooter()
+	bodyHeight := max(4, m.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(footer)-2)
+	m.viewport.Width = max(20, m.width)
+	m.viewport.Height = bodyHeight
 
-func (m tuiModel) maxFocus() focusPane {
-	if m.showLogPane {
-		return focusLogs
-	}
-	return focusTasks
-}
+	body, starts, ends := m.renderTaskStream()
+	m.viewport.SetContent(body)
 
-func (m *tuiModel) moveSelection(delta int) {
-	switch m.focus {
-	case focusHosts:
-		m.selectedHost += delta
-	case focusTasks, focusLogs:
-		m.selectedTask += delta
+	host := m.currentHost()
+	if host == nil || len(starts) == 0 {
+		return
+	}
+	selected := clamp(0, host.selectedTask, len(starts)-1)
+	if starts[selected] < m.viewport.YOffset {
+		m.viewport.YOffset = starts[selected]
+	}
+	bottom := m.viewport.YOffset + max(1, m.viewport.Height) - 1
+	if ends[selected] > bottom {
+		m.viewport.YOffset = max(0, ends[selected]-m.viewport.Height+1)
 	}
 }
 
 func (m *tuiModel) clampSelection() {
 	if len(m.hostOrder) == 0 {
 		m.selectedHost = 0
-		m.selectedTask = 0
 		return
 	}
-
 	if m.selectedHost < 0 {
 		m.selectedHost = 0
 	}
 	if m.selectedHost >= len(m.hostOrder) {
 		m.selectedHost = len(m.hostOrder) - 1
 	}
-
-	tasks := m.visibleTasks(m.currentHost())
-	if len(tasks) == 0 {
-		m.selectedTask = 0
+	host := m.currentHost()
+	if host == nil {
 		return
 	}
-	if m.selectedTask < 0 {
-		m.selectedTask = 0
+	ids := m.visibleTasks(host)
+	if len(ids) == 0 {
+		host.selectedTask = 0
+		return
 	}
-	if m.selectedTask >= len(tasks) {
-		m.selectedTask = len(tasks) - 1
+	if host.selectedTask < 0 {
+		host.selectedTask = 0
+	}
+	if host.selectedTask >= len(ids) {
+		host.selectedTask = len(ids) - 1
 	}
 }
 
@@ -348,6 +403,7 @@ func (m tuiModel) applyEvent(event Event) tuiModel {
 	}
 
 	m.clampSelection()
+	m.syncViewport()
 	return m
 }
 
@@ -446,201 +502,335 @@ func upsertPhase(phases []phaseView, name, status string, running bool) []phaseV
 
 func (m tuiModel) View() string {
 	header := m.renderHeader()
-	body := m.renderBody()
+	tabs := m.renderTabs()
 	footer := m.renderFooter()
 
-	parts := []string{header, body, footer}
-	if m.showHelp {
-		parts = append(parts, m.renderHelp())
-	}
+	bodyHeight := max(4, m.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(footer)-2)
+	m.viewport.Width = max(20, m.width)
+	m.viewport.Height = bodyHeight
+	m.syncViewport()
 
+	parts := []string{header}
+	if tabs != "" {
+		parts = append(parts, tabs)
+	}
+	parts = append(parts, m.viewport.View(), footer)
 	return strings.Join(parts, "\n")
 }
 
 func (m tuiModel) renderHeader() string {
-	title := tuiTitleStyle.Render("Preflight Run Dashboard")
-	subtitle := tuiSubtleStyle.Render("tab switch pane | enter details | l logs | c collapse completed | f failed only | ? help")
-	phaseLine := m.renderGlobalPhases()
-	if phaseLine != "" {
-		return lipgloss.JoinVertical(lipgloss.Left, title, subtitle, phaseLine)
+	title := lipgloss.JoinHorizontal(lipgloss.Center,
+		tuiTitleStyle.Render("Preflight"),
+		"  ",
+		tuiCommandStyle.Render(m.command),
+	)
+	status := renderStatusChip(m.overallStatus())
+	lines := []string{spaceBetween(m.width, title, status)}
+	if subject := m.subjectLine(); subject != "" {
+		lines = append(lines, tuiSubtleStyle.Render(truncateText(subject, m.width)))
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, title, subtitle)
+	if phases := m.phaseLine(); phases != "" {
+		lines = append(lines, phases)
+	}
+	if progressLine := m.progressLine(); progressLine != "" {
+		lines = append(lines, progressLine)
+	}
+	return strings.Join(lines, "\n")
 }
 
-func (m tuiModel) renderGlobalPhases() string {
-	if len(m.globalPhases) == 0 {
+func (m tuiModel) renderTabs() string {
+	if len(m.hostOrder) <= 1 {
 		return ""
 	}
-	parts := make([]string, 0, len(m.globalPhases))
-	for _, phase := range m.globalPhases {
-		label := phase.name
-		if phase.running {
-			label = fmt.Sprintf("%s %s", m.spinner.View(), label)
-		} else if phase.status != "" {
-			label = fmt.Sprintf("%s %s", statusGlyph(phase.status), label)
-		}
-		parts = append(parts, label)
-	}
-	return tuiSubtleStyle.Render("Global: " + strings.Join(parts, "  "))
-}
-
-func (m tuiModel) renderBody() string {
-	hostWidth := clamp(26, m.width/5, 34)
-	logWidth := 0
-	if m.showLogPane {
-		logWidth = clamp(34, m.width/3, 52)
-	}
-	taskWidth := m.width - hostWidth - logWidth - 4
-	if taskWidth < 36 {
-		taskWidth = 36
-	}
-
-	hostPanel := m.renderPanel("Hosts", m.renderHosts(), hostWidth, m.focus == focusHosts)
-	taskPanel := m.renderPanel("Tasks", m.renderTasks(), taskWidth, m.focus == focusTasks)
-
-	panels := []string{hostPanel, taskPanel}
-	if m.showLogPane {
-		logPanel := m.renderPanel("Logs", m.renderLogs(), logWidth, m.focus == focusLogs)
-		panels = append(panels, logPanel)
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, panels...)
-}
-
-func (m tuiModel) renderPanel(title, body string, width int, focused bool) string {
-	style := tuiPanelStyle
-	if focused {
-		style = tuiFocusedPanel
-	}
-	return style.Width(width).Render(title + "\n" + body)
-}
-
-func (m tuiModel) renderHosts() string {
-	if len(m.hostOrder) == 0 {
-		return tuiSubtleStyle.Render("Waiting for hosts...")
-	}
-
-	rows := make([]string, 0, len(m.hostOrder))
-	for i, name := range m.hostOrder {
+	tabs := make([]tuiTab, 0, len(m.hostOrder))
+	for _, name := range m.hostOrder {
 		host := m.hosts[name]
-		line := fmt.Sprintf("%s %s", m.hostStatusGlyph(host), name)
-		if host.totalTasks > 0 {
-			line += tuiSubtleStyle.Render(fmt.Sprintf("  %d tasks", host.totalTasks))
-		}
-		recap := fmt.Sprintf("ok=%d ~=%d x=%d -=%d", host.recap.ok, host.recap.changed, host.recap.failed, host.recap.skipped)
-		row := lipgloss.JoinVertical(lipgloss.Left, line, tuiSubtleStyle.Render(recap), tuiSubtleStyle.Render(m.hostStatusText(host)))
-		if i == m.selectedHost {
-			row = tuiSelectedRow.Width(24).Render(row)
-		}
-		rows = append(rows, row)
+		meta := fmt.Sprintf("%d/%d", host.completedCount(), max(host.totalTasks, len(host.taskOrder)))
+		tabs = append(tabs, tuiTab{
+			Label:  name,
+			Status: m.hostStatus(host),
+			Meta:   meta,
+		})
 	}
-	return strings.Join(rows, "\n")
+	return renderTabs(tabs, m.selectedHost, m.width)
 }
 
-func (m tuiModel) renderTasks() string {
+func (m tuiModel) renderTaskStream() (string, []int, []int) {
 	host := m.currentHost()
 	if host == nil {
-		return tuiSubtleStyle.Render("No host selected")
+		waiting := tuiSubtleStyle.Render("Waiting for targets...")
+		return waiting, nil, nil
 	}
-
 	ids := m.visibleTasks(host)
 	if len(ids) == 0 {
-		return tuiSubtleStyle.Render("No tasks match the current filters")
+		empty := tuiSubtleStyle.Render("No tasks match the current filters.")
+		return empty, nil, nil
 	}
 
-	rows := make([]string, 0, len(ids))
-	for i, id := range ids {
+	width := max(24, m.width-2)
+	blocks := make([]string, 0, len(ids))
+	starts := make([]int, 0, len(ids))
+	ends := make([]int, 0, len(ids))
+	currentLine := 0
+	for idx, id := range ids {
 		task := host.tasks[id]
-		line := fmt.Sprintf("%s %s", m.taskStatusGlyph(task), task.name)
-		if task.module != "" {
-			line += tuiSubtleStyle.Render(fmt.Sprintf("  (%s)", task.module))
+		starts = append(starts, currentLine)
+		block := m.renderTaskCard(task, idx == host.selectedTask, width)
+		blocks = append(blocks, block)
+		currentLine += lipgloss.Height(block)
+		ends = append(ends, currentLine-1)
+		if idx < len(ids)-1 {
+			currentLine++
 		}
-		if task.running {
-			line += tuiSubtleStyle.Render("  running")
-		}
-		row := line
-		if task.expanded {
-			meta := []string{}
-			if task.message != "" {
-				meta = append(meta, task.message)
-			}
-			if len(task.logs) > 0 {
-				meta = append(meta, fmt.Sprintf("%d log lines buffered", len(task.logs)))
-			}
-			if len(meta) > 0 {
-				row = lipgloss.JoinVertical(lipgloss.Left, row, tuiSubtleStyle.Render(strings.Join(meta, " | ")))
-			}
-		}
-		if i == m.selectedTask {
-			row = tuiSelectedRow.Render(row)
-		}
-		rows = append(rows, row)
 	}
-	return strings.Join(rows, "\n")
+	if host.done {
+		recap := renderStats([]ScreenStat{
+			{Label: "ok", Value: fmt.Sprintf("%d", host.recap.ok), Tone: "ok"},
+			{Label: "changed", Value: fmt.Sprintf("%d", host.recap.changed), Tone: "changed"},
+			{Label: "failed", Value: fmt.Sprintf("%d", host.recap.failed), Tone: "failed"},
+			{Label: "skipped", Value: fmt.Sprintf("%d", host.recap.skipped), Tone: "skipped"},
+		}, width)
+		if recap != "" {
+			blocks = append(blocks, tuiSectionStyle.Render("Recap")+"\n"+recap)
+		}
+	}
+	return strings.Join(blocks, "\n\n"), starts, ends
 }
 
-func (m tuiModel) renderLogs() string {
-	task := m.currentTask()
-	if task == nil {
-		return tuiSubtleStyle.Render("No task selected")
+func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) string {
+	summaryParts := []string{m.taskStatusGlyph(task), truncateText(task.name, max(20, width-8))}
+	if task.module != "" {
+		summaryParts = append(summaryParts, tuiSubtleStyle.Render("("+task.module+")"))
 	}
-	if len(task.logs) == 0 {
-		if task.message != "" {
-			return task.message
-		}
-		return tuiSubtleStyle.Render("No task logs captured yet")
+	if task.message != "" && !task.expanded {
+		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, width/3))))
+	}
+	lines := []string{strings.Join(summaryParts, "  ")}
+	meta := []string{}
+	if task.running {
+		meta = append(meta, "running")
+	}
+	if task.message != "" && task.expanded {
+		meta = append(meta, task.message)
+	}
+	if joined := joinMeta(meta...); joined != "" {
+		lines = append(lines, tuiSubtleStyle.Render(truncateText(joined, width)))
 	}
 
-	rows := make([]string, 0, len(task.logs))
-	for _, line := range task.logs {
-		prefix := "[" + line.stream + "] "
-		rows = append(rows, streamStyle(line.stream).Render(prefix)+line.line)
+	showPreview := task.running || task.status == "failed" || task.expanded
+	if showPreview && len(task.logs) > 0 {
+		previewLines := make([]ScreenLine, 0, min(3, len(task.logs)))
+		for _, line := range m.previewLogs(task) {
+			previewLines = append(previewLines, ScreenLine{
+				Prefix: logPrefix(line.stream),
+				Text:   line.line,
+				Tone:   lineTone(line.stream),
+			})
+		}
+		lines = append(lines, renderScreenLines(previewLines, width-2))
 	}
-	if len(task.logs) == maxTaskLogLines || task.logBytes >= maxTaskLogBytes {
-		rows = append(rows, tuiSubtleStyle.Render("... older log lines truncated in TUI"))
+	if task.expanded {
+		detail := m.expandedTaskLines(task)
+		if len(detail) > 0 {
+			lines = append(lines, tuiSectionStyle.Render("Details"))
+			lines = append(lines, renderScreenLines(detail, width-2))
+		}
 	}
-	return strings.Join(rows, "\n")
+
+	block := strings.Join(lines, "\n")
+	if selected {
+		return tuiSelectedCardStyle.Width(width).Render(block)
+	}
+	if task.status == "failed" {
+		return tuiMutedCardStyle.Width(width).Render(block)
+	}
+	return tuiCardStyle.Width(width).Render(block)
 }
 
 func (m tuiModel) renderFooter() string {
-	parts := []string{
-		tuiHelpStyle.Render(fmt.Sprintf("Focus: %s", m.focusLabel())),
-		tuiHelpStyle.Render(fmt.Sprintf("Collapse completed: %t", m.collapseCompleted)),
-		tuiHelpStyle.Render(fmt.Sprintf("Failed only: %t", m.failedOnly)),
+	location := ""
+	host := m.currentHost()
+	if host != nil {
+		location = tuiSubtleStyle.Render(host.name)
+		if len(m.visibleTasks(host)) > 0 {
+			location = tuiSubtleStyle.Render(
+				fmt.Sprintf("%s  task %d/%d", host.name, host.selectedTask+1, len(m.visibleTasks(host))),
+			)
+		}
 	}
 	if len(m.errors) > 0 {
-		parts = append(parts, tuiStatusFailStyle.Render(m.errors[len(m.errors)-1]))
+		location = tuiStatusFailStyle.Render(truncateText(m.errors[len(m.errors)-1], max(16, m.width/2)))
 	}
+	m.help.ShowAll = m.showHelp
+	if m.showHelp {
+		return m.help.FullHelpView(m.keys.FullHelp())
+	}
+	helpText := m.help.ShortHelpView(m.keys.ShortHelp())
 	if !m.done {
-		parts = append(parts, tuiSubtleStyle.Render("Ctrl+C cancels run"))
-	} else {
-		parts = append(parts, tuiSubtleStyle.Render("q exits"))
+		helpText = spaceBetween(max(10, m.width/2), tuiSubtleStyle.Render("Ctrl+C cancel"), helpText)
 	}
-	return strings.Join(parts, "   ")
+	return spaceBetween(m.width, location, helpText)
 }
 
-func (m tuiModel) renderHelp() string {
-	lines := []string{
-		"Keyboard",
-		"tab cycle panes",
-		"up/down move selection",
-		"enter expand selected task details",
-		"l toggle log pane",
-		"c hide completed tasks",
-		"f show failed tasks only",
-		"? toggle help",
-		"q quit after completion",
+func (m tuiModel) subjectLine() string {
+	hostCount := len(m.hostOrder)
+	hostLabel := fmt.Sprintf("%d target", hostCount)
+	if hostCount != 1 {
+		hostLabel += "s"
 	}
-	return tuiPanelStyle.Width(clamp(32, m.width/3, 44)).Render(strings.Join(lines, "\n"))
+	playName := ""
+	if host := m.currentHost(); host != nil && host.playName != "" {
+		playName = "play: " + host.playName
+	}
+	return joinMeta(playName, hostLabel)
 }
 
-func (m tuiModel) focusLabel() string {
-	switch m.focus {
-	case focusHosts:
-		return "hosts"
-	case focusLogs:
-		return "logs"
+func (m tuiModel) phaseLine() string {
+	parts := make([]string, 0, len(m.globalPhases)+4)
+	for _, phase := range m.globalPhases {
+		parts = append(parts, m.renderPhase(phase))
+	}
+	if host := m.currentHost(); host != nil {
+		for _, phase := range host.phases {
+			parts = append(parts, m.renderPhase(phase))
+		}
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, "  ")
+}
+
+func (m tuiModel) renderPhase(phase phaseView) string {
+	label := strings.Title(phase.name)
+	switch {
+	case phase.running:
+		return m.spinner.View() + " " + label
+	case phase.status != "":
+		return statusGlyph(phase.status) + " " + label
 	default:
-		return "tasks"
+		return "• " + label
+	}
+}
+
+func (m tuiModel) progressLine() string {
+	completed, total := m.progressCounts()
+	if total == 0 {
+		return ""
+	}
+	barWidth := clamp(12, m.width/3, 32)
+	m.progress.Width = barWidth
+	percent := float64(completed) / float64(total)
+	bar := m.progress.ViewAs(percent)
+	return spaceBetween(m.width, bar, tuiSubtleStyle.Render(fmt.Sprintf("%d/%d", completed, total)))
+}
+
+func (m tuiModel) progressCounts() (int, int) {
+	var completed int
+	var total int
+	for _, name := range m.hostOrder {
+		host := m.hosts[name]
+		total += max(host.totalTasks, len(host.taskOrder))
+		completed += host.completedCount()
+	}
+	return completed, total
+}
+
+func (h *hostView) completedCount() int {
+	return h.recap.ok + h.recap.changed + h.recap.failed + h.recap.skipped
+}
+
+func (m tuiModel) overallStatus() string {
+	if !m.done {
+		for _, name := range m.hostOrder {
+			if host := m.hosts[name]; host != nil && host.recap.failed > 0 {
+				return "warning"
+			}
+		}
+		return "running"
+	}
+	for _, name := range m.hostOrder {
+		if host := m.hosts[name]; host != nil && host.recap.failed > 0 {
+			return "failed"
+		}
+	}
+	return "complete"
+}
+
+func (m tuiModel) hostStatus(host *hostView) string {
+	for _, phase := range host.phases {
+		if phase.running {
+			return "running"
+		}
+	}
+	for _, id := range host.taskOrder {
+		if host.tasks[id].running {
+			return "running"
+		}
+	}
+	if host.recap.failed > 0 {
+		return "failed"
+	}
+	if host.done {
+		return "complete"
+	}
+	return "pending"
+}
+
+func (m tuiModel) previewLogs(task *taskView) []taskLogLine {
+	previewCount := min(3, len(task.logs))
+	return task.logs[len(task.logs)-previewCount:]
+}
+
+func (m tuiModel) expandedTaskLines(task *taskView) []ScreenLine {
+	lines := make([]ScreenLine, 0, min(12, len(task.logs))+1)
+	if task.message != "" {
+		lines = append(lines, ScreenLine{
+			Prefix: "info",
+			Text:   task.message,
+			Tone:   task.status,
+		})
+	}
+	if len(task.logs) == 0 {
+		return lines
+	}
+	start := max(0, len(task.logs)-12)
+	for _, entry := range task.logs[start:] {
+		lines = append(lines, ScreenLine{
+			Prefix: logPrefix(entry.stream),
+			Text:   entry.line,
+			Tone:   lineTone(entry.stream),
+		})
+	}
+	if start > 0 {
+		lines = append(lines, ScreenLine{
+			Prefix: "info",
+			Text:   fmt.Sprintf("%d older log lines hidden in TUI", start),
+			Tone:   "info",
+		})
+	}
+	return lines
+}
+
+func lineTone(stream string) string {
+	switch strings.ToLower(stream) {
+	case "stderr":
+		return "failed"
+	case "stdout":
+		return "ok"
+	default:
+		return "info"
+	}
+}
+
+func logPrefix(stream string) string {
+	switch strings.ToLower(stream) {
+	case "stderr":
+		return "err"
+	case "stdout":
+		return "out"
+	default:
+		return "inf"
 	}
 }
 
@@ -648,13 +838,7 @@ func (m tuiModel) currentHost() *hostView {
 	if len(m.hostOrder) == 0 {
 		return nil
 	}
-	index := m.selectedHost
-	if index < 0 {
-		index = 0
-	}
-	if index >= len(m.hostOrder) {
-		index = len(m.hostOrder) - 1
-	}
+	index := clamp(0, m.selectedHost, len(m.hostOrder)-1)
 	return m.hosts[m.hostOrder[index]]
 }
 
@@ -667,13 +851,7 @@ func (m tuiModel) currentTask() *taskView {
 	if len(ids) == 0 {
 		return nil
 	}
-	index := m.selectedTask
-	if index < 0 {
-		index = 0
-	}
-	if index >= len(ids) {
-		index = len(ids) - 1
-	}
+	index := clamp(0, host.selectedTask, len(ids)-1)
 	return host.tasks[ids[index]]
 }
 
@@ -695,86 +873,11 @@ func (m tuiModel) visibleTasks(host *hostView) []string {
 	return ids
 }
 
-func (m tuiModel) hostStatusGlyph(host *hostView) string {
-	for _, phase := range host.phases {
-		if phase.running {
-			return m.spinner.View()
-		}
-	}
-	for _, id := range host.taskOrder {
-		if host.tasks[id].running {
-			return m.spinner.View()
-		}
-	}
-	switch {
-	case host.recap.failed > 0:
-		return tuiStatusFailStyle.Render("x")
-	case host.done:
-		return tuiStatusOKStyle.Render("✓")
-	default:
-		return tuiSubtleStyle.Render("•")
-	}
-}
-
-func (m tuiModel) hostStatusText(host *hostView) string {
-	for _, phase := range host.phases {
-		if phase.running {
-			return "phase: " + phase.name
-		}
-	}
-	for _, id := range host.taskOrder {
-		task := host.tasks[id]
-		if task.running {
-			return "task: " + task.name
-		}
-	}
-	if host.done {
-		return "completed"
-	}
-	return "waiting"
-}
-
 func (m tuiModel) taskStatusGlyph(task *taskView) string {
 	if task.running {
 		return m.spinner.View()
 	}
 	return statusGlyph(task.status)
-}
-
-func statusGlyph(status string) string {
-	switch status {
-	case "ok":
-		return tuiStatusOKStyle.Render("✓")
-	case "changed":
-		return tuiStatusChgStyle.Render("~")
-	case "failed":
-		return tuiStatusFailStyle.Render("x")
-	case "skipped":
-		return tuiStatusSkipStyle.Render("-")
-	default:
-		return tuiSubtleStyle.Render("•")
-	}
-}
-
-func streamStyle(stream string) lipgloss.Style {
-	switch stream {
-	case "stderr":
-		return lipgloss.NewStyle().Foreground(tuiColorFailed)
-	case "stdout":
-		return lipgloss.NewStyle().Foreground(tuiColorOK)
-	default:
-		return lipgloss.NewStyle().Foreground(tuiColorInfo)
-	}
-}
-
-func clamp(minimum, value, maximum int) int {
-	if value < minimum {
-		return minimum
-	}
-	if value > maximum {
-		return maximum
-	}
-	return value
 }
 
 // TUIRenderer implements Renderer using a Bubble Tea program.
@@ -792,16 +895,18 @@ func NewTUIRenderer(w io.Writer) *TUIRenderer {
 // NewTUIRendererWithOptions creates a TUIRenderer with explicit options.
 func NewTUIRendererWithOptions(w io.Writer, options Options) *TUIRenderer {
 	events := make(chan Event, 256)
-	model := newTUIModel(events, options)
 	input := options.Input
+	if input == nil && w == os.Stdout && isTTY(w) {
+		input = os.Stdin
+	}
+	options.Input = input
+	model := newTUIModel(events, options)
 	programOptions := []tea.ProgramOption{
 		tea.WithOutput(w),
 		tea.WithoutSignalHandler(),
 	}
 	if input != nil {
 		programOptions = append(programOptions, tea.WithInput(input))
-	} else {
-		programOptions = append(programOptions, tea.WithInput(nil))
 	}
 	prog := tea.NewProgram(model, programOptions...)
 	renderer := &TUIRenderer{

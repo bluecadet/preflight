@@ -131,10 +131,16 @@ func TestTUIModel_KeyNavigationAndFilters(t *testing.T) {
 	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-2", TaskName: "bad task"})
 	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-2", TaskName: "bad task", Status: "failed"})
 
-	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	model = next.(tuiModel)
-	if model.focus != focusTasks {
-		t.Fatalf("expected focusTasks after tab, got %v", model.focus)
+	if model.selectedHost != 1 {
+		t.Fatalf("expected host selection to move to index 1, got %d", model.selectedHost)
+	}
+
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	model = next.(tuiModel)
+	if model.selectedHost != 0 {
+		t.Fatalf("expected left key to return to host index 0, got %d", model.selectedHost)
 	}
 
 	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -144,10 +150,10 @@ func TestTUIModel_KeyNavigationAndFilters(t *testing.T) {
 		t.Fatalf("expected failed-only filter to leave task-2, got %#v", visible)
 	}
 
-	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyDown})
 	model = next.(tuiModel)
-	if model.showLogPane {
-		t.Fatal("expected log pane to be hidden after pressing l")
+	if host := model.currentHost(); host == nil || host.selectedTask != 0 {
+		t.Fatal("expected failed-only mode to clamp the host selection to the single visible task")
 	}
 
 	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})

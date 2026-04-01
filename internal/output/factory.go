@@ -10,6 +10,7 @@ type Options struct {
 	Verbose   bool
 	Input     io.Reader
 	Interrupt func()
+	Command   string
 }
 
 // Format selects which renderer New returns.
