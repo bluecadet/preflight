@@ -45,17 +45,10 @@ func TestRender_EnvVar(t *testing.T) {
 	}
 }
 
-// TestRender_UnknownVar documents the behaviour: unknown variables resolve to
-// an empty string (no error). This is intentional — playbook authors sometimes
-// add optional variables that may not be set in every environment.
 func TestRender_UnknownVar(t *testing.T) {
 	e := New(map[string]any{})
-	got, err := e.Render("{{ vars.missing }}")
-	if err != nil {
-		t.Fatalf("unexpected error for unknown var: %v", err)
-	}
-	if got != "" {
-		t.Errorf("expected empty string for unknown var, got %q", got)
+	if _, err := e.Render("{{ vars.missing }}"); err == nil {
+		t.Fatal("expected error for undefined vars reference")
 	}
 }
 
@@ -71,6 +64,14 @@ func TestRender_PreserveUnknown(t *testing.T) {
 	want := "value {{ facts.os.build }} {{ target.hostname }}"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRender_PreserveUnknownStillErrorsForMissingVars(t *testing.T) {
+	e := New(map[string]any{}).WithPreserveUnknown()
+
+	if _, err := e.Render("{{ vars.missing }}"); err == nil {
+		t.Fatal("expected missing vars reference to fail even with preserve unknown enabled")
 	}
 }
 

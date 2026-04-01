@@ -14,8 +14,9 @@ var exprRe = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 // Engine evaluates {{ expression }} placeholders in strings using a simple
 // dot-path resolver. Supported namespaces: vars, env, target, facts.
 //
-// Unknown keys resolve to an empty string by default. An error is returned
-// only when the expression syntax is invalid (e.g. an empty path segment).
+// Unknown vars.* keys return an error so missing configuration is caught early.
+// Unknown env.*, target.*, and facts.* keys resolve to an empty string by
+// default unless preserveUnknown is enabled.
 type Engine struct {
 	vars   map[string]any
 	env    map[string]string
@@ -63,16 +64,17 @@ func (e *Engine) WithFacts(facts map[string]any) *Engine {
 	return e
 }
 
-// WithPreserveUnknown keeps unknown expressions intact instead of replacing
-// them with an empty string. This is useful during pure planning when facts
-// or target metadata may not be available yet.
+// WithPreserveUnknown keeps unknown env.*, target.*, and facts.* expressions
+// intact instead of replacing them with an empty string. This is useful during
+// pure planning when facts or target metadata may not be available yet.
+// Undefined vars.* references still return an error.
 func (e *Engine) WithPreserveUnknown() *Engine {
 	e.preserveUnknown = true
 	return e
 }
 
 // Render evaluates all {{ expression }} placeholders in s and returns the
-// resulting string. Unknown variable paths resolve to an empty string.
+// resulting string. Undefined vars.* references return an error.
 func (e *Engine) Render(s string) (string, error) {
 	var renderErr error
 	result := exprRe.ReplaceAllStringFunc(s, func(match string) string {
@@ -163,7 +165,8 @@ func (e *Engine) renderValue(v any) (any, error) {
 }
 
 // evalExpr resolves a dot-path expression such as "vars.foo.bar" against the
-// engine's context. Returns empty string for unknown paths.
+// engine's context. Undefined vars.* paths are errors; unknown env.*, target.*,
+// and facts.* paths are treated as unresolved.
 func (e *Engine) evalExpr(expr string) (string, bool, error) {
 	parts := strings.Split(expr, ".")
 	if len(parts) == 0 || parts[0] == "" {
@@ -190,7 +193,10 @@ func (e *Engine) evalExpr(expr string) (string, bool, error) {
 
 	val, err := dotLookup(root, rest)
 	if err != nil {
-		// Unresolvable path — return empty string.
+		if namespace == "vars" {
+			return "", false, fmt.Errorf("template: undefined variable %q", expr)
+		}
+		// Facts/target/env may legitimately be unavailable during planning.
 		return "", false, nil
 	}
 	return fmt.Sprintf("%v", val), true, nil

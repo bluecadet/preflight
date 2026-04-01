@@ -48,12 +48,17 @@ defaults
 
 At runtime, the effective merged variable map is exposed through `vars.*`.
 
+Undefined `vars.*` references are treated as errors so missing inventory,
+playbook, project, or CLI-provided values fail early instead of rendering as
+empty strings.
+
 ## Planning Versus Execution
 
 The runner renders templates in two different contexts:
 
 - During `plan`, unknown `facts.*` and `target.*` expressions are preserved so planning stays pure.
 - During `check` and `apply`, the runner gathers facts and target metadata, then renders task names, `when:` conditions, and parameters for real execution.
+- Missing `vars.*` references fail in every phase because they indicate incomplete configuration, not unavailable runtime metadata.
 
 That is why `plan` may still show `{{ facts... }}` placeholders while `check` and `apply` do not.
 
