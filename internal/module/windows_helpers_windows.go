@@ -4,11 +4,11 @@ package module
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 var windowsCombinedOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
@@ -49,17 +49,7 @@ func runWindowsPowerShellBool(ctx context.Context, params map[string]any, body s
 }
 
 func powershellJSONVar(name string, value any) (string, error) {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("encode %s params: %w", name, err)
-	}
-
-	encoded := base64.StdEncoding.EncodeToString(data)
-	return fmt.Sprintf(
-		"$%s = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('%s')) | ConvertFrom-Json",
-		name,
-		encoded,
-	), nil
+	return winutil.JSONVarScript(name, value)
 }
 
 func parseWindowsBool(out []byte) (bool, error) {

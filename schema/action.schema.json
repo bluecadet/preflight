@@ -126,6 +126,9 @@
         "shortcut": { "$ref": "#/$defs/moduleShortcut" },
         "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
         "user": { "$ref": "#/$defs/moduleUser" },
+        "winget_package": { "$ref": "#/$defs/moduleWingetPackage" },
+        "appx_package": { "$ref": "#/$defs/moduleAppxPackage" },
+        "power_plan": { "$ref": "#/$defs/modulePowerPlan" },
         "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
         "environment": { "$ref": "#/$defs/moduleEnvironment" },
         "firewall_rule": { "$ref": "#/$defs/moduleFirewallRule" },
@@ -145,9 +148,38 @@
           "description": "Registry key path, e.g. HKLM:\\SOFTWARE\\MyApp"
         },
         "values": {
-          "type": "object",
-          "description": "Map of value name to value data"
+          "description": "Registry values in legacy map or typed spec-list form",
+          "oneOf": [
+            {
+              "type": "object",
+              "description": "Legacy map of value name to value data"
+            },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/registryValueSpec" }
+            }
+          ]
         },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "registryValueSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["string", "expand_string", "dword", "qword", "binary", "multi_string"]
+        },
+        "data": {},
         "ensure": {
           "type": "string",
           "enum": ["present", "absent"],
@@ -282,17 +314,55 @@
           "type": "string",
           "description": "Task name"
         },
+        "path": {
+          "type": "string",
+          "description": "Task folder path, e.g. \\Preflight\\"
+        },
+        "execute": {
+          "type": "string",
+          "description": "Executable path"
+        },
         "command": {
           "type": "string",
-          "description": "Command to run"
+          "description": "Legacy alias for execute"
+        },
+        "arguments": {
+          "type": "string",
+          "description": "Arguments for the task action"
+        },
+        "working_dir": {
+          "type": "string",
+          "description": "Working directory for the task action"
         },
         "trigger": {
           "type": "string",
-          "description": "Task trigger (e.g. daily, onlogon)"
+          "enum": ["startup", "onlogon", "daily", "once"],
+          "description": "Task trigger"
+        },
+        "start_at": {
+          "type": "string",
+          "description": "Start time for daily/once triggers"
+        },
+        "delay": {
+          "type": "string",
+          "description": "Delay for startup or onlogon triggers"
+        },
+        "run_as": {
+          "type": "string",
+          "description": "User account to run the task as"
         },
         "user": {
           "type": "string",
-          "description": "User account to run the task as"
+          "description": "Legacy alias for run_as"
+        },
+        "run_level": {
+          "type": "string",
+          "enum": ["least", "highest"],
+          "default": "least"
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true
         },
         "ensure": {
           "type": "string",
@@ -327,6 +397,97 @@
           "type": "string",
           "enum": ["present", "absent"],
           "default": "present"
+        }
+      }
+    },
+    "moduleWingetPackage": {
+      "type": "object",
+      "description": "Manage packages through Windows Package Manager",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["machine", "user"],
+          "default": "machine"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "moduleAppxPackage": {
+      "type": "object",
+      "description": "Remove built-in Windows Store-style apps",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "string",
+          "enum": ["current_user", "all_users", "provisioned", "both"],
+          "default": "both"
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["absent"],
+          "default": "absent"
+        }
+      }
+    },
+    "modulePowerPlan": {
+      "type": "object",
+      "description": "Manage named Windows power plans",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "activate": {
+          "type": "boolean",
+          "default": true
+        },
+        "settings": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/powerPlanSetting" }
+        },
+        "ensure": {
+          "type": "string",
+          "enum": ["present", "absent"],
+          "default": "present"
+        }
+      }
+    },
+    "powerPlanSetting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subgroup", "setting"],
+      "properties": {
+        "subgroup": {
+          "type": "string"
+        },
+        "setting": {
+          "type": "string"
+        },
+        "ac_value": {
+          "type": "integer"
+        },
+        "dc_value": {
+          "type": "integer"
         }
       }
     },
@@ -426,6 +587,10 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Arguments to pass to the script"
+        },
+        "check_script": {
+          "type": "string",
+          "description": "PowerShell check script that returns whether change is needed"
         },
         "creates": {
           "type": "string",

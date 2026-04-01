@@ -83,6 +83,9 @@
         "shortcut": { "$ref": "#/$defs/moduleShortcut" },
         "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
         "user": { "$ref": "#/$defs/moduleUser" },
+        "winget_package": { "$ref": "#/$defs/moduleWingetPackage" },
+        "appx_package": { "$ref": "#/$defs/moduleAppxPackage" },
+        "power_plan": { "$ref": "#/$defs/modulePowerPlan" },
         "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
         "environment": { "$ref": "#/$defs/moduleEnvironment" },
         "firewall_rule": { "$ref": "#/$defs/moduleFirewallRule" },
@@ -97,7 +100,26 @@
       "additionalProperties": false,
       "properties": {
         "path": { "type": "string" },
-        "values": { "type": "object" },
+        "values": {
+          "oneOf": [
+            { "type": "object" },
+            {
+              "type": "array",
+              "items": { "$ref": "#/$defs/registryValueSpec" }
+            }
+          ]
+        },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "registryValueSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["string", "expand_string", "dword", "qword", "binary", "multi_string"] },
+        "data": {},
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
       }
     },
@@ -156,9 +178,18 @@
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
+        "path": { "type": "string" },
+        "execute": { "type": "string" },
         "command": { "type": "string" },
-        "trigger": { "type": "string" },
+        "arguments": { "type": "string" },
+        "working_dir": { "type": "string" },
+        "trigger": { "type": "string", "enum": ["startup", "onlogon", "daily", "once"] },
+        "start_at": { "type": "string" },
+        "delay": { "type": "string" },
+        "run_as": { "type": "string" },
         "user": { "type": "string" },
+        "run_level": { "type": "string", "enum": ["least", "highest"], "default": "least" },
+        "enabled": { "type": "boolean", "default": true },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
       }
     },
@@ -171,6 +202,48 @@
         "password_from": { "type": "string" },
         "groups": { "type": "array", "items": { "type": "string" } },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleWingetPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "version": { "type": "string" },
+        "source": { "type": "string" },
+        "scope": { "type": "string", "enum": ["machine", "user"], "default": "machine" },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "moduleAppxPackage": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "scope": { "type": "string", "enum": ["current_user", "all_users", "provisioned", "both"], "default": "both" },
+        "ensure": { "type": "string", "enum": ["absent"], "default": "absent" }
+      }
+    },
+    "modulePowerPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "base": { "type": "string" },
+        "activate": { "type": "boolean", "default": true },
+        "settings": { "type": "array", "items": { "$ref": "#/$defs/powerPlanSetting" } },
+        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      }
+    },
+    "powerPlanSetting": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subgroup", "setting"],
+      "properties": {
+        "subgroup": { "type": "string" },
+        "setting": { "type": "string" },
+        "ac_value": { "type": "integer" },
+        "dc_value": { "type": "integer" }
       }
     },
     "moduleWindowsFeature": {
@@ -216,6 +289,7 @@
         "script": { "type": "string" },
         "file": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } },
+        "check_script": { "type": "string" },
         "creates": { "type": "string" }
       }
     },

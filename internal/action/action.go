@@ -35,6 +35,9 @@ var inlineModuleFields = []struct {
 	{"shortcut", func(t *Task) map[string]any { return t.Shortcut }},
 	{"scheduled_task", func(t *Task) map[string]any { return t.ScheduledTask }},
 	{"user", func(t *Task) map[string]any { return t.User }},
+	{"winget_package", func(t *Task) map[string]any { return t.WingetPackage }},
+	{"appx_package", func(t *Task) map[string]any { return t.AppxPackage }},
+	{"power_plan", func(t *Task) map[string]any { return t.PowerPlan }},
 	{"windows_feature", func(t *Task) map[string]any { return t.WindowsFeature }},
 	{"environment", func(t *Task) map[string]any { return t.Environment }},
 	{"firewall_rule", func(t *Task) map[string]any { return t.FirewallRule }},
@@ -67,6 +70,9 @@ type Task struct {
 	Shortcut       map[string]any `yaml:"shortcut"`
 	ScheduledTask  map[string]any `yaml:"scheduled_task"`
 	User           map[string]any `yaml:"user"`
+	WingetPackage  map[string]any `yaml:"winget_package"`
+	AppxPackage    map[string]any `yaml:"appx_package"`
+	PowerPlan      map[string]any `yaml:"power_plan"`
 	WindowsFeature map[string]any `yaml:"windows_feature"`
 	Environment    map[string]any `yaml:"environment"`
 	FirewallRule   map[string]any `yaml:"firewall_rule"`
