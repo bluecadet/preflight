@@ -13,9 +13,6 @@ import (
 const (
 	defaultTUIWidth  = 100
 	defaultTUIHeight = 28
-
-	maxTaskLogLines = 200
-	maxTaskLogBytes = 32 * 1024
 )
 
 var (

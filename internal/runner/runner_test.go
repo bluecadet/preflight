@@ -188,6 +188,68 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	}
 }
 
+func TestPlanAssignsDisplayTaskPathsForNestedActions(t *testing.T) {
+	rootRef := "github.com/acme/actions/root@v1"
+	childRef := "github.com/acme/actions/child@v1"
+	resolver := &fetchableResolver{
+		actions: map[string]*action.Action{
+			rootRef: {
+				Name: "root",
+				Tasks: []action.Task{
+					{
+						Name:  "prepare",
+						Shell: map[string]any{"cmd": "echo prepare"},
+					},
+					{
+						Name: "child",
+						Uses: childRef,
+					},
+				},
+			},
+			childRef: {
+				Name: "child",
+				Tasks: []action.Task{{
+					Name:  "nested leaf",
+					Shell: map[string]any{"cmd": "echo nested"},
+				}},
+			},
+		},
+		fetched: map[string]bool{
+			rootRef:  true,
+			childRef: true,
+		},
+	}
+	r := New(&mockTarget{}, action.Chain{resolver}, Config{})
+	pb := &action.Playbook{
+		Name: "paths",
+		Tasks: []action.Task{
+			{
+				Name: "root",
+				Uses: rootRef,
+			},
+			{
+				Name:  "final",
+				Shell: map[string]any{"cmd": "echo final"},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 3 {
+		t.Fatalf("expected 3 expanded tasks, got %d", len(plan.Tasks))
+	}
+	got := []string{plan.Tasks[0].TaskPath, plan.Tasks[1].TaskPath, plan.Tasks[2].TaskPath}
+	want := []string{"1.1", "1.2.1", "2"}
+	for idx := range want {
+		if got[idx] != want[idx] {
+			t.Fatalf("expected task paths %v, got %v", want, got)
+		}
+	}
+}
+
 func TestDAGDependsOnOrder(t *testing.T) {
 	taskA := &PlanTask{ID: "task-0", Name: "task-a"}
 	taskB := &PlanTask{ID: "task-1", Name: "task-b", DependsOn: []string{"task-a"}}

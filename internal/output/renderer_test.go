@@ -169,6 +169,77 @@ func TestTextRenderer_VerboseTaskLog(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_DefaultFailureFlushesBufferedLogs(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRenderer(&buf)
+
+	r.Emit(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-a"})
+	r.Emit(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "fail task", Module: "shell"})
+	r.Emit(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-1", Stream: "stdout", Line: "first line"})
+	r.Emit(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "fail task", Module: "shell", Status: "failed", Message: "boom"})
+	r.Emit(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-2", TaskPath: "2", TaskName: "ok task", Module: "shell"})
+	r.Emit(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-2", Stream: "stdout", Line: "hidden success log"})
+	r.Emit(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-2", TaskPath: "2", TaskName: "ok task", Module: "shell", Status: "ok"})
+
+	out := buf.String()
+	if !strings.Contains(out, "out> first line") {
+		t.Fatalf("expected failed task logs to be flushed, got %q", out)
+	}
+	if strings.Contains(out, "hidden success log") {
+		t.Fatalf("expected successful task logs to stay hidden by default, got %q", out)
+	}
+}
+
+func TestTextRenderer_VerboseLogsAreNotDuplicatedOnFailure(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRendererWithOptions(&buf, Options{Verbose: true})
+
+	r.Emit(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-a"})
+	r.Emit(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "fail task", Module: "shell"})
+	r.Emit(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-1", Stream: "stderr", Line: "only once"})
+	r.Emit(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "fail task", Module: "shell", Status: "failed", Message: "boom"})
+
+	out := buf.String()
+	if strings.Count(out, "err> only once") != 1 {
+		t.Fatalf("expected verbose task log to render once, got %q", out)
+	}
+}
+
+func TestTextRenderer_MultiHostPrefixesTaskLines(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRenderer(&buf)
+
+	r.Emit(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-a"})
+	r.Emit(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-b"})
+	r.Emit(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "alpha", Status: "ok"})
+	r.Emit(Event{Type: EventTaskResult, Target: "host-b", TaskID: "task-1", TaskPath: "1", TaskName: "beta", Status: "ok"})
+
+	out := buf.String()
+	if !strings.Contains(out, "host-a") || !strings.Contains(out, "host-b") {
+		t.Fatalf("expected multi-host transcript to prefix task lines, got %q", out)
+	}
+}
+
+func TestRunTranscriptState_FooterCollapsesOnNarrowWidth(t *testing.T) {
+	state := newRunTranscriptState(Options{Command: "apply"}, false)
+	state.apply(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-a"})
+	state.apply(Event{Type: EventPlayStart, PlayName: "demo", Target: "host-b"})
+	state.apply(Event{Type: EventPhaseStart, Target: "host-a", Phase: "execute"})
+	state.apply(Event{Type: EventPhaseStart, Target: "host-b", Phase: "execute"})
+	state.apply(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskPath: "1", TaskName: "install chrome"})
+	state.apply(Event{Type: EventTaskStart, Target: "host-b", TaskID: "task-2", TaskPath: "2", TaskName: "copy bundle"})
+
+	narrow := state.footerLines(30)
+	if len(narrow) != 1 {
+		t.Fatalf("expected narrow footer to collapse to one line, got %#v", narrow)
+	}
+
+	wide := state.footerLines(100)
+	if len(wide) < 2 {
+		t.Fatalf("expected wide footer to include active summary, got %#v", wide)
+	}
+}
+
 func TestJSONRenderer_TaskLogRequiresVerbose(t *testing.T) {
 	var quiet bytes.Buffer
 	NewJSONRenderer(&quiet).Emit(Event{

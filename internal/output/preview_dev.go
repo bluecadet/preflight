@@ -3,8 +3,10 @@
 package output
 
 import (
+	"bytes"
 	"io"
 	"slices"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -18,11 +20,11 @@ type PreviewScenario struct {
 
 func PreviewScenarios() []PreviewScenario {
 	return []PreviewScenario{
-		newRunPreviewScenario("run-single-loading", "Run: single host loading", "One host mid-run with an active task and inline logs.", false, previewRunSingleLoadingEvents()),
-		newRunPreviewScenario("run-single-failed", "Run: failed task", "Single host with a failed task expanded and related logs.", true, previewRunSingleFailedEvents()),
-		newRunPreviewScenario("run-multi-host", "Run: multi-host tabs", "Two hosts with mixed progress and host tab overflow behavior.", true, previewRunMultiHostEvents()),
-		newRunPreviewScenario("run-deep-playbook", "Run: deep playbook", "Longer run with nested action-style task names, many statuses, and recap-heavy output.", true, previewRunDeepPlaybookEvents()),
-		newRunPreviewScenario("run-host-overflow", "Run: host overflow", "Many hosts to exercise host-tab pagination and per-host progress states.", true, previewRunHostOverflowEvents()),
+		newScreenPreviewScenario("run-single-loading", "Run: single host loading", "Transcript preview for one host mid-run with an active task and logs.", previewRunScreen("preview", "single host loading", previewRunSingleLoadingEvents())),
+		newScreenPreviewScenario("run-single-failed", "Run: failed task", "Transcript preview for a failed task and related logs.", previewRunScreen("preview", "failed task", previewRunSingleFailedEvents())),
+		newScreenPreviewScenario("run-multi-host", "Run: multi-host transcript", "Transcript preview for two hosts with mixed progress.", previewRunScreen("preview", "multi-host transcript", previewRunMultiHostEvents())),
+		newScreenPreviewScenario("run-deep-playbook", "Run: deep playbook", "Transcript preview with many tasks and nested action-style names.", previewRunScreen("preview", "deep playbook transcript", previewRunDeepPlaybookEvents())),
+		newScreenPreviewScenario("run-host-overflow", "Run: host overflow", "Transcript preview with many hosts and varied outcomes.", previewRunScreen("preview", "host overflow transcript", previewRunHostOverflowEvents())),
 		newScreenPreviewScenario("screen-plan", "Screen: plan list", "Static list preview for plan output.", previewPlanScreen()),
 		newScreenPreviewScenario("screen-plan-tabs", "Screen: plan tabs", "Multi-target plan view with host tabs and nested action-style task names.", previewPlanTabbedScreen()),
 		newScreenPreviewScenario("screen-diff", "Screen: state diff", "Comparison-style screen with changed, new, and removed items.", previewDiffScreen()),
@@ -67,24 +69,6 @@ func (e ErrUnknownPreviewScenario) Error() string {
 	return "unknown preview scenario: " + e.name
 }
 
-func runPreviewTUI(w io.Writer, input io.Reader, command string, done bool, events []Event) error {
-	model := newTUIModel(make(chan Event), Options{Input: input, Command: command})
-	for _, event := range events {
-		model = model.applyEvent(event)
-	}
-	model.done = done
-	programOptions := []tea.ProgramOption{
-		tea.WithOutput(w),
-		tea.WithoutSignalHandler(),
-	}
-	if input != nil {
-		programOptions = append(programOptions, tea.WithInput(input))
-		programOptions = append(programOptions, tea.WithAltScreen())
-	}
-	_, err := tea.NewProgram(model, programOptions...).Run()
-	return err
-}
-
 func runScreenPreview(w io.Writer, input io.Reader, screen Screen) error {
 	model := newStaticScreenModel(screen)
 	programOptions := []tea.ProgramOption{
@@ -99,17 +83,6 @@ func runScreenPreview(w io.Writer, input io.Reader, screen Screen) error {
 	return err
 }
 
-func newRunPreviewScenario(name, title, description string, done bool, events []Event) PreviewScenario {
-	return PreviewScenario{
-		Name:        name,
-		Title:       title,
-		Description: description,
-		run: func(w io.Writer, input io.Reader) error {
-			return runPreviewTUI(w, input, "preview", done, events)
-		},
-	}
-}
-
 func newScreenPreviewScenario(name, title, description string, screen Screen) PreviewScenario {
 	return PreviewScenario{
 		Name:        name,
@@ -117,6 +90,25 @@ func newScreenPreviewScenario(name, title, description string, screen Screen) Pr
 		Description: description,
 		run: func(w io.Writer, input io.Reader) error {
 			return runScreenPreview(w, input, screen)
+		},
+	}
+}
+
+func previewRunScreen(command, subject string, events []Event) Screen {
+	var buf bytes.Buffer
+	renderer := NewTextRendererWithOptions(&buf, Options{
+		Command: command,
+		Verbose: true,
+	})
+	for _, event := range events {
+		renderer.Emit(event)
+	}
+	return Screen{
+		Command: command,
+		Subject: subject,
+		Content: ScreenContent{
+			Kind:     ScreenKindDocument,
+			Document: strings.TrimRight(buf.String(), "\n"),
 		},
 	}
 }

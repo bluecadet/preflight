@@ -67,16 +67,16 @@ type runRecap struct {
 }
 
 type runHostState struct {
-	name           string
-	playName       string
-	currentPhase   string
-	phaseRunning   bool
-	currentTaskID  string
-	currentTask    string
+	name            string
+	playName        string
+	currentPhase    string
+	phaseRunning    bool
+	currentTaskID   string
+	currentTask     string
 	currentTaskPath string
-	tasks          map[string]*runTaskState
-	recap          runRecap
-	done           bool
+	tasks           map[string]*runTaskState
+	recap           runRecap
+	done            bool
 }
 
 func (h *runHostState) ensureTask(event Event) *runTaskState {
@@ -435,7 +435,7 @@ func (s runTranscriptState) renderActiveSummary(width int) string {
 	if len(active) == 0 || width < 36 {
 		return ""
 	}
-	joined := ""
+	var joined strings.Builder
 	used := 0
 	for idx, item := range active {
 		part := item
@@ -448,18 +448,18 @@ func (s runTranscriptState) renderActiveSummary(width int) string {
 			if remaining > 0 {
 				more := fmt.Sprintf(" | +%d more", remaining)
 				if used+ansi.StringWidth(more) <= width {
-					joined += more
+					joined.WriteString(more)
 				}
 			}
 			break
 		}
-		joined += part
+		joined.WriteString(part)
 		used += partWidth
 	}
-	if joined == "" {
+	if joined.Len() == 0 {
 		return ""
 	}
-	return lipgloss.NewStyle().Width(width).Render(tuiSubtleStyle.Render("active: ") + joined)
+	return lipgloss.NewStyle().Width(width).Render(tuiSubtleStyle.Render("active: ") + joined.String())
 }
 
 func (s runTranscriptState) footerPhase() string {
@@ -587,9 +587,8 @@ func NewLiveRunRendererWithOptions(w io.Writer, options Options) *LiveRunRendere
 	if options.Command == "" {
 		renderer.command = "run"
 	}
-	if file, ok := w.(terminalSizer); ok && isTTY(w) {
+	if _, ok := w.(terminalSizer); ok && isTTY(w) {
 		renderer.interactive = true
-		_ = file
 		renderer.startTicker()
 	}
 	return renderer
@@ -647,13 +646,13 @@ func (r *LiveRunRenderer) redrawFooterLocked() {
 		r.footerLines = 0
 		return
 	}
-	fmt.Fprint(r.writer, "\x1b[s")
+	_, _ = fmt.Fprint(r.writer, "\x1b[s")
 	for idx, line := range lines {
 		row := height - len(lines) + idx + 1
-		fmt.Fprintf(r.writer, "\x1b[%d;1H\x1b[2K", row)
-		fmt.Fprint(r.writer, lipgloss.NewStyle().Width(width).Render(truncateText(line, width)))
+		_, _ = fmt.Fprintf(r.writer, "\x1b[%d;1H\x1b[2K", row)
+		_, _ = fmt.Fprint(r.writer, lipgloss.NewStyle().Width(width).Render(truncateText(line, width)))
 	}
-	fmt.Fprint(r.writer, "\x1b[u")
+	_, _ = fmt.Fprint(r.writer, "\x1b[u")
 	r.footerLines = len(lines)
 }
 
@@ -662,12 +661,12 @@ func (r *LiveRunRenderer) clearFooterLocked() {
 		return
 	}
 	_, height := r.terminalSizeLocked()
-	fmt.Fprint(r.writer, "\x1b[s")
+	_, _ = fmt.Fprint(r.writer, "\x1b[s")
 	for idx := 0; idx < r.footerLines; idx++ {
 		row := height - r.footerLines + idx + 1
-		fmt.Fprintf(r.writer, "\x1b[%d;1H\x1b[2K", row)
+		_, _ = fmt.Fprintf(r.writer, "\x1b[%d;1H\x1b[2K", row)
 	}
-	fmt.Fprint(r.writer, "\x1b[u")
+	_, _ = fmt.Fprint(r.writer, "\x1b[u")
 	r.footerLines = 0
 }
 
