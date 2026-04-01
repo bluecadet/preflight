@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
@@ -64,6 +66,24 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("state show: %w", err)
 	}
 
+	if getOutputFormat(cmd) == output.FormatTUI {
+		screen := output.Screen{
+			Command: "state show",
+			Subject: "state: " + path,
+			Status:  "ready",
+			Summary: []output.ScreenStat{
+				{Label: "version", Value: strconv.Itoa(state.Version), Tone: "info"},
+				{Label: "tasks", Value: strconv.Itoa(len(state.Tasks)), Tone: "info"},
+				{Label: "last applied", Value: formatTimestamp(state.LastApplied), Tone: "info"},
+			},
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: prettyJSON(state),
+			},
+		}
+		return showScreen(cmd, screen)
+	}
+
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	return enc.Encode(state)
@@ -109,6 +129,8 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 
 	varFlags, _ := cmd.Flags().GetStringArray("var")
 	vars := parseVars(varFlags)
+	outFmt := getOutputFormat(cmd)
+	screenTabs := make([]output.ScreenTab, 0, len(hosts))
 
 	for idx, host := range hosts {
 		statePath := host.StatePath
@@ -144,10 +166,77 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 		comparisons := runner.ComparePlannedTasks(plannedState, state)
 
+		statusCounts := map[runner.ComparisonStatus]int{}
+		items := make([]output.ScreenItem, 0, len(comparisons))
+		for _, comparison := range comparisons {
+			statusCounts[comparison.Status]++
+			recordedStatus := "(not recorded)"
+			if comparison.Status != runner.ComparisonStatusNew {
+				recordedStatus = string(comparison.RecordedStatus)
+			}
+			items = append(items, output.ScreenItem{
+				Title:    comparison.TaskName,
+				Status:   comparisonTone(comparison.Status),
+				Subtitle: comparison.Module,
+				Summary:  string(comparison.Status),
+				Meta: []string{
+					"recorded: " + recordedStatus,
+				},
+				DetailTitle: "Comparison",
+				Detail: []output.ScreenLine{
+					{Prefix: "inf", Text: "recorded status: " + recordedStatus, Tone: "info"},
+					{Prefix: "inf", Text: "recorded summary: " + compactSummary(comparison.RecordedSummary), Tone: "info"},
+					{Prefix: "inf", Text: "planned summary: " + compactSummary(comparison.PlannedSummary), Tone: "info"},
+				},
+				AutoExpand: comparison.Status != runner.ComparisonStatusUnchanged,
+			})
+		}
+		hostStatus := "ready"
+		if statusCounts[runner.ComparisonStatusChanged] > 0 || statusCounts[runner.ComparisonStatusNew] > 0 || statusCounts[runner.ComparisonStatusRemoved] > 0 {
+			hostStatus = "changed"
+		}
+		screenTabs = append(screenTabs, output.ScreenTab{
+			Label:  host.Name,
+			Status: hostStatus,
+			Meta:   strconv.Itoa(len(comparisons)) + " items",
+			Content: output.ScreenContent{
+				Kind:  output.ScreenKindList,
+				Items: items,
+				Summary: []output.ScreenStat{
+					{Label: "new", Value: strconv.Itoa(statusCounts[runner.ComparisonStatusNew]), Tone: "changed"},
+					{Label: "changed", Value: strconv.Itoa(statusCounts[runner.ComparisonStatusChanged]), Tone: "changed"},
+					{Label: "unchanged", Value: strconv.Itoa(statusCounts[runner.ComparisonStatusUnchanged]), Tone: "ok"},
+					{Label: "removed", Value: strconv.Itoa(statusCounts[runner.ComparisonStatusRemoved]), Tone: "failed"},
+				},
+				Empty: "No comparisons available.",
+			},
+		})
+
+		if outFmt == output.FormatTUI {
+			continue
+		}
+
 		if idx > 0 {
 			fmt.Println()
 		}
 		printStateComparison(host, statePath, plan, state, comparisons)
+	}
+
+	if outFmt == output.FormatTUI {
+		screen := output.Screen{
+			Command: label,
+			Subject: "play: " + pb.Name,
+			Status:  "ready",
+			Summary: []output.ScreenStat{
+				{Label: "targets", Value: strconv.Itoa(len(hosts)), Tone: "info"},
+			},
+		}
+		if len(screenTabs) == 1 {
+			screen.Content = screenTabs[0].Content
+		} else {
+			screen.Tabs = screenTabs
+		}
+		return showScreen(cmd, screen)
 	}
 
 	return nil

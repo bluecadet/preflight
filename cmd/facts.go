@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/facts"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
@@ -69,6 +71,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	outFmt := getOutputFormat(cmd)
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if len(hosts) == 1 {
@@ -77,10 +80,29 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
+		if outFmt == output.FormatTUI {
+			screen := output.Screen{
+				Command: "facts",
+				Subject: "target: " + hosts[0].Name,
+				Status:  "ready",
+				Summary: []output.ScreenStat{
+					{Label: "hostname", Value: f.Hostname, Tone: "info"},
+					{Label: "os", Value: f.OS.Name, Tone: "info"},
+					{Label: "build", Value: strconv.Itoa(f.OS.Build), Tone: "info"},
+					{Label: "disks", Value: strconv.Itoa(len(f.Disks)), Tone: "info"},
+				},
+				Content: output.ScreenContent{
+					Kind:     output.ScreenKindDocument,
+					Document: prettyJSON(f.AsMap()),
+				},
+			}
+			return showScreen(cmd, screen)
+		}
 		return enc.Encode(f.AsMap())
 	}
 
 	result := make(map[string]any, len(hosts))
+	factResults := make(map[string]*facts.Facts, len(hosts))
 	var mu sync.Mutex
 	if err := runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		g := facts.New(host.Target)
@@ -90,10 +112,37 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		}
 		mu.Lock()
 		result[host.Name] = f.AsMap()
+		factResults[host.Name] = f
 		mu.Unlock()
 		return nil
 	}); err != nil {
 		return err
+	}
+	if outFmt == output.FormatTUI {
+		tabs := make([]output.ScreenTab, 0, len(hosts))
+		for _, host := range hosts {
+			f := factResults[host.Name]
+			tabs = append(tabs, output.ScreenTab{
+				Label:  host.Name,
+				Status: "ready",
+				Meta:   f.OS.Name,
+				Content: output.ScreenContent{
+					Kind:     output.ScreenKindDocument,
+					Document: prettyJSON(f.AsMap()),
+					Summary: []output.ScreenStat{
+						{Label: "hostname", Value: f.Hostname, Tone: "info"},
+						{Label: "build", Value: strconv.Itoa(f.OS.Build), Tone: "info"},
+						{Label: "disks", Value: strconv.Itoa(len(f.Disks)), Tone: "info"},
+					},
+				},
+			})
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "facts",
+			Subject: "targets: " + strconv.Itoa(len(hosts)),
+			Status:  "ready",
+			Tabs:    tabs,
+		})
 	}
 	return enc.Encode(result)
 }

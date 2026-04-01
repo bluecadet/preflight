@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/config"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
 )
 
@@ -52,7 +53,7 @@ func init() {
 	rootCmd.AddCommand(secretCmd)
 }
 
-func runSecretList(_ *cobra.Command, _ []string) error {
+func runSecretList(cmd *cobra.Command, _ []string) error {
 	cwd, _ := os.Getwd()
 	cfg, err := loadProjectConfig(cwd)
 	if err != nil {
@@ -63,6 +64,31 @@ func runSecretList(_ *cobra.Command, _ []string) error {
 		return nil
 	}
 	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
+	if getOutputFormat(cmd) == output.FormatTUI {
+		items := make([]output.ScreenItem, 0, len(provider.List()))
+		for _, name := range provider.List() {
+			entry := cfg.Secrets.Entries[name]
+			items = append(items, output.ScreenItem{
+				Title:   name,
+				Status:  "ready",
+				Summary: entry.File,
+				Detail: []output.ScreenLine{
+					{Prefix: "inf", Text: "file: " + entry.File, Tone: "info"},
+				},
+				AutoExpand: len(items) == 0,
+			})
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "secret list",
+			Subject: "project: " + cwd,
+			Status:  "ready",
+			Content: output.ScreenContent{
+				Kind:  output.ScreenKindList,
+				Items: items,
+				Empty: "No secrets configured.",
+			},
+		})
+	}
 	for _, name := range provider.List() {
 		entry := cfg.Secrets.Entries[name]
 		fmt.Printf("%-24s %s\n", name, entry.File)
@@ -120,6 +146,18 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 	}
 	if err := config.SaveFile(cfgPath, cfg); err != nil {
 		return err
+	}
+
+	if getOutputFormat(cmd) == output.FormatTUI {
+		return showScreen(cmd, output.Screen{
+			Command: "secret encrypt",
+			Subject: name,
+			Status:  "ok",
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: fmt.Sprintf("Encrypted secret %q\nFile  %s", name, entry.File),
+			},
+		})
 	}
 
 	fmt.Printf("Encrypted secret %q to %s\n", name, entry.File)
@@ -187,6 +225,18 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 	}
 	if err := config.SaveFile(cfgPath, cfg); err != nil {
 		return err
+	}
+
+	if getOutputFormat(cmd) == output.FormatTUI {
+		return showScreen(cmd, output.Screen{
+			Command: "secret edit",
+			Subject: name,
+			Status:  "ok",
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: fmt.Sprintf("Updated secret %q", name),
+			},
+		})
 	}
 
 	fmt.Printf("Updated secret %q\n", name)

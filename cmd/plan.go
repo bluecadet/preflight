@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -54,8 +54,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.New(outFmt, os.Stdout)
-	defer renderer.Close()
+	screenTabs := make([]output.ScreenTab, 0, len(hosts))
 
 	for idx, host := range hosts {
 		cfg := runner.Config{
@@ -68,7 +67,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
 			Phase:          "plan",
-			Renderer:       renderer,
 			Secrets:        secretsResolver,
 			ModuleRegistry: registry,
 		}
@@ -77,6 +75,49 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		plan, err := r.Plan(ctx, pb)
 		if err != nil {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
+		}
+
+		items := make([]output.ScreenItem, 0, len(plan.Tasks))
+		for _, pt := range plan.Tasks {
+			preview, err := runner.PreviewTask(pt, host.TargetVars)
+			if err != nil {
+				return fmt.Errorf("preview task %q for %s: %w", pt.Name, host.Name, err)
+			}
+			meta := []string{}
+			if preview.When != "" {
+				meta = append(meta, "when: "+preview.When)
+			}
+			if len(preview.Tags) > 0 {
+				meta = append(meta, "tags: "+fmt.Sprintf("%v", preview.Tags))
+			}
+			items = append(items, output.ScreenItem{
+				Title:    preview.Name,
+				Status:   "pending",
+				Subtitle: preview.Module,
+				Summary:  preview.ID,
+				Meta:     meta,
+				DetailTitle: "Task",
+				Detail: []output.ScreenLine{
+					{Prefix: "inf", Text: "task id: " + preview.ID, Tone: "info"},
+				},
+			})
+		}
+		screenTabs = append(screenTabs, output.ScreenTab{
+			Label:  host.Name,
+			Status: "ready",
+			Meta:   strconv.Itoa(len(plan.Tasks)) + " tasks",
+			Content: output.ScreenContent{
+				Kind:  output.ScreenKindList,
+				Items: items,
+				Summary: []output.ScreenStat{
+					{Label: "tasks", Value: strconv.Itoa(len(plan.Tasks)), Tone: "info"},
+				},
+				Empty: "No tasks planned.",
+			},
+		})
+
+		if outFmt == output.FormatTUI {
+			continue
 		}
 
 		if idx > 0 {
@@ -99,6 +140,23 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			}
 			fmt.Println()
 		}
+	}
+
+	if outFmt == output.FormatTUI {
+		screen := output.Screen{
+			Command: "plan",
+			Subject: "play: " + pb.Name,
+			Status:  "ready",
+			Summary: []output.ScreenStat{
+				{Label: "targets", Value: strconv.Itoa(len(hosts)), Tone: "info"},
+			},
+		}
+		if len(screenTabs) == 1 {
+			screen.Content = screenTabs[0].Content
+		} else {
+			screen.Tabs = screenTabs
+		}
+		return showScreen(cmd, screen)
 	}
 
 	return nil

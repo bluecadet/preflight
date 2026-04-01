@@ -7,11 +7,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
@@ -47,34 +49,75 @@ func init() {
 	rootCmd.AddCommand(actionCmd)
 }
 
-func runActionList(_ *cobra.Command, _ []string) error {
+func runActionList(cmd *cobra.Command, _ []string) error {
 	// List embedded stdlib actions.
-	fmt.Println("=== Embedded stdlib actions (preflight/) ===")
 	embeddedRefs, err := listEmbeddedActions()
 	if err != nil {
 		return fmt.Errorf("action list: embedded: %w", err)
 	}
 	sort.Strings(embeddedRefs)
-	for _, ref := range embeddedRefs {
-		fmt.Printf("  %s\n", ref)
-	}
 
 	// List local ./actions/ actions.
 	cwd, _ := os.Getwd()
 	localActionsDir := filepath.Join(cwd, "actions")
-	fmt.Printf("\n=== Local actions (%s) ===\n", localActionsDir)
 	localRefs, err := listLocalActions(localActionsDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("action list: local: %w", err)
 	}
 	sort.Strings(localRefs)
+
+	if getOutputFormat(cmd) == output.FormatTUI {
+		makeItems := func(refs []string) []output.ScreenItem {
+			items := make([]output.ScreenItem, 0, len(refs))
+			for _, ref := range refs {
+				items = append(items, output.ScreenItem{
+					Title:   ref,
+					Status:  "ready",
+					Summary: ref,
+				})
+			}
+			return items
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "action list",
+			Subject: "cwd: " + cwd,
+			Status:  "ready",
+			Tabs: []output.ScreenTab{
+				{
+					Label:  "stdlib",
+					Status: "ready",
+					Meta:   strconv.Itoa(len(embeddedRefs)),
+					Content: output.ScreenContent{
+						Kind:  output.ScreenKindList,
+						Items: makeItems(embeddedRefs),
+						Empty: "No embedded actions found.",
+					},
+				},
+				{
+					Label:  "local",
+					Status: "ready",
+					Meta:   strconv.Itoa(len(localRefs)),
+					Content: output.ScreenContent{
+						Kind:  output.ScreenKindList,
+						Items: makeItems(localRefs),
+						Empty: "No local actions found.",
+					},
+				},
+			},
+		})
+	}
+
+	fmt.Println("=== Embedded stdlib actions (preflight/) ===")
+	for _, ref := range embeddedRefs {
+		fmt.Printf("  %s\n", ref)
+	}
+	fmt.Printf("\n=== Local actions (%s) ===\n", localActionsDir)
 	for _, ref := range localRefs {
 		fmt.Printf("  %s\n", ref)
 	}
 	if len(localRefs) == 0 {
 		fmt.Println("  (none)")
 	}
-
 	return nil
 }
 
@@ -120,6 +163,68 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 	a, err := chain.Resolve(context.Background(), ref)
 	if err != nil {
 		return err
+	}
+
+	if getOutputFormat(cmd) == output.FormatTUI {
+		lines := []string{
+			"Name        " + a.Name,
+			"Version     " + a.Version,
+			"Description " + a.Description,
+		}
+		if a.Author != "" {
+			lines = append(lines, "Author      "+a.Author)
+		}
+		if len(a.Inputs) > 0 {
+			lines = append(lines, "", "Inputs")
+			keys := make([]string, 0, len(a.Inputs))
+			for k := range a.Inputs {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				inp := a.Inputs[k]
+				line := fmt.Sprintf("%s  %s", k, inp.Description)
+				if inp.Required {
+					line += " (required)"
+				}
+				if inp.Default != nil {
+					line += fmt.Sprintf(" [default: %v]", inp.Default)
+				}
+				lines = append(lines, line)
+			}
+		}
+		if len(a.Outputs) > 0 {
+			lines = append(lines, "", "Outputs")
+			keys := make([]string, 0, len(a.Outputs))
+			for k := range a.Outputs {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				out := a.Outputs[k]
+				lines = append(lines, fmt.Sprintf("%s  %s", k, out.Description))
+			}
+		}
+		if len(a.Tasks) > 0 {
+			lines = append(lines, "", fmt.Sprintf("Tasks (%d)", len(a.Tasks)))
+			for i, t := range a.Tasks {
+				lines = append(lines, fmt.Sprintf("%d. %s", i+1, t.Name))
+			}
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "action info",
+			Subject: ref,
+			Status:  "ready",
+			Summary: []output.ScreenStat{
+				{Label: "tasks", Value: strconv.Itoa(len(a.Tasks)), Tone: "info"},
+				{Label: "inputs", Value: strconv.Itoa(len(a.Inputs)), Tone: "info"},
+				{Label: "outputs", Value: strconv.Itoa(len(a.Outputs)), Tone: "info"},
+			},
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: strings.Join(lines, "\n"),
+			},
+		})
 	}
 
 	fmt.Printf("Name:        %s\n", a.Name)
@@ -171,7 +276,7 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runActionFetch(_ *cobra.Command, args []string) error {
+func runActionFetch(cmd *cobra.Command, args []string) error {
 	ref := args[0]
 	if _, err := action.ParseRemoteRef(ref); err != nil {
 		return fmt.Errorf("action fetch: %w", err)
@@ -190,6 +295,23 @@ func runActionFetch(_ *cobra.Command, args []string) error {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Ref < entries[j].Ref
 	})
+	if getOutputFormat(cmd) == output.FormatTUI {
+		lines := make([]string, 0, len(entries)*2)
+		for _, entry := range entries {
+			lines = append(lines, "Ref  "+entry.Ref)
+			lines = append(lines, "SHA  "+entry.SHA)
+			lines = append(lines, "")
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "action fetch",
+			Subject: ref,
+			Status:  "ready",
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: strings.TrimSpace(strings.Join(lines, "\n")),
+			},
+		})
+	}
 	for _, entry := range entries {
 		fmt.Printf("Fetched %s -> %s\n", entry.Ref, entry.SHA)
 	}

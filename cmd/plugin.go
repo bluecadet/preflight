@@ -3,9 +3,12 @@ package cmd
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
@@ -33,7 +36,7 @@ func init() {
 	rootCmd.AddCommand(pluginCmd)
 }
 
-func runPluginList(_ *cobra.Command, _ []string) error {
+func runPluginList(cmd *cobra.Command, _ []string) error {
 	plugins, err := sdk.Inspect(sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin list: %w", err)
@@ -51,6 +54,47 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 		return plugins[i].Name < plugins[j].Name
 	})
 
+	if getOutputFormat(cmd) == output.FormatTUI {
+		items := make([]output.ScreenItem, 0, len(plugins))
+		for _, plugin := range plugins {
+			status := "ready"
+			summary := plugin.Version
+			if !plugin.Initialized {
+				status = "failed"
+				summary = plugin.ErrorMessage
+			}
+			items = append(items, output.ScreenItem{
+				Title:    plugin.Name,
+				Status:   status,
+				Subtitle: plugin.Version,
+				Summary:  summary,
+				Meta: []string{
+					"path: " + plugin.Path,
+				},
+				DetailTitle: "Plugin",
+				Detail: []output.ScreenLine{
+					{Prefix: "inf", Text: "source: " + plugin.Source, Tone: "info"},
+					{Prefix: "inf", Text: "path: " + plugin.Path, Tone: "info"},
+					{Prefix: "inf", Text: "initialized: " + strconv.FormatBool(plugin.Initialized), Tone: status},
+				},
+				AutoExpand: !plugin.Initialized,
+			})
+		}
+		return showScreen(cmd, output.Screen{
+			Command: "plugin list",
+			Subject: "binary dir: " + currentBinaryDir(),
+			Status:  "ready",
+			Summary: []output.ScreenStat{
+				{Label: "plugins", Value: strconv.Itoa(len(plugins)), Tone: "info"},
+			},
+			Content: output.ScreenContent{
+				Kind:  output.ScreenKindList,
+				Items: items,
+				Empty: "No plugins found.",
+			},
+		})
+	}
+
 	fmt.Printf("%-24s %-12s %-8s %s\n", "NAME", "VERSION", "STATUS", "PATH")
 	fmt.Printf("%-24s %-12s %-8s %s\n", "----", "-------", "------", "----")
 	for _, plugin := range plugins {
@@ -64,7 +108,7 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runPluginInfo(_ *cobra.Command, args []string) error {
+func runPluginInfo(cmd *cobra.Command, args []string) error {
 	plugins, err := sdk.Inspect(sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin info: %w", err)
@@ -74,6 +118,33 @@ func runPluginInfo(_ *cobra.Command, args []string) error {
 	for _, plugin := range plugins {
 		if plugin.Name != name {
 			continue
+		}
+		if getOutputFormat(cmd) == output.FormatTUI {
+			status := "ready"
+			if !plugin.Initialized {
+				status = "failed"
+			}
+			doc := strings.Join([]string{
+				"Name        " + plugin.Name,
+				"Version     " + plugin.Version,
+				"Path        " + plugin.Path,
+				"Source      " + plugin.Source,
+				"Initialize  " + func() string {
+					if plugin.Initialized {
+						return "ok"
+					}
+					return "error (" + plugin.ErrorMessage + ")"
+				}(),
+			}, "\n")
+			return showScreen(cmd, output.Screen{
+				Command: "plugin info",
+				Subject: plugin.Name,
+				Status:  status,
+				Content: output.ScreenContent{
+					Kind:     output.ScreenKindDocument,
+					Document: doc,
+				},
+			})
 		}
 		fmt.Printf("Name:        %s\n", plugin.Name)
 		fmt.Printf("Version:     %s\n", plugin.Version)

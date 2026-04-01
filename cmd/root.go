@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -30,6 +31,10 @@ func Execute(version, commit, date string) {
 	buildDate = date
 	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
 	if err := rootCmd.Execute(); err != nil {
+		var quiet interface{ Quiet() bool }
+		if errors.As(err, &quiet) && quiet.Quiet() {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

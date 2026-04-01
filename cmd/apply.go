@@ -70,6 +70,13 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	if checkFlag {
 		dryRun = true
 	}
+	commandName := "apply"
+	if dryRun {
+		commandName = "check"
+	}
+	if phase == "stage" {
+		commandName = "stage"
+	}
 
 	outFmt := getOutputFormat(cmd)
 	verbose, _ := cmd.Flags().GetBool("verbose")
@@ -77,6 +84,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		Verbose:   verbose,
 		Input:     os.Stdin,
 		Interrupt: cancel,
+		Command:   commandName,
 	}))
 	defer renderer.Close()
 
@@ -213,12 +221,22 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	}
 	defer cancel()
 
+	checkFlag, _ := cmd.Flags().GetBool("check")
+	if checkFlag {
+		dryRun = true
+	}
+	commandName := "apply"
+	if dryRun {
+		commandName = "check"
+	}
+
 	outFmt := getOutputFormat(cmd)
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, output.Options{
 		Verbose:   verbose,
 		Input:     os.Stdin,
 		Interrupt: cancel,
+		Command:   commandName,
 	}))
 	defer renderer.Close()
 
@@ -241,11 +259,6 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	var plan runner.ExecutionPlan
 	if err := json.Unmarshal(planBytes, &plan); err != nil {
 		return fmt.Errorf("apply bundle: parse plan: %w", err)
-	}
-
-	checkFlag, _ := cmd.Flags().GetBool("check")
-	if checkFlag {
-		dryRun = true
 	}
 
 	// TargetName is set from the bundle manifest so the state file and recap

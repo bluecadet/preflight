@@ -41,6 +41,9 @@ func parseVars(varFlags []string) map[string]any {
 // When the flag is not set (or is the default "text"), AutoDetect is called to
 // automatically use FormatTUI when running interactively.
 func getOutputFormat(cmd *cobra.Command) output.Format {
+	if cmd == nil {
+		return output.FormatText
+	}
 	f, _ := cmd.Flags().GetString("output")
 	switch output.Format(f) {
 	case output.FormatJSON, output.FormatJSONL:

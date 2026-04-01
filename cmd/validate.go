@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 var validateCmd = &cobra.Command{
@@ -45,10 +47,41 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(errs) > 0 {
+		if getOutputFormat(cmd) == output.FormatTUI {
+			lines := []string{fmt.Sprintf("%d validation errors", len(errs)), ""}
+			for _, err := range errs {
+				lines = append(lines, "- "+err.Error())
+			}
+			renderErr := showScreen(cmd, output.Screen{
+				Command: "validate",
+				Subject: playbookPath,
+				Status:  "failed",
+				Content: output.ScreenContent{
+					Kind:     output.ScreenKindDocument,
+					Document: strings.Join(lines, "\n"),
+				},
+			})
+			if renderErr != nil {
+				return renderErr
+			}
+			return quietError(fmt.Errorf("validation failed with %d error(s)", len(errs)))
+		}
 		for _, e := range errs {
 			fmt.Printf("ERROR: %v\n", e)
 		}
 		return fmt.Errorf("validation failed with %d error(s)", len(errs))
+	}
+
+	if getOutputFormat(cmd) == output.FormatTUI {
+		return showScreen(cmd, output.Screen{
+			Command: "validate",
+			Subject: playbookPath,
+			Status:  "ok",
+			Content: output.ScreenContent{
+				Kind:     output.ScreenKindDocument,
+				Document: "Playbook parsed successfully\nResolved all action references\nNo validation errors found",
+			},
+		})
 	}
 
 	fmt.Println("OK")
