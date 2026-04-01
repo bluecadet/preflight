@@ -60,6 +60,9 @@ Run the normal apply:
 preflight apply playbooks/lobby.yml
 ```
 
+By default, Preflight stops on the first task failure. Set `ignore_errors: true`
+on a task only when later tasks should continue running after that failure.
+
 Override variables from the CLI when needed:
 
 ```bash

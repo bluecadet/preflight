@@ -8,8 +8,10 @@ import (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "preflight",
-	Short: "Windows-first configuration management CLI for exhibit PCs",
+	Use:           "preflight",
+	Short:         "Windows-first configuration management CLI for exhibit PCs",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `Preflight is a configuration management CLI for deploying and maintaining
 exhibit PCs in museum/gallery environments. It compiles to a single static
 binary with no runtime dependencies.`,

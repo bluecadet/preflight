@@ -448,6 +448,32 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	succeeded := make(map[string]bool)
 	failed := make(map[string]bool)
 
+	finishApply := func() error {
+		state.LastApplied = time.Now()
+		if !r.config.DryRun && r.config.StatePath != "" {
+			if err := state.Save(r.config.StatePath); err != nil {
+				return fmt.Errorf("apply: save state: %w", err)
+			}
+		}
+
+		if r.config.Renderer != nil {
+			r.config.Renderer.Emit(output.Event{
+				Type:         output.EventPlayEnd,
+				PlayName:     plan.PlaybookName,
+				Target:       r.targetName(),
+				OKCount:      okCount,
+				ChangedCount: changedCount,
+				FailedCount:  failedCount,
+				SkippedCount: skippedCount,
+			})
+		}
+
+		if failedCount > 0 {
+			return fmt.Errorf("apply: %d task(s) failed", failedCount)
+		}
+		return nil
+	}
+
 	for _, pt := range ordered {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -513,7 +539,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				state.RecordTask(newTaskSnapshot(pt, taskName, params, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
-				continue
+				return finishApply()
 			}
 			// IgnoreErrors: treat as ok.
 			result = target.Result{
@@ -538,6 +564,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			failedCount++
 			if !pt.IgnoreErrors {
 				failed[pt.ID] = true
+				return finishApply()
 			} else {
 				succeeded[pt.ID] = true
 			}
@@ -547,30 +574,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 	}
 
-	state.LastApplied = time.Now()
-	if !r.config.DryRun && r.config.StatePath != "" {
-		if err := state.Save(r.config.StatePath); err != nil {
-			return fmt.Errorf("apply: save state: %w", err)
-		}
-	}
-
-	// Emit play recap.
-	if r.config.Renderer != nil {
-		r.config.Renderer.Emit(output.Event{
-			Type:         output.EventPlayEnd,
-			PlayName:     plan.PlaybookName,
-			Target:       r.targetName(),
-			OKCount:      okCount,
-			ChangedCount: changedCount,
-			FailedCount:  failedCount,
-			SkippedCount: skippedCount,
-		})
-	}
-
-	if failedCount > 0 {
-		return fmt.Errorf("apply: %d task(s) failed", failedCount)
-	}
-	return nil
+	return finishApply()
 }
 
 // taskMatchesTags returns true if the task should run given the tag config.
