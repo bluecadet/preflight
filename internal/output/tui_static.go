@@ -1,12 +1,13 @@
 package output
 
 import (
+	"fmt"
 	"io"
-	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -77,16 +78,93 @@ func (k staticKeyMap) FullHelp() [][]key.Binding {
 	}
 }
 
+type staticListItem struct {
+	index int
+	item  ScreenItem
+}
+
+func (i staticListItem) FilterValue() string {
+	parts := []string{i.item.Title, i.item.Subtitle, i.item.Summary}
+	parts = append(parts, i.item.Meta...)
+	for _, line := range i.item.Preview {
+		parts = append(parts, line.Text)
+	}
+	for _, line := range i.item.Detail {
+		parts = append(parts, line.Text)
+	}
+	return strings.Join(parts, " ")
+}
+
+type staticListDelegate struct{}
+
+func newStaticListDelegate() staticListDelegate {
+	return staticListDelegate{}
+}
+
+func (d staticListDelegate) Height() int  { return 2 }
+func (d staticListDelegate) Spacing() int { return 1 }
+func (d staticListDelegate) Update(tea.Msg, *list.Model) tea.Cmd {
+	return nil
+}
+
+func (d staticListDelegate) Render(w io.Writer, m list.Model, index int, item list.Item) {
+	screenItem, ok := item.(staticListItem)
+	if !ok {
+		return
+	}
+
+	width := max(20, m.Width()-2)
+	selected := index == m.Index()
+	title := truncateText(screenItem.item.Title, max(16, width-8))
+
+	summary := []string{statusGlyph(screenItem.item.Status), title}
+	if screenItem.item.Subtitle != "" {
+		summary = append(summary, tuiSubtleStyle.Render("("+screenItem.item.Subtitle+")"))
+	}
+
+	secondLine := ""
+	switch {
+	case screenItem.item.Summary != "":
+		secondLine = truncateText(screenItem.item.Summary, width)
+	case len(screenItem.item.Meta) > 0:
+		secondLine = truncateText(joinMeta(screenItem.item.Meta...), width)
+	case len(screenItem.item.Preview) > 0:
+		secondLine = truncateText(screenItem.item.Preview[0].Text, width)
+	}
+
+	lines := []string{strings.Join(summary, "  ")}
+	if secondLine == "" {
+		lines = append(lines, "")
+	} else {
+		lines = append(lines, tuiSubtleStyle.Render(secondLine))
+	}
+
+	block := strings.Join(lines, "\n")
+	style := tuiCardStyle.Width(width)
+	if selected {
+		style = tuiSelectedCardStyle.Width(width)
+	} else if screenItem.item.Status == "failed" {
+		style = tuiMutedCardStyle.Width(width)
+	}
+
+	_, _ = io.WriteString(w, style.Render(block))
+}
+
 type staticTabState struct {
-	selected int
-	expanded map[int]bool
+	list      list.Model
+	detail    viewport.Model
+	document  viewport.Model
+	expanded  bool
+	hasList   bool
+	hasDoc    bool
+	ready     bool
+	lastCount int
 }
 
 type staticScreenModel struct {
 	screen      Screen
 	width       int
 	height      int
-	viewport    viewport.Model
 	help        helpKeyMap
 	helpModel   help.Model
 	keys        staticKeyMap
@@ -98,15 +176,12 @@ type staticScreenModel struct {
 
 func newStaticScreenModel(screen Screen) staticScreenModel {
 	keys := newStaticKeyMap()
-	h := tuiNewHelp()
-	vp := viewport.New(defaultTUIWidth, defaultTUIHeight)
 	return staticScreenModel{
 		screen:    screen,
 		width:     defaultTUIWidth,
 		height:    defaultTUIHeight,
-		viewport:  vp,
 		help:      keys,
-		helpModel: h,
+		helpModel: tuiNewHelp(),
 		keys:      keys,
 		tabStates: make(map[int]*staticTabState),
 	}
@@ -122,7 +197,7 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = max(40, msg.Width)
 		m.height = max(12, msg.Height)
 		m.initialized = true
-		m.syncViewport()
+		m.syncActiveState()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -134,7 +209,7 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "?":
 			m.showHelp = !m.showHelp
-			m.syncViewport()
+			m.syncActiveState()
 			return m, nil
 		}
 
@@ -143,44 +218,40 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "left", "h":
 				m.activeTab--
 				m.clampTab()
-				m.syncViewport()
+				m.syncActiveState()
 				return m, nil
 			case "right", "l":
 				m.activeTab++
 				m.clampTab()
-				m.syncViewport()
+				m.syncActiveState()
 				return m, nil
 			}
 			if msg.Type == tea.KeyRunes && len(msg.Runes) == 1 {
 				digit := int(msg.Runes[0] - '1')
 				if digit >= 0 && digit < len(m.screen.Tabs) {
 					m.activeTab = digit
-					m.syncViewport()
+					m.syncActiveState()
 					return m, nil
 				}
 			}
 		}
 
-		switch m.currentContent().Kind {
+		state := m.currentTabState()
+		content := m.currentContent()
+		switch content.Kind {
 		case ScreenKindList:
-			state := m.currentTabState()
-			switch msg.String() {
-			case "up", "k":
-				state.selected--
-			case "down", "j":
-				state.selected++
-			case "enter", " ":
-				if len(m.currentContent().Items) > 0 {
-					state.expanded[state.selected] = !state.expanded[state.selected]
-				}
+			if msg.String() == "enter" || msg.String() == " " {
+				state.expanded = !state.expanded
+				m.syncActiveState()
+				return m, nil
 			}
-			m.clampSelection()
-			m.syncViewport()
-			return m, nil
-
+			var cmd tea.Cmd
+			state.list, cmd = state.list.Update(msg)
+			m.syncActiveState()
+			return m, cmd
 		default:
 			var cmd tea.Cmd
-			m.viewport, cmd = m.viewport.Update(msg)
+			state.document, cmd = state.document.Update(msg)
 			return m, cmd
 		}
 	}
@@ -190,24 +261,22 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m staticScreenModel) View() string {
 	if !m.initialized {
-		m.syncViewport()
+		m.syncActiveState()
 	}
+
 	header := m.renderHeader()
 	tabs := m.renderTabs()
+	body := m.renderBody()
 	footer := m.renderFooter()
-	bodyHeight := viewportBodyHeight(m.height, header, tabs, footer)
-	m.viewport.Width = max(20, m.width)
-	m.viewport.Height = bodyHeight
-	m.syncViewport()
 
-	parts := []string{}
+	parts := make([]string, 0, 4)
 	if header != "" {
 		parts = append(parts, header)
 	}
 	if tabs != "" {
 		parts = append(parts, tabs)
 	}
-	parts = append(parts, strings.TrimRight(m.viewport.View(), "\n"))
+	parts = append(parts, strings.TrimRight(body, "\n"))
 	if footer != "" {
 		parts = append(parts, footer)
 	}
@@ -219,12 +288,7 @@ func (m *staticScreenModel) clampTab() {
 		m.activeTab = 0
 		return
 	}
-	if m.activeTab < 0 {
-		m.activeTab = 0
-	}
-	if m.activeTab >= len(m.screen.Tabs) {
-		m.activeTab = len(m.screen.Tabs) - 1
-	}
+	m.activeTab = clamp(0, m.activeTab, len(m.screen.Tabs)-1)
 }
 
 func (m *staticScreenModel) currentContent() ScreenContent {
@@ -240,55 +304,115 @@ func (m *staticScreenModel) currentTabState() *staticTabState {
 	if ok {
 		return state
 	}
-	state = &staticTabState{expanded: make(map[int]bool)}
-	for idx, item := range m.currentContent().Items {
-		if item.AutoExpand {
-			state.expanded[idx] = true
+
+	content := m.currentContent()
+	state = &staticTabState{}
+	switch content.Kind {
+	case ScreenKindList:
+		state.list = newStaticListModel(content, max(20, m.width), max(4, m.height))
+		state.detail = viewport.New(max(20, m.width), max(4, m.height/3))
+		state.hasList = true
+		for idx, item := range content.Items {
+			if !item.AutoExpand {
+				continue
+			}
+			state.list.Select(idx)
+			state.expanded = true
+			break
 		}
+	default:
+		state.document = viewport.New(max(20, m.width), max(4, m.height))
+		state.hasDoc = true
 	}
+	state.ready = true
 	m.tabStates[m.activeTab] = state
 	return state
 }
 
-func (m *staticScreenModel) clampSelection() {
-	content := m.currentContent()
-	state := m.currentTabState()
-	if len(content.Items) == 0 {
-		state.selected = 0
-		return
+func newStaticListModel(content ScreenContent, width, height int) list.Model {
+	items := make([]list.Item, 0, len(content.Items))
+	for idx, item := range content.Items {
+		items = append(items, staticListItem{index: idx, item: item})
 	}
-	if state.selected < 0 {
-		state.selected = 0
-	}
-	if state.selected >= len(content.Items) {
-		state.selected = len(content.Items) - 1
-	}
+
+	delegate := newStaticListDelegate()
+	model := list.New(items, delegate, width, height)
+	model.DisableQuitKeybindings()
+	model.SetFilteringEnabled(false)
+	model.SetShowTitle(false)
+	model.SetShowFilter(false)
+	model.SetShowStatusBar(false)
+	model.SetShowPagination(false)
+	model.SetShowHelp(false)
+	model.Styles.NoItems = tuiSubtleStyle
+	model.Styles.PaginationStyle = tuiSubtleStyle
+	return model
 }
 
-func (m *staticScreenModel) syncViewport() {
+func (m *staticScreenModel) syncActiveState() {
+	state := m.currentTabState()
 	content := m.currentContent()
+	header := m.renderHeader()
+	tabs := m.renderTabs()
+	footer := m.renderFooter()
+	bodyHeight := viewportBodyHeight(m.height, header, tabs, footer)
+	bodyWidth := max(20, m.width)
+
 	switch content.Kind {
 	case ScreenKindList:
-		body, starts, ends := m.renderList(content)
-		m.viewport.SetContent(body)
-		state := m.currentTabState()
-		if len(starts) > 0 {
-			selected := state.selected
-			selected = clamp(0, selected, len(starts)-1)
-			if starts[selected] < m.viewport.YOffset {
-				m.viewport.YOffset = starts[selected]
+		if state.lastCount != len(content.Items) {
+			items := make([]list.Item, 0, len(content.Items))
+			for idx, item := range content.Items {
+				items = append(items, staticListItem{index: idx, item: item})
 			}
-			bottom := m.viewport.YOffset + max(1, m.viewport.Height) - 1
-			if ends[selected] > bottom {
-				m.viewport.YOffset = max(0, ends[selected]-m.viewport.Height+1)
-			}
+			_ = state.list.SetItems(items)
+			state.lastCount = len(content.Items)
 		}
+
+		detail := m.selectedDetail(content, state)
+		detailHeight := 0
+		if state.expanded && detail != "" && bodyHeight >= 9 {
+			detailLines := lipgloss.Height(detail)
+			detailHeight = min(max(4, min(detailLines, bodyHeight/2)), bodyHeight-5)
+		}
+
+		listHeight := bodyHeight
+		if detailHeight > 0 {
+			listHeight = max(4, bodyHeight-detailHeight-1)
+		}
+		state.list.SetSize(bodyWidth, listHeight)
+		state.detail.Width = bodyWidth
+		state.detail.Height = detailHeight
+		state.detail.SetContent(detail)
+
 	default:
 		doc := content.Document
 		if doc == "" {
 			doc = tuiSubtleStyle.Render(content.Empty)
 		}
-		m.viewport.SetContent(doc)
+		state.document.Width = bodyWidth
+		state.document.Height = bodyHeight
+		state.document.SetContent(doc)
+	}
+}
+
+func (m staticScreenModel) renderBody() string {
+	state := m.currentTabState()
+	content := m.currentContent()
+	bodyHeight := viewportBodyHeight(m.height, m.renderHeader(), m.renderTabs(), m.renderFooter())
+	switch content.Kind {
+	case ScreenKindList:
+		body := clipRenderedHeight(strings.TrimRight(state.list.View(), "\n"), state.list.Height())
+		if !state.expanded {
+			return clipRenderedHeight(body, bodyHeight)
+		}
+		detail := clipRenderedHeight(strings.TrimRight(state.detail.View(), "\n"), state.detail.Height)
+		if detail == "" {
+			return clipRenderedHeight(body, bodyHeight)
+		}
+		return clipRenderedHeight(body+"\n"+detail, bodyHeight)
+	default:
+		return clipRenderedHeight(strings.TrimRight(state.document.View(), "\n"), bodyHeight)
 	}
 }
 
@@ -324,80 +448,60 @@ func (m staticScreenModel) renderTabs() string {
 	return renderTabs(tabs, m.activeTab, m.width)
 }
 
-func (m staticScreenModel) renderList(content ScreenContent) (string, []int, []int) {
-	if len(content.Items) == 0 {
-		empty := content.Empty
-		if empty == "" {
-			empty = "Nothing to show."
-		}
-		return tuiSubtleStyle.Render(empty), nil, nil
-	}
-	state := m.currentTabState()
-	width := max(24, m.width-2)
-	blocks := make([]string, 0, len(content.Items))
-	starts := make([]int, 0, len(content.Items))
-	ends := make([]int, 0, len(content.Items))
-	currentLine := 0
-	for idx, item := range content.Items {
-		starts = append(starts, currentLine)
-		block := m.renderItem(item, idx == state.selected, state.expanded[idx], width)
-		blocks = append(blocks, block)
-		currentLine += lipgloss.Height(block)
-		ends = append(ends, currentLine-1)
-		if idx < len(content.Items)-1 {
-			currentLine++
-		}
-	}
-	return strings.Join(blocks, "\n\n"), starts, ends
-}
-
-func (m staticScreenModel) renderItem(item ScreenItem, selected, expanded bool, width int) string {
-	title := truncateText(item.Title, max(20, width-8))
-	summaryParts := []string{statusGlyph(item.Status), title}
-	if item.Subtitle != "" {
-		summaryParts = append(summaryParts, tuiSubtleStyle.Render("("+item.Subtitle+")"))
-	}
-	if item.Summary != "" {
-		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(item.Summary, max(16, width/2))))
-	}
-	lines := []string{strings.Join(summaryParts, "  ")}
-	if meta := joinMeta(item.Meta...); meta != "" {
-		lines = append(lines, tuiSubtleStyle.Render(truncateText(meta, width)))
-	}
-	if len(item.Preview) > 0 {
-		lines = append(lines, renderScreenLines(item.Preview, width-2))
-	}
-	if expanded {
-		if item.DetailTitle != "" {
-			lines = append(lines, tuiSectionStyle.Render(item.DetailTitle))
-		}
-		if len(item.Detail) > 0 {
-			lines = append(lines, renderScreenLines(item.Detail, width-2))
-		}
-	}
-	block := strings.Join(lines, "\n")
-	if selected {
-		return tuiSelectedCardStyle.Width(width).Render(block)
-	}
-	return tuiCardStyle.Width(width).Render(block)
-}
-
 func (m staticScreenModel) renderFooter() string {
 	helpModel := m.helpModel
 	helpModel.ShowAll = m.showHelp
 	if m.showHelp {
 		return helpModel.FullHelpView(m.help.FullHelp())
 	}
+
 	location := ""
 	content := m.currentContent()
 	if content.Kind == ScreenKindList && len(content.Items) > 0 {
 		state := m.currentTabState()
 		location = tuiSubtleStyle.Render(
-			truncateText("item "+strconv.Itoa(state.selected+1)+"/"+strconv.Itoa(len(content.Items)), m.width/3),
+			truncateText(fmt.Sprintf("item %d/%d", state.list.Index()+1, len(content.Items)), m.width/3),
 		)
 	}
-	helpText := helpModel.ShortHelpView(m.help.ShortHelp())
-	return responsiveFooter(m.width, location, helpText)
+
+	return responsiveFooter(m.width, location, helpModel.ShortHelpView(m.help.ShortHelp()))
+}
+
+func (m staticScreenModel) selectedDetail(content ScreenContent, state *staticTabState) string {
+	if !state.expanded || len(content.Items) == 0 {
+		return ""
+	}
+	selected, ok := state.list.SelectedItem().(staticListItem)
+	if !ok {
+		return ""
+	}
+	item := selected.item
+	width := max(20, m.width-2)
+
+	title := []string{statusGlyph(item.Status), truncateText(item.Title, max(16, width-8))}
+	if item.Subtitle != "" {
+		title = append(title, tuiSubtleStyle.Render("("+item.Subtitle+")"))
+	}
+
+	lines := []string{strings.Join(title, "  ")}
+	if item.Summary != "" {
+		lines = append(lines, tuiSubtleStyle.Render(truncateText(item.Summary, width)))
+	}
+	if meta := joinMeta(item.Meta...); meta != "" {
+		lines = append(lines, tuiSubtleStyle.Render(truncateText(meta, width)))
+	}
+	if len(item.Preview) > 0 {
+		lines = append(lines, renderScreenLines(item.Preview, width-2))
+	}
+	if len(item.Detail) > 0 {
+		if item.DetailTitle != "" {
+			lines = append(lines, tuiSectionStyle.Render(item.DetailTitle))
+		}
+		lines = append(lines, renderScreenLines(item.Detail, width-2))
+	}
+
+	style := tuiSelectedCardStyle.Width(max(20, m.width-2))
+	return style.Render(strings.Join(lines, "\n"))
 }
 
 func RunScreenTUI(w io.Writer, options Options, screen Screen) error {
@@ -419,4 +523,15 @@ func RunScreenTUI(w io.Writer, options Options, screen Screen) error {
 		return RenderScreenText(w, screen)
 	}
 	return nil
+}
+
+func clipRenderedHeight(text string, height int) string {
+	if height <= 0 || text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= height {
+		return text
+	}
+	return strings.Join(lines[:height], "\n")
 }
