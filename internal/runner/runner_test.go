@@ -335,6 +335,70 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	}
 }
 
+func TestApplyStdlibWindowsMachineRendersNestedExecutionTimeInputs(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	mt := &mockTarget{
+		results: []target.Result{
+			{Status: target.StatusChanged},
+			{Status: target.StatusChanged},
+			{Status: target.StatusChanged},
+			{Status: target.StatusChanged},
+		},
+	}
+	r := New(mt, resolver, Config{
+		TargetVars: map[string]any{
+			"hostname": "Gallery-Kiosk-01",
+			"timezone": "Eastern Standard Time",
+		},
+	})
+	pb := &action.Playbook{
+		Name: "windows-machine",
+		Tasks: []action.Task{
+			{
+				Name: "machine baseline",
+				Uses: "preflight/windows-machine",
+				With: map[string]any{
+					"computer_name": "{{ target.hostname }}",
+					"timezone":      "{{ target.timezone }}",
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if len(mt.calls) != 4 {
+		t.Fatalf("expected 4 executed tasks, got %d", len(mt.calls))
+	}
+
+	checkScript, ok := mt.calls[0].Params["check_script"].(string)
+	if !ok {
+		t.Fatalf("expected check_script string, got %T", mt.calls[0].Params["check_script"])
+	}
+	if strings.Contains(checkScript, "{{") {
+		t.Fatalf("expected rendered computer name script, got:\n%s", checkScript)
+	}
+	if !strings.Contains(checkScript, "Gallery-Kiosk-01") {
+		t.Fatalf("expected rendered computer name in check script, got:\n%s", checkScript)
+	}
+
+	tzScript, ok := mt.calls[1].Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected script string, got %T", mt.calls[1].Params["script"])
+	}
+	if strings.Contains(tzScript, "{{") {
+		t.Fatalf("expected rendered timezone script, got:\n%s", tzScript)
+	}
+	if !strings.Contains(tzScript, "Eastern Standard Time") {
+		t.Fatalf("expected rendered timezone in script, got:\n%s", tzScript)
+	}
+}
+
 func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusOK}},

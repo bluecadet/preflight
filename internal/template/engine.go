@@ -7,6 +7,8 @@ import (
 	"strings"
 )
 
+const maxRenderPasses = 16
+
 // exprRe matches {{ ... }} expressions, capturing the inner expression.
 // It tolerates optional whitespace inside the delimiters.
 var exprRe = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
@@ -76,6 +78,26 @@ func (e *Engine) WithPreserveUnknown() *Engine {
 // Render evaluates all {{ expression }} placeholders in s and returns the
 // resulting string. Undefined vars.* references return an error.
 func (e *Engine) Render(s string) (string, error) {
+	current := s
+	seen := map[string]struct{}{current: {}}
+	for i := 0; i < maxRenderPasses; i++ {
+		rendered, err := e.renderOnce(current)
+		if err != nil {
+			return "", err
+		}
+		if rendered == current {
+			return rendered, nil
+		}
+		if _, ok := seen[rendered]; ok {
+			return rendered, nil
+		}
+		seen[rendered] = struct{}{}
+		current = rendered
+	}
+	return "", fmt.Errorf("template: exceeded recursive render depth")
+}
+
+func (e *Engine) renderOnce(s string) (string, error) {
 	var renderErr error
 	result := exprRe.ReplaceAllStringFunc(s, func(match string) string {
 		if renderErr != nil {

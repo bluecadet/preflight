@@ -88,6 +88,38 @@ func TestRender_MultipleExpressions(t *testing.T) {
 	}
 }
 
+func TestRender_RecursiveVarResolution(t *testing.T) {
+	e := New(map[string]any{
+		"name":        "{{ vars.device_name }}",
+		"greeting":    "Hello {{ vars.name }}",
+		"device_name": "Gallery-Kiosk-01",
+	})
+
+	got, err := e.Render("{{ vars.greeting }}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "Hello Gallery-Kiosk-01" {
+		t.Errorf("got %q, want %q", got, "Hello Gallery-Kiosk-01")
+	}
+}
+
+func TestRender_RecursiveTargetResolution(t *testing.T) {
+	e := New(map[string]any{
+		"name": "{{ target.hostname }}",
+	}).WithTarget(map[string]any{
+		"hostname": "gallery-01",
+	})
+
+	got, err := e.Render("{{ vars.name }}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "gallery-01" {
+		t.Errorf("got %q, want %q", got, "gallery-01")
+	}
+}
+
 func TestRender_NoPlaceholders(t *testing.T) {
 	e := New(nil)
 	s := "no templates here"
