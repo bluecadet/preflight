@@ -115,3 +115,16 @@ func (r *Runner) emitError(err error) {
 		})
 	}
 }
+
+// PlannedTaskState renders the current plan with execution-time target context
+// so state comparisons use the same task names and params that apply records.
+func (r *Runner) PlannedTaskState(ctx context.Context, plan *ExecutionPlan) ([]PlannedTaskState, error) {
+	if r.target == nil {
+		return nil, fmt.Errorf("state: target is not configured")
+	}
+	execCtx, err := r.buildExecutionContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return BuildPlannedTaskState(ctx, plan, execCtx, r.config.Secrets)
+}

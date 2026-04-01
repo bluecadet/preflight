@@ -9,7 +9,7 @@ Preflight writes state files to:
 - `state/provision.json` for local applies
 - `state/targets/<host>.json` for inventory-backed applies
 
-Override the path with `--state-file`.
+Inspection commands such as `preflight state show` and `preflight state diff` can read a different file with `--state-file`.
 
 ## File Shape
 
@@ -62,6 +62,10 @@ State files do not persist decrypted secret values.
 | `UNCHANGED` | The task matches recorded state |
 | `REMOVED` | The task exists in recorded state but not in the current plan |
 | `STATUS-ONLY` | The task shape matches, but the recorded status still matters operationally |
+
+## Host Context Matters
+
+State comparison uses the selected host context to render task names and params before hashing them. For inventory-backed diffs, pass the relevant `--target` and `--inventory` values so `vars.*`, `target.*`, `facts.*`, and `env.*` expressions are evaluated for the correct machine.
 
 ## Why Stable Task Keys Matter
 

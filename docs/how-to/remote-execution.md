@@ -145,7 +145,7 @@ Inventory-backed applies write a separate state file per host:
 
 ```bash
 preflight state show --state-file state/targets/lobby-pc-01.json
-preflight state diff playbooks/lobby.yml --state-file state/targets/lobby-pc-01.json
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml --state-file state/targets/lobby-pc-01.json
 ```
 
 That split is deliberate. It keeps state comparisons meaningful even when one playbook is applied to many machines with different facts or variable layers.

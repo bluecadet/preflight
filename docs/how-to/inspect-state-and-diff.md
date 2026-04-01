@@ -44,6 +44,14 @@ Override the file explicitly when needed:
 preflight state diff playbooks/lobby.yml --state-file ./state/custom.json
 ```
 
+For inventory-backed diffs, pass the same host selection context you would use for a real run:
+
+```bash
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml --state-file state/targets/lobby-pc-01.json
+```
+
+If multiple hosts resolve and you do not set `--state-file`, Preflight compares each host against its own default `state/targets/<host>.json` file and prints one section per host.
+
 ## Interpret The Statuses
 
 The comparison output uses these statuses:

@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/runner"
-	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/targeting"
 )
 
 const defaultStatePath = "state/provision.json"
@@ -48,6 +48,14 @@ func stateFilePath(cmd *cobra.Command) string {
 	return p
 }
 
+func stateFileOverride(cmd *cobra.Command) (string, bool) {
+	flag := cmd.Flags().Lookup("state-file")
+	if flag == nil || !flag.Changed {
+		return "", false
+	}
+	return stateFilePath(cmd), true
+}
+
 func runStateShow(cmd *cobra.Command, _ []string) error {
 	path := stateFilePath(cmd)
 
@@ -77,12 +85,6 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	statePath := stateFilePath(cmd)
-	state, err := runner.LoadState(statePath)
-	if err != nil {
-		return fmt.Errorf("%s: load state: %w", label, err)
-	}
-
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
@@ -95,37 +97,77 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
-	tgt := target.NewLocalTarget(registry)
+	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
+
+	overrideStatePath, hasStateOverride := stateFileOverride(cmd)
+	if hasStateOverride && len(hosts) > 1 {
+		return fmt.Errorf("%s: --state-file can only be used when exactly one host is resolved", label)
+	}
 
 	varFlags, _ := cmd.Flags().GetStringArray("var")
 	vars := parseVars(varFlags)
 
-	cfg := runner.Config{
-		ProjectVars:    projectCfg.Vars,
-		Vars:           vars,
-		Phase:          "plan",
-		Secrets:        secretsResolver,
-		ModuleRegistry: registry,
+	for idx, host := range hosts {
+		statePath := host.StatePath
+		if hasStateOverride {
+			statePath = overrideStatePath
+		}
+
+		state, err := runner.LoadState(statePath)
+		if err != nil {
+			return fmt.Errorf("%s: load state for %s: %w", label, host.Name, err)
+		}
+
+		cfg := runner.Config{
+			ProjectVars:    projectCfg.Vars,
+			InventoryVars:  host.Vars,
+			Vars:           vars,
+			TargetVars:     host.TargetVars,
+			TargetName:     host.Name,
+			Phase:          "plan",
+			Secrets:        secretsResolver,
+			ModuleRegistry: registry,
+		}
+
+		r := runner.New(host.Target, chain, cfg)
+		plan, err := r.Plan(ctx, pb)
+		if err != nil {
+			return fmt.Errorf("%s: plan for %s: %w", label, host.Name, err)
+		}
+
+		plannedState, err := r.PlannedTaskState(ctx, plan)
+		if err != nil {
+			return fmt.Errorf("%s: build planned state for %s: %w", label, host.Name, err)
+		}
+		comparisons := runner.ComparePlannedTasks(plannedState, state)
+
+		if idx > 0 {
+			fmt.Println()
+		}
+		printStateComparison(host, statePath, plan, state, comparisons)
 	}
 
-	r := runner.New(tgt, chain, cfg)
-	plan, err := r.Plan(ctx, pb)
-	if err != nil {
-		return fmt.Errorf("%s: plan: %w", label, err)
-	}
+	return nil
+}
 
-	plannedState, err := runner.BuildPlannedTaskState(ctx, plan, secretsResolver)
-	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
-	}
-	comparisons := runner.ComparePlannedTasks(plannedState, state)
-
+func printStateComparison(
+	host targeting.ResolvedHost,
+	statePath string,
+	plan *runner.ExecutionPlan,
+	state *runner.State,
+	comparisons []runner.TaskComparison,
+) {
 	fmt.Printf("State diff for playbook: %s\n", plan.PlaybookName)
+	fmt.Printf("Target: %s\n", host.Name)
+	fmt.Printf("State file: %s\n", statePath)
 	fmt.Printf("Last applied: %s\n\n", func() string {
 		if state.LastApplied.IsZero() {
 			return "(never)"
 		}
-		return state.LastApplied.Format("2006-01-02 15:04:05 UTC")
+		return state.LastApplied.UTC().Format("2006-01-02 15:04:05 UTC")
 	}())
 
 	fmt.Printf("%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
@@ -138,6 +180,4 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 		fmt.Printf("%-12s %-28s %-16s %s\n", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
 	}
-
-	return nil
 }

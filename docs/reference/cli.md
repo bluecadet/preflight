@@ -72,6 +72,7 @@ Compare the current plan to the selected recorded state file.
 
 ```bash
 preflight diff playbooks/lobby.yml
+preflight diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
 ```
 
 ### `preflight plan <playbook>`
@@ -88,6 +89,7 @@ Behavior notes:
 - `plan` does not contact targets.
 - Action expansion and playbook imports are reflected in the printed output.
 - `facts.*` expressions may remain unresolved in preview output.
+- Remote Git-backed actions must already exist in the local cache and lockfile. Use `preflight action fetch`, `check`, or `apply` to populate uncached refs.
 
 ### `preflight validate <playbook>`
 
@@ -211,6 +213,11 @@ Print the selected state file as JSON.
 
 Compare the current plan to the selected state file.
 
+```bash
+preflight state diff playbooks/lobby.yml
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+```
+
 Command-specific flags:
 
 | Flag | Meaning |
@@ -221,6 +228,8 @@ Behavior notes:
 
 - Local applies default to `state/provision.json`.
 - Inventory-backed applies write `state/targets/<host>.json`.
+- Inventory-backed diffs should pass the same `--target` and `--inventory` context used for the host being compared.
+- When multiple hosts resolve and `--state-file` is not set, the command prints one section per host and reads each host's default state file.
 - `preflight diff` is a shortcut into the same comparison machinery.
 
 ## Output Formats

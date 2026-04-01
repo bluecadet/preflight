@@ -65,6 +65,8 @@ github.com/acme/actions/collections/autologin@0123456789abcdef
 
 The resolver can fetch the repository, locate the action path, cache it locally, and pin the reference to the exact commit SHA.
 
+Once fetched, later `plan` runs resolve that remote content from the cache plus `preflight.lock` instead of mutating dependency state again.
+
 ## Why `preflight.lock` Exists
 
 Floating refs such as tags or branches are convenient to write but bad for reproducibility. `preflight.lock` solves that by recording the exact commit SHA used for each fetched remote ref.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/targeting"
@@ -199,7 +200,7 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRunPlanFetchesRemoteActions(t *testing.T) {
+func TestRunPlanDoesNotFetchRemoteActions(t *testing.T) {
 	playbookPath := writeRemoteActionPlaybook(t)
 	resolver := &testRemoteActionResolver{}
 
@@ -210,12 +211,12 @@ func TestRunPlanFetchesRemoteActions(t *testing.T) {
 	cmd := newTestCommand()
 	if _, err := captureStdout(t, func() error {
 		return runPlan(cmd, []string{playbookPath})
-	}); err != nil {
-		t.Fatalf("runPlan: %v", err)
+	}); err == nil {
+		t.Fatal("expected remote cache miss, got nil")
 	}
 
-	if resolver.fetchCalls != 1 {
-		t.Fatalf("expected one remote fetch, got %d", resolver.fetchCalls)
+	if resolver.fetchCalls != 0 {
+		t.Fatalf("expected plan to avoid fetching remote actions, got %d fetches", resolver.fetchCalls)
 	}
 }
 
@@ -241,6 +242,128 @@ func TestRunDiffFetchesRemoteActions(t *testing.T) {
 
 	if resolver.fetchCalls != 1 {
 		t.Fatalf("expected one remote fetch, got %d", resolver.fetchCalls)
+	}
+}
+
+func TestRunDiffUsesResolvedHostContext(t *testing.T) {
+	dir := t.TempDir()
+	playbookPath := filepath.Join(dir, "playbook.yml")
+	inventoryPath := filepath.Join(dir, "inventory.yml")
+	statePath := filepath.Join(dir, "state", "kiosk-a.json")
+
+	if err := os.WriteFile(playbookPath, []byte(`
+name: host-aware-diff
+tasks:
+  - name: echo {{ target.name }}
+    shell:
+      cmd: echo
+      args: ["{{ vars.message }}", "{{ target.address }}"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", playbookPath, err)
+	}
+	if err := os.WriteFile(inventoryPath, []byte(`
+groups:
+  lab:
+    hosts:
+      - name: kiosk-a
+        address: 10.0.0.1
+        transport: local
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+	}
+
+	hostVars := map[string]any{"message": "hello"}
+	targetVars := map[string]any{
+		"name":      "kiosk-a",
+		"hostname":  "kiosk-a",
+		"address":   "10.0.0.1",
+		"transport": string(inventory.TransportLocal),
+	}
+
+	registry, _, err := buildModuleRegistry(dir)
+	if err != nil {
+		t.Fatalf("buildModuleRegistry: %v", err)
+	}
+	pb, err := action.LoadPlaybookFile(playbookPath)
+	if err != nil {
+		t.Fatalf("LoadPlaybookFile: %v", err)
+	}
+
+	hostRunner := runner.New(target.NewLocalTarget(registry), action.Chain{}, runner.Config{
+		InventoryVars: hostVars,
+		TargetVars:    targetVars,
+	})
+	plan, err := hostRunner.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	plannedState, err := hostRunner.PlannedTaskState(context.Background(), plan)
+	if err != nil {
+		t.Fatalf("PlannedTaskState: %v", err)
+	}
+
+	state := &runner.State{Tasks: make(map[string]runner.TaskSnapshot)}
+	for _, task := range plannedState {
+		state.RecordTask(runner.TaskSnapshot{
+			TaskKey:      task.TaskKey,
+			TaskName:     task.TaskName,
+			Module:       task.Module,
+			DependsOn:    task.DependsOn,
+			TaskHash:     task.TaskHash,
+			ParamHash:    task.ParamHash,
+			ParamSummary: task.ParamSummary,
+			Status:       target.StatusOK,
+		})
+	}
+	if err := state.Save(statePath); err != nil {
+		t.Fatalf("Save state: %v", err)
+	}
+
+	oldResolveHosts := resolveInventoryHosts
+	resolveInventoryHosts = func(_ context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+		if len(selectors) != 1 || selectors[0] != "lab" {
+			t.Fatalf("unexpected selectors: %#v", selectors)
+		}
+		return []targeting.ResolvedHost{{
+			Name:       "kiosk-a",
+			Vars:       hostVars,
+			TargetVars: targetVars,
+			StatePath:  statePath,
+			Target:     target.NewLocalTarget(registry),
+			InventoryRef: inventory.Host{
+				Name:      "kiosk-a",
+				Address:   "10.0.0.1",
+				Transport: inventory.TransportLocal,
+			},
+		}}, nil
+	}
+	defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("target", "lab"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
+		t.Fatalf("Set inventory: %v", err)
+	}
+	if err := cmd.Flags().Set("state-file", statePath); err != nil {
+		t.Fatalf("Set state-file: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runDiff(cmd, []string{playbookPath})
+	})
+	if err != nil {
+		t.Fatalf("runDiff: %v", err)
+	}
+	if !strings.Contains(out, "Target: kiosk-a") {
+		t.Fatalf("expected target section for kiosk-a, got %q", out)
+	}
+	if !strings.Contains(out, "echo kiosk-a") {
+		t.Fatalf("expected rendered target-aware task name, got %q", out)
+	}
+	if !strings.Contains(out, "UNCHANGED") {
+		t.Fatalf("expected unchanged comparison, got %q", out)
 	}
 }
 

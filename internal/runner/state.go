@@ -170,36 +170,46 @@ func ParamHash(params map[string]any) string {
 	return hashValue(params)
 }
 
-func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, resolver *secrets.Resolver) ([]PlannedTaskState, error) {
+func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *executionContext, resolver *secrets.Resolver) ([]PlannedTaskState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if plan == nil {
 		return nil, fmt.Errorf("state: nil execution plan")
 	}
+	if execCtx == nil {
+		execCtx = &executionContext{}
+	}
 
 	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
 	nameToKey := make(map[string]string, len(plan.Tasks))
-	previews := make([]*PlanTask, 0, len(plan.Tasks))
+	type renderedTask struct {
+		name   string
+		params map[string]any
+	}
+	renderedTasks := make([]renderedTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
-		preview, err := PreviewTask(task, nil)
+		params, taskName, err := renderTaskParams(task, execCtx)
 		if err != nil {
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}
-		previews = append(previews, preview)
-		nameToKey[preview.Name] = task.ID
+		renderedTasks = append(renderedTasks, renderedTask{
+			name:   taskName,
+			params: params,
+		})
+		nameToKey[task.Name] = task.ID
 	}
 
 	for idx, task := range plan.Tasks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		preview := previews[idx]
-		params := preview.Params
+		rendered := renderedTasks[idx]
+		params := rendered.params
 		if resolver != nil && resolver.HasProviders() {
 			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
-				return nil, fmt.Errorf("state: task %q: %w", preview.Name, err)
+				return nil, fmt.Errorf("state: task %q: %w", rendered.name, err)
 			}
 			params = resolved
 		}
@@ -215,14 +225,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, resolver *s
 		paramHash := ParamHash(params)
 		tasks = append(tasks, PlannedTaskState{
 			TaskKey:      task.ID,
-			TaskName:     preview.Name,
+			TaskName:     rendered.name,
 			Module:       task.Module,
 			DependsOn:    dependsOn,
 			ParamHash:    paramHash,
 			ParamSummary: SummarizeParams(params),
 			TaskHash: hashValue(map[string]any{
 				"task_key":   task.ID,
-				"task_name":  preview.Name,
+				"task_name":  rendered.name,
 				"module":     task.Module,
 				"depends_on": dependsOn,
 				"param_hash": paramHash,

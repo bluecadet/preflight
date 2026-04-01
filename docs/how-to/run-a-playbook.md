@@ -190,7 +190,7 @@ For per-host inventory-backed state:
 
 ```bash
 preflight state show --state-file state/targets/lobby-pc-01.json
-preflight state diff playbooks/lobby.yml --state-file state/targets/lobby-pc-01.json
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml --state-file state/targets/lobby-pc-01.json
 ```
 
 See [Inspect state and diffs](./inspect-state-and-diff.md) for a task-focused workflow.

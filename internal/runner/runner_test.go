@@ -567,6 +567,90 @@ func TestComparePlannedTasksMarksKnownChangedAndRemoved(t *testing.T) {
 	}
 }
 
+func TestBuildPlannedTaskStateRendersExecutionTimeTemplates(t *testing.T) {
+	plan := &ExecutionPlan{
+		PlaybookName: "rendered-state",
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "echo {{ target.name }} on {{ facts.os.name }}",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd":  "echo",
+				"args": []any{"{{ env.SITE }}", "{{ target.address }}", "{{ facts.os.build }}"},
+			},
+			TemplateVars: map[string]any{},
+		}},
+	}
+
+	planned, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{
+		target: map[string]any{
+			"name":    "kiosk-a",
+			"address": "10.0.0.1",
+		},
+		facts: map[string]any{
+			"os": map[string]any{
+				"name":  "Windows 11",
+				"build": 22631,
+			},
+		},
+		env: map[string]string{
+			"SITE": "lobby",
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
+	}
+	if len(planned) != 1 {
+		t.Fatalf("expected 1 planned task, got %d", len(planned))
+	}
+	if planned[0].TaskName != "echo kiosk-a on Windows 11" {
+		t.Fatalf("expected rendered task name, got %q", planned[0].TaskName)
+	}
+	wantHash := ParamHash(map[string]any{
+		"cmd":  "echo",
+		"args": []any{"lobby", "10.0.0.1", "22631"},
+	})
+	if planned[0].ParamHash != wantHash {
+		t.Fatalf("expected rendered param hash %q, got %q", wantHash, planned[0].ParamHash)
+	}
+}
+
+func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
+	plan := &ExecutionPlan{
+		PlaybookName: "dep-state",
+		Tasks: []*PlanTask{
+			{
+				ID:           "task-0",
+				Name:         "prepare {{ target.name }}",
+				Module:       "shell",
+				Params:       map[string]any{"cmd": "echo"},
+				TemplateVars: map[string]any{},
+			},
+			{
+				ID:           "task-1",
+				Name:         "apply",
+				Module:       "shell",
+				DependsOn:    []string{"prepare {{ target.name }}"},
+				Params:       map[string]any{"cmd": "echo"},
+				TemplateVars: map[string]any{},
+			},
+		},
+	}
+
+	planned, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{
+		target: map[string]any{"name": "kiosk-a"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
+	}
+	if len(planned) != 2 {
+		t.Fatalf("expected 2 planned tasks, got %d", len(planned))
+	}
+	if len(planned[1].DependsOn) != 1 || planned[1].DependsOn[0] != "task-0" {
+		t.Fatalf("expected dependency on task-0, got %#v", planned[1].DependsOn)
+	}
+}
+
 func TestApplySavesStateWithParamHashes(t *testing.T) {
 	dir := t.TempDir()
 	statePath := filepath.Join(dir, "state", "provision.json")
