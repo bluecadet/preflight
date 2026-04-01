@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,5 +171,28 @@ func TestTaskView_LogBufferIsBounded(t *testing.T) {
 	}
 	if len(task.logs) != maxTaskLogLines {
 		t.Fatalf("expected log buffer capped at %d lines, got %d", maxTaskLogLines, len(task.logs))
+	}
+}
+
+func TestRenderTaskCard_ExpandedDoesNotDuplicatePreviewLogs(t *testing.T) {
+	model := newTUIModel(make(chan Event, 1), Options{})
+	task := &taskView{
+		name:     "stream logs",
+		module:   "shell",
+		status:   "failed",
+		message:  "boom",
+		expanded: true,
+		logs: []taskLogLine{
+			{stream: "stdout", line: "alpha"},
+			{stream: "stderr", line: "boom"},
+		},
+	}
+
+	rendered := model.renderTaskCard(task, false, 80)
+	if strings.Count(rendered, "alpha") != 1 {
+		t.Fatalf("expected expanded card to render stdout log once, got %q", rendered)
+	}
+	if strings.Count(rendered, "boom") != 1 {
+		t.Fatalf("expected expanded card to avoid repeating the failure message, got %q", rendered)
 	}
 }

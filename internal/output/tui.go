@@ -610,14 +610,11 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 	if task.running {
 		meta = append(meta, "running")
 	}
-	if task.message != "" && task.expanded {
-		meta = append(meta, task.message)
-	}
 	if joined := joinMeta(meta...); joined != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(joined, width)))
 	}
 
-	showPreview := task.running || task.status == "failed" || task.expanded
+	showPreview := !task.expanded && (task.running || task.status == "failed")
 	if showPreview && len(task.logs) > 0 {
 		previewLines := make([]ScreenLine, 0, min(3, len(task.logs)))
 		for _, line := range m.previewLogs(task) {
@@ -632,7 +629,7 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 	if task.expanded {
 		detail := m.expandedTaskLines(task)
 		if len(detail) > 0 {
-			lines = append(lines, tuiSectionStyle.Render("Details"))
+			lines = append(lines, tuiSectionStyle.Render(m.expandedTaskTitle(task)))
 			lines = append(lines, renderScreenLines(detail, width-2))
 		}
 	}
@@ -783,10 +780,10 @@ func (m tuiModel) previewLogs(task *taskView) []taskLogLine {
 }
 
 func (m tuiModel) expandedTaskLines(task *taskView) []ScreenLine {
-	lines := make([]ScreenLine, 0, min(12, len(task.logs))+1)
-	if task.message != "" {
+	lines := make([]ScreenLine, 0, min(8, len(task.logs))+1)
+	if task.message != "" && !m.logContainsMessage(task) {
 		lines = append(lines, ScreenLine{
-			Prefix: "info",
+			Prefix: "",
 			Text:   task.message,
 			Tone:   task.status,
 		})
@@ -794,22 +791,42 @@ func (m tuiModel) expandedTaskLines(task *taskView) []ScreenLine {
 	if len(task.logs) == 0 {
 		return lines
 	}
-	start := max(0, len(task.logs)-12)
+	start := max(0, len(task.logs)-8)
+	if start > 0 {
+		lines = append(lines, ScreenLine{
+			Prefix: "",
+			Text:   fmt.Sprintf("%d earlier log lines hidden", start),
+			Tone:   "info",
+		})
+	}
 	for _, entry := range task.logs[start:] {
 		lines = append(lines, ScreenLine{
 			Prefix: logPrefix(entry.stream),
 			Text:   entry.line,
-			Tone:   lineTone(entry.stream),
-		})
-	}
-	if start > 0 {
-		lines = append(lines, ScreenLine{
-			Prefix: "info",
-			Text:   fmt.Sprintf("%d older log lines hidden in TUI", start),
-			Tone:   "info",
+			Tone:   detailLineTone(entry.stream),
 		})
 	}
 	return lines
+}
+
+func (m tuiModel) expandedTaskTitle(task *taskView) string {
+	if len(task.logs) > 0 {
+		return "Recent logs"
+	}
+	return "Details"
+}
+
+func (m tuiModel) logContainsMessage(task *taskView) bool {
+	needle := strings.TrimSpace(task.message)
+	if needle == "" {
+		return false
+	}
+	for _, entry := range task.logs {
+		if strings.TrimSpace(entry.line) == needle {
+			return true
+		}
+	}
+	return false
 }
 
 func lineTone(stream string) string {
@@ -820,6 +837,15 @@ func lineTone(stream string) string {
 		return "ok"
 	default:
 		return "info"
+	}
+}
+
+func detailLineTone(stream string) string {
+	switch strings.ToLower(stream) {
+	case "stderr":
+		return "failed"
+	default:
+		return ""
 	}
 }
 

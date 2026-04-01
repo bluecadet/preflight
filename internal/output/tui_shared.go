@@ -26,7 +26,6 @@ var (
 	tuiColorDim      = lipgloss.Color("241")
 	tuiColorBorder   = lipgloss.Color("63")
 	tuiColorSelected = lipgloss.Color("229")
-	tuiColorCardBG   = lipgloss.Color("235")
 
 	tuiTitleStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
 	tuiCommandStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
@@ -44,8 +43,9 @@ var (
 				BorderForeground(tuiColorSelected).
 				PaddingLeft(1)
 	tuiMutedCardStyle = lipgloss.NewStyle().
+				Border(lipgloss.NormalBorder(), false, false, false, true).
+				BorderForeground(tuiColorFailed).
 				Foreground(lipgloss.Color("250")).
-				Background(tuiColorCardBG).
 				PaddingLeft(1)
 )
 
