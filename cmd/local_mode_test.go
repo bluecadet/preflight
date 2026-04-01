@@ -436,10 +436,10 @@ func TestRunApplyVerboseTextIncludesTaskLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
-	if !strings.Contains(out, "[stdout] hello") {
+	if !strings.Contains(out, "out> hello") {
 		t.Fatalf("expected verbose text output to include stdout log, got %q", out)
 	}
-	if !strings.Contains(out, "[stderr] warn") {
+	if !strings.Contains(out, "err> warn") {
 		t.Fatalf("expected verbose text output to include stderr log, got %q", out)
 	}
 }
@@ -457,7 +457,7 @@ func TestRunApplyDefaultTextSuppressesTaskLogs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runApply: %v", err)
 	}
-	if strings.Contains(out, "[stdout] hello") || strings.Contains(out, "[stderr] warn") {
+	if strings.Contains(out, "out> hello") || strings.Contains(out, "err> warn") {
 		t.Fatalf("expected default text output to suppress task logs, got %q", out)
 	}
 }

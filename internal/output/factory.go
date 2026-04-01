@@ -36,7 +36,7 @@ func NewWithOptions(format Format, w io.Writer, options Options) Renderer {
 	case FormatJSON, FormatJSONL:
 		return NewJSONRendererWithOptions(w, options)
 	case FormatTUI:
-		return NewTUIRendererWithOptions(w, options)
+		return NewLiveRunRendererWithOptions(w, options)
 	default:
 		return NewTextRendererWithOptions(w, options)
 	}

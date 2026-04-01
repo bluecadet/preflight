@@ -459,8 +459,10 @@ func TestApplyEmitsLifecycleEventsInOrder(t *testing.T) {
 	want := []output.EventType{
 		output.EventPhaseStart,
 		output.EventPhaseEnd,
+		output.EventPhaseStart,
 		output.EventTaskStart,
 		output.EventTaskResult,
+		output.EventPhaseEnd,
 		output.EventPlayEnd,
 	}
 	if len(got) != len(want) {
@@ -471,8 +473,11 @@ func TestApplyEmitsLifecycleEventsInOrder(t *testing.T) {
 			t.Fatalf("event %d: expected %q, got %q", i, eventType, got[i])
 		}
 	}
-	if rec.events[2].TaskTotal != 1 {
-		t.Fatalf("expected task_start to include TaskTotal=1, got %d", rec.events[2].TaskTotal)
+	if rec.events[3].TaskTotal != 1 {
+		t.Fatalf("expected task_start to include TaskTotal=1, got %d", rec.events[3].TaskTotal)
+	}
+	if rec.events[3].TaskPath != "1" {
+		t.Fatalf("expected task_start to include TaskPath=1, got %q", rec.events[3].TaskPath)
 	}
 }
 

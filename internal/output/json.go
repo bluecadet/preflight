@@ -12,6 +12,7 @@ type jsonEvent struct {
 	PlayName     string    `json:"play,omitempty"`
 	Phase        string    `json:"phase,omitempty"`
 	TaskID       string    `json:"task_id,omitempty"`
+	TaskPath     string    `json:"task_path,omitempty"`
 	Task         string    `json:"task,omitempty"`
 	Target       string    `json:"target,omitempty"`
 	Module       string    `json:"module,omitempty"`
@@ -58,6 +59,7 @@ func (r *JSONRenderer) Emit(event Event) {
 		PlayName: event.PlayName,
 		Phase:    event.Phase,
 		TaskID:   event.TaskID,
+		TaskPath: event.TaskPath,
 		Task:     event.TaskName,
 		Target:   event.Target,
 		Module:   event.Module,

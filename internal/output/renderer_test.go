@@ -9,7 +9,7 @@ import (
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
 func newTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false}
+	return NewTextRendererWithOptions(w, Options{})
 }
 
 func TestTextRenderer_PlayStart(t *testing.T) {
@@ -18,11 +18,8 @@ func TestTextRenderer_PlayStart(t *testing.T) {
 	r.Emit(Event{Type: EventPlayStart, PlayName: "lobby"})
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY [lobby]") {
-		t.Errorf("expected PLAY [lobby] in output, got: %q", out)
-	}
-	if !strings.Contains(out, "*") {
-		t.Errorf("expected fill characters (*) in output, got: %q", out)
+	if !strings.Contains(out, "play: lobby") {
+		t.Errorf("expected play header in output, got: %q", out)
 	}
 }
 
@@ -31,6 +28,7 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 	r := newTextRenderer(&buf)
 	r.Emit(Event{
 		Type:     EventTaskResult,
+		TaskPath: "1",
 		TaskName: "preflight/kiosk-mode : Disable Windows Update",
 		Target:   "lobby-pc-01",
 		Status:   "ok",
@@ -38,10 +36,13 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "ok") {
-		t.Errorf("expected 'ok' in output, got: %q", out)
+	if !strings.Contains(out, "✓") {
+		t.Errorf("expected success glyph in output, got: %q", out)
 	}
-	if !strings.Contains(out, "TASK [preflight/kiosk-mode : Disable Windows Update]") {
+	if !strings.Contains(out, "1") || !strings.Contains(out, "no change") {
+		t.Errorf("expected task path and message in output, got: %q", out)
+	}
+	if !strings.Contains(out, "preflight/kiosk-mode : Disable Windows Update") {
 		t.Errorf("expected task name in output, got: %q", out)
 	}
 }
@@ -57,8 +58,8 @@ func TestTextRenderer_TaskResultChanged(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "changed") {
-		t.Errorf("expected 'changed' in output, got: %q", out)
+	if !strings.Contains(out, "~") {
+		t.Errorf("expected change glyph in output, got: %q", out)
 	}
 }
 
@@ -75,23 +76,20 @@ func TestTextRenderer_PlayEnd(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY RECAP") {
-		t.Errorf("expected PLAY RECAP in output, got: %q", out)
+	if !strings.Contains(out, "recap") {
+		t.Errorf("expected recap output, got: %q", out)
 	}
-	if !strings.Contains(out, "lobby-pc-01") {
-		t.Errorf("expected target hostname in output, got: %q", out)
+	if !strings.Contains(out, "ok 4") {
+		t.Errorf("expected ok count in output, got: %q", out)
 	}
-	if !strings.Contains(out, "ok=4") {
-		t.Errorf("expected ok=4 in output, got: %q", out)
+	if !strings.Contains(out, "changed 2") {
+		t.Errorf("expected changed count in output, got: %q", out)
 	}
-	if !strings.Contains(out, "changed=2") {
-		t.Errorf("expected changed=2 in output, got: %q", out)
+	if !strings.Contains(out, "failed 1") {
+		t.Errorf("expected failed count in output, got: %q", out)
 	}
-	if !strings.Contains(out, "failed=1") {
-		t.Errorf("expected failed=1 in output, got: %q", out)
-	}
-	if !strings.Contains(out, "skipped=0") {
-		t.Errorf("expected skipped=0 in output, got: %q", out)
+	if !strings.Contains(out, "skipped 0") {
+		t.Errorf("expected skipped count in output, got: %q", out)
 	}
 }
 
@@ -166,7 +164,7 @@ func TestTextRenderer_VerboseTaskLog(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "[stdout] hello from task") {
+	if !strings.Contains(out, "out> hello from task") {
 		t.Fatalf("expected verbose task log output, got %q", out)
 	}
 }
@@ -204,6 +202,9 @@ func TestFactory_New(t *testing.T) {
 	}
 	if _, ok := New(FormatJSONL, &buf).(*JSONRenderer); !ok {
 		t.Error("expected JSONRenderer for FormatJSONL")
+	}
+	if _, ok := New(FormatTUI, &buf).(*LiveRunRenderer); !ok {
+		t.Error("expected LiveRunRenderer for FormatTUI")
 	}
 	// Unknown format falls back to text.
 	if _, ok := New("unknown", &buf).(*TextRenderer); !ok {

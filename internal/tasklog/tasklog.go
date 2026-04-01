@@ -10,6 +10,7 @@ import (
 type Entry struct {
 	Target   string
 	TaskID   string
+	TaskPath string
 	TaskName string
 	Module   string
 	Stream   string

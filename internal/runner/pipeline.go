@@ -34,6 +34,7 @@ type ExecutionPlan struct {
 // PlanTask is a single task entry in the execution plan.
 type PlanTask struct {
 	ID           string // unique ID, e.g. "task-0", "task-1"
+	TaskPath     string // display path like "2.1"
 	Name         string
 	Module       string
 	Params       map[string]any
@@ -66,7 +67,7 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, []int{i + 1}, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -100,7 +101,7 @@ func (s *expansionScope) next(base string) string {
 	return base + "-" + strconv.Itoa(count)
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, label string) error {
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, taskPath []int, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -113,7 +114,7 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 	currentLineage := append(append([]string{}, lineage...), segment)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, currentLineage, vars)
+		pt, err := buildPlanTask(task, currentLineage, taskPath, vars)
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,8 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, childLabel); err != nil {
+		childTaskPath := append(append([]int{}, taskPath...), j+1)
+		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, childTaskPath, childLabel); err != nil {
 			return err
 		}
 	}
@@ -174,13 +176,14 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, lineage []string, vars map[string]any) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, lineage []string, taskPath []int, vars map[string]any) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
 	rawParams := cloneMap(t.Params)
 	templateVars := cloneMap(vars)
 
 	return &PlanTask{
 		ID:           id,
+		TaskPath:     formatTaskPath(taskPath),
 		Name:         t.Name,
 		Module:       t.Module,
 		Params:       rawParams,
@@ -190,6 +193,17 @@ func buildPlanTask(t *action.Task, lineage []string, vars map[string]any) (*Plan
 		Tags:         t.Tags,
 		IgnoreErrors: t.IgnoreErrors,
 	}, nil
+}
+
+func formatTaskPath(path []int) string {
+	if len(path) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(path))
+	for _, segment := range path {
+		parts = append(parts, strconv.Itoa(segment))
+	}
+	return strings.Join(parts, ".")
 }
 
 func taskLineageSegment(task *action.Task) string {
@@ -256,37 +270,46 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 	if plan == nil {
 		return fmt.Errorf("stage: nil execution plan")
 	}
+	r.emitPhaseStart("stage")
+	finishStage := func(err error) error {
+		if err != nil {
+			r.emitPhaseEnd("stage", "failed", len(plan.Tasks))
+			return err
+		}
+		r.emitPhaseEnd("stage", "ok", len(plan.Tasks))
+		return nil
+	}
 
 	if r.config.BundleOutputDir == "" {
-		return fmt.Errorf("stage: bundle output directory is not configured")
+		return finishStage(fmt.Errorf("stage: bundle output directory is not configured"))
 	}
 
 	info, err := r.target.Info(ctx)
 	if err != nil {
-		return fmt.Errorf("stage: target info: %w", err)
+		return finishStage(fmt.Errorf("stage: target info: %w", err))
 	}
 
 	if err := r.validateStagePlan(plan); err != nil {
-		return err
+		return finishStage(err)
 	}
 
 	planBytes, err := json.MarshalIndent(plan, "", "  ")
 	if err != nil {
-		return fmt.Errorf("stage: marshal plan: %w", err)
+		return finishStage(fmt.Errorf("stage: marshal plan: %w", err))
 	}
 
 	binaryPath := r.config.BundleBinaryPath
 	if binaryPath == "" {
-		return fmt.Errorf("stage: bundle runtime binary path is not configured")
+		return finishStage(fmt.Errorf("stage: bundle runtime binary path is not configured"))
 	}
 	binaryData, err := os.ReadFile(binaryPath)
 	if err != nil {
-		return fmt.Errorf("stage: read runtime binary %q: %w", binaryPath, err)
+		return finishStage(fmt.Errorf("stage: read runtime binary %q: %w", binaryPath, err))
 	}
 
 	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan)
 	if err != nil {
-		return err
+		return finishStage(err)
 	}
 
 	files := []bundle.FileSpec{
@@ -340,9 +363,9 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 
 	bundlePath := filepath.Join(r.config.BundleOutputDir, bundle.BundleFileName(plan.PlaybookName, r.targetName(), info.OSVersion, info.Arch))
 	if err := bundle.Write(bundlePath, manifest, files); err != nil {
-		return fmt.Errorf("stage: %w", err)
+		return finishStage(fmt.Errorf("stage: %w", err))
 	}
-	return nil
+	return finishStage(nil)
 }
 
 func (r *Runner) validateStagePlan(plan *ExecutionPlan) error {
@@ -423,23 +446,49 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 
 // Apply executes the task graph against the target.
 func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
+	prepared, err := r.GatherContext(ctx)
+	if err != nil {
+		return err
+	}
+	return r.ApplyPrepared(ctx, plan, prepared)
+}
+
+// PreparedContext holds execution-time context gathered before task execution.
+type PreparedContext struct {
+	exec *executionContext
+}
+
+// GatherContext resolves target info and facts before executing any tasks.
+func (r *Runner) GatherContext(ctx context.Context) (*PreparedContext, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	r.emitPhaseStart("gather-context")
+	execCtx, err := r.buildExecutionContext(ctx)
+	if err != nil {
+		r.emitPhaseEnd("gather-context", "failed", 0)
+		return nil, err
+	}
+	r.emitPhaseEnd("gather-context", "ok", 0)
+	return &PreparedContext{exec: execCtx}, nil
+}
+
+// ApplyPrepared executes the task graph using a previously gathered context.
+func (r *Runner) ApplyPrepared(ctx context.Context, plan *ExecutionPlan, prepared *PreparedContext) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-
+	if prepared == nil || prepared.exec == nil {
+		return fmt.Errorf("apply: nil prepared context")
+	}
 	dag, err := BuildDAG(plan.Tasks)
 	if err != nil {
 		return fmt.Errorf("apply: build DAG: %w", err)
 	}
 
 	ordered := dag.TopologicalOrder()
-	r.emitPhaseStart("gather-context")
-	execCtx, err := r.buildExecutionContext(ctx)
-	if err != nil {
-		r.emitPhaseEnd("gather-context", "failed", 0)
-		return err
-	}
-	r.emitPhaseEnd("gather-context", "ok", 0)
+	execCtx := prepared.exec
+	r.emitPhaseStart("execute")
 
 	state := &State{
 		Tasks: make(map[string]TaskSnapshot),
@@ -456,9 +505,15 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		state.LastApplied = time.Now()
 		if !r.config.DryRun && r.config.StatePath != "" {
 			if err := state.Save(r.config.StatePath); err != nil {
+				r.emitPhaseEnd("execute", "failed", len(ordered))
 				return fmt.Errorf("apply: save state: %w", err)
 			}
 		}
+		executeStatus := "ok"
+		if failedCount > 0 {
+			executeStatus = "failed"
+		}
+		r.emitPhaseEnd("execute", executeStatus, len(ordered))
 
 		if r.config.Renderer != nil {
 			r.config.Renderer.Emit(output.Event{
@@ -485,6 +540,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		taskName, err := renderTaskName(pt, execCtx)
 		if err != nil {
+			r.emitPhaseEnd("execute", "failed", len(ordered))
 			return fmt.Errorf("apply: task %q: render name: %w", pt.Name, err)
 		}
 		r.emitTaskStart(pt, taskName, len(ordered))
@@ -519,6 +575,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if pt.When != "" {
 			ok, err := renderTaskWhen(pt, execCtx)
 			if err != nil {
+				r.emitPhaseEnd("execute", "failed", len(ordered))
 				return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 			}
 			if !ok {
@@ -532,11 +589,13 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		params, taskName, err := renderTaskParams(pt, execCtx)
 		if err != nil {
+			r.emitPhaseEnd("execute", "failed", len(ordered))
 			return fmt.Errorf("apply: task %q: render params: %w", pt.Name, err)
 		}
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
 			params, err = r.config.Secrets.ResolveMap(ctx, params)
 			if err != nil {
+				r.emitPhaseEnd("execute", "failed", len(ordered))
 				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 			}
 		}
@@ -545,6 +604,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		execTaskCtx := tasklog.WithTask(ctx, r.taskLogSink(), tasklog.Entry{
 			Target:   r.targetName(),
 			TaskID:   pt.ID,
+			TaskPath: pt.TaskPath,
 			TaskName: taskName,
 			Module:   pt.Module,
 		})
@@ -627,6 +687,7 @@ func (r *Runner) emitTaskStart(pt *PlanTask, taskName string, taskTotal int) {
 	r.config.Renderer.Emit(output.Event{
 		Type:      output.EventTaskStart,
 		TaskID:    pt.ID,
+		TaskPath:  pt.TaskPath,
 		TaskName:  taskName,
 		Target:    r.targetName(),
 		Module:    pt.Module,
@@ -642,6 +703,7 @@ func (r *Runner) emitTaskResult(pt *PlanTask, taskName string, status target.Sta
 	r.config.Renderer.Emit(output.Event{
 		Type:     output.EventTaskResult,
 		TaskID:   pt.ID,
+		TaskPath: pt.TaskPath,
 		TaskName: taskName,
 		Target:   r.targetName(),
 		Module:   pt.Module,
@@ -693,6 +755,7 @@ func (s runnerTaskLogSink) EmitTaskLog(entry tasklog.Entry) {
 		Type:     output.EventTaskLog,
 		Target:   entry.Target,
 		TaskID:   entry.TaskID,
+		TaskPath: entry.TaskPath,
 		TaskName: entry.TaskName,
 		Module:   entry.Module,
 		Stream:   entry.Stream,

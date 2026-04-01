@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sync"
 
 	"github.com/spf13/cobra"
 
@@ -105,6 +106,25 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	if err != nil {
 		return err
 	}
+	if renderer != nil {
+		for _, host := range hosts {
+			renderer.Emit(output.Event{
+				Type:     output.EventPlayStart,
+				PlayName: pb.Name,
+				Target:   host.Name,
+			})
+		}
+	}
+	emitRunError := func(err error) error {
+		if err == nil || renderer == nil {
+			return err
+		}
+		renderer.Emit(output.Event{
+			Type:  output.EventError,
+			Error: err,
+		})
+		return err
+	}
 
 	if phase != "plan" {
 		if renderer != nil {
@@ -124,7 +144,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 					Status: "failed",
 				})
 			}
-			return err
+			return emitRunError(err)
 		}
 		if renderer != nil {
 			renderer.Emit(output.Event{
@@ -138,7 +158,15 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		return nil
 	}
 
-	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+	type plannedHost struct {
+		host   targeting.ResolvedHost
+		runner *runner.Runner
+		plan   *runner.ExecutionPlan
+	}
+	planned := make(map[string]plannedHost, len(hosts))
+	var plannedMu sync.Mutex
+
+	err = runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		cfg := runner.Config{
 			DryRun:           dryRun,
 			Tags:             tags,
@@ -165,11 +193,6 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		}
 
 		if renderer != nil {
-			renderer.Emit(output.Event{
-				Type:     output.EventPlayStart,
-				PlayName: pb.Name,
-				Target:   host.Name,
-			})
 			renderer.Emit(output.Event{
 				Type:   output.EventPhaseStart,
 				Target: host.Name,
@@ -199,19 +222,71 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 				TaskTotal: len(plan.Tasks),
 			})
 		}
+		plannedMu.Lock()
+		planned[host.Name] = plannedHost{
+			host:   host,
+			runner: r,
+			plan:   plan,
+		}
+		plannedMu.Unlock()
+		return nil
+	})
+	if err != nil {
+		return emitRunError(err)
+	}
+	if phase == "plan" {
+		return nil
+	}
 
-		if phase == "stage" {
-			if err := r.Stage(runCtx, plan); err != nil {
+	if phase == "stage" {
+		err = runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+			plannedHost, ok := planned[host.Name]
+			if !ok {
+				return fmt.Errorf("stage for %s: missing planned host state", host.Name)
+			}
+			if err := plannedHost.runner.Stage(runCtx, plannedHost.plan); err != nil {
 				return fmt.Errorf("stage for %s: %w", host.Name, err)
 			}
 			return nil
-		}
+		})
+		return emitRunError(err)
+	}
 
-		if err := r.Apply(runCtx, plan); err != nil {
+	prepared := make(map[string]*runner.PreparedContext, len(hosts))
+	var preparedMu sync.Mutex
+	err = runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+		plannedHost, ok := planned[host.Name]
+		if !ok {
+			return fmt.Errorf("gather context for %s: missing planned host state", host.Name)
+		}
+		preparedCtx, err := plannedHost.runner.GatherContext(runCtx)
+		if err != nil {
+			return fmt.Errorf("gather context for %s: %w", host.Name, err)
+		}
+		preparedMu.Lock()
+		prepared[host.Name] = preparedCtx
+		preparedMu.Unlock()
+		return nil
+	})
+	if err != nil {
+		return emitRunError(err)
+	}
+
+	err = runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+		plannedHost, ok := planned[host.Name]
+		if !ok {
+			return fmt.Errorf("apply for %s: missing planned host state", host.Name)
+		}
+		preparedCtx, ok := prepared[host.Name]
+		if !ok {
+			return fmt.Errorf("apply for %s: missing prepared context", host.Name)
+		}
+		if err := plannedHost.runner.ApplyPrepared(runCtx, plannedHost.plan, preparedCtx); err != nil {
 			return fmt.Errorf("apply for %s: %w", host.Name, err)
 		}
 		return nil
 	})
+	return emitRunError(err)
 }
 
 func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
