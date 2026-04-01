@@ -4,29 +4,32 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 func TestNewTUIRenderer_NoPanel(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewTUIRenderer(&buf)
-	if r == nil {
+	renderer := NewTUIRenderer(&buf)
+	if renderer == nil {
 		t.Fatal("NewTUIRenderer returned nil")
 	}
-	if r.program == nil {
+	if renderer.program == nil {
 		t.Error("expected program to be non-nil")
 	}
-	if r.events == nil {
+	if renderer.events == nil {
 		t.Error("expected events channel to be non-nil")
 	}
-	if r.done == nil {
+	if renderer.done == nil {
 		t.Error("expected done channel to be non-nil")
 	}
-	// Close cleanly without sending any events.
+
 	done := make(chan struct{})
 	go func() {
-		r.Close()
+		renderer.Close()
 		close(done)
 	}()
+
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -34,66 +37,24 @@ func TestNewTUIRenderer_NoPanel(t *testing.T) {
 	}
 }
 
-func TestTUIRenderer_PlayStartTaskResultPlayEnd(t *testing.T) {
+func TestTUIRenderer_PlayStartTaskLifecycle(t *testing.T) {
 	var buf bytes.Buffer
-	r := NewTUIRenderer(&buf)
+	renderer := NewTUIRenderer(&buf)
 
-	r.Emit(Event{Type: EventPlayStart, PlayName: "test-play"})
-	r.Emit(Event{
-		Type:     EventTaskResult,
-		TaskName: "Configure firewall",
-		Target:   "test-host",
-		Status:   "ok",
-	})
-	r.Emit(Event{
-		Type:         EventPlayEnd,
-		Target:       "test-host",
-		OKCount:      1,
-		ChangedCount: 0,
-		FailedCount:  0,
-		SkippedCount: 0,
-	})
+	renderer.Emit(Event{Type: EventPlayStart, PlayName: "test-play", Target: "host-a"})
+	renderer.Emit(Event{Type: EventPhaseStart, Target: "host-a", Phase: "plan"})
+	renderer.Emit(Event{Type: EventPhaseEnd, Target: "host-a", Phase: "plan", Status: "ok", TaskTotal: 1})
+	renderer.Emit(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskName: "Configure firewall", Module: "shell"})
+	renderer.Emit(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-1", Stream: "stdout", Line: "hello"})
+	renderer.Emit(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskName: "Configure firewall", Status: "ok"})
+	renderer.Emit(Event{Type: EventPlayEnd, Target: "host-a", OKCount: 1})
 
 	done := make(chan struct{})
 	go func() {
-		r.Close()
+		renderer.Close()
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Error("TUIRenderer.Close() timed out after play_start+task_result+play_end")
-	}
-}
 
-func TestTUIRenderer_MultipleStatuses(t *testing.T) {
-	var buf bytes.Buffer
-	r := NewTUIRenderer(&buf)
-
-	statuses := []string{"ok", "changed", "failed", "skipped"}
-	for i, s := range statuses {
-		r.Emit(Event{
-			Type:     EventTaskResult,
-			TaskName: "task-" + s,
-			Target:   "host",
-			Status:   s,
-		})
-		_ = i
-	}
-	r.Emit(Event{
-		Type:         EventPlayEnd,
-		Target:       "host",
-		OKCount:      1,
-		ChangedCount: 1,
-		FailedCount:  1,
-		SkippedCount: 1,
-	})
-
-	done := make(chan struct{})
-	go func() {
-		r.Close()
-		close(done)
-	}()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
@@ -110,7 +71,6 @@ func TestAutoDetect_NonTTY(t *testing.T) {
 }
 
 func TestAutoDetect_AnotherNonTTY(t *testing.T) {
-	// Any non-os.Stdout writer that is not a TTY should return FormatText.
 	w := &bytes.Buffer{}
 	got := AutoDetect(w)
 	if got != FormatText {
@@ -118,58 +78,91 @@ func TestAutoDetect_AnotherNonTTY(t *testing.T) {
 	}
 }
 
-func TestTUIModel_ApplyEvent_PlayStart(t *testing.T) {
+func TestTUIModel_ApplyEventLifecycle(t *testing.T) {
 	events := make(chan Event, 1)
-	m := newTUIModel(events)
-	m = m.applyEvent(Event{Type: EventPlayStart, PlayName: "my-play"})
-	if m.playName != "my-play" {
-		t.Errorf("expected playName=my-play, got %q", m.playName)
+	model := newTUIModel(events, Options{})
+
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "my-play", Target: "host-a"})
+	model = model.applyEvent(Event{Type: EventPhaseStart, Target: "host-a", Phase: "plan"})
+	model = model.applyEvent(Event{Type: EventPhaseEnd, Target: "host-a", Phase: "plan", Status: "ok", TaskTotal: 2})
+	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskName: "do-thing", Module: "shell", TaskTotal: 2})
+	model = model.applyEvent(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-1", Stream: "stdout", Line: "stream line"})
+	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskName: "do-thing", Module: "shell", Status: "failed", Message: "boom"})
+	model = model.applyEvent(Event{Type: EventPlayEnd, Target: "host-a", FailedCount: 1})
+
+	host := model.hosts["host-a"]
+	if host == nil {
+		t.Fatal("expected host state to be created")
+	}
+	if host.playName != "my-play" {
+		t.Fatalf("expected playName my-play, got %q", host.playName)
+	}
+	if host.totalTasks != 2 {
+		t.Fatalf("expected totalTasks=2, got %d", host.totalTasks)
+	}
+	task := host.tasks["task-1"]
+	if task == nil {
+		t.Fatal("expected task state to be created")
+	}
+	if task.status != "failed" {
+		t.Fatalf("expected failed task status, got %q", task.status)
+	}
+	if !task.expanded {
+		t.Fatal("expected failed task to auto-expand")
+	}
+	if len(task.logs) != 1 {
+		t.Fatalf("expected one task log, got %d", len(task.logs))
+	}
+	if host.recap.failed != 1 {
+		t.Fatalf("expected failed recap count 1, got %d", host.recap.failed)
+	}
+	if !host.done {
+		t.Fatal("expected host to be marked done")
 	}
 }
 
-func TestTUIModel_ApplyEvent_TaskResult(t *testing.T) {
+func TestTUIModel_KeyNavigationAndFilters(t *testing.T) {
 	events := make(chan Event, 1)
-	m := newTUIModel(events)
+	model := newTUIModel(events, Options{})
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "play", Target: "host-a"})
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "play", Target: "host-b"})
+	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskName: "ok task"})
+	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskName: "ok task", Status: "ok"})
+	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-2", TaskName: "bad task"})
+	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-2", TaskName: "bad task", Status: "failed"})
 
-	m = m.applyEvent(Event{
-		Type:     EventTaskResult,
-		TaskName: "do-thing",
-		Status:   "ok",
-	})
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyTab})
+	model = next.(tuiModel)
+	if model.focus != focusTasks {
+		t.Fatalf("expected focusTasks after tab, got %v", model.focus)
+	}
 
-	if len(m.tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(m.tasks))
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	model = next.(tuiModel)
+	visible := model.visibleTasks(model.currentHost())
+	if len(visible) != 1 || visible[0] != "task-2" {
+		t.Fatalf("expected failed-only filter to leave task-2, got %#v", visible)
 	}
-	if m.tasks[0].name != "do-thing" {
-		t.Errorf("expected task name do-thing, got %q", m.tasks[0].name)
+
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	model = next.(tuiModel)
+	if model.showLogPane {
+		t.Fatal("expected log pane to be hidden after pressing l")
 	}
-	if m.tasks[0].status != "ok" {
-		t.Errorf("expected status ok, got %q", m.tasks[0].status)
-	}
-	if m.recap.ok != 1 {
-		t.Errorf("expected recap.ok=1, got %d", m.recap.ok)
+
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'c'}})
+	model = next.(tuiModel)
+	if !model.collapseCompleted {
+		t.Fatal("expected collapseCompleted toggle to be enabled")
 	}
 }
 
-func TestTUIModel_ApplyEvent_PlayEnd(t *testing.T) {
-	events := make(chan Event, 1)
-	m := newTUIModel(events)
-
-	m = m.applyEvent(Event{
-		Type:         EventPlayEnd,
-		OKCount:      3,
-		ChangedCount: 2,
-		FailedCount:  1,
-		SkippedCount: 0,
-	})
-
-	if m.recap.ok != 3 {
-		t.Errorf("expected recap.ok=3, got %d", m.recap.ok)
+func TestTaskView_LogBufferIsBounded(t *testing.T) {
+	task := &taskView{}
+	for i := 0; i < maxTaskLogLines+25; i++ {
+		task.appendLog("stdout", "line")
 	}
-	if m.recap.changed != 2 {
-		t.Errorf("expected recap.changed=2, got %d", m.recap.changed)
-	}
-	if m.recap.failed != 1 {
-		t.Errorf("expected recap.failed=1, got %d", m.recap.failed)
+	if len(task.logs) != maxTaskLogLines {
+		t.Fatalf("expected log buffer capped at %d lines, got %d", maxTaskLogLines, len(task.logs))
 	}
 }

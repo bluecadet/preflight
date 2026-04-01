@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 // ShellModule runs an arbitrary shell command.
@@ -33,7 +34,7 @@ func (m *ShellModule) Check(_ context.Context, params map[string]any) (bool, err
 	return true, nil
 }
 
-func (m *ShellModule) Apply(_ context.Context, params map[string]any) error {
+func (m *ShellModule) Apply(ctx context.Context, params map[string]any) error {
 	cmdName, err := paramStringRequired(params, "cmd")
 	if err != nil {
 		return err
@@ -52,9 +53,13 @@ func (m *ShellModule) Apply(_ context.Context, params map[string]any) error {
 		cmd.Dir = workingDir
 	}
 
-	out, err := cmd.CombinedOutput()
+	stdout, stderr, err := runCommandStreaming(ctx, cmd)
 	if err != nil {
-		return fmt.Errorf("shell: command %q failed: %w\noutput: %s", cmdName, err, string(out))
+		output := strings.TrimSpace(joinCommandOutput(stdout, stderr))
+		if output == "" {
+			return fmt.Errorf("shell: command %q failed: %w", cmdName, err)
+		}
+		return fmt.Errorf("shell: command %q failed: %w\noutput: %s", cmdName, err, output)
 	}
 	return nil
 }

@@ -420,6 +420,69 @@ secrets:
 	}
 }
 
+func TestRunApplyVerboseTextIncludesTaskLogs(t *testing.T) {
+	playbookPath := writeLoggingPlaybook(t)
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("output", "text"); err != nil {
+		t.Fatalf("Set output: %v", err)
+	}
+	if err := cmd.Flags().Set("verbose", "true"); err != nil {
+		t.Fatalf("Set verbose: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runApply(cmd, []string{playbookPath})
+	})
+	if err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	if !strings.Contains(out, "[stdout] hello") {
+		t.Fatalf("expected verbose text output to include stdout log, got %q", out)
+	}
+	if !strings.Contains(out, "[stderr] warn") {
+		t.Fatalf("expected verbose text output to include stderr log, got %q", out)
+	}
+}
+
+func TestRunApplyDefaultTextSuppressesTaskLogs(t *testing.T) {
+	playbookPath := writeLoggingPlaybook(t)
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("output", "text"); err != nil {
+		t.Fatalf("Set output: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runApply(cmd, []string{playbookPath})
+	})
+	if err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	if strings.Contains(out, "[stdout] hello") || strings.Contains(out, "[stderr] warn") {
+		t.Fatalf("expected default text output to suppress task logs, got %q", out)
+	}
+}
+
+func TestRunApplyVerboseJSONLIncludesTaskLogs(t *testing.T) {
+	playbookPath := writeLoggingPlaybook(t)
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("output", "jsonl"); err != nil {
+		t.Fatalf("Set output: %v", err)
+	}
+	if err := cmd.Flags().Set("verbose", "true"); err != nil {
+		t.Fatalf("Set verbose: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runApply(cmd, []string{playbookPath})
+	})
+	if err != nil {
+		t.Fatalf("runApply: %v", err)
+	}
+	if !strings.Contains(out, `"type":"task_log"`) || !strings.Contains(out, `"line":"hello"`) {
+		t.Fatalf("expected verbose jsonl output to include task_log events, got %q", out)
+	}
+}
+
 func newTestCommand() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.Flags().StringSliceP("target", "t", nil, "")
@@ -512,6 +575,23 @@ groups:
 	}
 
 	return playbookPath, inventoryPath
+}
+
+func writeLoggingPlaybook(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "playbook.yml")
+	if err := os.WriteFile(path, []byte(`
+name: log-test
+tasks:
+  - name: stream logs
+    shell:
+      cmd: sh
+      args: ["-c", "printf 'hello\n'; printf 'warn\n' >&2"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+	return path
 }
 
 const testRemoteActionRef = "github.com/acme/actions/signage@v1"

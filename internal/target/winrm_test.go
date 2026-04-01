@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/bluecadet/preflight/internal/tasklog"
 )
 
 type fakeWinRMClient struct {
@@ -162,5 +164,41 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	}
 	if len(commands) != 2 {
 		t.Fatalf("expected 2 PowerShell invocations, got %d", len(commands))
+	}
+}
+
+func TestWinRMTarget_ExecuteEmitsBufferedTaskLogs(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			if !strings.Contains(command, "& $cmd @args") {
+				t.Fatalf("expected shell apply script, got %q", command)
+			}
+			return "hello\n", "warn\n", 0, nil
+		},
+	}
+
+	logs := &taskLogSink{}
+	ctx := tasklog.WithTask(context.Background(), logs, tasklog.Entry{
+		Target:   "host",
+		TaskID:   "task-1",
+		TaskName: "shell",
+		Module:   "shell",
+	})
+
+	if _, err := tgt.Execute(ctx, "task-1", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, false); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if len(logs.entries) != 2 {
+		t.Fatalf("expected 2 buffered WinRM logs, got %d", len(logs.entries))
+	}
+	if logs.entries[0].Stream != "stdout" || logs.entries[0].Line != "hello" {
+		t.Fatalf("unexpected first log entry: %#v", logs.entries[0])
+	}
+	if logs.entries[1].Stream != "stderr" || logs.entries[1].Line != "warn" {
+		t.Fatalf("unexpected second log entry: %#v", logs.entries[1])
 	}
 }

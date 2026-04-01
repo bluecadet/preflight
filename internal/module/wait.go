@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/bluecadet/preflight/internal/tasklog"
 )
 
 // WaitModule polls until a condition is met or a timeout expires.
@@ -52,6 +54,7 @@ func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 		return fmt.Errorf("wait: invalid timeout %q: %w", timeoutStr, err)
 	}
 
+	tasklog.Infof(ctx, "waiting for condition %q on %q (timeout %s)", condition, tgt, timeoutStr)
 	deadline := time.Now().Add(timeout)
 	for {
 		met, err := checkCondition(condition, tgt)
@@ -59,6 +62,7 @@ func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 			return err
 		}
 		if met {
+			tasklog.Infof(ctx, "condition %q satisfied on %q", condition, tgt)
 			return nil
 		}
 		if time.Now().After(deadline) {

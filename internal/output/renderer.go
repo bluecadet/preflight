@@ -12,6 +12,10 @@ type EventType string
 
 const (
 	EventPlayStart  EventType = "play_start"
+	EventPhaseStart EventType = "phase_start"
+	EventPhaseEnd   EventType = "phase_end"
+	EventTaskStart  EventType = "task_start"
+	EventTaskLog    EventType = "task_log"
 	EventTaskResult EventType = "task_result"
 	EventPlayEnd    EventType = "play_end"
 	EventError      EventType = "error"
@@ -19,13 +23,19 @@ const (
 
 // Event carries all data for a single renderer call.
 type Event struct {
-	Type     EventType
-	PlayName string // for play_start / play_end
-	TaskName string // for task_result
-	Target   string // hostname
-	Status   string // "ok", "changed", "failed", "skipped"
-	Message  string
-	Error    error
+	Type      EventType
+	PlayName  string // for play_start / play_end
+	Phase     string // for phase_start / phase_end
+	TaskID    string // for task_start / task_log / task_result
+	TaskName  string // for task_result
+	Target    string // hostname
+	Module    string // task module
+	Stream    string // stdout / stderr / info
+	Line      string // task log line
+	Status    string // "ok", "changed", "failed", "skipped"
+	Message   string
+	Error     error
+	TaskTotal int
 	// For play_end recap:
 	OKCount      int
 	ChangedCount int
@@ -68,15 +78,22 @@ func isTTY(w io.Writer) bool {
 
 // TextRenderer writes Ansible-style human-readable output.
 type TextRenderer struct {
-	w     io.Writer
-	color bool
+	w       io.Writer
+	color   bool
+	verbose bool
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
 func NewTextRenderer(w io.Writer) *TextRenderer {
+	return NewTextRendererWithOptions(w, Options{})
+}
+
+// NewTextRendererWithOptions creates a TextRenderer with explicit options.
+func NewTextRendererWithOptions(w io.Writer, options Options) *TextRenderer {
 	return &TextRenderer{
-		w:     w,
-		color: isTTY(w),
+		w:       w,
+		color:   isTTY(w),
+		verbose: options.Verbose,
 	}
 }
 
@@ -103,6 +120,50 @@ func (r *TextRenderer) Emit(event Event) {
 		line := fillLine(title, "*", lineWidth)
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		_, _ = fmt.Fprintln(r.w)
+
+	case EventPhaseStart:
+		if !r.verbose {
+			return
+		}
+		target := r.targetPrefix(event.Target)
+		_, _ = fmt.Fprintf(r.w, "%sPHASE [%s] starting\n", target, event.Phase)
+
+	case EventPhaseEnd:
+		if !r.verbose {
+			return
+		}
+		target := r.targetPrefix(event.Target)
+		status := event.Status
+		if status == "" {
+			status = "ok"
+		}
+		if event.TaskTotal > 0 {
+			_, _ = fmt.Fprintf(r.w, "%sPHASE [%s] %s (%d tasks)\n", target, event.Phase, status, event.TaskTotal)
+			return
+		}
+		_, _ = fmt.Fprintf(r.w, "%sPHASE [%s] %s\n", target, event.Phase, status)
+
+	case EventTaskStart:
+		if !r.verbose {
+			return
+		}
+		target := r.targetPrefix(event.Target)
+		if event.Module != "" {
+			_, _ = fmt.Fprintf(r.w, "%sSTART [%s] (%s)\n", target, event.TaskName, event.Module)
+			return
+		}
+		_, _ = fmt.Fprintf(r.w, "%sSTART [%s]\n", target, event.TaskName)
+
+	case EventTaskLog:
+		if !r.verbose {
+			return
+		}
+		target := r.targetPrefix(event.Target)
+		stream := event.Stream
+		if stream == "" {
+			stream = "log"
+		}
+		_, _ = fmt.Fprintf(r.w, "%s  [%s] %s\n", target, stream, event.Line)
 
 	case EventTaskResult:
 		label := fmt.Sprintf("TASK [%s]", event.TaskName)
@@ -138,6 +199,13 @@ func (r *TextRenderer) Emit(event Event) {
 		}
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
 	}
+}
+
+func (r *TextRenderer) targetPrefix(target string) string {
+	if target == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s | ", target)
 }
 
 func (r *TextRenderer) statusColored(status, message string) string {

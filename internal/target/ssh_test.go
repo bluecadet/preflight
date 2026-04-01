@@ -6,14 +6,24 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/bluecadet/preflight/internal/tasklog"
 )
 
 type fakeSSHRunner struct {
 	run func(context.Context, string, []byte) (string, string, int, error)
 }
 
+type taskLogSink struct {
+	entries []tasklog.Entry
+}
+
 func (f *fakeSSHRunner) Run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
 	return f.run(ctx, command, stdin)
+}
+
+func (s *taskLogSink) EmitTaskLog(entry tasklog.Entry) {
+	s.entries = append(s.entries, entry)
 }
 
 func TestSSHTarget_ExecuteShell(t *testing.T) {
@@ -94,5 +104,41 @@ func TestSSHTarget_CopyReadReachableAndInfo(t *testing.T) {
 	}
 	if len(commands) < 4 {
 		t.Fatalf("expected several SSH commands, got %d", len(commands))
+	}
+}
+
+func TestSSHTarget_ExecuteEmitsBufferedTaskLogs(t *testing.T) {
+	logs := &taskLogSink{}
+	ctx := tasklog.WithTask(context.Background(), logs, tasklog.Entry{
+		Target:   "host",
+		TaskID:   "task-1",
+		TaskName: "shell",
+		Module:   "shell",
+	})
+
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"})
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+			if !strings.Contains(command, `"echo" "hello"`) {
+				t.Fatalf("unexpected command %q", command)
+			}
+			return "hello\n", "warn\n", 0, nil
+		},
+	}
+
+	if _, err := tgt.Execute(ctx, "task-1", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, false); err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if len(logs.entries) != 2 {
+		t.Fatalf("expected 2 buffered SSH logs, got %d", len(logs.entries))
+	}
+	if logs.entries[0].Stream != "stdout" || logs.entries[0].Line != "hello" {
+		t.Fatalf("unexpected first log entry: %#v", logs.entries[0])
+	}
+	if logs.entries[1].Stream != "stderr" || logs.entries[1].Line != "warn" {
+		t.Fatalf("unexpected second log entry: %#v", logs.entries[1])
 	}
 }

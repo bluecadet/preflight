@@ -10,7 +10,12 @@ import (
 )
 
 var powershellCombinedOutput = func(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	stdout, stderr, err := runCommandStreaming(ctx, cmd)
+	if err != nil {
+		return []byte(joinCommandOutput(stdout, stderr)), err
+	}
+	return []byte(joinCommandOutput(stdout, stderr)), nil
 }
 
 func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {

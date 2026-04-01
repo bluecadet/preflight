@@ -7,7 +7,16 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/tasklog"
 )
+
+type logSink struct {
+	entries []tasklog.Entry
+}
+
+func (s *logSink) EmitTaskLog(entry tasklog.Entry) {
+	s.entries = append(s.entries, entry)
+}
 
 func TestRegistry_NotEmpty(t *testing.T) {
 	reg := module.Registry()
@@ -139,5 +148,33 @@ func TestShellModule_Apply(t *testing.T) {
 	}
 	if _, err := os.Stat(out); os.IsNotExist(err) {
 		t.Error("expected file to be created by shell apply")
+	}
+}
+
+func TestShellModule_ApplyStreamsTaskLogs(t *testing.T) {
+	reg := module.Registry()
+	m := reg["shell"]
+	sink := &logSink{}
+	ctx := tasklog.WithTask(context.Background(), sink, tasklog.Entry{
+		TaskID:   "task-1",
+		TaskName: "stream logs",
+		Module:   "shell",
+	})
+
+	err := m.Apply(ctx, map[string]any{
+		"cmd":  "sh",
+		"args": []any{"-c", "printf 'hello\\n'; printf 'oops\\n' >&2"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(sink.entries) != 2 {
+		t.Fatalf("expected 2 streamed log entries, got %d", len(sink.entries))
+	}
+	if sink.entries[0].Stream != "stdout" || sink.entries[0].Line != "hello" {
+		t.Fatalf("unexpected stdout log entry: %#v", sink.entries[0])
+	}
+	if sink.entries[1].Stream != "stderr" || sink.entries[1].Line != "oops" {
+		t.Fatalf("unexpected stderr log entry: %#v", sink.entries[1])
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bluecadet/preflight/internal/tasklog"
 	"github.com/bluecadet/preflight/internal/winutil"
 	"github.com/masterzen/winrm"
 )
@@ -186,6 +187,8 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) 
 		return "", err
 	}
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
+	tasklog.EmitLines(ctx, "stdout", stdout)
+	tasklog.EmitLines(ctx, "stderr", stderr)
 	if err != nil {
 		return "", fmt.Errorf("winrm powershell failed: %w", err)
 	}
@@ -201,6 +204,8 @@ func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error
 		return "", err
 	}
 	stdout, stderr, code, err := client.RunCmdWithContext(ctx, command)
+	tasklog.EmitLines(ctx, "stdout", stdout)
+	tasklog.EmitLines(ctx, "stderr", stderr)
 	if err != nil {
 		return "", fmt.Errorf("winrm command failed: %w", err)
 	}

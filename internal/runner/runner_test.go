@@ -434,6 +434,48 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	}
 }
 
+func TestApplyEmitsLifecycleEventsInOrder(t *testing.T) {
+	mt := &mockTarget{
+		results: []target.Result{{Status: target.StatusOK}},
+	}
+	rec := &recordingRenderer{}
+	r := New(mt, emptyResolver(), Config{Renderer: rec})
+
+	pb := newShellPlaybook("lifecycle-test")
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+
+	var got []output.EventType
+	for _, event := range rec.events {
+		got = append(got, event.Type)
+	}
+
+	want := []output.EventType{
+		output.EventPhaseStart,
+		output.EventPhaseEnd,
+		output.EventTaskStart,
+		output.EventTaskResult,
+		output.EventPlayEnd,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d events, got %d: %#v", len(want), len(got), got)
+	}
+	for i, eventType := range want {
+		if got[i] != eventType {
+			t.Fatalf("event %d: expected %q, got %q", i, eventType, got[i])
+		}
+	}
+	if rec.events[2].TaskTotal != 1 {
+		t.Fatalf("expected task_start to include TaskTotal=1, got %d", rec.events[2].TaskTotal)
+	}
+}
+
 func TestApplyDryRun(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusChanged}},

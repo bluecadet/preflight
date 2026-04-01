@@ -19,6 +19,7 @@ import (
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/tasklog"
 	"github.com/bluecadet/preflight/internal/template"
 )
 
@@ -432,10 +433,13 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	}
 
 	ordered := dag.TopologicalOrder()
+	r.emitPhaseStart("gather-context")
 	execCtx, err := r.buildExecutionContext(ctx)
 	if err != nil {
+		r.emitPhaseEnd("gather-context", "failed", 0)
 		return err
 	}
+	r.emitPhaseEnd("gather-context", "ok", 0)
 
 	state := &State{
 		Tasks: make(map[string]TaskSnapshot),
@@ -479,10 +483,16 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			return err
 		}
 
+		taskName, err := renderTaskName(pt, execCtx)
+		if err != nil {
+			return fmt.Errorf("apply: task %q: render name: %w", pt.Name, err)
+		}
+		r.emitTaskStart(pt, taskName, len(ordered))
+
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
-			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "tag-filtered", nil))
+			r.emitTaskResult(pt, taskName, target.StatusSkipped, "tag-filtered")
+			state.RecordTask(newTaskSnapshot(pt, taskName, pt.Params, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -498,8 +508,8 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 		if depFailed && !pt.IgnoreErrors {
-			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "dependency-failed", dag))
+			r.emitTaskResult(pt, taskName, target.StatusSkipped, "dependency-failed")
+			state.RecordTask(newTaskSnapshot(pt, taskName, pt.Params, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -512,8 +522,8 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 			}
 			if !ok {
-				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false")
-				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "when-condition-false", dag))
+				r.emitTaskResult(pt, taskName, target.StatusSkipped, "when-condition-false")
+				state.RecordTask(newTaskSnapshot(pt, taskName, pt.Params, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
 				succeeded[pt.ID] = false
 				continue
@@ -532,10 +542,16 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 
 		// Execute the task against the target.
-		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, r.config.DryRun)
+		execTaskCtx := tasklog.WithTask(ctx, r.taskLogSink(), tasklog.Entry{
+			Target:   r.targetName(),
+			TaskID:   pt.ID,
+			TaskName: taskName,
+			Module:   pt.Module,
+		})
+		result, execErr := r.target.Execute(execTaskCtx, pt.ID, pt.Module, params, r.config.DryRun)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
-				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
+				r.emitTaskResult(pt, taskName, target.StatusFailed, execErr.Error())
 				state.RecordTask(newTaskSnapshot(pt, taskName, params, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
@@ -551,7 +567,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		state.RecordTask(newTaskSnapshot(pt, taskName, params, result.Status, result.Message, dag))
 
-		r.emitTaskResult(pt, result.Status, result.Message)
+		r.emitTaskResult(pt, taskName, result.Status, result.Message)
 
 		switch result.Status {
 		case target.StatusOK:
@@ -603,17 +619,84 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	return true
 }
 
+// emitTaskStart emits a task_start event to the renderer.
+func (r *Runner) emitTaskStart(pt *PlanTask, taskName string, taskTotal int) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.Event{
+		Type:      output.EventTaskStart,
+		TaskID:    pt.ID,
+		TaskName:  taskName,
+		Target:    r.targetName(),
+		Module:    pt.Module,
+		TaskTotal: taskTotal,
+	})
+}
+
 // emitTaskResult emits a task_result event to the renderer.
-func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message string) {
+func (r *Runner) emitTaskResult(pt *PlanTask, taskName string, status target.Status, message string) {
 	if r.config.Renderer == nil {
 		return
 	}
 	r.config.Renderer.Emit(output.Event{
 		Type:     output.EventTaskResult,
-		TaskName: pt.Name,
+		TaskID:   pt.ID,
+		TaskName: taskName,
 		Target:   r.targetName(),
+		Module:   pt.Module,
 		Status:   string(status),
 		Message:  message,
+	})
+}
+
+func (r *Runner) emitPhaseStart(phase string) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.Event{
+		Type:   output.EventPhaseStart,
+		Target: r.targetName(),
+		Phase:  phase,
+	})
+}
+
+func (r *Runner) emitPhaseEnd(phase, status string, taskTotal int) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.Event{
+		Type:      output.EventPhaseEnd,
+		Target:    r.targetName(),
+		Phase:     phase,
+		Status:    status,
+		TaskTotal: taskTotal,
+	})
+}
+
+func (r *Runner) taskLogSink() tasklog.Sink {
+	if r.config.Renderer == nil {
+		return nil
+	}
+	return runnerTaskLogSink{renderer: r.config.Renderer}
+}
+
+type runnerTaskLogSink struct {
+	renderer output.Renderer
+}
+
+func (s runnerTaskLogSink) EmitTaskLog(entry tasklog.Entry) {
+	if s.renderer == nil {
+		return
+	}
+	s.renderer.Emit(output.Event{
+		Type:     output.EventTaskLog,
+		Target:   entry.Target,
+		TaskID:   entry.TaskID,
+		TaskName: entry.TaskName,
+		Module:   entry.Module,
+		Stream:   entry.Stream,
+		Line:     entry.Line,
 	})
 }
 
@@ -719,6 +802,20 @@ func renderTaskParams(task *PlanTask, execCtx *executionContext) (map[string]any
 	}
 
 	return params, name, nil
+}
+
+func renderTaskName(task *PlanTask, execCtx *executionContext) (string, error) {
+	name := task.Name
+	if task.Name == "" {
+		return name, nil
+	}
+
+	eng := template.New(task.TemplateVars).
+		WithTarget(execCtx.target).
+		WithFacts(execCtx.facts).
+		WithEnv(execCtx.env)
+
+	return eng.Render(task.Name)
 }
 
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {

@@ -72,7 +72,12 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.New(outFmt, os.Stdout))
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, output.Options{
+		Verbose:   verbose,
+		Input:     os.Stdin,
+		Interrupt: cancel,
+	}))
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
@@ -94,11 +99,31 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 
 	if phase != "plan" {
+		if renderer != nil {
+			renderer.Emit(output.Event{
+				Type:  output.EventPhaseStart,
+				Phase: "fetch",
+			})
+		}
 		// Fetch is target-agnostic: it only resolves action refs via the resolver
 		// chain and never calls any method on the target. A nil target is safe here.
 		fetchRunner := runner.New(nil, chain, runner.Config{})
 		if err := fetchRunner.Fetch(ctx, pb); err != nil {
+			if renderer != nil {
+				renderer.Emit(output.Event{
+					Type:   output.EventPhaseEnd,
+					Phase:  "fetch",
+					Status: "failed",
+				})
+			}
 			return err
+		}
+		if renderer != nil {
+			renderer.Emit(output.Event{
+				Type:   output.EventPhaseEnd,
+				Phase:  "fetch",
+				Status: "ok",
+			})
 		}
 	}
 	if phase == "fetch" {
@@ -137,12 +162,34 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 				PlayName: pb.Name,
 				Target:   host.Name,
 			})
+			renderer.Emit(output.Event{
+				Type:   output.EventPhaseStart,
+				Target: host.Name,
+				Phase:  "plan",
+			})
 		}
 
 		r := runner.New(host.Target, chain, cfg)
 		plan, err := r.Plan(runCtx, pb)
 		if err != nil {
+			if renderer != nil {
+				renderer.Emit(output.Event{
+					Type:   output.EventPhaseEnd,
+					Target: host.Name,
+					Phase:  "plan",
+					Status: "failed",
+				})
+			}
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
+		}
+		if renderer != nil {
+			renderer.Emit(output.Event{
+				Type:      output.EventPhaseEnd,
+				Target:    host.Name,
+				Phase:     "plan",
+				Status:    "ok",
+				TaskTotal: len(plan.Tasks),
+			})
 		}
 
 		if phase == "stage" {
@@ -167,7 +214,12 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	defer cancel()
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.New(outFmt, os.Stdout))
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, output.Options{
+		Verbose:   verbose,
+		Input:     os.Stdin,
+		Interrupt: cancel,
+	}))
 	defer renderer.Close()
 
 	extracted, err := bundle.Extract(bundlePath)
@@ -198,6 +250,13 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 
 	// TargetName is set from the bundle manifest so the state file and recap
 	// output correctly identify the original target, not the local machine.
+	if renderer != nil {
+		renderer.Emit(output.Event{
+			Type:     output.EventPlayStart,
+			PlayName: plan.PlaybookName,
+			Target:   extracted.Manifest.TargetName,
+		})
+	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,
 		Renderer:       renderer,

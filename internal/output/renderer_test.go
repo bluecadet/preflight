@@ -154,6 +154,46 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_VerboseTaskLog(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRendererWithOptions(&buf, Options{Verbose: true})
+
+	r.Emit(Event{
+		Type:   EventTaskLog,
+		Target: "host-a",
+		Stream: "stdout",
+		Line:   "hello from task",
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "[stdout] hello from task") {
+		t.Fatalf("expected verbose task log output, got %q", out)
+	}
+}
+
+func TestJSONRenderer_TaskLogRequiresVerbose(t *testing.T) {
+	var quiet bytes.Buffer
+	NewJSONRenderer(&quiet).Emit(Event{
+		Type:   EventTaskLog,
+		TaskID: "task-1",
+		Line:   "hidden",
+	})
+	if strings.TrimSpace(quiet.String()) != "" {
+		t.Fatalf("expected default JSON renderer to suppress task logs, got %q", quiet.String())
+	}
+
+	var verbose bytes.Buffer
+	NewJSONRendererWithOptions(&verbose, Options{Verbose: true}).Emit(Event{
+		Type:   EventTaskLog,
+		TaskID: "task-1",
+		Stream: "stdout",
+		Line:   "visible",
+	})
+	if !strings.Contains(verbose.String(), `"line":"visible"`) {
+		t.Fatalf("expected verbose JSON renderer to include task logs, got %q", verbose.String())
+	}
+}
+
 func TestFactory_New(t *testing.T) {
 	var buf bytes.Buffer
 	if _, ok := New(FormatText, &buf).(*TextRenderer); !ok {

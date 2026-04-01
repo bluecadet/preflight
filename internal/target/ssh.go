@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/bluecadet/preflight/internal/tasklog"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
@@ -189,7 +190,10 @@ func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (stri
 	if err != nil {
 		return "", "", 0, err
 	}
-	return runner.Run(ctx, command, stdin)
+	stdout, stderr, code, err := runner.Run(ctx, command, stdin)
+	tasklog.EmitLines(ctx, "stdout", stdout)
+	tasklog.EmitLines(ctx, "stderr", stderr)
+	return stdout, stderr, code, err
 }
 
 func (t *SSHTarget) checkModule(ctx context.Context, module string, params map[string]any) (bool, error) {
