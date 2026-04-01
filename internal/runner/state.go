@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -206,6 +205,7 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		}
 		rendered := renderedTasks[idx]
 		params := rendered.params
+		stateSource := rendered.params
 		if resolver != nil && resolver.HasProviders() {
 			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
@@ -222,14 +222,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		}
 		slices.Sort(dependsOn)
 
-		paramHash := ParamHash(params)
+		paramHash := StateParamHash(stateSource, params)
 		tasks = append(tasks, PlannedTaskState{
 			TaskKey:      task.ID,
 			TaskName:     rendered.name,
 			Module:       task.Module,
 			DependsOn:    dependsOn,
 			ParamHash:    paramHash,
-			ParamSummary: SummarizeParams(params),
+			ParamSummary: StateParamSummary(stateSource, params),
 			TaskHash: hashValue(map[string]any{
 				"task_key":   task.ID,
 				"task_name":  rendered.name,
@@ -312,66 +312,7 @@ func ComparePlannedTasks(planned []PlannedTaskState, state *State) []TaskCompari
 // SummarizeParams produces a redacted, JSON-friendly summary of parameters for
 // state diff output.
 func SummarizeParams(params map[string]any) any {
-	if params == nil {
-		return nil
-	}
-	return summarizeValue("", params)
-}
-
-func summarizeValue(key string, value any) any {
-	if secretishKey(key) {
-		return secrets.RedactString("")
-	}
-
-	switch t := value.(type) {
-	case string:
-		if secrets.IsRef(t) {
-			return secrets.RedactString(t)
-		}
-		return t
-	case map[string]any:
-		out := make(map[string]any, len(t))
-		for childKey, childValue := range t {
-			out[childKey] = summarizeValue(childKey, childValue)
-		}
-		return out
-	case []any:
-		out := make([]any, len(t))
-		for i, item := range t {
-			out[i] = summarizeValue(key, item)
-		}
-		return out
-	default:
-		return t
-	}
-}
-
-func containsSecretValue(value any) bool {
-	switch t := value.(type) {
-	case string:
-		return secrets.IsRef(t)
-	case map[string]any:
-		for key, child := range t {
-			if secretishKey(key) || containsSecretValue(child) {
-				return true
-			}
-		}
-	case []any:
-		if slices.ContainsFunc(t, containsSecretValue) {
-			return true
-		}
-	}
-	return false
-}
-
-func secretishKey(key string) bool {
-	lower := strings.ToLower(key)
-	for _, token := range []string{"password", "secret", "token", "private_key", "credential", "_from"} {
-		if strings.Contains(lower, token) {
-			return true
-		}
-	}
-	return false
+	return NormalizeParamsForState(params, params)
 }
 
 func hashValue(v any) string {

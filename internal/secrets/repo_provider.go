@@ -103,24 +103,7 @@ func (p *RepoProvider) absPath(path string) string {
 }
 
 func (p *RepoProvider) loadIdentities() ([]age.Identity, error) {
-	if p.cfg.Identity == "" {
-		return nil, fmt.Errorf("no secrets.identity configured in preflight.yml")
-	}
-	f, err := os.Open(p.absPath(p.cfg.Identity))
-	if err != nil {
-		return nil, fmt.Errorf("open identity file: %w", err)
-	}
-	defer func() {
-		_ = f.Close()
-	}()
-	identities, err := age.ParseIdentities(f)
-	if err != nil {
-		return nil, fmt.Errorf("parse identity file: %w", err)
-	}
-	if len(identities) == 0 {
-		return nil, fmt.Errorf("identity file did not contain any age identities")
-	}
-	return identities, nil
+	return loadAgeIdentities(p.absPath(p.cfg.Identity))
 }
 
 func (p *RepoProvider) loadRecipients() ([]age.Recipient, error) {
@@ -136,4 +119,25 @@ func (p *RepoProvider) loadRecipients() ([]age.Recipient, error) {
 		recipients = append(recipients, recipient)
 	}
 	return recipients, nil
+}
+
+func loadAgeIdentities(path string) ([]age.Identity, error) {
+	if path == "" {
+		return nil, fmt.Errorf("no secrets.identity configured in preflight.yml")
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("open identity file: %w", err)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	identities, err := age.ParseIdentities(f)
+	if err != nil {
+		return nil, fmt.Errorf("parse identity file: %w", err)
+	}
+	if len(identities) == 0 {
+		return nil, fmt.Errorf("identity file did not contain any age identities")
+	}
+	return identities, nil
 }

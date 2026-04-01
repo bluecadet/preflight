@@ -11,6 +11,7 @@ import (
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
+	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
@@ -25,6 +26,8 @@ var applyCmd = &cobra.Command{
 func init() {
 	applyCmd.Flags().String("bundle", "", "apply from a staged bundle zip")
 	applyCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")
+	applyCmd.Flags().String("secret-identity", "", "path to an age identity file used to decrypt bundled encrypted secrets")
+	applyCmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "allow staging bundles that contain plaintext secrets")
 	rootCmd.AddCommand(applyCmd)
 }
 
@@ -35,6 +38,14 @@ func runApply(cmd *cobra.Command, args []string) error {
 // runPlaybook is the shared implementation for apply and check.
 func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	bundlePath, _ := cmd.Flags().GetString("bundle")
+	secretIdentity, _ := cmd.Flags().GetString("secret-identity")
+	allowPlaintextSecrets, _ := cmd.Flags().GetBool("allow-plaintext-secrets-in-bundle")
+	if secretIdentity != "" && bundlePath == "" {
+		return fmt.Errorf("apply: --secret-identity requires --bundle")
+	}
+	if allowPlaintextSecrets && bundlePath != "" {
+		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle is only valid when staging a playbook")
+	}
 	if bundlePath != "" {
 		if len(args) > 0 {
 			return fmt.Errorf("apply: playbook path and --bundle cannot be used together")
@@ -64,6 +75,9 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	phase, _ := cmd.Flags().GetString("phase")
+	if allowPlaintextSecrets && phase != "stage" {
+		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage phase")
+	}
 
 	// --check flag overrides the dryRun argument.
 	checkFlag, _ := cmd.Flags().GetBool("check")
@@ -120,11 +134,13 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			Phase:            phase,
 			Renderer:         renderer,
 			Secrets:          secretsResolver,
+			SecretsConfig:    projectCfg.Secrets,
 			StatePath:        host.StatePath,
 			ModuleRegistry:   registry,
 			BundleOutputDir:  bundleOutputDir(cmd, projectDir),
 			BundleBinaryPath: currentBinaryPath(),
 			BundlePlugins:    loadedPlugins,
+			AllowPlaintextSecretsInBundle: allowPlaintextSecrets,
 			Lockfile:         lockfile,
 			Version:          buildVersion,
 			Commit:           buildCommit,
@@ -197,12 +213,31 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	if checkFlag {
 		dryRun = true
 	}
+	secretIdentity, _ := cmd.Flags().GetString("secret-identity")
+	secretResolver, err := buildBundleSecretsResolver(extracted, secretIdentity)
+	if err != nil {
+		return fmt.Errorf("apply bundle: %w", err)
+	}
 
 	// TargetName is set from the bundle manifest so the state file and recap
 	// output correctly identify the original target, not the local machine.
+	if extracted.Manifest.SecretMode == bundle.SecretModePlaintext && renderer != nil {
+		renderer.Emit(output.Event{
+			Type:    output.EventWarning,
+			Message: "bundle contains plaintext secrets",
+		})
+	}
+	if renderer != nil {
+		renderer.Emit(output.Event{
+			Type:     output.EventPlayStart,
+			PlayName: plan.PlaybookName,
+			Target:   extracted.Manifest.TargetName,
+		})
+	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,
 		Renderer:       renderer,
+		Secrets:        secretResolver,
 		StatePath:      stateFilePath(cmd),
 		TargetName:     extracted.Manifest.TargetName,
 		ModuleRegistry: registry,
@@ -211,4 +246,32 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 		BuildDate:      extracted.Manifest.Build.Date,
 	})
 	return r.Apply(ctx, &plan)
+}
+
+func buildBundleSecretsResolver(extracted *bundle.ExtractedBundle, identityPath string) (*secrets.Resolver, error) {
+	if extracted == nil || extracted.Manifest == nil {
+		return secrets.NewResolver(nil), nil
+	}
+	if extracted.Manifest.SecretMode != bundle.SecretModeEncrypted && extracted.Manifest.SecretMode != bundle.SecretModePlaintext {
+		return secrets.NewResolver(nil), nil
+	}
+	if len(extracted.Manifest.SecretEntries) == 0 {
+		return secrets.NewResolver(nil), nil
+	}
+	if extracted.Manifest.SecretMode == bundle.SecretModeEncrypted && identityPath == "" {
+		return nil, fmt.Errorf("--secret-identity is required for encrypted bundle secrets")
+	}
+	entries := make(map[string]string, len(extracted.Manifest.SecretEntries))
+	for _, entry := range extracted.Manifest.SecretEntries {
+		entries[entry.Name] = entry.Path
+	}
+	provider := secrets.NewBundleProvider(
+		extracted.RootDir,
+		extracted.Manifest.SecretMode == bundle.SecretModeEncrypted,
+		identityPath,
+		entries,
+	)
+	return secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: provider,
+	}), nil
 }
