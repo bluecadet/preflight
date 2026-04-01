@@ -51,7 +51,30 @@ func getOutputFormat(cmd *cobra.Command) output.Format {
 	case output.FormatTUI:
 		return output.FormatTUI
 	default:
+		if !shouldAutoUseTUI(cmd.CommandPath()) {
+			return output.FormatText
+		}
 		return output.AutoDetect(os.Stdout)
+	}
+}
+
+func shouldAutoUseTUI(commandPath string) bool {
+	switch strings.TrimSpace(commandPath) {
+	case "preflight apply",
+		"preflight check",
+		"preflight stage",
+		"preflight plan",
+		"preflight diff",
+		"preflight state diff",
+		"preflight inventory list",
+		"preflight action list",
+		"preflight action info",
+		"preflight plugin list",
+		"preflight plugin info",
+		"preflight secret list":
+		return true
+	default:
+		return false
 	}
 }
 

@@ -524,7 +524,7 @@ func (m tuiModel) View() string {
 	if tabs != "" {
 		parts = append(parts, tabs)
 	}
-	parts = append(parts, m.viewport.View())
+	parts = append(parts, strings.TrimRight(m.viewport.View(), "\n"))
 	if footer != "" {
 		parts = append(parts, footer)
 	}

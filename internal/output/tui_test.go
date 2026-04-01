@@ -241,3 +241,17 @@ func TestStaticScreenModel_ViewRespectsWindowHeight(t *testing.T) {
 		t.Fatalf("expected static rendered view height <= %d, got %d\n%s", model.height, lipgloss.Height(rendered), rendered)
 	}
 }
+
+func TestTUIModel_ViewTrimsViewportPadding(t *testing.T) {
+	model := newTUIModel(make(chan Event, 1), Options{})
+	model.width = 60
+	model.height = 12
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "play", Target: "host-a"})
+	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskName: "short task", Module: "shell"})
+	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskName: "short task", Status: "ok"})
+
+	rendered := model.View()
+	if strings.HasSuffix(rendered, "\n\n") {
+		t.Fatalf("expected view to avoid extra bottom blank lines, got %q", rendered)
+	}
+}
