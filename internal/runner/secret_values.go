@@ -120,7 +120,7 @@ func normalizeStateValue(key string, source, resolved any) any {
 		}
 		out := make([]any, len(resolvedSlice))
 		for i, item := range resolvedSlice {
-			var childSource any = item
+			childSource := item
 			if i < len(src) {
 				childSource = src[i]
 			}
