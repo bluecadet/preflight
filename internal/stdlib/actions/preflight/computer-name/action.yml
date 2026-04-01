@@ -1,0 +1,26 @@
+name: preflight/computer-name
+version: "1.0.0"
+description: Configure the Windows computer name
+author: preflight
+
+inputs:
+  name:
+    type: string
+    required: false
+    description: Desired Windows computer name
+
+tasks:
+  - name: Set Windows computer name
+    powershell:
+      check_script: |
+        $name = '{{ vars.name }}'
+        if ([string]::IsNullOrWhiteSpace($name)) {
+          return $false
+        }
+        return ($env:COMPUTERNAME -ine $name)
+      script: |
+        $name = '{{ vars.name }}'
+        if ([string]::IsNullOrWhiteSpace($name)) {
+          exit 0
+        }
+        Rename-Computer -NewName $name -Force

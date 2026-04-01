@@ -1,0 +1,154 @@
+name: preflight/windows-power
+version: "1.0.0"
+description: Configure Windows power plans and optional reboot scheduling
+author: preflight
+
+inputs:
+  scope_bias:
+    type: string
+    default: machine
+    description: Apply user-scoped settings for the current user or bias toward machine baselines
+  plan_name:
+    type: string
+    default: Preflight Exhibit
+    description: Friendly name for the managed power plan
+  plan_base:
+    type: string
+    default: balanced
+    description: Base power plan alias or GUID to clone
+  activate_plan:
+    type: bool
+    default: true
+    description: Activate the managed plan after applying it
+  display_timeout_ac:
+    type: int
+    default: 0
+    description: Display idle timeout on AC power in minutes
+  display_timeout_dc:
+    type: int
+    default: 0
+    description: Display idle timeout on DC power in minutes
+  sleep_timeout_ac:
+    type: int
+    default: 0
+    description: Sleep idle timeout on AC power in minutes
+  sleep_timeout_dc:
+    type: int
+    default: 0
+    description: Sleep idle timeout on DC power in minutes
+  disable_screensaver:
+    type: bool
+    default: true
+    description: Disable the Windows screen saver
+  scheduled_reboot_state:
+    type: string
+    default: absent
+    description: Whether a scheduled reboot task should be present or absent
+  scheduled_reboot_time:
+    type: string
+    default: "03:00"
+    description: Daily time for the scheduled reboot task
+  scheduled_reboot_name:
+    type: string
+    default: Preflight Scheduled Reboot
+    description: Scheduled task name for the reboot task
+
+tasks:
+  - name: Configure power plan
+    power_plan:
+      name: "{{ vars.plan_name }}"
+      base: "{{ vars.plan_base }}"
+      activate: "{{ vars.activate_plan }}"
+      settings:
+        - subgroup: SUB_VIDEO
+          setting: VIDEOIDLE
+          ac_value: "{{ vars.display_timeout_ac }}"
+          dc_value: "{{ vars.display_timeout_dc }}"
+        - subgroup: SUB_SLEEP
+          setting: STANDBYIDLE
+          ac_value: "{{ vars.sleep_timeout_ac }}"
+          dc_value: "{{ vars.sleep_timeout_dc }}"
+      ensure: present
+
+  - name: Configure screen saver
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
+        $scopeBias = '{{ vars.scope_bias }}'
+        function Test-Target([string]$root) {
+          $desktopPath = Join-Path $root 'Control Panel\Desktop'
+          $prop = Get-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -ErrorAction SilentlyContinue
+          if ($disable) {
+            return ($null -eq $prop -or [string]$prop.ScreenSaveActive -ne '0')
+          }
+          return ($null -ne $prop -and [string]$prop.ScreenSaveActive -eq '0')
+        }
+        $needs = Test-Target 'HKCU:'
+        if (-not $needs -and $scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              $needs = Test-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+        return $needs
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
+        $scopeBias = '{{ vars.scope_bias }}'
+        function Set-Target([string]$root) {
+          $desktopPath = Join-Path $root 'Control Panel\Desktop'
+          New-Item -Path $desktopPath -Force | Out-Null
+          if ($disable) {
+            New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '0' -PropertyType String -Force | Out-Null
+            Remove-ItemProperty -LiteralPath $desktopPath -Name SCRNSAVE.EXE -Force -ErrorAction SilentlyContinue
+          } else {
+            New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '1' -PropertyType String -Force | Out-Null
+          }
+        }
+        Set-Target 'HKCU:'
+        if ($disable) {
+          Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
+        }
+        if ($scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              Set-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+
+  - name: Configure scheduled reboot task
+    scheduled_task:
+      path: Preflight
+      name: "{{ vars.scheduled_reboot_name }}"
+      execute: C:\Windows\System32\shutdown.exe
+      arguments: /r /f /t 30
+      working_dir: C:\Windows\System32
+      trigger: daily
+      start_at: "{{ vars.scheduled_reboot_time }}"
+      run_as: SYSTEM
+      run_level: highest
+      enabled: true
+      ensure: "{{ vars.scheduled_reboot_state }}"

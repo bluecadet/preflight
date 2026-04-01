@@ -3,6 +3,7 @@ package stdlib_test
 import (
 	"testing"
 
+	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
@@ -17,7 +18,18 @@ func TestEmbeddedActions(t *testing.T) {
 }
 
 func TestAllStdlibActions(t *testing.T) {
-	for _, name := range []string{"autologin"} {
+	for _, name := range []string{
+		"autologin",
+		"computer-name",
+		"timezone",
+		"windows-apps",
+		"windows-input",
+		"windows-machine",
+		"windows-power",
+		"windows-quiet-mode",
+		"windows-shell",
+		"windows-update-lockdown",
+	} {
 		path := "actions/preflight/" + name + "/action.yml"
 		data, err := stdlib.FS.ReadFile(path)
 		if err != nil {
@@ -26,6 +38,10 @@ func TestAllStdlibActions(t *testing.T) {
 		}
 		if len(data) == 0 {
 			t.Errorf("empty action file: %s", path)
+			continue
+		}
+		if _, err := action.ParseAction(data); err != nil {
+			t.Errorf("invalid stdlib action %s: %v", name, err)
 		}
 	}
 }

@@ -1,0 +1,77 @@
+name: preflight/windows-update-lockdown
+version: "1.0.0"
+description: Reduce Windows Update and Store-driven background changes
+author: preflight
+
+inputs:
+  disable_windows_update:
+    type: bool
+    default: true
+    description: Turn off automatic Windows Update policy checks
+  disable_windows_update_service:
+    type: bool
+    default: true
+    description: Stop and disable the Windows Update service
+  disable_store_auto_download:
+    type: bool
+    default: true
+    description: Turn off automatic Store app update downloads
+
+tasks:
+  - name: Configure Windows Update policy
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+        $prop = Get-ItemProperty -LiteralPath $path -Name NoAutoUpdate -ErrorAction SilentlyContinue
+        if ($disable) {
+          return ($null -eq $prop -or [int]$prop.NoAutoUpdate -ne 1)
+        }
+        return ($null -ne $prop)
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU'
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name NoAutoUpdate -Value 1 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name NoAutoUpdate -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure Windows Update service
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update_service }}')
+        $service = Get-CimInstance Win32_Service -Filter "Name='wuauserv'"
+        if ($disable) {
+          return ($service.StartMode -ne 'Disabled' -or $service.State -ne 'Stopped')
+        }
+        return ($service.StartMode -eq 'Disabled')
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update_service }}')
+        if ($disable) {
+          Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
+          Set-Service -Name wuauserv -StartupType Disabled
+        } else {
+          Set-Service -Name wuauserv -StartupType Manual
+        }
+
+  - name: Configure Store automatic downloads
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_store_auto_download }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore'
+        $prop = Get-ItemProperty -LiteralPath $path -Name AutoDownload -ErrorAction SilentlyContinue
+        if ($disable) {
+          return ($null -eq $prop -or [int]$prop.AutoDownload -ne 2)
+        }
+        return ($null -ne $prop)
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_store_auto_download }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore'
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name AutoDownload -Value 2 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name AutoDownload -Force -ErrorAction SilentlyContinue
+        }

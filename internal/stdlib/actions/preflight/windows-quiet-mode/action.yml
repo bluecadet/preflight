@@ -1,0 +1,138 @@
+name: preflight/windows-quiet-mode
+version: "1.0.0"
+description: Reduce notifications, prompts, and Windows recovery UI noise
+author: preflight
+
+inputs:
+  scope_bias:
+    type: string
+    default: machine
+    description: Apply user-scoped settings for the current user or bias toward machine baselines
+  disable_notifications:
+    type: bool
+    default: true
+    description: Turn off toast and cloud notifications
+  disable_error_reporting:
+    type: bool
+    default: true
+    description: Disable Windows Error Reporting UI and submission
+  disable_windows_setup_prompt:
+    type: bool
+    default: true
+    description: Turn off Windows consumer and cloud-optimized prompt content
+  disable_app_restore_on_boot:
+    type: bool
+    default: true
+    description: Disable automatic restart sign-on after Windows Update restarts
+
+tasks:
+  - name: Configure notification policy
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_notifications }}')
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' }
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($disable) {
+          return (
+            $null -eq $props -or
+            [int]$props.NoToastApplicationNotification -ne 1 -or
+            [int]$props.NoCloudApplicationNotification -ne 1
+          )
+        }
+        return ($null -ne $props -and ($null -ne $props.NoToastApplicationNotification -or $null -ne $props.NoCloudApplicationNotification))
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_notifications }}')
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' }
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name NoToastApplicationNotification -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name NoCloudApplicationNotification -Value 1 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name NoToastApplicationNotification -Force -ErrorAction SilentlyContinue
+          Remove-ItemProperty -LiteralPath $path -Name NoCloudApplicationNotification -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure Windows Error Reporting
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_error_reporting }}')
+        $werPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting'
+        $pcHealthPath = 'HKLM:\SOFTWARE\Policies\Microsoft\PCHealth\ErrorReporting'
+        $wer = Get-ItemProperty -LiteralPath $werPath -ErrorAction SilentlyContinue
+        $pcHealth = Get-ItemProperty -LiteralPath $pcHealthPath -ErrorAction SilentlyContinue
+        if ($disable) {
+          return (
+            $null -eq $wer -or
+            [int]$wer.Disabled -ne 1 -or
+            [int]$wer.DontShowUI -ne 1 -or
+            $null -eq $pcHealth -or
+            [int]$pcHealth.ShowUI -ne 0
+          )
+        }
+        return (
+          ($null -ne $wer -and ($null -ne $wer.Disabled -or $null -ne $wer.DontShowUI)) -or
+          ($null -ne $pcHealth -and $null -ne $pcHealth.ShowUI)
+        )
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_error_reporting }}')
+        $werPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting'
+        $pcHealthPath = 'HKLM:\SOFTWARE\Policies\Microsoft\PCHealth\ErrorReporting'
+        New-Item -Path $werPath -Force | Out-Null
+        New-Item -Path $pcHealthPath -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $werPath -Name Disabled -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $werPath -Name DontShowUI -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $pcHealthPath -Name ShowUI -Value 0 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $werPath -Name Disabled -Force -ErrorAction SilentlyContinue
+          Remove-ItemProperty -LiteralPath $werPath -Name DontShowUI -Force -ErrorAction SilentlyContinue
+          Remove-ItemProperty -LiteralPath $pcHealthPath -Name ShowUI -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure Windows experience prompts
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_setup_prompt }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent'
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($disable) {
+          return (
+            $null -eq $props -or
+            [int]$props.DisableWindowsConsumerFeatures -ne 1 -or
+            [int]$props.DisableCloudOptimizedContent -ne 1
+          )
+        }
+        return ($null -ne $props -and ($null -ne $props.DisableWindowsConsumerFeatures -or $null -ne $props.DisableCloudOptimizedContent))
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_setup_prompt }}')
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CloudContent'
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name DisableWindowsConsumerFeatures -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name DisableCloudOptimizedContent -Value 1 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name DisableWindowsConsumerFeatures -Force -ErrorAction SilentlyContinue
+          Remove-ItemProperty -LiteralPath $path -Name DisableCloudOptimizedContent -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure automatic restart sign-on
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_app_restore_on_boot }}')
+        $path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        $prop = Get-ItemProperty -LiteralPath $path -Name DisableAutomaticRestartSignOn -ErrorAction SilentlyContinue
+        if ($disable) {
+          return ($null -eq $prop -or [int]$prop.DisableAutomaticRestartSignOn -ne 1)
+        }
+        return ($null -ne $prop)
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_app_restore_on_boot }}')
+        $path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name DisableAutomaticRestartSignOn -Value 1 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name DisableAutomaticRestartSignOn -Force -ErrorAction SilentlyContinue
+        }

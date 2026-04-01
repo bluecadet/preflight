@@ -1,0 +1,26 @@
+name: preflight/timezone
+version: "1.0.0"
+description: Configure the Windows time zone
+author: preflight
+
+inputs:
+  timezone:
+    type: string
+    required: false
+    description: Windows time zone ID, such as Eastern Standard Time
+
+tasks:
+  - name: Set Windows time zone
+    powershell:
+      check_script: |
+        $timezone = '{{ vars.timezone }}'
+        if ([string]::IsNullOrWhiteSpace($timezone)) {
+          return $false
+        }
+        return ((Get-TimeZone).Id -ne $timezone)
+      script: |
+        $timezone = '{{ vars.timezone }}'
+        if ([string]::IsNullOrWhiteSpace($timezone)) {
+          exit 0
+        }
+        Set-TimeZone -Id $timezone

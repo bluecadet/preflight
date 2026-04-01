@@ -1,0 +1,163 @@
+name: preflight/windows-input
+version: "1.0.0"
+description: Configure Windows touch, gesture, and text-size input preferences
+author: preflight
+
+inputs:
+  scope_bias:
+    type: string
+    default: machine
+    description: Apply user-scoped settings for the current user or bias toward machine baselines
+  disable_edge_gestures:
+    type: bool
+    default: true
+    description: Disable screen-edge swipe gestures that invoke Windows UI
+  disable_touch_feedback:
+    type: bool
+    default: true
+    description: Disable touch contact visualization feedback
+  disable_touch_gestures:
+    type: bool
+    default: true
+    description: Disable gesture visualization feedback
+  text_scale_percent:
+    type: int
+    default: 100
+    description: Windows text size percentage
+
+tasks:
+  - name: Configure edge swipe policy
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' }
+        $prop = Get-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -ErrorAction SilentlyContinue
+        if ($disable) {
+          return ($null -eq $prop -or [int]$prop.AllowEdgeSwipe -ne 0)
+        }
+        return ($null -ne $prop)
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' }
+        New-Item -Path $path -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -Value 0 -PropertyType DWord -Force | Out-Null
+        } else {
+          Remove-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure text scale
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $desired = [int]'{{ vars.text_scale_percent }}'
+
+        function Test-Target([string]$root) {
+          $path = Join-Path $root 'Software\Microsoft\Accessibility'
+          $prop = Get-ItemProperty -LiteralPath $path -Name TextScaleFactor -ErrorAction SilentlyContinue
+          return ($null -eq $prop -or [int]$prop.TextScaleFactor -ne $desired)
+        }
+
+        $needs = Test-Target 'HKCU:'
+        if (-not $needs -and $scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              $needs = Test-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+        return $needs
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $desired = [int]'{{ vars.text_scale_percent }}'
+
+        function Set-Target([string]$root) {
+          $path = Join-Path $root 'Software\Microsoft\Accessibility'
+          New-Item -Path $path -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name TextScaleFactor -Value $desired -PropertyType DWord -Force | Out-Null
+        }
+
+        Set-Target 'HKCU:'
+        if ($scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              Set-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+
+  - name: Configure touch feedback visualization
+    powershell:
+      check_script: |
+        $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
+        $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
+        $desiredContact = [uint32]1
+        if ($disableTouchFeedback) {
+          $desiredContact = [uint32]0
+        }
+        $desiredGesture = [uint32]31
+        if ($disableTouchGestures) {
+          $desiredGesture = [uint32]0
+        }
+
+        Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public static class NativeMethods {
+          [DllImport("user32.dll", SetLastError=true)]
+          public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
+        }
+        "@
+
+        $contact = [uint32]0
+        $gesture = [uint32]0
+        [void][NativeMethods]::SystemParametersInfo(0x2018, 0, [ref]$contact, 0)
+        [void][NativeMethods]::SystemParametersInfo(0x201A, 0, [ref]$gesture, 0)
+        return ($contact -ne $desiredContact -or $gesture -ne $desiredGesture)
+      script: |
+        $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
+        $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
+        $desiredContact = [uint32]1
+        if ($disableTouchFeedback) {
+          $desiredContact = [uint32]0
+        }
+        $desiredGesture = [uint32]31
+        if ($disableTouchGestures) {
+          $desiredGesture = [uint32]0
+        }
+
+        Add-Type @"
+        using System;
+        using System.Runtime.InteropServices;
+        public static class NativeMethods {
+          [DllImport("user32.dll", SetLastError=true)]
+          public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
+        }
+        "@
+
+        [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
+        [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)

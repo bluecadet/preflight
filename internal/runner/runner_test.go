@@ -15,6 +15,7 @@ import (
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
+	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -212,6 +213,125 @@ func TestDAGCycleDetection(t *testing.T) {
 	_, err := BuildDAG([]*PlanTask{taskA, taskB})
 	if err == nil {
 		t.Fatal("expected cycle error, got nil")
+	}
+}
+
+func TestPlanStdlibWindowsMachineRendersLeafInputs(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	r := New(&mockTarget{}, resolver, Config{
+		ProjectVars: map[string]any{
+			"device_name": "Gallery-Kiosk-01",
+			"device_tz":   "Eastern Standard Time",
+		},
+	})
+	pb := &action.Playbook{
+		Name: "windows-machine",
+		Tasks: []action.Task{
+			{
+				Name: "machine baseline",
+				Uses: "preflight/windows-machine",
+				With: map[string]any{
+					"computer_name": "{{ vars.device_name }}",
+					"timezone":      "{{ vars.device_tz }}",
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 4 {
+		t.Fatalf("expected 4 expanded tasks, got %d", len(plan.Tasks))
+	}
+
+	previewName, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(computer name) returned error: %v", err)
+	}
+	checkScript, ok := previewName.Params["check_script"].(string)
+	if !ok {
+		t.Fatalf("expected check_script string, got %T", previewName.Params["check_script"])
+	}
+	if !strings.Contains(checkScript, "Gallery-Kiosk-01") {
+		t.Fatalf("expected rendered computer name in check script, got:\n%s", checkScript)
+	}
+
+	previewTZ, err := PreviewTask(plan.Tasks[1], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(timezone) returned error: %v", err)
+	}
+	tzScript, ok := previewTZ.Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected script string, got %T", previewTZ.Params["script"])
+	}
+	if !strings.Contains(tzScript, "Eastern Standard Time") {
+		t.Fatalf("expected rendered timezone in script, got:\n%s", tzScript)
+	}
+}
+
+func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	r := New(&mockTarget{}, resolver, Config{})
+	pb := &action.Playbook{
+		Name: "windows-power",
+		Tasks: []action.Task{
+			{
+				Name: "power baseline",
+				Uses: "preflight/windows-power",
+				With: map[string]any{
+					"plan_name":              "Exhibit Plan",
+					"display_timeout_ac":     5,
+					"display_timeout_dc":     7,
+					"sleep_timeout_ac":       0,
+					"sleep_timeout_dc":       10,
+					"scheduled_reboot_state": "present",
+					"scheduled_reboot_time":  "04:30",
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 3 {
+		t.Fatalf("expected 3 expanded tasks, got %d", len(plan.Tasks))
+	}
+
+	previewPlan, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(power plan) returned error: %v", err)
+	}
+	if previewPlan.Module != "power_plan" {
+		t.Fatalf("expected power_plan task, got %q", previewPlan.Module)
+	}
+	settings, ok := previewPlan.Params["settings"].([]any)
+	if !ok {
+		t.Fatalf("expected settings list, got %T", previewPlan.Params["settings"])
+	}
+	if len(settings) != 2 {
+		t.Fatalf("expected 2 settings, got %d", len(settings))
+	}
+	first, ok := settings[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first setting map, got %T", settings[0])
+	}
+	if first["ac_value"] != "5" || first["dc_value"] != "7" {
+		t.Fatalf("unexpected first setting values: %#v", first)
+	}
+
+	previewReboot, err := PreviewTask(plan.Tasks[2], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(scheduled reboot) returned error: %v", err)
+	}
+	if previewReboot.Params["ensure"] != "present" {
+		t.Fatalf("expected scheduled task ensure=present, got %#v", previewReboot.Params["ensure"])
+	}
+	if previewReboot.Params["start_at"] != "04:30" {
+		t.Fatalf("expected scheduled reboot time 04:30, got %#v", previewReboot.Params["start_at"])
 	}
 }
 

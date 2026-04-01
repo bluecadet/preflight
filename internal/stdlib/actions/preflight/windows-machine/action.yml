@@ -1,0 +1,66 @@
+name: preflight/windows-machine
+version: "1.0.0"
+description: Configure machine-wide Windows baseline settings
+author: preflight
+
+inputs:
+  computer_name:
+    type: string
+    required: false
+    description: Desired Windows computer name
+  timezone:
+    type: string
+    required: false
+    description: Windows time zone ID
+  enable_long_paths:
+    type: bool
+    default: true
+    description: Enable the Windows long path policy
+  ps1_execution_policy:
+    type: string
+    default: RemoteSigned
+    description: PowerShell execution policy for LocalMachine scope
+
+tasks:
+  - name: Configure computer name
+    uses: preflight/computer-name
+    with:
+      name: "{{ vars.computer_name }}"
+
+  - name: Configure time zone
+    uses: preflight/timezone
+    with:
+      timezone: "{{ vars.timezone }}"
+
+  - name: Configure Windows long paths
+    powershell:
+      check_script: |
+        $enabled = [System.Convert]::ToBoolean('{{ vars.enable_long_paths }}')
+        $desired = if ($enabled) { 1 } else { 0 }
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+        $current = (Get-ItemProperty -LiteralPath $path -Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled
+        if ($null -eq $current) {
+          return $true
+        }
+        return ([int]$current -ne $desired)
+      script: |
+        $enabled = [System.Convert]::ToBoolean('{{ vars.enable_long_paths }}')
+        $desired = if ($enabled) { 1 } else { 0 }
+        $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name LongPathsEnabled -Value $desired -PropertyType DWord -Force | Out-Null
+
+  - name: Configure PowerShell execution policy
+    powershell:
+      check_script: |
+        $policy = '{{ vars.ps1_execution_policy }}'
+        if ([string]::IsNullOrWhiteSpace($policy)) {
+          return $false
+        }
+        return ((Get-ExecutionPolicy -Scope LocalMachine) -ne $policy)
+      script: |
+        $policy = '{{ vars.ps1_execution_policy }}'
+        if ([string]::IsNullOrWhiteSpace($policy)) {
+          exit 0
+        }
+        Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy $policy -Force

@@ -1,0 +1,258 @@
+name: preflight/windows-shell
+version: "1.0.0"
+description: Configure Windows shell defaults for kiosk-style machines
+author: preflight
+
+inputs:
+  scope_bias:
+    type: string
+    default: machine
+    description: Apply user-scoped settings for the current user or bias toward machine baselines
+  clear_desktop_background:
+    type: bool
+    default: true
+    description: Clear the desktop wallpaper for the targeted profile(s)
+  clear_desktop_shortcuts:
+    type: bool
+    default: true
+    description: Remove .lnk and .url shortcuts from the desktop
+  hide_recycle_bin:
+    type: bool
+    default: true
+    description: Hide the Recycle Bin icon from the desktop
+  show_hidden_files:
+    type: bool
+    default: true
+    description: Show hidden files in File Explorer
+  show_file_extensions:
+    type: bool
+    default: true
+    description: Show file extensions in File Explorer
+  clear_start_pins:
+    type: bool
+    default: false
+    description: Replace Start pins with an empty pinned list
+  start_pins_json:
+    type: string
+    required: false
+    description: JSON content for the ConfigureStartPins policy value
+
+tasks:
+  - name: Configure shell profile defaults
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $clearBackground = [System.Convert]::ToBoolean('{{ vars.clear_desktop_background }}')
+        $showHiddenFiles = [System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')
+        $showFileExtensions = [System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')
+        $hideRecycleBin = [System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')
+        $desiredHidden = if ($showHiddenFiles) { 1 } else { 2 }
+        $desiredHideFileExt = if ($showFileExtensions) { 0 } else { 1 }
+        $desiredRecycleBin = if ($hideRecycleBin) { 1 } else { 0 }
+        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
+
+        function Test-Target([string]$root) {
+          $desktop = Join-Path $root 'Control Panel\Desktop'
+          $advanced = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+          $hideDesktop = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons'
+          $newStart = Join-Path $hideDesktop 'NewStartPanel'
+          $classic = Join-Path $hideDesktop 'ClassicStartMenu'
+
+          if ($clearBackground) {
+            $wallpaper = (Get-ItemProperty -LiteralPath $desktop -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
+            if (-not [string]::IsNullOrEmpty([string]$wallpaper)) {
+              return $true
+            }
+          }
+
+          $advancedProps = Get-ItemProperty -LiteralPath $advanced -ErrorAction SilentlyContinue
+          if ($null -eq $advancedProps) {
+            return $true
+          }
+          if ([int]$advancedProps.Hidden -ne $desiredHidden) {
+            return $true
+          }
+          if ([int]$advancedProps.HideFileExt -ne $desiredHideFileExt) {
+            return $true
+          }
+
+          foreach ($path in @($newStart, $classic)) {
+            $value = (Get-ItemProperty -LiteralPath $path -Name $recycleBinGuid -ErrorAction SilentlyContinue).$recycleBinGuid
+            if ($null -eq $value -or [int]$value -ne $desiredRecycleBin) {
+              return $true
+            }
+          }
+          return $false
+        }
+
+        $needs = Test-Target 'HKCU:'
+        if (-not $needs -and $scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              $needs = Test-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+        return $needs
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $clearBackground = [System.Convert]::ToBoolean('{{ vars.clear_desktop_background }}')
+        $showHiddenFiles = [System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')
+        $showFileExtensions = [System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')
+        $hideRecycleBin = [System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')
+        $desiredHidden = if ($showHiddenFiles) { 1 } else { 2 }
+        $desiredHideFileExt = if ($showFileExtensions) { 0 } else { 1 }
+        $desiredRecycleBin = if ($hideRecycleBin) { 1 } else { 0 }
+        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
+
+        function Set-Target([string]$root) {
+          $desktop = Join-Path $root 'Control Panel\Desktop'
+          $advanced = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+          $hideDesktop = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons'
+          $newStart = Join-Path $hideDesktop 'NewStartPanel'
+          $classic = Join-Path $hideDesktop 'ClassicStartMenu'
+
+          New-Item -Path $desktop -Force | Out-Null
+          New-Item -Path $advanced -Force | Out-Null
+          New-Item -Path $newStart -Force | Out-Null
+          New-Item -Path $classic -Force | Out-Null
+
+          if ($clearBackground) {
+            New-ItemProperty -LiteralPath $desktop -Name Wallpaper -Value '' -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $desktop -Name WallpaperStyle -Value '0' -PropertyType String -Force | Out-Null
+            New-ItemProperty -LiteralPath $desktop -Name TileWallpaper -Value '0' -PropertyType String -Force | Out-Null
+          }
+
+          New-ItemProperty -LiteralPath $advanced -Name Hidden -Value $desiredHidden -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $advanced -Name HideFileExt -Value $desiredHideFileExt -PropertyType DWord -Force | Out-Null
+
+          foreach ($path in @($newStart, $classic)) {
+            New-ItemProperty -LiteralPath $path -Name $recycleBinGuid -Value $desiredRecycleBin -PropertyType DWord -Force | Out-Null
+          }
+        }
+
+        Set-Target 'HKCU:'
+        if ($clearBackground) {
+          Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
+        }
+        if ($scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              Set-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+
+  - name: Clear desktop shortcuts
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $clearShortcuts = [System.Convert]::ToBoolean('{{ vars.clear_desktop_shortcuts }}')
+        if (-not $clearShortcuts) {
+          return $false
+        }
+
+        function Get-DesktopPaths() {
+          $paths = @()
+          if ($env:USERPROFILE) {
+            $paths += (Join-Path $env:USERPROFILE 'Desktop')
+          }
+          if ($scopeBias -eq 'machine') {
+            if ($env:PUBLIC) {
+              $paths += (Join-Path $env:PUBLIC 'Desktop')
+            }
+            $paths += 'C:\Users\Default\Desktop'
+          }
+          return $paths | Select-Object -Unique
+        }
+
+        foreach ($path in Get-DesktopPaths) {
+          if (-not (Test-Path -LiteralPath $path)) {
+            continue
+          }
+          $items = Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' }
+          if ($items) {
+            return $true
+          }
+        }
+        return $false
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $clearShortcuts = [System.Convert]::ToBoolean('{{ vars.clear_desktop_shortcuts }}')
+        if (-not $clearShortcuts) {
+          exit 0
+        }
+
+        function Get-DesktopPaths() {
+          $paths = @()
+          if ($env:USERPROFILE) {
+            $paths += (Join-Path $env:USERPROFILE 'Desktop')
+          }
+          if ($scopeBias -eq 'machine') {
+            if ($env:PUBLIC) {
+              $paths += (Join-Path $env:PUBLIC 'Desktop')
+            }
+            $paths += 'C:\Users\Default\Desktop'
+          }
+          return $paths | Select-Object -Unique
+        }
+
+        foreach ($path in Get-DesktopPaths) {
+          if (-not (Test-Path -LiteralPath $path)) {
+            continue
+          }
+          Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.lnk', '.url' } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Configure Start pins policy
+    powershell:
+      check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $desiredJson = '{{ vars.start_pins_json }}'
+        $clearStartPins = [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')
+        if ([string]::IsNullOrWhiteSpace($desiredJson) -and $clearStartPins) {
+          $desiredJson = '{"pinnedList":[]}'
+        }
+        if ([string]::IsNullOrWhiteSpace($desiredJson)) {
+          return $false
+        }
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' }
+        $current = (Get-ItemProperty -LiteralPath $path -Name ConfigureStartPins -ErrorAction SilentlyContinue).ConfigureStartPins
+        return ([string]$current -ne $desiredJson)
+      script: |
+        $scopeBias = '{{ vars.scope_bias }}'
+        $desiredJson = '{{ vars.start_pins_json }}'
+        $clearStartPins = [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')
+        if ([string]::IsNullOrWhiteSpace($desiredJson) -and $clearStartPins) {
+          $desiredJson = '{"pinnedList":[]}'
+        }
+        if ([string]::IsNullOrWhiteSpace($desiredJson)) {
+          exit 0
+        }
+        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' }
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name ConfigureStartPins -Value $desiredJson -PropertyType String -Force | Out-Null
