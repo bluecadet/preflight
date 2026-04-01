@@ -19,3 +19,57 @@ func TestSummarizeParamsDoesNotRedactOrdinaryPathValues(t *testing.T) {
 		t.Fatalf("expected url to remain visible, got %#v", summary["url"])
 	}
 }
+
+func TestStateParamSummaryRedactsSecretRefUnderNeutralKey(t *testing.T) {
+	source := map[string]any{
+		"cmd": "secret:db-password",
+	}
+	resolved := map[string]any{
+		"cmd": "hunter2",
+	}
+
+	summary, ok := StateParamSummary(source, resolved).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
+	}
+	if summary["cmd"] != "[redacted]" {
+		t.Fatalf("expected secret-derived neutral key to be redacted, got %#v", summary["cmd"])
+	}
+}
+
+func TestStateParamHashIgnoresSecretContentChanges(t *testing.T) {
+	source := map[string]any{
+		"cmd": "secret:db-password",
+	}
+	first := map[string]any{
+		"cmd": "hunter2",
+	}
+	second := map[string]any{
+		"cmd": "correct horse battery staple",
+	}
+
+	if got, want := StateParamHash(source, first), StateParamHash(source, second); got != want {
+		t.Fatalf("expected secret-derived hashes to match, got %q != %q", got, want)
+	}
+}
+
+func TestStateParamSummaryRedactsDerivedBaseFieldFromPasswordFrom(t *testing.T) {
+	source := map[string]any{
+		"password_from": "secret:db-password",
+	}
+	resolved := map[string]any{
+		"password_from": "hunter2",
+		"password":      "hunter2",
+	}
+
+	summary, ok := StateParamSummary(source, resolved).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
+	}
+	if summary["password_from"] != "[redacted]" {
+		t.Fatalf("expected password_from to be redacted, got %#v", summary["password_from"])
+	}
+	if summary["password"] != "[redacted]" {
+		t.Fatalf("expected derived password to be redacted, got %#v", summary["password"])
+	}
+}

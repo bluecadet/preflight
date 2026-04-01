@@ -113,6 +113,70 @@ func TestResolverResolveMap(t *testing.T) {
 	}
 }
 
+func TestBundleProviderResolveEncrypted(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("GenerateX25519Identity: %v", err)
+	}
+	identityPath := filepath.Join(dir, "keys.txt")
+	if err := os.WriteFile(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
+		t.Fatalf("write identity: %v", err)
+	}
+
+	secretPath := filepath.Join(dir, "secrets", "db-password.age")
+	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	var encrypted bytes.Buffer
+	w, err := age.Encrypt(&encrypted, identity.Recipient())
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := w.Write([]byte("hunter2")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if err := os.WriteFile(secretPath, encrypted.Bytes(), 0o600); err != nil {
+		t.Fatalf("write encrypted secret: %v", err)
+	}
+
+	provider := secrets.NewBundleProvider(dir, true, identityPath, map[string]string{
+		"db-password": filepath.ToSlash(filepath.Join("secrets", "db-password.age")),
+	})
+	got, err := provider.Resolve(context.Background(), "db-password")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if string(got) != "hunter2" {
+		t.Fatalf("expected decrypted bundled secret, got %q", string(got))
+	}
+}
+
+func TestBundleProviderResolvePlaintext(t *testing.T) {
+	dir := t.TempDir()
+	secretPath := filepath.Join(dir, "secrets", "db-password")
+	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(secretPath, []byte("hunter2"), 0o600); err != nil {
+		t.Fatalf("write plaintext secret: %v", err)
+	}
+
+	provider := secrets.NewBundleProvider(dir, false, "", map[string]string{
+		"db-password": filepath.ToSlash(filepath.Join("secrets", "db-password")),
+	})
+	got, err := provider.Resolve(context.Background(), "db-password")
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if string(got) != "hunter2" {
+		t.Fatalf("expected plaintext bundled secret, got %q", string(got))
+	}
+}
+
 func TestIsRefDoesNotTreatWindowsPathsOrURLsAsSecrets(t *testing.T) {
 	cases := []string{
 		`C:\Exhibits\Lobby`,

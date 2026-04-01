@@ -12,6 +12,7 @@ import (
 	"filippo.io/age"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -775,6 +776,222 @@ func TestRunFetchAndStagePhases(t *testing.T) {
 	if len(matches) != 1 {
 		t.Fatalf("expected one staged bundle, got %d", len(matches))
 	}
+}
+
+func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+	cfg := config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"db-password": {File: "secrets/db-password.age"},
+		},
+	}
+	provider := secrets.NewRepoProvider(dir, cfg)
+	if err := provider.Encrypt("db-password", []byte("hunter2")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	r := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:            "stage",
+		BundleOutputDir:  dir,
+		BundleBinaryPath: exe,
+		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
+		ProjectDir:       dir,
+		SecretsConfig:    cfg,
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "bundle-secret",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "set env secret",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd": "echo",
+				"env": map[string]any{
+					"PASSWORD": "secret:db-password",
+				},
+			},
+		}},
+	}
+
+	if err := r.Stage(context.Background(), plan); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	bundlePath := mustOneBundlePath(t, dir)
+	extracted, err := bundle.Extract(bundlePath)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	defer extracted.Cleanup()
+
+	if extracted.Manifest.SecretMode != bundle.SecretModeEncrypted {
+		t.Fatalf("expected encrypted secret mode, got %q", extracted.Manifest.SecretMode)
+	}
+	if len(extracted.Manifest.SecretEntries) != 1 || extracted.Manifest.SecretEntries[0].Name != "db-password" {
+		t.Fatalf("unexpected secret entries: %#v", extracted.Manifest.SecretEntries)
+	}
+	planBytes, err := os.ReadFile(extracted.PlanPath)
+	if err != nil {
+		t.Fatalf("ReadFile(plan): %v", err)
+	}
+	if !strings.Contains(string(planBytes), "secret:db-password") {
+		t.Fatalf("expected staged plan to preserve secret ref, got %q", string(planBytes))
+	}
+	if strings.Contains(string(planBytes), "hunter2") {
+		t.Fatalf("expected staged plan to avoid plaintext secret, got %q", string(planBytes))
+	}
+	encryptedBytes, err := os.ReadFile(filepath.Join(dir, "secrets", "db-password.age"))
+	if err != nil {
+		t.Fatalf("ReadFile(secret source): %v", err)
+	}
+	bundledBytes, err := os.ReadFile(filepath.Join(extracted.RootDir, filepath.FromSlash(extracted.Manifest.SecretEntries[0].Path)))
+	if err != nil {
+		t.Fatalf("ReadFile(bundled secret): %v", err)
+	}
+	if string(bundledBytes) != string(encryptedBytes) {
+		t.Fatalf("expected bundled ciphertext to match source ciphertext")
+	}
+}
+
+func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	r := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:            "stage",
+		BundleOutputDir:  t.TempDir(),
+		BundleBinaryPath: exe,
+		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "literal-secret",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "set literal secret",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd": "echo",
+				"env": map[string]any{
+					"PASSWORD": "hunter2",
+				},
+			},
+		}},
+	}
+
+	err = r.Stage(context.Background(), plan)
+	if err == nil || !strings.Contains(err.Error(), "cannot be embedded in a staged bundle") {
+		t.Fatalf("expected literal secret stage failure, got %v", err)
+	}
+}
+
+func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+	cfg := config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"db-password": {File: "secrets/db-password.age"},
+		},
+	}
+	provider := secrets.NewRepoProvider(dir, cfg)
+	if err := provider.Encrypt("db-password", []byte("hunter2")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	r := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:                         "stage",
+		BundleOutputDir:               dir,
+		BundleBinaryPath:              exe,
+		ModuleRegistry:                map[string]target.Module{"shell": noopModule{}},
+		ProjectDir:                    dir,
+		SecretsConfig:                 cfg,
+		AllowPlaintextSecretsInBundle: true,
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "plaintext-secret",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "set secret env",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd": "echo",
+				"env": map[string]any{
+					"PASSWORD": "secret:db-password",
+					"TOKEN":    "abc123",
+				},
+			},
+		}},
+	}
+
+	if err := r.Stage(context.Background(), plan); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	bundlePath := mustOneBundlePath(t, dir)
+	extracted, err := bundle.Extract(bundlePath)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	defer extracted.Cleanup()
+
+	if extracted.Manifest.SecretMode != bundle.SecretModePlaintext {
+		t.Fatalf("expected plaintext secret mode, got %q", extracted.Manifest.SecretMode)
+	}
+	if len(extracted.Manifest.SecretEntries) != 1 {
+		t.Fatalf("expected one bundled plaintext secret, got %#v", extracted.Manifest.SecretEntries)
+	}
+	info, err := os.Stat(extracted.PlanPath)
+	if err != nil {
+		t.Fatalf("Stat(plan): %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("expected plaintext plan mode 0600, got %#o", info.Mode().Perm())
+	}
+	secretBytes, err := os.ReadFile(filepath.Join(extracted.RootDir, filepath.FromSlash(extracted.Manifest.SecretEntries[0].Path)))
+	if err != nil {
+		t.Fatalf("ReadFile(secret): %v", err)
+	}
+	if string(secretBytes) != "hunter2" {
+		t.Fatalf("expected plaintext bundled secret, got %q", string(secretBytes))
+	}
+}
+
+func mustOneBundlePath(t *testing.T, dir string) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(dir, "*.zip"))
+	if err != nil {
+		t.Fatalf("Glob: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one staged bundle, got %d", len(matches))
+	}
+	return matches[0]
 }
 
 type noopModule struct{}

@@ -99,6 +99,23 @@ func TestExtractSucceedsForValidBundle(t *testing.T) {
 	}
 }
 
+func TestExtractRejectsUnsupportedFutureFormat(t *testing.T) {
+	bundlePath := filepath.Join(t.TempDir(), "bundle.zip")
+	writeRawBundle(t, bundlePath, &Manifest{
+		FormatVersion: FormatV2 + 1,
+		Checksums: map[string]string{
+			PlanPath: checksum([]byte(`{"tasks":[]}`)),
+		},
+	}, map[string][]byte{
+		PlanPath: []byte(`{"tasks":[]}`),
+	})
+
+	_, err := Extract(bundlePath)
+	if err == nil || !strings.Contains(err.Error(), "unsupported format version") {
+		t.Fatalf("expected unsupported format version error, got %v", err)
+	}
+}
+
 func writeRawBundle(t *testing.T, path string, manifest *Manifest, files map[string][]byte) {
 	t.Helper()
 
