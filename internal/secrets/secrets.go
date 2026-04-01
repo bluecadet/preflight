@@ -51,10 +51,12 @@ func ParseRef(ref string) (Ref, error) {
 	}, nil
 }
 
-// IsRef reports whether s looks like a secret reference.
+// IsRef reports whether s looks like a built-in repo-backed secret reference.
+// Preflight currently reserves automatic string detection for "secret:<name>"
+// so ordinary values like Windows paths do not get misclassified.
 func IsRef(s string) bool {
 	ref, err := ParseRef(s)
-	return err == nil && ref.Provider != ""
+	return err == nil && ref.Provider == DefaultProviderName
 }
 
 // ResolveRef resolves a single secret reference to plaintext.

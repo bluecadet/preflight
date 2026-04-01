@@ -112,3 +112,22 @@ func TestResolverResolveMap(t *testing.T) {
 		t.Fatalf("expected nested token to resolve, got %#v", nested["token"])
 	}
 }
+
+func TestIsRefDoesNotTreatWindowsPathsOrURLsAsSecrets(t *testing.T) {
+	cases := []string{
+		`C:\Exhibits\Lobby`,
+		`https://example.com/app`,
+		`mailto:signage@example.com`,
+		`user:pass`,
+	}
+
+	for _, tc := range cases {
+		if secrets.IsRef(tc) {
+			t.Fatalf("expected %q to not be treated as a secret ref", tc)
+		}
+	}
+
+	if !secrets.IsRef("secret:db-password") {
+		t.Fatal(`expected "secret:db-password" to be treated as a secret ref`)
+	}
+}
