@@ -16,7 +16,7 @@ func (m tuiModel) View() string {
 	m.viewport.Height = viewportBodyHeight(m.height, header, tabs, footer)
 	m.syncViewport()
 
-	parts := []string{}
+	parts := make([]string, 0, 4)
 	if header != "" {
 		parts = append(parts, header)
 	}
@@ -27,7 +27,7 @@ func (m tuiModel) View() string {
 	if footer != "" {
 		parts = append(parts, footer)
 	}
-	return strings.Join(parts, "\n")
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m tuiModel) renderHeader() string {
@@ -38,7 +38,10 @@ func (m tuiModel) renderHeader() string {
 	if phases := m.phaseLine(); phases != "" {
 		lines = append(lines, phases)
 	}
-	return strings.Join(lines, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return tuiChromeStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 func (m tuiModel) renderTabs() string {
@@ -54,7 +57,7 @@ func (m tuiModel) renderTabs() string {
 			Meta:   fmt.Sprintf("%d/%d", host.completedCount(), max(host.totalTasks, len(host.taskOrder))),
 		})
 	}
-	return renderTabs(tabs, m.selectedHost, m.width)
+	return renderTabs(tabs, m.selectedHost, m.width, &m.tabPager)
 }
 
 func (m tuiModel) renderTaskStream() (string, []int, []int) {
@@ -93,7 +96,7 @@ func (m tuiModel) renderTaskStream() (string, []int, []int) {
 			blocks = append(blocks, tuiSectionStyle.Render("Recap")+"\n"+recap)
 		}
 	}
-	return strings.Join(blocks, "\n\n"), starts, ends
+	return joinVerticalBlocks(blocks), starts, ends
 }
 
 func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) string {
@@ -185,7 +188,7 @@ func (m tuiModel) phaseLine() string {
 			parts = append(parts, m.renderPhase(phase))
 		}
 	}
-	return strings.Join(parts, "  ")
+	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(parts, "  ")...)
 }
 
 func (m tuiModel) renderPhase(phase phaseView) string {

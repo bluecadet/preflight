@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/help"
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -31,6 +32,7 @@ type tuiModel struct {
 	selectedHost      int
 	width             int
 	height            int
+	tabPager          paginator.Model
 	viewport          viewport.Model
 	collapseCompleted bool
 	failedOnly        bool
@@ -58,6 +60,7 @@ func newTUIModel(events chan Event, options Options) tuiModel {
 		hosts:       make(map[string]*hostView),
 		width:       defaultTUIWidth,
 		height:      defaultTUIHeight,
+		tabPager:    newTUITabPager(),
 		viewport:    viewport.New(defaultTUIWidth, defaultTUIHeight-6),
 	}
 }

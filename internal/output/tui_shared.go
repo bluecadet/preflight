@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -31,6 +32,8 @@ var (
 	tuiHelpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
 	tuiSpinnerStyle      = lipgloss.NewStyle().Foreground(tuiColorInfo)
 	tuiSectionStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("187"))
+	tuiChromeStyle       = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1)
+	tuiFooterStyle       = lipgloss.NewStyle().PaddingLeft(1).PaddingRight(1)
 	tuiStatusOKStyle     = lipgloss.NewStyle().Foreground(tuiColorOK).Bold(true)
 	tuiStatusChgStyle    = lipgloss.NewStyle().Foreground(tuiColorChanged).Bold(true)
 	tuiStatusFailStyle   = lipgloss.NewStyle().Foreground(tuiColorFailed).Bold(true)
@@ -45,6 +48,15 @@ var (
 				BorderForeground(tuiColorFailed).
 				Foreground(lipgloss.Color("250")).
 				PaddingLeft(1)
+	tuiTabStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(tuiColorBorder).
+			Padding(0, 1)
+	tuiActiveTabStyle = tuiTabStyle.
+				BorderForeground(tuiColorSelected).
+				Bold(true)
+	tuiPagerActiveStyle   = lipgloss.NewStyle().Foreground(tuiColorSelected)
+	tuiPagerInactiveStyle = tuiSubtleStyle
 )
 
 type tuiTab struct {
@@ -192,43 +204,114 @@ func renderStats(stats []ScreenStat, width int) string {
 		parts = append(parts, part)
 		used += partWidth
 	}
-	return strings.Join(parts, "  ")
+	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(parts, "  ")...)
 }
 
-func renderTabs(tabs []tuiTab, active, width int) string {
+func newTUITabPager() paginator.Model {
+	pager := paginator.New()
+	pager.Type = paginator.Dots
+	pager.ActiveDot = tuiPagerActiveStyle.Render("•")
+	pager.InactiveDot = tuiPagerInactiveStyle.Render("•")
+	pager.PerPage = 1
+	return pager
+}
+
+func renderTabs(tabs []tuiTab, active, width int, pager *paginator.Model) string {
 	if len(tabs) == 0 || width <= 0 {
 		return ""
 	}
-	parts := make([]string, 0, len(tabs))
+
+	pages := make([][]string, 0, len(tabs))
+	page := make([]string, 0, len(tabs))
 	used := 0
 	for i, tab := range tabs {
-		label := tab.Label
+		labelParts := []string{fmt.Sprintf("%d", i+1), tab.Label}
 		if tab.Meta != "" {
-			label += " " + tuiSubtleStyle.Render(tab.Meta)
+			labelParts = append(labelParts, tuiSubtleStyle.Render(tab.Meta))
 		}
+		label := lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(labelParts, " ")...)
 		pill := label
 		if tab.Status != "" {
-			pill = statusGlyph(tab.Status) + " " + pill
+			pill = lipgloss.JoinHorizontal(lipgloss.Left, statusGlyph(tab.Status), " ", pill)
 		}
-		style := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(tuiColorBorder).
-			Padding(0, 1)
+		style := tuiTabStyle
 		if i == active {
-			style = style.BorderForeground(tuiColorSelected).Bold(true)
+			style = tuiActiveTabStyle
 		}
-		rendered := style.Render(fmt.Sprintf("%d %s", i+1, pill))
+		rendered := style.Render(pill)
 		partWidth := lipgloss.Width(rendered)
 		if used > 0 {
 			partWidth++
 		}
-		if used+partWidth > width && len(parts) > 0 {
-			break
+		if used+partWidth > width && len(page) > 0 {
+			pages = append(pages, page)
+			page = nil
+			used = 0
+			partWidth = lipgloss.Width(rendered)
 		}
-		parts = append(parts, rendered)
+		page = append(page, rendered)
 		used += partWidth
 	}
-	return strings.Join(parts, " ")
+	if len(page) > 0 {
+		pages = append(pages, page)
+	}
+	if len(pages) == 0 {
+		return ""
+	}
+
+	activePage := 0
+	tabIndex := 0
+	for pageIndex, items := range pages {
+		if active >= tabIndex && active < tabIndex+len(items) {
+			activePage = pageIndex
+			break
+		}
+		tabIndex += len(items)
+	}
+
+	body := lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(pages[activePage], " ")...)
+	if pager == nil || len(pages) == 1 {
+		return body
+	}
+	pager.TotalPages = len(pages)
+	pager.Page = clamp(0, activePage, len(pages)-1)
+	pagerLine := lipgloss.PlaceHorizontal(width, lipgloss.Center, tuiSubtleStyle.Render(pager.View()))
+	return lipgloss.JoinVertical(lipgloss.Left, body, pagerLine)
+}
+
+func withHorizontalSpacing(parts []string, separator string) []string {
+	if len(parts) == 0 {
+		return nil
+	}
+	spaced := make([]string, 0, len(parts)*2-1)
+	for i, part := range parts {
+		if i > 0 {
+			spaced = append(spaced, separator)
+		}
+		spaced = append(spaced, part)
+	}
+	return spaced
+}
+
+func joinVerticalBlocks(blocks []string) string {
+	filtered := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if strings.TrimSpace(block) == "" {
+			continue
+		}
+		filtered = append(filtered, block)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(filtered)*2-1)
+	for i, block := range filtered {
+		if i > 0 {
+			parts = append(parts, "")
+		}
+		parts = append(parts, block)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func spaceBetween(width int, left, right string) string {
@@ -241,9 +324,10 @@ func spaceBetween(width int, left, right string) string {
 	leftWidth := lipgloss.Width(left)
 	rightWidth := lipgloss.Width(right)
 	if leftWidth+rightWidth+1 > width {
-		return left + "\n" + right
+		return lipgloss.JoinVertical(lipgloss.Left, left, right)
 	}
-	return left + strings.Repeat(" ", width-leftWidth-rightWidth) + right
+	spacer := lipgloss.NewStyle().Width(max(0, width-leftWidth-rightWidth))
+	return lipgloss.JoinHorizontal(lipgloss.Top, left, spacer.Render(""), right)
 }
 
 func clamp(minimum, value, maximum int) int {
@@ -384,13 +468,13 @@ func responsiveFooter(width int, left, right string) string {
 		if lipgloss.Width(left) > width {
 			return compactHelpPrompt()
 		}
-		return left
+		return tuiFooterStyle.Width(width).Render(left)
 	}
 	if left != "" && lipgloss.Width(left)+1+lipgloss.Width(right) <= width {
-		return spaceBetween(width, left, right)
+		return tuiFooterStyle.Width(width).Render(spaceBetween(width, left, right))
 	}
 	if left == "" && lipgloss.Width(right) <= width {
-		return right
+		return tuiFooterStyle.Width(width).AlignHorizontal(lipgloss.Right).Render(right)
 	}
 	return compactHelpPrompt()
 }

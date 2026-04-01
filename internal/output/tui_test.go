@@ -255,3 +255,20 @@ func TestTUIModel_ViewTrimsViewportPadding(t *testing.T) {
 		t.Fatalf("expected view to avoid extra bottom blank lines, got %q", rendered)
 	}
 }
+
+func TestRenderTabsUsesPaginatorWhenNeeded(t *testing.T) {
+	tabs := []tuiTab{
+		{Label: "host-a", Status: "complete", Meta: "8/8"},
+		{Label: "host-b", Status: "running", Meta: "4/8"},
+		{Label: "host-c", Status: "pending", Meta: "0/8"},
+	}
+	pager := newTUITabPager()
+
+	rendered := renderTabs(tabs, 2, 24, &pager)
+	if !strings.Contains(rendered, "host-c") {
+		t.Fatalf("expected active tab page to include host-c, got %q", rendered)
+	}
+	if !strings.Contains(rendered, pager.ActiveDot) {
+		t.Fatalf("expected paginator dots in narrow tab view, got %q", rendered)
+	}
+}

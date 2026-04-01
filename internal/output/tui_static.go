@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -169,6 +170,7 @@ type staticScreenModel struct {
 	helpModel   help.Model
 	keys        staticKeyMap
 	activeTab   int
+	tabPager    paginator.Model
 	tabStates   map[int]*staticTabState
 	showHelp    bool
 	initialized bool
@@ -183,6 +185,7 @@ func newStaticScreenModel(screen Screen) staticScreenModel {
 		help:      keys,
 		helpModel: tuiNewHelp(),
 		keys:      keys,
+		tabPager:  newTUITabPager(),
 		tabStates: make(map[int]*staticTabState),
 	}
 }
@@ -280,7 +283,7 @@ func (m staticScreenModel) View() string {
 	if footer != "" {
 		parts = append(parts, footer)
 	}
-	return strings.Join(parts, "\n")
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 func (m *staticScreenModel) clampTab() {
@@ -430,7 +433,10 @@ func (m staticScreenModel) renderHeader() string {
 	if rendered := renderStats(stats, m.width); rendered != "" {
 		lines = append(lines, rendered)
 	}
-	return strings.Join(lines, "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+	return tuiChromeStyle.Width(m.width).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 func (m staticScreenModel) renderTabs() string {
@@ -445,7 +451,7 @@ func (m staticScreenModel) renderTabs() string {
 			Meta:   tab.Meta,
 		})
 	}
-	return renderTabs(tabs, m.activeTab, m.width)
+	return renderTabs(tabs, m.activeTab, m.width, &m.tabPager)
 }
 
 func (m staticScreenModel) renderFooter() string {
