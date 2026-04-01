@@ -105,6 +105,26 @@ CI runs tests, linting, and build jobs. Fixing failures locally is usually much 
 
 ---
 
+## TUI Preview Scenarios
+
+If you are working on the Bubble Tea interface, there is a dev-only preview command for quickly inspecting the UI in different states without running real playbooks or connecting to targets.
+
+Run the preview browser:
+
+```bash
+go run -tags devtools . ui preview
+```
+
+Open a specific scenario directly:
+
+```bash
+go run -tags devtools . ui preview run-multi-host
+```
+
+The preview command is behind the `devtools` build tag on purpose, so it does not ship in normal builds or release binaries.
+
+---
+
 ## Architecture
 
 The three-layer model — **Modules → Actions → Playbooks** — is central to every design decision. When adding a feature, identify which layer it belongs to before writing any code.
