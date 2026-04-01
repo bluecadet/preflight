@@ -16,17 +16,6 @@ func validateLocalOnlyRunFlags(cmd *cobra.Command) error {
 	return validatePhase(cmd)
 }
 
-func validateLocalTargets(cmd *cobra.Command) error {
-	targets, _ := cmd.Flags().GetStringSlice("target")
-	if len(targets) == 0 {
-		return nil
-	}
-	if len(targets) == 1 && isLocalTarget(targets[0]) {
-		return nil
-	}
-	return fmt.Errorf("local-only mode only supports no --target or a single target of %q or %q", "local", "localhost")
-}
-
 func validateConcurrency(cmd *cobra.Command) error {
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	if concurrency >= 0 {

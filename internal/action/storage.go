@@ -55,14 +55,6 @@ func loadActionFromCache(cacheDir, ref string) (*Action, error) {
 	return action, nil
 }
 
-func loadActionFromDir(dir string) (*Action, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "action.yml"))
-	if err != nil {
-		return nil, err
-	}
-	return ParseAction(data)
-}
-
 func copyDir(srcDir, dstDir string) error {
 	if err := os.MkdirAll(dstDir, 0o755); err != nil {
 		return fmt.Errorf("mkdir %q: %w", dstDir, err)
@@ -105,7 +97,9 @@ func copyFile(srcPath, dstPath string, mode fs.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("open %q: %w", srcPath, err)
 	}
-	defer src.Close()
+	defer func() {
+		_ = src.Close()
+	}()
 
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return fmt.Errorf("mkdir %q: %w", filepath.Dir(dstPath), err)
@@ -115,10 +109,13 @@ func copyFile(srcPath, dstPath string, mode fs.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("create %q: %w", dstPath, err)
 	}
-	defer dst.Close()
 
 	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
 		return fmt.Errorf("copy %q -> %q: %w", srcPath, dstPath, err)
+	}
+	if err := dst.Close(); err != nil {
+		return fmt.Errorf("close %q: %w", dstPath, err)
 	}
 	return nil
 }

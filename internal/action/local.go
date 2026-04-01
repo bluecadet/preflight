@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -39,10 +40,8 @@ func (r *LocalResolver) Resolve(ctx context.Context, ref string) (*Action, error
 	}
 
 	// Reject refs containing path traversal before any other processing.
-	for _, seg := range strings.Split(ref, "/") {
-		if seg == ".." {
-			return nil, fmt.Errorf("local resolver: ref %q contains path traversal", ref)
-		}
+	if slices.Contains(strings.Split(ref, "/"), "..") {
+		return nil, fmt.Errorf("local resolver: ref %q contains path traversal", ref)
 	}
 
 	// Skip refs that look like remote hostnames (contain a '.' in the first path

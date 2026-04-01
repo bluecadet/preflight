@@ -174,7 +174,9 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("apply bundle: %w", err)
 	}
-	defer extracted.Cleanup()
+	defer func() {
+		_ = extracted.Cleanup()
+	}()
 
 	registry, _, err := buildModuleRegistryWithOptions(extracted.RootDir, true, extracted.PluginDir)
 	if err != nil {

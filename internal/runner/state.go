@@ -357,10 +357,8 @@ func containsSecretValue(value any) bool {
 			}
 		}
 	case []any:
-		for _, item := range t {
-			if containsSecretValue(item) {
-				return true
-			}
+		if slices.ContainsFunc(t, containsSecretValue) {
+			return true
 		}
 	}
 	return false

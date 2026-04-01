@@ -15,7 +15,9 @@ func TestEnvironmentModule_Check_NotSet(t *testing.T) {
 	m := reg["environment"]
 
 	const varName = "PREFLIGHT_TEST_ENV_UNSET_VAR"
-	os.Unsetenv(varName)
+	if err := os.Unsetenv(varName); err != nil {
+		t.Fatalf("Unsetenv(%q): %v", varName, err)
+	}
 
 	needsChange, err := m.Check(context.Background(), map[string]any{
 		"name":  varName,
@@ -53,8 +55,14 @@ func TestEnvironmentModule_ApplyThenCheck(t *testing.T) {
 	m := reg["environment"]
 
 	const varName = "PREFLIGHT_TEST_ENV_APPLY"
-	os.Unsetenv(varName)
-	t.Cleanup(func() { os.Unsetenv(varName) })
+	if err := os.Unsetenv(varName); err != nil {
+		t.Fatalf("Unsetenv(%q): %v", varName, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Unsetenv(varName); err != nil {
+			t.Fatalf("Unsetenv(%q): %v", varName, err)
+		}
+	})
 
 	if err := m.Apply(context.Background(), map[string]any{
 		"name":  varName,
