@@ -133,14 +133,31 @@ func (d staticListDelegate) Render(w io.Writer, m list.Model, index int, item li
 		secondLine = truncateText(screenItem.item.Preview[0].Text, width)
 	}
 
-	lines := []string{joinHorizontalParts("  ", summary...)}
+	summarySegments := make([]string, 0, len(summary)*2)
+	for _, part := range summary {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if len(summarySegments) > 0 {
+			summarySegments = append(summarySegments, "  ")
+		}
+		summarySegments = append(summarySegments, part)
+	}
+	lines := []string{lipgloss.JoinHorizontal(lipgloss.Left, summarySegments...)}
 	if secondLine == "" {
 		lines = append(lines, "")
 	} else {
 		lines = append(lines, tuiSubtleStyle.Render(secondLine))
 	}
 
-	block := joinVerticalParts(lines...)
+	contentLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		contentLines = append(contentLines, line)
+	}
+	block := lipgloss.JoinVertical(lipgloss.Left, contentLines...)
 	style := tuiCardStyle.Width(width)
 	if selected {
 		style = tuiSelectedCardStyle.Width(width)
@@ -489,7 +506,17 @@ func (m staticScreenModel) selectedDetail(content ScreenContent, state *staticTa
 		title = append(title, tuiSubtleStyle.Render("("+item.Subtitle+")"))
 	}
 
-	lines := []string{joinHorizontalParts("  ", title...)}
+	titleSegments := make([]string, 0, len(title)*2)
+	for _, part := range title {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if len(titleSegments) > 0 {
+			titleSegments = append(titleSegments, "  ")
+		}
+		titleSegments = append(titleSegments, part)
+	}
+	lines := []string{lipgloss.JoinHorizontal(lipgloss.Left, titleSegments...)}
 	if item.Summary != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(item.Summary, width)))
 	}
@@ -507,7 +534,14 @@ func (m staticScreenModel) selectedDetail(content ScreenContent, state *staticTa
 	}
 
 	style := tuiSelectedCardStyle.Width(max(20, m.width-2))
-	return style.Render(joinVerticalParts(lines...))
+	contentLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		contentLines = append(contentLines, line)
+	}
+	return style.Render(lipgloss.JoinVertical(lipgloss.Left, contentLines...))
 }
 
 func RunScreenTUI(w io.Writer, options Options, screen Screen) error {

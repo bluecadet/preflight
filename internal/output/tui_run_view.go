@@ -93,10 +93,23 @@ func (m tuiModel) renderTaskStream() (string, []int, []int) {
 			{Label: "skipped", Value: fmt.Sprintf("%d", host.recap.skipped), Tone: "skipped"},
 		}, width)
 		if recap != "" {
-			blocks = append(blocks, joinVerticalParts(tuiSectionStyle.Render("Recap"), recap))
+			blocks = append(blocks, lipgloss.JoinVertical(lipgloss.Left, tuiSectionStyle.Render("Recap"), recap))
 		}
 	}
-	return joinVerticalBlocks(blocks), starts, ends
+	if len(blocks) == 0 {
+		return "", starts, ends
+	}
+	streamParts := make([]string, 0, len(blocks)*2)
+	for _, block := range blocks {
+		if strings.TrimSpace(block) == "" {
+			continue
+		}
+		if len(streamParts) > 0 {
+			streamParts = append(streamParts, "")
+		}
+		streamParts = append(streamParts, block)
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, streamParts...), starts, ends
 }
 
 func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) string {
@@ -112,7 +125,17 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 	if task.message != "" && !task.expanded {
 		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, contentWidth/3))))
 	}
-	lines := []string{joinHorizontalParts("  ", summaryParts...)}
+	summarySegments := make([]string, 0, len(summaryParts)*2)
+	for _, part := range summaryParts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if len(summarySegments) > 0 {
+			summarySegments = append(summarySegments, "  ")
+		}
+		summarySegments = append(summarySegments, part)
+	}
+	lines := []string{lipgloss.JoinHorizontal(lipgloss.Left, summarySegments...)}
 	if task.running {
 		lines = append(lines, tuiSubtleStyle.Render("running"))
 	}
@@ -137,7 +160,14 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 		}
 	}
 
-	content := lipgloss.NewStyle().Width(contentWidth).Render(joinVerticalParts(lines...))
+	contentLines := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		contentLines = append(contentLines, line)
+	}
+	content := lipgloss.NewStyle().Width(contentWidth).Render(lipgloss.JoinVertical(lipgloss.Left, contentLines...))
 	glyphColumn := lipgloss.NewStyle().Width(glyphWidth).Align(lipgloss.Left, lipgloss.Top).Render(glyph)
 	gap := lipgloss.NewStyle().Width(gapWidth).Render("")
 	block := lipgloss.JoinHorizontal(lipgloss.Top, glyphColumn, gap, content)
@@ -196,18 +226,28 @@ func (m tuiModel) phaseLine() string {
 			parts = append(parts, m.renderPhase(phase))
 		}
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(parts, "  ")...)
+	segments := make([]string, 0, len(parts)*2)
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if len(segments) > 0 {
+			segments = append(segments, "  ")
+		}
+		segments = append(segments, part)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, segments...)
 }
 
 func (m tuiModel) renderPhase(phase phaseView) string {
 	label := phaseLabel(phase.name)
 	switch {
 	case phase.running:
-		return joinHorizontalParts(" ", m.spinner.View(), label)
+		return lipgloss.JoinHorizontal(lipgloss.Left, m.spinner.View(), " ", label)
 	case phase.status != "":
-		return joinHorizontalParts(" ", statusGlyph(phase.status), label)
+		return lipgloss.JoinHorizontal(lipgloss.Left, statusGlyph(phase.status), " ", label)
 	default:
-		return joinHorizontalParts(" ", "•", label)
+		return lipgloss.JoinHorizontal(lipgloss.Left, "•", " ", label)
 	}
 }
 

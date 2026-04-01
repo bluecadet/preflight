@@ -192,7 +192,12 @@ func renderStats(stats []ScreenStat, width int) string {
 		}
 		part := toneStyle(stat.Tone).Render(value)
 		if stat.Label != "" && stat.Value != "" {
-			part = joinHorizontalParts(" ", tuiSubtleStyle.Render(stat.Label), toneStyle(stat.Tone).Render(stat.Value))
+			part = lipgloss.JoinHorizontal(
+				lipgloss.Left,
+				tuiSubtleStyle.Render(stat.Label),
+				" ",
+				toneStyle(stat.Tone).Render(stat.Value),
+			)
 		}
 		partWidth := lipgloss.Width(part)
 		if used > 0 {
@@ -204,21 +209,17 @@ func renderStats(stats []ScreenStat, width int) string {
 		parts = append(parts, part)
 		used += partWidth
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(parts, "  ")...)
-}
-
-func joinHorizontalParts(separator string, parts ...string) string {
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-	if len(filtered) == 0 {
+	if len(parts) == 0 {
 		return ""
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(filtered, separator)...)
+	segments := make([]string, 0, len(parts)*2)
+	for i, part := range parts {
+		if i > 0 {
+			segments = append(segments, "  ")
+		}
+		segments = append(segments, part)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, segments...)
 }
 
 func newTUITabPager() paginator.Model {
@@ -243,7 +244,14 @@ func renderTabs(tabs []tuiTab, active, width int, pager *paginator.Model) string
 		if tab.Meta != "" {
 			labelParts = append(labelParts, tuiSubtleStyle.Render(tab.Meta))
 		}
-		label := lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(labelParts, " ")...)
+		labelSegments := make([]string, 0, len(labelParts)*2)
+		for idx, part := range labelParts {
+			if idx > 0 {
+				labelSegments = append(labelSegments, " ")
+			}
+			labelSegments = append(labelSegments, part)
+		}
+		label := lipgloss.JoinHorizontal(lipgloss.Left, labelSegments...)
 		pill := label
 		if tab.Status != "" {
 			pill = lipgloss.JoinHorizontal(lipgloss.Left, statusGlyph(tab.Status), " ", pill)
@@ -283,7 +291,14 @@ func renderTabs(tabs []tuiTab, active, width int, pager *paginator.Model) string
 		tabIndex += len(items)
 	}
 
-	body := lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(pages[activePage], " ")...)
+	bodySegments := make([]string, 0, len(pages[activePage])*2)
+	for idx, item := range pages[activePage] {
+		if idx > 0 {
+			bodySegments = append(bodySegments, " ")
+		}
+		bodySegments = append(bodySegments, item)
+	}
+	body := lipgloss.JoinHorizontal(lipgloss.Left, bodySegments...)
 	if pager == nil || len(pages) == 1 {
 		return body
 	}
@@ -291,55 +306,6 @@ func renderTabs(tabs []tuiTab, active, width int, pager *paginator.Model) string
 	pager.Page = clamp(0, activePage, len(pages)-1)
 	pagerLine := lipgloss.PlaceHorizontal(width, lipgloss.Center, tuiSubtleStyle.Render(pager.View()))
 	return lipgloss.JoinVertical(lipgloss.Left, body, pagerLine)
-}
-
-func withHorizontalSpacing(parts []string, separator string) []string {
-	if len(parts) == 0 {
-		return nil
-	}
-	spaced := make([]string, 0, len(parts)*2-1)
-	for i, part := range parts {
-		if i > 0 {
-			spaced = append(spaced, separator)
-		}
-		spaced = append(spaced, part)
-	}
-	return spaced
-}
-
-func joinVerticalBlocks(blocks []string) string {
-	filtered := make([]string, 0, len(blocks))
-	for _, block := range blocks {
-		if strings.TrimSpace(block) == "" {
-			continue
-		}
-		filtered = append(filtered, block)
-	}
-	if len(filtered) == 0 {
-		return ""
-	}
-	parts := make([]string, 0, len(filtered)*2-1)
-	for i, block := range filtered {
-		if i > 0 {
-			parts = append(parts, "")
-		}
-		parts = append(parts, block)
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
-}
-
-func joinVerticalParts(parts ...string) string {
-	filtered := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if strings.TrimSpace(part) == "" {
-			continue
-		}
-		filtered = append(filtered, part)
-	}
-	if len(filtered) == 0 {
-		return ""
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, filtered...)
 }
 
 func spaceBetween(width int, left, right string) string {
@@ -377,7 +343,7 @@ func joinMeta(parts ...string) string {
 		}
 		filtered = append(filtered, part)
 	}
-	return joinHorizontalParts("  ", filtered...)
+	return strings.Join(filtered, "  ")
 }
 
 func truncateText(text string, width int) string {
@@ -459,7 +425,7 @@ func renderScreenLines(lines []ScreenLine, width int) string {
 		for i, wrappedLine := range wrapped {
 			content := tone.Render(wrappedLine)
 			if prefixWidth > 0 && i == 0 {
-				rendered = append(rendered, joinHorizontalParts(" ", prefixText, content))
+				rendered = append(rendered, lipgloss.JoinHorizontal(lipgloss.Left, prefixText, " ", content))
 				continue
 			}
 			if prefixWidth > 0 {
@@ -469,7 +435,7 @@ func renderScreenLines(lines []ScreenLine, width int) string {
 			rendered = append(rendered, content)
 		}
 	}
-	return joinVerticalParts(rendered...)
+	return strings.Join(rendered, "\n")
 }
 
 func viewportBodyHeight(totalHeight int, chromeParts ...string) int {
