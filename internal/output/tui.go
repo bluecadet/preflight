@@ -5,10 +5,10 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -59,7 +59,7 @@ type runKeyMap struct {
 	Down     key.Binding
 	Left     key.Binding
 	Right    key.Binding
-	Enter    key.Binding
+	Toggle   key.Binding
 	Collapse key.Binding
 	Failed   key.Binding
 	Help     key.Binding
@@ -84,9 +84,9 @@ func newRunKeyMap() runKeyMap {
 			key.WithKeys("right", "l"),
 			key.WithHelp("→/l", "next host"),
 		),
-		Enter: key.NewBinding(
-			key.WithKeys("enter"),
-			key.WithHelp("enter", "details"),
+		Toggle: key.NewBinding(
+			key.WithKeys("enter", "space"),
+			key.WithHelp("enter/space", "details"),
 		),
 		Collapse: key.NewBinding(
 			key.WithKeys("c"),
@@ -101,20 +101,20 @@ func newRunKeyMap() runKeyMap {
 			key.WithHelp("?", "help"),
 		),
 		Quit: key.NewBinding(
-			key.WithKeys("q"),
-			key.WithHelp("q", "quit"),
+			key.WithKeys("q", "esc"),
+			key.WithHelp("q/esc", "quit"),
 		),
 	}
 }
 
 func (k runKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Enter, k.Collapse, k.Failed, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Toggle, k.Collapse, k.Failed, k.Help, k.Quit}
 }
 
 func (k runKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
-		{k.Enter, k.Collapse, k.Failed},
+		{k.Toggle, k.Collapse, k.Failed},
 		{k.Help, k.Quit},
 	}
 }
@@ -127,7 +127,6 @@ type tuiDoneMsg struct{}
 
 type tuiModel struct {
 	spinner           spinner.Model
-	progress          progress.Model
 	help              help.Model
 	keys              runKeyMap
 	events            chan Event
@@ -153,7 +152,6 @@ func newTUIModel(events chan Event, options Options) tuiModel {
 		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(tuiSpinnerStyle),
 	)
-	p := progress.New()
 	h := tuiNewHelp()
 	keys := newRunKeyMap()
 	command := options.Command
@@ -162,7 +160,6 @@ func newTUIModel(events chan Event, options Options) tuiModel {
 	}
 	return tuiModel{
 		spinner:     s,
-		progress:    p,
 		help:        h,
 		keys:        keys,
 		events:      events,
@@ -223,6 +220,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if msg.Type == tea.KeyEsc {
+		if m.done {
+			return m, tea.Quit
+		}
+		if m.interrupt != nil {
+			m.interrupt()
+		}
+		return m, tea.Quit
+	}
+
 	switch msg.String() {
 	case "ctrl+c":
 		if m.interrupt != nil {
@@ -240,7 +247,7 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.collapseCompleted = !m.collapseCompleted
 	case "f":
 		m.failedOnly = !m.failedOnly
-	case "enter":
+	case "enter", " ":
 		if task := m.currentTask(); task != nil {
 			task.expanded = !task.expanded
 		}
@@ -510,34 +517,27 @@ func (m tuiModel) View() string {
 	m.viewport.Height = bodyHeight
 	m.syncViewport()
 
-	parts := []string{header}
+	parts := []string{}
+	if header != "" {
+		parts = append(parts, header)
+	}
 	if tabs != "" {
 		parts = append(parts, tabs)
 	}
-	parts = append(parts, m.viewport.View(), footer)
+	parts = append(parts, m.viewport.View())
+	if footer != "" {
+		parts = append(parts, footer)
+	}
 	return strings.Join(parts, "\n")
 }
 
 func (m tuiModel) renderHeader() string {
-	title := lipgloss.JoinHorizontal(lipgloss.Center,
-		tuiTitleStyle.Render("Preflight"),
-		"  ",
-		tuiCommandStyle.Render(m.command),
-	)
-	status := renderStatusChip(m.overallStatus())
-	lines := []string{spaceBetween(m.width, title, status)}
+	lines := make([]string, 0, 2)
 	if subject := m.subjectLine(); subject != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(subject, m.width)))
 	}
-	phases := m.phaseLine()
-	progress := m.progressView()
-	switch {
-	case phases != "" && progress != "":
-		lines = append(lines, spaceBetween(m.width, phases, progress))
-	case phases != "":
+	if phases := m.phaseLine(); phases != "" {
 		lines = append(lines, phases)
-	case progress != "":
-		lines = append(lines, progress)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -670,7 +670,7 @@ func (m tuiModel) renderFooter() string {
 	if !m.done {
 		helpText = spaceBetween(max(10, m.width/2), tuiSubtleStyle.Render("Ctrl+C cancel"), helpText)
 	}
-	return spaceBetween(m.width, location, helpText)
+	return responsiveFooter(m.width, location, helpText)
 }
 
 func (m tuiModel) subjectLine() string {
@@ -714,48 +714,8 @@ func (m tuiModel) renderPhase(phase phaseView) string {
 	}
 }
 
-func (m tuiModel) progressView() string {
-	completed, total := m.progressCounts()
-	if total == 0 {
-		return ""
-	}
-	barWidth := clamp(12, m.width/3, 32)
-	m.progress.Width = barWidth
-	percent := float64(completed) / float64(total)
-	bar := m.progress.ViewAs(percent)
-	return lipgloss.JoinHorizontal(lipgloss.Left, bar, " ", tuiSubtleStyle.Render(fmt.Sprintf("%d/%d", completed, total)))
-}
-
-func (m tuiModel) progressCounts() (int, int) {
-	var completed int
-	var total int
-	for _, name := range m.hostOrder {
-		host := m.hosts[name]
-		total += max(host.totalTasks, len(host.taskOrder))
-		completed += host.completedCount()
-	}
-	return completed, total
-}
-
 func (h *hostView) completedCount() int {
 	return h.recap.ok + h.recap.changed + h.recap.failed + h.recap.skipped
-}
-
-func (m tuiModel) overallStatus() string {
-	if !m.done {
-		for _, name := range m.hostOrder {
-			if host := m.hosts[name]; host != nil && host.recap.failed > 0 {
-				return "warning"
-			}
-		}
-		return "running"
-	}
-	for _, name := range m.hostOrder {
-		if host := m.hosts[name]; host != nil && host.recap.failed > 0 {
-			return "failed"
-		}
-	}
-	return "complete"
 }
 
 func (m tuiModel) hostStatus(host *hostView) string {
@@ -921,9 +881,14 @@ func (m tuiModel) taskStatusGlyph(task *taskView) string {
 
 // TUIRenderer implements Renderer using a Bubble Tea program.
 type TUIRenderer struct {
-	program *tea.Program
-	events  chan Event
-	done    chan struct{}
+	mu           sync.Mutex
+	program      *tea.Program
+	events       chan Event
+	done         chan struct{}
+	writer       io.Writer
+	options      Options
+	transcript   []Event
+	printOnClose bool
 }
 
 // NewTUIRenderer creates a TUIRenderer that writes to w.
@@ -946,12 +911,16 @@ func NewTUIRendererWithOptions(w io.Writer, options Options) *TUIRenderer {
 	}
 	if input != nil {
 		programOptions = append(programOptions, tea.WithInput(input))
+		programOptions = append(programOptions, tea.WithAltScreen())
 	}
 	prog := tea.NewProgram(model, programOptions...)
 	renderer := &TUIRenderer{
-		program: prog,
-		events:  events,
-		done:    make(chan struct{}),
+		program:      prog,
+		events:       events,
+		done:         make(chan struct{}),
+		writer:       w,
+		options:      options,
+		printOnClose: input != nil,
 	}
 	go func() {
 		defer close(renderer.done)
@@ -962,6 +931,9 @@ func NewTUIRendererWithOptions(w io.Writer, options Options) *TUIRenderer {
 
 // Emit sends an event to the running Bubble Tea program.
 func (r *TUIRenderer) Emit(event Event) {
+	r.mu.Lock()
+	r.transcript = append(r.transcript, event)
+	r.mu.Unlock()
 	r.events <- event
 }
 
@@ -969,4 +941,14 @@ func (r *TUIRenderer) Emit(event Event) {
 func (r *TUIRenderer) Close() {
 	close(r.events)
 	<-r.done
+	if !r.printOnClose {
+		return
+	}
+	r.mu.Lock()
+	events := append([]Event(nil), r.transcript...)
+	r.mu.Unlock()
+	renderer := NewTextRendererWithOptions(r.writer, Options{Verbose: r.options.Verbose})
+	for _, event := range events {
+		renderer.Emit(event)
+	}
 }

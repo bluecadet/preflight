@@ -17,7 +17,7 @@ type staticKeyMap struct {
 	Down   key.Binding
 	Left   key.Binding
 	Right  key.Binding
-	Enter  key.Binding
+	Toggle key.Binding
 	PageUp key.Binding
 	PageDn key.Binding
 	Help   key.Binding
@@ -42,16 +42,16 @@ func newStaticKeyMap() staticKeyMap {
 			key.WithKeys("right", "l"),
 			key.WithHelp("→/l", "next tab"),
 		),
-		Enter: key.NewBinding(
-			key.WithKeys("enter"),
-			key.WithHelp("enter", "details"),
+		Toggle: key.NewBinding(
+			key.WithKeys("enter", "space"),
+			key.WithHelp("enter/space", "details"),
 		),
 		PageUp: key.NewBinding(
 			key.WithKeys("pgup", "b"),
 			key.WithHelp("pgup/b", "page up"),
 		),
 		PageDn: key.NewBinding(
-			key.WithKeys("pgdown", "space", "f"),
+			key.WithKeys("pgdown", "f"),
 			key.WithHelp("pgdn/f", "page down"),
 		),
 		Help: key.NewBinding(
@@ -59,20 +59,20 @@ func newStaticKeyMap() staticKeyMap {
 			key.WithHelp("?", "help"),
 		),
 		Quit: key.NewBinding(
-			key.WithKeys("q"),
-			key.WithHelp("q", "quit"),
+			key.WithKeys("q", "esc"),
+			key.WithHelp("q/esc", "quit"),
 		),
 	}
 }
 
 func (k staticKeyMap) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Enter, k.Help, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Left, k.Right, k.Toggle, k.Help, k.Quit}
 }
 
 func (k staticKeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		{k.Up, k.Down, k.Left, k.Right},
-		{k.Enter, k.PageUp, k.PageDn},
+		{k.Toggle, k.PageUp, k.PageDn},
 		{k.Help, k.Quit},
 	}
 }
@@ -126,6 +126,9 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		if msg.Type == tea.KeyEsc {
+			return m, tea.Quit
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
@@ -166,7 +169,7 @@ func (m staticScreenModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				state.selected--
 			case "down", "j":
 				state.selected++
-			case "enter":
+			case "enter", " ":
 				if len(m.currentContent().Items) > 0 {
 					state.expanded[state.selected] = !state.expanded[state.selected]
 				}
@@ -197,11 +200,17 @@ func (m staticScreenModel) View() string {
 	m.viewport.Height = bodyHeight
 	m.syncViewport()
 
-	parts := []string{header}
+	parts := []string{}
+	if header != "" {
+		parts = append(parts, header)
+	}
 	if tabs != "" {
 		parts = append(parts, tabs)
 	}
-	parts = append(parts, m.viewport.View(), footer)
+	parts = append(parts, m.viewport.View())
+	if footer != "" {
+		parts = append(parts, footer)
+	}
 	return strings.Join(parts, "\n")
 }
 
@@ -284,13 +293,7 @@ func (m *staticScreenModel) syncViewport() {
 }
 
 func (m staticScreenModel) renderHeader() string {
-	title := lipgloss.JoinHorizontal(lipgloss.Center,
-		tuiTitleStyle.Render("Preflight"),
-		"  ",
-		tuiCommandStyle.Render(m.screen.Command),
-	)
-	status := renderStatusChip(m.screen.Status)
-	lines := []string{spaceBetween(m.width, title, status)}
+	lines := make([]string, 0, 2)
 	if m.screen.Subject != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(m.screen.Subject, m.width)))
 	}
@@ -394,7 +397,7 @@ func (m staticScreenModel) renderFooter() string {
 		)
 	}
 	helpText := helpModel.ShortHelpView(m.help.ShortHelp())
-	return spaceBetween(m.width, location, helpText)
+	return responsiveFooter(m.width, location, helpText)
 }
 
 func RunScreenTUI(w io.Writer, options Options, screen Screen) error {
@@ -405,8 +408,15 @@ func RunScreenTUI(w io.Writer, options Options, screen Screen) error {
 	}
 	if options.Input != nil {
 		programOptions = append(programOptions, tea.WithInput(options.Input))
+		programOptions = append(programOptions, tea.WithAltScreen())
 	}
 	prog := tea.NewProgram(model, programOptions...)
 	_, err := prog.Run()
-	return err
+	if err != nil {
+		return err
+	}
+	if options.Input != nil {
+		return RenderScreenText(w, screen)
+	}
+	return nil
 }

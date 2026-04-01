@@ -27,8 +27,6 @@ var (
 	tuiColorBorder   = lipgloss.Color("63")
 	tuiColorSelected = lipgloss.Color("229")
 
-	tuiTitleStyle        = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("230"))
-	tuiCommandStyle      = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("117"))
 	tuiSubtleStyle       = lipgloss.NewStyle().Foreground(tuiColorDim)
 	tuiHelpStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
 	tuiSpinnerStyle      = lipgloss.NewStyle().Foreground(tuiColorInfo)
@@ -164,29 +162,6 @@ func toneStyle(tone string) lipgloss.Style {
 	default:
 		return tuiSubtleStyle
 	}
-}
-
-func renderStatusChip(status string) string {
-	if status == "" {
-		return ""
-	}
-	label := strings.ToUpper(status)
-	style := lipgloss.NewStyle().
-		Padding(0, 1).
-		Foreground(lipgloss.Color("16")).
-		Background(tuiColorInfo).
-		Bold(true)
-	switch strings.ToLower(status) {
-	case "ok", "ready", "complete", "success", "unchanged":
-		style = style.Background(tuiColorOK)
-	case "changed", "warning", "new":
-		style = style.Background(tuiColorChanged)
-	case "failed", "error", "removed":
-		style = style.Background(tuiColorFailed)
-	case "skipped", "pending", "status-only":
-		style = style.Background(tuiColorSkipped)
-	}
-	return style.Render(label)
 }
 
 func renderStats(stats []ScreenStat, width int) string {
@@ -392,6 +367,32 @@ func viewportBodyHeight(totalHeight int, chromeParts ...string) int {
 		nonEmpty++
 	}
 	return max(4, totalHeight-used-nonEmpty)
+}
+
+func compactHelpPrompt() string {
+	return tuiHelpStyle.Render("? help")
+}
+
+func responsiveFooter(width int, left, right string) string {
+	if width <= 0 {
+		return compactHelpPrompt()
+	}
+	if right == "" {
+		if left == "" {
+			return ""
+		}
+		if lipgloss.Width(left) > width {
+			return compactHelpPrompt()
+		}
+		return left
+	}
+	if left != "" && lipgloss.Width(left)+1+lipgloss.Width(right) <= width {
+		return spaceBetween(width, left, right)
+	}
+	if left == "" && lipgloss.Width(right) <= width {
+		return right
+	}
+	return compactHelpPrompt()
 }
 
 type helpKeyMap interface {
