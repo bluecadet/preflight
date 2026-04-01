@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -26,11 +27,13 @@ type Config struct {
 	Phase            string // "plan", "fetch", "stage", "apply" (empty = all)
 	Renderer         output.Renderer
 	Secrets          *secrets.Resolver
+	SecretsConfig    config.SecretsConfig
 	StatePath        string
 	ModuleRegistry   target.ModuleRegistry
 	BundleOutputDir  string
 	BundleBinaryPath string
 	BundlePlugins    []plugins.LoadedPlugin
+	AllowPlaintextSecretsInBundle bool
 	Lockfile         *action.Lockfile
 	Version          string
 	Commit           string
@@ -112,6 +115,15 @@ func (r *Runner) emitError(err error) {
 		r.config.Renderer.Emit(output.Event{
 			Type:  output.EventError,
 			Error: err,
+		})
+	}
+}
+
+func (r *Runner) emitWarning(message string) {
+	if r.config.Renderer != nil && message != "" {
+		r.config.Renderer.Emit(output.Event{
+			Type:    output.EventWarning,
+			Message: message,
 		})
 	}
 }

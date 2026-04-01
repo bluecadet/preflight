@@ -19,6 +19,16 @@ import (
 const (
 	ManifestPath = "manifest.json"
 	PlanPath     = "plan.json"
+	FormatV1     = 1
+	FormatV2     = 2
+)
+
+type SecretMode string
+
+const (
+	SecretModeNone      SecretMode = ""
+	SecretModeEncrypted SecretMode = "encrypted"
+	SecretModePlaintext SecretMode = "plaintext"
 )
 
 // Manifest describes a staged offline bundle.
@@ -34,6 +44,8 @@ type Manifest struct {
 	Modules       []ModuleInfo       `json:"modules,omitempty"`
 	Checksums     map[string]string  `json:"checksums,omitempty"`
 	LockEntries   []action.LockEntry `json:"lock_entries,omitempty"`
+	SecretMode    SecretMode         `json:"secret_mode,omitempty"`
+	SecretEntries []SecretEntry      `json:"secret_entries,omitempty"`
 }
 
 // BuildInfo identifies the preflight binary that created the bundle.
@@ -49,6 +61,12 @@ type ModuleInfo struct {
 	Kind    string `json:"kind"`
 	Path    string `json:"path,omitempty"`
 	Version string `json:"version,omitempty"`
+}
+
+// SecretEntry records one bundle-local secret payload referenced by the plan.
+type SecretEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // FileSpec is one file to include in a bundle.
@@ -72,7 +90,7 @@ func Write(path string, manifest *Manifest, files []FileSpec) error {
 		return fmt.Errorf("bundle: nil manifest")
 	}
 	if manifest.FormatVersion == 0 {
-		manifest.FormatVersion = 1
+		manifest.FormatVersion = FormatV2
 	}
 	if manifest.CreatedAt.IsZero() {
 		manifest.CreatedAt = time.Now().UTC()
@@ -95,6 +113,11 @@ func Write(path string, manifest *Manifest, files []FileSpec) error {
 			_ = out.Close()
 		}
 	}()
+	if manifest.SecretMode == SecretModePlaintext {
+		if err := out.Chmod(0o600); err != nil {
+			return fmt.Errorf("bundle: chmod %q: %w", path, err)
+		}
+	}
 
 	zw := zip.NewWriter(out)
 	defer func() {
@@ -260,6 +283,12 @@ func readManifest(files []*zip.File) (*Manifest, error) {
 		var manifest Manifest
 		if err := json.Unmarshal(data, &manifest); err != nil {
 			return nil, fmt.Errorf("bundle: parse manifest: %w", err)
+		}
+		if manifest.FormatVersion == 0 {
+			manifest.FormatVersion = FormatV1
+		}
+		if manifest.FormatVersion < FormatV1 || manifest.FormatVersion > FormatV2 {
+			return nil, fmt.Errorf("bundle: unsupported format version %d", manifest.FormatVersion)
 		}
 		return &manifest, nil
 	}

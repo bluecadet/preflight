@@ -265,7 +265,8 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: target info: %w", err)
 	}
 
-	if err := r.validateStagePlan(plan); err != nil {
+	stageSecrets, err := r.analyzeStagePlan(ctx, plan)
+	if err != nil {
 		return err
 	}
 
@@ -291,7 +292,7 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 	files := []bundle.FileSpec{
 		{
 			Path: bundle.PlanPath,
-			Mode: 0o644,
+			Mode: stageSecrets.planMode,
 			Data: planBytes,
 		},
 		{
@@ -300,6 +301,7 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 			Data: binaryData,
 		},
 	}
+	files = append(files, stageSecrets.files...)
 	files = append(files, pluginFiles...)
 
 	lockEntries := []action.LockEntry(nil)
@@ -321,7 +323,7 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 	}
 
 	manifest := &bundle.Manifest{
-		FormatVersion: 1,
+		FormatVersion: bundle.FormatV2,
 		CreatedAt:     time.Now().UTC(),
 		PlaybookName:  plan.PlaybookName,
 		TargetName:    r.targetName(),
@@ -333,37 +335,171 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 			Commit:  r.config.Commit,
 			Date:    r.config.BuildDate,
 		},
-		Modules:     moduleInfos,
-		LockEntries: lockEntries,
+		Modules:       moduleInfos,
+		LockEntries:   lockEntries,
+		SecretMode:    stageSecrets.mode,
+		SecretEntries: stageSecrets.entries,
 	}
 
 	bundlePath := filepath.Join(r.config.BundleOutputDir, bundle.BundleFileName(plan.PlaybookName, r.targetName(), info.OSVersion, info.Arch))
 	if err := bundle.Write(bundlePath, manifest, files); err != nil {
 		return fmt.Errorf("stage: %w", err)
 	}
+	if stageSecrets.mode == bundle.SecretModePlaintext {
+		r.emitWarning("bundle contains plaintext secrets")
+	}
 	return nil
 }
 
-func (r *Runner) validateStagePlan(plan *ExecutionPlan) error {
+type stageSecretBundle struct {
+	mode    bundle.SecretMode
+	planMode os.FileMode
+	entries  []bundle.SecretEntry
+	files    []bundle.FileSpec
+}
+
+func (r *Runner) analyzeStagePlan(ctx context.Context, plan *ExecutionPlan) (*stageSecretBundle, error) {
+	result := &stageSecretBundle{planMode: 0o644}
 	if len(plan.Tasks) == 0 {
-		return nil
+		return result, nil
 	}
 
+	usedRefs := make(map[string]struct{})
 	for _, task := range plan.Tasks {
 		if r.config.ModuleRegistry != nil {
 			if _, ok := r.config.ModuleRegistry[task.Module]; !ok {
-				return fmt.Errorf("stage: task %q references unknown module %q", task.Name, task.Module)
+				return nil, fmt.Errorf("stage: task %q references unknown module %q", task.Name, task.Module)
 			}
 		}
 		preview, err := PreviewTask(task, r.config.TargetVars)
 		if err != nil {
-			return fmt.Errorf("stage: preview task %q: %w", task.Name, err)
+			return nil, fmt.Errorf("stage: preview task %q: %w", task.Name, err)
 		}
-		if containsSecretValue(preview.Params) {
-			return fmt.Errorf("stage: task %q depends on secret values that cannot be embedded in a staged bundle", preview.Name)
+		analysis := AnalyzeSecretValues(preview.Params)
+		if analysis.HasLiteralSecrets && !r.config.AllowPlaintextSecretsInBundle {
+			return nil, fmt.Errorf("stage: task %q depends on secret values that cannot be embedded in a staged bundle", preview.Name)
+		}
+		for _, name := range analysis.RefNames {
+			usedRefs[name] = struct{}{}
+		}
+		if analysis.HasLiteralSecrets {
+			result.mode = bundle.SecretModePlaintext
+			result.planMode = 0o600
 		}
 	}
-	return nil
+
+	if len(usedRefs) == 0 {
+		return result, nil
+	}
+	refNames := make([]string, 0, len(usedRefs))
+	for name := range usedRefs {
+		refNames = append(refNames, name)
+	}
+	slices.Sort(refNames)
+
+	secretMode := bundle.SecretModeEncrypted
+	if r.config.AllowPlaintextSecretsInBundle {
+		secretMode = bundle.SecretModePlaintext
+		result.planMode = 0o600
+	}
+	entries, files, err := r.stageSecretFiles(ctx, refNames, secretMode)
+	if err != nil {
+		return nil, err
+	}
+	result.mode = secretMode
+	result.entries = entries
+	result.files = files
+	return result, nil
+}
+
+func (r *Runner) stageSecretFiles(ctx context.Context, names []string, mode bundle.SecretMode) ([]bundle.SecretEntry, []bundle.FileSpec, error) {
+	if len(names) == 0 {
+		return nil, nil, nil
+	}
+
+	entries := make([]bundle.SecretEntry, 0, len(names))
+	files := make([]bundle.FileSpec, 0, len(names))
+	for _, name := range names {
+		entry, ok := r.config.SecretsConfig.Entries[name]
+		if !ok {
+			return nil, nil, fmt.Errorf("stage: secret %q is not defined in preflight.yml", name)
+		}
+
+		var (
+			relPath string
+			data    []byte
+			err     error
+		)
+		switch mode {
+		case bundle.SecretModeEncrypted:
+			relPath = stageSecretBundlePath(name, true)
+			data, err = os.ReadFile(r.bundleSecretSourcePath(entry.File))
+			if err != nil {
+				return nil, nil, fmt.Errorf("stage: read encrypted secret %q: %w", name, err)
+			}
+		case bundle.SecretModePlaintext:
+			relPath = stageSecretBundlePath(name, false)
+			if r.config.Secrets == nil || !r.config.Secrets.HasProviders() {
+				return nil, nil, fmt.Errorf("stage: no secrets resolver is configured")
+			}
+			resolved, err := r.config.Secrets.ResolveRef(ctx, "secret:"+name)
+			if err != nil {
+				return nil, nil, fmt.Errorf("stage: resolve secret %q: %w", name, err)
+			}
+			data = []byte(resolved)
+		default:
+			return nil, nil, fmt.Errorf("stage: unsupported secret mode %q", mode)
+		}
+
+		entries = append(entries, bundle.SecretEntry{Name: name, Path: relPath})
+		files = append(files, bundle.FileSpec{
+			Path: relPath,
+			Mode: 0o600,
+			Data: data,
+		})
+	}
+	return entries, files, nil
+}
+
+func (r *Runner) bundleSecretSourcePath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+	return filepath.Join(r.config.ProjectDir, path)
+}
+
+func stageSecretBundlePath(name string, encrypted bool) string {
+	path := filepath.ToSlash(filepath.Join("secrets", sanitizeStageSecretName(name)))
+	if encrypted {
+		return path + ".age"
+	}
+	return path
+}
+
+func sanitizeStageSecretName(name string) string {
+	name = strings.TrimSpace(strings.ToLower(name))
+	if name == "" {
+		return "secret"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	trimmed := strings.Trim(b.String(), "-")
+	if trimmed == "" {
+		return "secret"
+	}
+	return trimmed
 }
 
 func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
@@ -482,7 +618,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "tag-filtered", nil))
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -499,7 +635,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if depFailed && !pt.IgnoreErrors {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "dependency-failed", dag))
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
 			succeeded[pt.ID] = false
 			continue
@@ -513,7 +649,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 			if !ok {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false")
-				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, target.StatusSkipped, "when-condition-false", dag))
+				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
 				succeeded[pt.ID] = false
 				continue
@@ -524,6 +660,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if err != nil {
 			return fmt.Errorf("apply: task %q: render params: %w", pt.Name, err)
 		}
+		stateSource := params
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
 			params, err = r.config.Secrets.ResolveMap(ctx, params)
 			if err != nil {
@@ -536,7 +673,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
-				state.RecordTask(newTaskSnapshot(pt, taskName, params, target.StatusFailed, execErr.Error(), dag))
+				state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
 				return finishApply()
@@ -549,7 +686,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
-		state.RecordTask(newTaskSnapshot(pt, taskName, params, result.Status, result.Message, dag))
+		state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, result.Status, result.Message, dag))
 
 		r.emitTaskResult(pt, result.Status, result.Message)
 
@@ -617,7 +754,7 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 	})
 }
 
-func newTaskSnapshot(pt *PlanTask, taskName string, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
+func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
 	dependsOn := make([]string, 0, len(pt.DependsOn))
 	if dag != nil {
 		for _, depName := range pt.DependsOn {
@@ -628,8 +765,8 @@ func newTaskSnapshot(pt *PlanTask, taskName string, params map[string]any, statu
 	}
 	slices.Sort(dependsOn)
 
-	paramHash := ParamHash(params)
-	summary := SummarizeParams(params)
+	paramHash := StateParamHash(sourceParams, params)
+	summary := StateParamSummary(sourceParams, params)
 
 	return TaskSnapshot{
 		TaskKey:      pt.ID,

@@ -14,6 +14,7 @@ const (
 	EventPlayStart  EventType = "play_start"
 	EventTaskResult EventType = "task_result"
 	EventPlayEnd    EventType = "play_end"
+	EventWarning    EventType = "warning"
 	EventError      EventType = "error"
 )
 
@@ -137,6 +138,13 @@ func (r *TextRenderer) Emit(event Event) {
 			msg = event.Error.Error()
 		}
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
+
+	case EventWarning:
+		msg := event.Message
+		if event.Error != nil {
+			msg = event.Error.Error()
+		}
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiYellow, "WARNING: "+msg))
 	}
 }
 
