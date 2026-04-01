@@ -151,11 +151,11 @@ func streamStyle(stream string) lipgloss.Style {
 	case "stderr", "err", "error":
 		return lipgloss.NewStyle().Foreground(tuiColorFailed)
 	case "stdout", "out":
-		return lipgloss.NewStyle().Foreground(tuiColorOK)
+		return lipgloss.NewStyle().Foreground(tuiColorDim)
 	case "warn", "warning":
 		return lipgloss.NewStyle().Foreground(tuiColorChanged)
 	default:
-		return lipgloss.NewStyle().Foreground(tuiColorInfo)
+		return lipgloss.NewStyle().Foreground(tuiColorDim)
 	}
 }
 
@@ -421,9 +421,8 @@ func renderScreenLines(lines []ScreenLine, width int) string {
 			contentWidth = 12
 		}
 		wrapped := wrapText(line.Text, contentWidth)
-		tone := toneStyle(line.Tone)
 		for i, wrappedLine := range wrapped {
-			content := tone.Render(wrappedLine)
+			content := tuiSubtleStyle.Render(wrappedLine)
 			if prefixWidth > 0 && i == 0 {
 				rendered = append(rendered, lipgloss.JoinHorizontal(lipgloss.Left, prefixText, " ", content))
 				continue

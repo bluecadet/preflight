@@ -34,6 +34,8 @@ type tuiModel struct {
 	height            int
 	tabPager          paginator.Model
 	viewport          viewport.Model
+	detailViewport    viewport.Model
+	modalOpen         bool
 	collapseCompleted bool
 	failedOnly        bool
 	showHelp          bool
@@ -50,18 +52,19 @@ func newTUIModel(events chan Event, options Options) tuiModel {
 		command = "run"
 	}
 	return tuiModel{
-		spinner:     s,
-		help:        tuiNewHelp(),
-		keys:        newRunKeyMap(),
-		events:      events,
-		interrupt:   options.Interrupt,
-		command:     command,
-		interactive: options.Input != nil,
-		hosts:       make(map[string]*hostView),
-		width:       defaultTUIWidth,
-		height:      defaultTUIHeight,
-		tabPager:    newTUITabPager(),
-		viewport:    viewport.New(defaultTUIWidth, defaultTUIHeight-6),
+		spinner:        s,
+		help:           tuiNewHelp(),
+		keys:           newRunKeyMap(),
+		events:         events,
+		interrupt:      options.Interrupt,
+		command:        command,
+		interactive:    options.Input != nil,
+		hosts:          make(map[string]*hostView),
+		width:          defaultTUIWidth,
+		height:         defaultTUIHeight,
+		tabPager:       newTUITabPager(),
+		viewport:       viewport.New(defaultTUIWidth, defaultTUIHeight-6),
+		detailViewport: viewport.New(defaultTUIWidth-8, defaultTUIHeight-10),
 	}
 }
 
@@ -109,6 +112,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if msg.Type == tea.KeyEsc {
+		if m.modalOpen {
+			m.modalOpen = false
+			return m, nil
+		}
 		if m.done {
 			return m, tea.Quit
 		}
@@ -129,16 +136,30 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, nil
+	case "enter", " ":
+		if m.modalOpen {
+			m.modalOpen = false
+		} else if m.currentTask() != nil {
+			m.modalOpen = true
+			m.detailViewport.GotoTop()
+		}
+		m.syncViewport()
+		return m, nil
+	}
+
+	if m.modalOpen {
+		var cmd tea.Cmd
+		m.detailViewport, cmd = m.detailViewport.Update(msg)
+		return m, cmd
+	}
+
+	switch msg.String() {
 	case "?":
 		m.showHelp = !m.showHelp
 	case "c":
 		m.collapseCompleted = !m.collapseCompleted
 	case "f":
 		m.failedOnly = !m.failedOnly
-	case "enter", " ":
-		if task := m.currentTask(); task != nil {
-			task.expanded = !task.expanded
-		}
 	case "up", "k":
 		if host := m.currentHost(); host != nil {
 			host.selectedTask--
@@ -166,14 +187,14 @@ func (m tuiModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *tuiModel) syncViewport() {
-	header := m.renderHeader()
-	tabs := m.renderTabs()
+	topChrome := m.renderTopChrome()
 	footer := m.renderFooter()
 	m.viewport.Width = max(20, m.width)
-	m.viewport.Height = viewportBodyHeight(m.height, header, tabs, footer)
+	m.viewport.Height = viewportBodyHeight(m.height, topChrome, footer)
 
 	body, starts, ends := m.renderTaskStream()
 	m.viewport.SetContent(body)
+	m.syncDetailViewport()
 
 	host := m.currentHost()
 	if host == nil || len(starts) == 0 {
@@ -255,7 +276,6 @@ func (m tuiModel) applyEvent(event Event) tuiModel {
 		task.message = event.Message
 		task.module = event.Module
 		if event.Status == "failed" {
-			task.expanded = true
 			if len(task.logs) == 0 && event.Message != "" {
 				task.appendLog("stderr", event.Message)
 			}
@@ -415,19 +435,15 @@ func (m tuiModel) previewLogs(task *taskView) []taskLogLine {
 	return task.logs[len(task.logs)-previewCount:]
 }
 
-func (m tuiModel) expandedTaskLines(task *taskView) []ScreenLine {
-	lines := make([]ScreenLine, 0, min(8, len(task.logs))+1)
+func (m tuiModel) taskDetailLines(task *taskView) []ScreenLine {
+	lines := make([]ScreenLine, 0, len(task.logs)+2)
 	if task.message != "" && !m.logContainsMessage(task) {
 		lines = append(lines, ScreenLine{Text: task.message, Tone: task.status})
 	}
 	if len(task.logs) == 0 {
 		return lines
 	}
-	start := max(0, len(task.logs)-8)
-	if start > 0 {
-		lines = append(lines, ScreenLine{Text: fmt.Sprintf("%d earlier log lines hidden", start), Tone: "info"})
-	}
-	for _, entry := range task.logs[start:] {
+	for _, entry := range task.logs {
 		lines = append(lines, ScreenLine{
 			Prefix: logPrefix(entry.stream),
 			Text:   entry.line,
@@ -437,11 +453,30 @@ func (m tuiModel) expandedTaskLines(task *taskView) []ScreenLine {
 	return lines
 }
 
-func (m tuiModel) expandedTaskTitle(task *taskView) string {
+func (m tuiModel) taskDetailTitle(task *taskView) string {
 	if len(task.logs) > 0 {
-		return "Recent logs"
+		return "Output"
 	}
 	return "Details"
+}
+
+func (m *tuiModel) syncDetailViewport() {
+	if !m.modalOpen {
+		return
+	}
+	task := m.currentTask()
+	if task == nil {
+		m.modalOpen = false
+		return
+	}
+	modalWidth := max(40, min(m.width-6, 100))
+	modalHeight := max(10, min(m.height-4, 28))
+	innerWidth := max(20, modalWidth-4)
+	innerHeight := max(4, modalHeight-8)
+	m.detailViewport.Width = innerWidth
+	m.detailViewport.Height = innerHeight
+	content := renderScreenLines(m.taskDetailLines(task), innerWidth)
+	m.detailViewport.SetContent(content)
 }
 
 func (m tuiModel) logContainsMessage(task *taskView) bool {

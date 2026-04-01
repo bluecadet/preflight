@@ -110,9 +110,6 @@ func TestTUIModel_ApplyEventLifecycle(t *testing.T) {
 	if task.status != "failed" {
 		t.Fatalf("expected failed task status, got %q", task.status)
 	}
-	if !task.expanded {
-		t.Fatal("expected failed task to auto-expand")
-	}
 	if len(task.logs) != 1 {
 		t.Fatalf("expected one task log, got %d", len(task.logs))
 	}
@@ -176,26 +173,26 @@ func TestTaskView_LogBufferIsBounded(t *testing.T) {
 	}
 }
 
-func TestRenderTaskCard_ExpandedDoesNotDuplicatePreviewLogs(t *testing.T) {
+func TestTaskDetailLines_DoNotDuplicateFailureMessage(t *testing.T) {
 	model := newTUIModel(make(chan Event, 1), Options{})
 	task := &taskView{
-		name:     "stream logs",
-		module:   "shell",
-		status:   "failed",
-		message:  "boom",
-		expanded: true,
+		name:    "stream logs",
+		module:  "shell",
+		status:  "failed",
+		message: "boom",
 		logs: []taskLogLine{
 			{stream: "stdout", line: "alpha"},
 			{stream: "stderr", line: "boom"},
 		},
 	}
 
-	rendered := model.renderTaskCard(task, false, 80)
+	lines := model.taskDetailLines(task)
+	rendered := renderScreenLines(lines, 80)
 	if strings.Count(rendered, "alpha") != 1 {
-		t.Fatalf("expected expanded card to render stdout log once, got %q", rendered)
+		t.Fatalf("expected detail view to render stdout log once, got %q", rendered)
 	}
 	if strings.Count(rendered, "boom") != 1 {
-		t.Fatalf("expected expanded card to avoid repeating the failure message, got %q", rendered)
+		t.Fatalf("expected detail view to avoid repeating the failure message, got %q", rendered)
 	}
 }
 
@@ -284,6 +281,29 @@ func TestTUIModel_ViewTrimsViewportPadding(t *testing.T) {
 	rendered := model.View()
 	if strings.HasSuffix(rendered, "\n\n") {
 		t.Fatalf("expected view to avoid extra bottom blank lines, got %q", rendered)
+	}
+}
+
+func TestTUIModel_ToggleOpensAndClosesDetailModal(t *testing.T) {
+	model := newTUIModel(make(chan Event, 1), Options{})
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "play", Target: "host-a"})
+	model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: "task-1", TaskName: "short task", Module: "shell"})
+	model = model.applyEvent(Event{Type: EventTaskLog, Target: "host-a", TaskID: "task-1", TaskName: "short task", Stream: "stdout", Line: "hello"})
+	model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: "task-1", TaskName: "short task", Status: "failed", Message: "boom"})
+
+	next, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	model = next.(tuiModel)
+	if !model.modalOpen {
+		t.Fatal("expected enter to open detail modal")
+	}
+	if model.detailViewport.Height == 0 || model.detailViewport.Width == 0 {
+		t.Fatal("expected detail viewport to be sized when modal opens")
+	}
+
+	next, _ = model.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	model = next.(tuiModel)
+	if model.modalOpen {
+		t.Fatal("expected esc to close detail modal before quitting")
 	}
 }
 

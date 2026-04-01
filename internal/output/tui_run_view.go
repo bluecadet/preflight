@@ -8,26 +8,41 @@ import (
 )
 
 func (m tuiModel) View() string {
-	header := m.renderHeader()
-	tabs := m.renderTabs()
+	topChrome := m.renderTopChrome()
 	footer := m.renderFooter()
 
 	m.viewport.Width = max(20, m.width)
-	m.viewport.Height = viewportBodyHeight(m.height, header, tabs, footer)
+	m.viewport.Height = viewportBodyHeight(m.height, topChrome, footer)
 	m.syncViewport()
 
-	parts := make([]string, 0, 4)
-	if header != "" {
-		parts = append(parts, header)
+	if m.modalOpen {
+		return m.renderTaskModal()
 	}
-	if tabs != "" {
-		parts = append(parts, tabs)
+
+	parts := make([]string, 0, 4)
+	if topChrome != "" {
+		parts = append(parts, topChrome, "")
 	}
 	parts = append(parts, strings.TrimRight(m.viewport.View(), "\n"))
 	if footer != "" {
-		parts = append(parts, footer)
+		parts = append(parts, "", footer)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+func (m tuiModel) renderTopChrome() string {
+	header := m.renderHeader()
+	tabs := m.renderTabs()
+	switch {
+	case header == "" && tabs == "":
+		return ""
+	case header == "":
+		return tabs
+	case tabs == "":
+		return header
+	default:
+		return lipgloss.JoinVertical(lipgloss.Left, header, tabs)
+	}
 }
 
 func (m tuiModel) renderHeader() string {
@@ -85,17 +100,6 @@ func (m tuiModel) renderTaskStream() (string, []int, []int) {
 			currentLine++
 		}
 	}
-	if host.done {
-		recap := renderStats([]ScreenStat{
-			{Label: "ok", Value: fmt.Sprintf("%d", host.recap.ok), Tone: "ok"},
-			{Label: "changed", Value: fmt.Sprintf("%d", host.recap.changed), Tone: "changed"},
-			{Label: "failed", Value: fmt.Sprintf("%d", host.recap.failed), Tone: "failed"},
-			{Label: "skipped", Value: fmt.Sprintf("%d", host.recap.skipped), Tone: "skipped"},
-		}, width)
-		if recap != "" {
-			blocks = append(blocks, lipgloss.JoinVertical(lipgloss.Left, tuiSectionStyle.Render("Recap"), recap))
-		}
-	}
 	if len(blocks) == 0 {
 		return "", starts, ends
 	}
@@ -122,7 +126,8 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 	if task.module != "" {
 		summaryParts = append(summaryParts, tuiSubtleStyle.Render("("+task.module+")"))
 	}
-	if task.message != "" && !task.expanded {
+	if task.message != "" {
+		// Keep the summary line concise; the full detail lives in the modal.
 		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, contentWidth/3))))
 	}
 	summarySegments := make([]string, 0, len(summaryParts)*2)
@@ -135,12 +140,10 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 		}
 		summarySegments = append(summarySegments, part)
 	}
-	lines := []string{lipgloss.JoinHorizontal(lipgloss.Left, summarySegments...)}
-	if task.running {
-		lines = append(lines, tuiSubtleStyle.Render("running"))
-	}
 
-	if !task.expanded && (task.running || task.status == "failed") && len(task.logs) > 0 {
+	lines := []string{lipgloss.JoinHorizontal(lipgloss.Left, summarySegments...)}
+
+	if (task.running || task.status == "failed") && len(task.logs) > 0 {
 		previewLines := make([]ScreenLine, 0, min(3, len(task.logs)))
 		for _, line := range m.previewLogs(task) {
 			previewLines = append(previewLines, ScreenLine{
@@ -150,14 +153,6 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 			})
 		}
 		lines = append(lines, renderScreenLines(previewLines, contentWidth))
-	}
-
-	if task.expanded {
-		detail := m.expandedTaskLines(task)
-		if len(detail) > 0 {
-			lines = append(lines, tuiSectionStyle.Render(m.expandedTaskTitle(task)))
-			lines = append(lines, renderScreenLines(detail, contentWidth))
-		}
 	}
 
 	contentLines := make([]string, 0, len(lines))
@@ -183,7 +178,18 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 func (m tuiModel) renderFooter() string {
 	location := ""
 	host := m.currentHost()
-	if host != nil {
+	if host != nil && host.done {
+		recap := renderStats([]ScreenStat{
+			{Label: "ok", Value: fmt.Sprintf("%d", host.recap.ok), Tone: "ok"},
+			{Label: "changed", Value: fmt.Sprintf("%d", host.recap.changed), Tone: "changed"},
+			{Label: "failed", Value: fmt.Sprintf("%d", host.recap.failed), Tone: "failed"},
+			{Label: "skipped", Value: fmt.Sprintf("%d", host.recap.skipped), Tone: "skipped"},
+		}, max(20, m.width/2))
+		location = recap
+		if len(m.hostOrder) > 1 && recap != "" {
+			location = lipgloss.JoinHorizontal(lipgloss.Left, tuiSubtleStyle.Render(host.name), "  ", recap)
+		}
+	} else if host != nil {
 		location = tuiSubtleStyle.Render(host.name)
 		if len(m.visibleTasks(host)) > 0 {
 			location = tuiSubtleStyle.Render(fmt.Sprintf("%s  task %d/%d", host.name, host.selectedTask+1, len(m.visibleTasks(host))))
@@ -201,6 +207,54 @@ func (m tuiModel) renderFooter() string {
 		helpText = spaceBetween(max(10, m.width/2), tuiSubtleStyle.Render("Ctrl+C cancel"), helpText)
 	}
 	return responsiveFooter(m.width, location, helpText)
+}
+
+func (m tuiModel) renderTaskModal() string {
+	task := m.currentTask()
+	if task == nil {
+		return ""
+	}
+
+	modalWidth := max(40, min(m.width-6, 100))
+	modalHeight := max(10, min(m.height-4, 28))
+	titleParts := []string{m.taskStatusGlyph(task), truncateText(task.name, max(20, modalWidth-12))}
+	if task.module != "" {
+		titleParts = append(titleParts, tuiSubtleStyle.Render("("+task.module+")"))
+	}
+	titleSegments := make([]string, 0, len(titleParts)*2)
+	for _, part := range titleParts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if len(titleSegments) > 0 {
+			titleSegments = append(titleSegments, "  ")
+		}
+		titleSegments = append(titleSegments, part)
+	}
+	title := lipgloss.JoinHorizontal(lipgloss.Left, titleSegments...)
+	meta := ""
+	if host := m.currentHost(); host != nil {
+		meta = tuiSubtleStyle.Render(host.name)
+	}
+	footer := tuiSubtleStyle.Render("esc close  ↑/↓ scroll  pgup/pgdn page")
+
+	parts := []string{title}
+	if meta != "" {
+		parts = append(parts, meta)
+	}
+	if section := m.taskDetailTitle(task); section != "" {
+		parts = append(parts, tuiSectionStyle.Render(section))
+	}
+	parts = append(parts, strings.TrimRight(m.detailViewport.View(), "\n"), footer)
+	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	modal := lipgloss.NewStyle().
+		Width(modalWidth).
+		Height(modalHeight).
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(tuiColorSelected).
+		Padding(1, 2).
+		Render(body)
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
 }
 
 func (m tuiModel) subjectLine() string {

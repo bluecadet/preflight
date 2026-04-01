@@ -34,7 +34,7 @@ func newRunKeyMap() runKeyMap {
 		),
 		Toggle: key.NewBinding(
 			key.WithKeys("enter", "space"),
-			key.WithHelp("enter/space", "details"),
+			key.WithHelp("enter/space", "open details"),
 		),
 		Collapse: key.NewBinding(
 			key.WithKeys("c"),

@@ -12,7 +12,6 @@ type taskView struct {
 	status   string
 	message  string
 	running  bool
-	expanded bool
 	logs     []taskLogLine
 	logBytes int
 }
