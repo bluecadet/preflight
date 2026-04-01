@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"filippo.io/age"
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
@@ -197,6 +198,54 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 
 	if _, err := os.Stat(statePath); err != nil {
 		t.Fatalf("expected bundle apply state file, got %v", err)
+	}
+}
+
+func TestRunApplyBundleEncryptedSecretsRequireIdentity(t *testing.T) {
+	playbookPath, _ := writeSecretBundleProject(t, false)
+	stageCmd := newTestCommand()
+	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
+		t.Fatalf("Set phase: %v", err)
+	}
+	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+		t.Fatalf("stage bundle: %v", err)
+	}
+
+	applyCmd := newTestCommand()
+	if err := applyCmd.Flags().Set("bundle", mustOneBundleMatch(t, filepath.Dir(playbookPath))); err != nil {
+		t.Fatalf("Set bundle: %v", err)
+	}
+	err := runApply(applyCmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "--secret-identity is required") {
+		t.Fatalf("expected missing identity error, got %v", err)
+	}
+}
+
+func TestRunApplyBundlePlaintextSecretsWithoutIdentity(t *testing.T) {
+	playbookPath, _ := writeSecretBundleProject(t, true)
+	stageCmd := newTestCommand()
+	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
+		t.Fatalf("Set phase: %v", err)
+	}
+	if err := stageCmd.Flags().Set("allow-plaintext-secrets-in-bundle", "true"); err != nil {
+		t.Fatalf("Set allow-plaintext-secrets-in-bundle: %v", err)
+	}
+	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+		t.Fatalf("stage bundle: %v", err)
+	}
+
+	applyCmd := newTestCommand()
+	if err := applyCmd.Flags().Set("bundle", mustOneBundleMatch(t, filepath.Dir(playbookPath))); err != nil {
+		t.Fatalf("Set bundle: %v", err)
+	}
+	out, err := captureStdout(t, func() error {
+		return runApply(applyCmd, nil)
+	})
+	if err != nil {
+		t.Fatalf("apply bundle: %v", err)
+	}
+	if !strings.Contains(out, "WARNING: bundle contains plaintext secrets") {
+		t.Fatalf("expected plaintext bundle warning, got %q", out)
 	}
 }
 
@@ -435,6 +484,8 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("phase", "", "")
 	cmd.Flags().String("bundle-output-dir", "", "")
 	cmd.Flags().String("bundle", "", "")
+	cmd.Flags().String("secret-identity", "", "")
+	cmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "")
 	cmd.Flags().String("state-file", "", "")
 	cmd.Flags().String("inventory", "", "")
 	cmd.SetContext(context.Background())
@@ -578,4 +629,78 @@ tasks:
 		t.Fatalf("WriteFile(%q): %v", path, err)
 	}
 	return path
+}
+
+func writeSecretBundleProject(t *testing.T, includeLiteralSecret bool) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("GenerateX25519Identity: %v", err)
+	}
+	identityPath := filepath.Join(dir, "keys.txt")
+	if err := os.WriteFile(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(identity): %v", err)
+	}
+
+	secretPath := filepath.Join(dir, "secrets", "db-password.age")
+	if err := os.MkdirAll(filepath.Dir(secretPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(secrets): %v", err)
+	}
+	var encrypted bytes.Buffer
+	w, err := age.Encrypt(&encrypted, identity.Recipient())
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := w.Write([]byte("hunter2")); err != nil {
+		t.Fatalf("Write(secret): %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close(secret): %v", err)
+	}
+	if err := os.WriteFile(secretPath, encrypted.Bytes(), 0o600); err != nil {
+		t.Fatalf("WriteFile(secret): %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte(`
+secrets:
+  identity: "keys.txt"
+  recipients:
+    - "`+identity.Recipient().String()+`"
+  entries:
+    db-password:
+      file: "secrets/db-password.age"
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(preflight.yml): %v", err)
+	}
+
+	literalLine := ""
+	if includeLiteralSecret {
+		literalLine = "        TOKEN: abc123\n"
+	}
+	playbookPath := filepath.Join(dir, "playbook.yml")
+	if err := os.WriteFile(playbookPath, []byte(`
+name: secret-bundle
+tasks:
+  - name: echo
+    shell:
+      cmd: echo
+      env:
+        PASSWORD: secret:db-password
+`+literalLine), 0o644); err != nil {
+		t.Fatalf("WriteFile(playbook): %v", err)
+	}
+	return playbookPath, identityPath
+}
+
+func mustOneBundleMatch(t *testing.T, projectDir string) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(projectDir, "dist", "bundles", "*.zip"))
+	if err != nil {
+		t.Fatalf("Glob bundle output: %v", err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("expected one staged bundle, got %d", len(matches))
+	}
+	return matches[0]
 }
