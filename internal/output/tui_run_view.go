@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func (m tuiModel) View() string {
@@ -15,11 +16,15 @@ func (m tuiModel) View() string {
 	m.viewport.Height = viewportBodyHeight(m.height, topChrome, footer)
 	m.syncViewport()
 
+	base := m.renderMainView(topChrome, footer)
 	if m.modalOpen {
-		return m.renderTaskModal()
+		return m.renderTaskModalOverlay(base)
 	}
+	return base
+}
 
-	parts := make([]string, 0, 4)
+func (m tuiModel) renderMainView(topChrome, footer string) string {
+	parts := make([]string, 0, 5)
 	if topChrome != "" {
 		parts = append(parts, topChrome, "")
 	}
@@ -209,7 +214,50 @@ func (m tuiModel) renderFooter() string {
 	return responsiveFooter(m.width, location, helpText)
 }
 
-func (m tuiModel) renderTaskModal() string {
+func (m tuiModel) renderTaskModalOverlay(base string) string {
+	base = lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Top, base)
+	base = lipgloss.NewStyle().Faint(true).Render(base)
+
+	modal := m.renderTaskModalBox()
+	modalWidth := lipgloss.Width(modal)
+	modalHeight := lipgloss.Height(modal)
+	left := max(0, (m.width-modalWidth)/2)
+	top := max(0, (m.height-modalHeight)/2)
+
+	baseLines := strings.Split(base, "\n")
+	if len(baseLines) < m.height {
+		padded := make([]string, 0, m.height)
+		padded = append(padded, baseLines...)
+		for len(padded) < m.height {
+			padded = append(padded, strings.Repeat(" ", m.width))
+		}
+		baseLines = padded
+	}
+
+	modalLines := strings.Split(modal, "\n")
+	for row, modalLine := range modalLines {
+		targetRow := top + row
+		if targetRow < 0 || targetRow >= len(baseLines) {
+			continue
+		}
+		modalWidth := ansi.StringWidth(modalLine)
+		if modalWidth == 0 {
+			continue
+		}
+		baseLine := lipgloss.PlaceHorizontal(m.width, lipgloss.Left, baseLines[targetRow])
+		leftPart := ansi.Cut(baseLine, 0, left)
+		rightPart := ansi.Cut(baseLine, min(m.width, left+modalWidth), m.width)
+		composed := leftPart + modalLine + rightPart
+		if width := ansi.StringWidth(composed); width < m.width {
+			composed += strings.Repeat(" ", m.width-width)
+		}
+		baseLines[targetRow] = composed
+	}
+
+	return strings.Join(baseLines[:min(len(baseLines), m.height)], "\n")
+}
+
+func (m tuiModel) renderTaskModalBox() string {
 	task := m.currentTask()
 	if task == nil {
 		return ""
@@ -250,11 +298,12 @@ func (m tuiModel) renderTaskModal() string {
 	modal := lipgloss.NewStyle().
 		Width(modalWidth).
 		Height(modalHeight).
+		Background(lipgloss.Color("236")).
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(tuiColorSelected).
 		Padding(1, 2).
 		Render(body)
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, modal)
+	return modal
 }
 
 func (m tuiModel) subjectLine() string {
