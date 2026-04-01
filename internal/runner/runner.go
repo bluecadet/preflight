@@ -14,30 +14,30 @@ import (
 
 // Config holds the options that control runner behavior.
 type Config struct {
-	DryRun           bool
-	Tags             []string
-	SkipTags         []string
-	Concurrency      int
-	ProjectDir       string
-	ProjectVars      map[string]any
-	InventoryVars    map[string]any
-	Vars             map[string]any // from --var CLI flags
-	TargetVars       map[string]any
-	TargetName       string
-	Phase            string // "plan", "fetch", "stage", "apply" (empty = all)
-	Renderer         output.Renderer
-	Secrets          *secrets.Resolver
-	SecretsConfig    config.SecretsConfig
-	StatePath        string
-	ModuleRegistry   target.ModuleRegistry
-	BundleOutputDir  string
-	BundleBinaryPath string
-	BundlePlugins    []plugins.LoadedPlugin
+	DryRun                        bool
+	Tags                          []string
+	SkipTags                      []string
+	Concurrency                   int
+	ProjectDir                    string
+	ProjectVars                   map[string]any
+	InventoryVars                 map[string]any
+	Vars                          map[string]any // from --var CLI flags
+	TargetVars                    map[string]any
+	TargetName                    string
+	Phase                         string // "plan", "fetch", "stage", "apply" (empty = all)
+	Renderer                      output.Renderer
+	Secrets                       *secrets.Resolver
+	SecretsConfig                 config.SecretsConfig
+	StatePath                     string
+	ModuleRegistry                target.ModuleRegistry
+	BundleOutputDir               string
+	BundleBinaryPath              string
+	BundlePlugins                 []plugins.LoadedPlugin
 	AllowPlaintextSecretsInBundle bool
-	Lockfile         *action.Lockfile
-	Version          string
-	Commit           string
-	BuildDate        string
+	Lockfile                      *action.Lockfile
+	Version                       string
+	Commit                        string
+	BuildDate                     string
 }
 
 // Runner orchestrates the Plan→Fetch→Stage→Apply pipeline.

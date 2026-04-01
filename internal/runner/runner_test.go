@@ -835,7 +835,11 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
-	defer extracted.Cleanup()
+	defer func() {
+		if err := extracted.Cleanup(); err != nil {
+			t.Fatalf("Cleanup: %v", err)
+		}
+	}()
 
 	if extracted.Manifest.SecretMode != bundle.SecretModeEncrypted {
 		t.Fatalf("expected encrypted secret mode, got %q", extracted.Manifest.SecretMode)
@@ -958,7 +962,11 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
-	defer extracted.Cleanup()
+	defer func() {
+		if err := extracted.Cleanup(); err != nil {
+			t.Fatalf("Cleanup: %v", err)
+		}
+	}()
 
 	if extracted.Manifest.SecretMode != bundle.SecretModePlaintext {
 		t.Fatalf("expected plaintext secret mode, got %q", extracted.Manifest.SecretMode)

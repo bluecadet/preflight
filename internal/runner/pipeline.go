@@ -352,7 +352,7 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 }
 
 type stageSecretBundle struct {
-	mode    bundle.SecretMode
+	mode     bundle.SecretMode
 	planMode os.FileMode
 	entries  []bundle.SecretEntry
 	files    []bundle.FileSpec
