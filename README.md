@@ -42,16 +42,16 @@ Plan -> Fetch -> Stage -> Apply
 name: quickstart
 
 tasks:
+  - name: Apply machine baseline
+    uses: preflight/windows-machine
+    with:
+      computer_name: LOBBY-KIOSK-01
+      timezone: Eastern Standard Time
+
   - name: Create content directory
     directory:
       path: "C:\\Exhibits\\Content"
       ensure: present
-
-  - name: Configure auto-login
-    uses: preflight/autologin
-    with:
-      username: exhibituser
-      password_from: secret:autologin-password
 ```
 
 ## Installation
@@ -108,6 +108,7 @@ The full docs live under [`docs/`](docs/):
 - [Manage secrets](docs/how-to/manage-secrets.md)
 - [Write an action](docs/how-to/write-an-action.md)
 - [CLI reference](docs/reference/cli.md)
+- [Embedded stdlib action reference](docs/reference/stdlib-actions.md)
 - [Built-in module reference](docs/reference/modules.md)
 - [Architecture](docs/explanation/architecture.md)
 
@@ -118,6 +119,7 @@ Implemented today:
 - Local execution and inventory-backed host selection
 - WinRM and SSH targets
 - Embedded, local, cached, and Git-backed action resolution
+- Embedded Windows baseline stdlib actions for machine, shell, input, quiet mode, updates, power, and apps
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply
@@ -126,7 +128,6 @@ Implemented today:
 Important current limits:
 
 - SSH currently supports `directory`, `file`, and `shell`.
-- The embedded stdlib currently ships `preflight/autologin`.
 - `--diff` exists on the CLI surface but is not yet wired into task execution output.
 
 ## Build And Test

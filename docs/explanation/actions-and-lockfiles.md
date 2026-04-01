@@ -38,6 +38,15 @@ The cost is that stdlib actions do not have independent versioning. When users n
 The current stdlib in this repository ships:
 
 - `preflight/autologin`
+- `preflight/computer-name`
+- `preflight/timezone`
+- `preflight/windows-machine`
+- `preflight/windows-shell`
+- `preflight/windows-input`
+- `preflight/windows-quiet-mode`
+- `preflight/windows-update-lockdown`
+- `preflight/windows-power`
+- `preflight/windows-apps`
 
 ## How Remote Refs Work
 

@@ -44,9 +44,12 @@ or as explicit modules:
 | `registry` | Windows only | Yes | No |
 | `service` | Windows only | Yes | No |
 | `package` | Windows only | Yes | No |
+| `winget_package` | Windows only | Yes | No |
+| `appx_package` | Windows only | Yes | No |
 | `shortcut` | Windows only | Yes | No |
 | `scheduled_task` | Windows only | Yes | No |
 | `user` | Windows only | Yes | No |
+| `power_plan` | Windows only | Yes | No |
 | `windows_feature` | Windows only | Yes | No |
 | `firewall_rule` | Windows only | Yes | No |
 
@@ -64,8 +67,17 @@ Manage Windows registry keys and values.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `path` | string | Registry key path |
-| `values` | object | Value-name to value-data map |
+| `values` | object or list | Legacy value-name map or typed value spec list |
 | `ensure` | `present` or `absent` | Desired state |
+
+Typed value specs inside `values` support these fields:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | Registry value name |
+| `type` | `string`, `expand_string`, `dword`, `qword`, `binary`, or `multi_string` | Registry value type |
+| `data` | any | Registry value data |
+| `ensure` | `present` or `absent` | Desired value state |
 
 ### `service`
 
@@ -102,7 +114,7 @@ Manage directories.
 
 ### `package`
 
-Manage package installation on Windows.
+Manage local MSI or EXE installation on Windows.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -110,6 +122,32 @@ Manage package installation on Windows.
 | `args` | string[] | Extra installer arguments |
 | `product_id` | string | MSI product GUID used for idempotency |
 | `ensure` | `present` or `absent` | Desired state |
+
+Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
+
+### `winget_package`
+
+Manage packages through `winget`.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `id` | string | `winget` package identifier |
+| `version` | string | Optional package version |
+| `source` | string | Optional `winget` source name |
+| `scope` | `machine` or `user` | Install scope |
+| `ensure` | `present` or `absent` | Desired state |
+
+### `appx_package`
+
+Remove built-in Windows Store-style packages.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | Package name or wildcard pattern |
+| `scope` | `current_user`, `all_users`, `provisioned`, or `both` | Removal scope |
+| `ensure` | `absent` | Desired state |
+
+`appx_package` currently supports removal only.
 
 ### `shortcut`
 
@@ -128,11 +166,22 @@ Manage Windows scheduled tasks.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
+| `path` | string | Scheduled task folder path, such as `\Preflight\` |
 | `name` | string | Scheduled task name |
-| `command` | string | Command to run |
-| `trigger` | string | Trigger expression |
-| `user` | string | Run-as user |
+| `execute` | string | Executable path |
+| `command` | string | Alias for `execute` |
+| `arguments` | string | Optional command arguments |
+| `working_dir` | string | Optional working directory |
+| `trigger` | `startup`, `onlogon`, `daily`, or `once` | Trigger type |
+| `start_at` | string | Start time for `daily` and `once` triggers |
+| `delay` | string | Delay for `startup` and `onlogon` triggers |
+| `run_as` | string | Run-as user |
+| `user` | string | Alias for `run_as` |
+| `run_level` | `least` or `highest` | Privilege level |
+| `enabled` | bool | Enabled state |
 | `ensure` | `present` or `absent` | Desired state |
+
+`delay` accepts ISO-8601 duration strings such as `PT30S`. `command` and `user` remain supported as compatibility aliases.
 
 ### `user`
 
@@ -145,6 +194,27 @@ Manage Windows local users.
 | `password_from` | string | Secret reference for the password |
 | `groups` | string[] | Group memberships |
 | `ensure` | `present` or `absent` | Desired state |
+
+### `power_plan`
+
+Manage named Windows power plans.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string | Friendly scheme name |
+| `base` | string | Base alias or GUID to clone when creating the scheme |
+| `activate` | bool | Whether to activate the scheme after applying it |
+| `settings` | list | AC and DC setting overrides |
+| `ensure` | `present` or `absent` | Desired state |
+
+Each entry in `settings` supports:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `subgroup` | string | Power setting subgroup alias or GUID |
+| `setting` | string | Power setting alias or GUID |
+| `ac_value` | integer | AC value override |
+| `dc_value` | integer | DC value override |
 
 ### `windows_feature`
 
@@ -188,9 +258,15 @@ Run PowerShell.
 | `script` | string | Inline PowerShell script |
 | `file` | string | Path to a PowerShell script file |
 | `args` | string[] | Arguments passed to the script file path |
+| `check_script` | string | Inline non-mutating PowerShell check script |
 | `creates` | string | Skip when this path already exists |
 
 Exactly one of `script` or `file` should be provided for meaningful behavior.
+
+`check_script` takes precedence over `creates`. It must return either:
+
+- a boolean, where `true` means change is needed
+- an object with `needs_change` and optional `message`
 
 ### `shell`
 

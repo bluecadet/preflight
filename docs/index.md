@@ -14,6 +14,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 | Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
 | Use external plugin modules | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
 | Reuse tasks as a custom action | [Write an action](./how-to/write-an-action.md) |
+| Browse the embedded `preflight/` action library | [Embedded stdlib action reference](./reference/stdlib-actions.md) |
 | Compare desired state to recorded state | [Inspect state and diffs](./how-to/inspect-state-and-diff.md) |
 
 ## Tutorials
@@ -37,6 +38,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Project config reference](./reference/config.md)
 - [Inventory reference](./reference/inventory.md)
 - [Playbook and action YAML reference](./reference/yaml.md)
+- [Embedded stdlib action reference](./reference/stdlib-actions.md)
 - [Built-in module reference](./reference/modules.md)
 - [Templating and facts reference](./reference/templating.md)
 - [Plugin reference](./reference/plugins.md)
@@ -77,6 +79,7 @@ The codebase already supports:
 - Local execution and inventory-backed host selection
 - WinRM and SSH target transports
 - Embedded, local, cached, and Git-backed action resolution
+- Embedded Windows baseline stdlib actions for machine, shell, input, quiet mode, updates, power, and apps
 - Repo-backed `age` secrets
 - Staged bundle creation and bundle apply
 - Structured output in `text`, `tui`, `json`, and `jsonl`
@@ -85,5 +88,4 @@ The codebase already supports:
 Important current limits:
 
 - SSH currently implements `directory`, `file`, and `shell` tasks; Windows-native modules belong on WinRM targets.
-- The embedded stdlib currently ships one action: `preflight/autologin`.
 - `--diff` exists on the CLI surface but is not yet wired into task execution output.

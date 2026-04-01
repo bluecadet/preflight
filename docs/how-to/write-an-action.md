@@ -106,5 +106,5 @@ That verifies both the playbook and the action ref, then shows the expanded task
 ## Notes
 
 - Resolution order is embedded stdlib, then local `actions/`, then the user cache, then Git-backed refs.
-- The embedded stdlib in this repo currently ships `preflight/autologin`.
+- The embedded stdlib in this repo includes leaf actions such as `preflight/autologin`, `preflight/computer-name`, and `preflight/timezone`, plus grouped Windows actions such as `preflight/windows-machine` and `preflight/windows-power`.
 - Remote actions can be fetched and pinned into `preflight.lock`, but you do not need that machinery for project-local actions.

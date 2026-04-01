@@ -16,7 +16,8 @@ Preflight uses a lightweight Jinja-like placeholder form:
 Supported behavior:
 
 - dot-path lookups only
-- string substitution inside task names and string parameter values
+- string substitution inside task names and parameter values
+- recursive rendering through nested maps and lists
 - boolean rendering for `when:`
 
 Important limit:
@@ -67,6 +68,8 @@ Accepted values include:
 - `yes` and `no`
 
 If the rendered value is not a parseable boolean, the task errors.
+
+Preflight does not currently support comparison or arithmetic expressions such as `{{ vars.count > 1 }}` in `when:`. Action authors should pass a boolean input or compute the decision inside a module-specific script.
 
 ## Facts Shape
 

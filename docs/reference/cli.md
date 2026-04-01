@@ -140,6 +140,7 @@ Show action metadata, inputs, outputs, and task count.
 
 ```bash
 preflight action info preflight/autologin
+preflight action info preflight/windows-machine
 preflight action info myorg/display-config
 ```
 

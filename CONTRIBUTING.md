@@ -125,7 +125,7 @@ Apply(ctx context.Context, params Params) error
 Rules:
 - `Check` must be safe to call repeatedly and must not modify system state.
 - `Apply` must be idempotent — calling it twice must not break anything.
-- Params must be a typed struct, not `map[string]any`.
+- Built-in modules currently receive `map[string]any`; validate and normalize params early so the module still has a clear internal contract.
 - Add a `_windows.go` / `_stub.go` pair if the module is Windows-only so the binary still compiles on other platforms.
 
 ---
@@ -141,6 +141,11 @@ internal/stdlib/actions/preflight/
 ```
 
 Stdlib actions use the `preflight/` namespace and are versioned with the binary — there are no independent versions. If a user needs to pin an older version of an action, they should reference it via a remote Git ref instead.
+
+When adding or materially changing a stdlib action, update the public docs that describe it:
+
+- `docs/reference/stdlib-actions.md` for the embedded action surface
+- `docs/reference/modules.md` if the action depends on new built-in module fields or behavior
 
 ---
 

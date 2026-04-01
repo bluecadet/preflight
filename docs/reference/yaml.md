@@ -156,7 +156,7 @@ Task names, `when:` expressions, and string parameter values may read from:
 | `target.*` | Safe target metadata |
 | `env.*` | Gathered target environment variables |
 
-The template engine supports simple dot-path lookups such as `{{ vars.content_root }}`. It does not implement the full Jinja filter and expression language.
+The template engine supports simple dot-path lookups such as `{{ vars.content_root }}`. It renders string values recursively through nested maps and lists, which lets actions template shapes such as registry value lists and power-plan setting arrays. It does not implement the full Jinja filter and expression language.
 
 ## Action Resolution Order
 
