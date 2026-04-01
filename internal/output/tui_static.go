@@ -133,14 +133,14 @@ func (d staticListDelegate) Render(w io.Writer, m list.Model, index int, item li
 		secondLine = truncateText(screenItem.item.Preview[0].Text, width)
 	}
 
-	lines := []string{strings.Join(summary, "  ")}
+	lines := []string{joinHorizontalParts("  ", summary...)}
 	if secondLine == "" {
 		lines = append(lines, "")
 	} else {
 		lines = append(lines, tuiSubtleStyle.Render(secondLine))
 	}
 
-	block := strings.Join(lines, "\n")
+	block := joinVerticalParts(lines...)
 	style := tuiCardStyle.Width(width)
 	if selected {
 		style = tuiSelectedCardStyle.Width(width)
@@ -489,7 +489,7 @@ func (m staticScreenModel) selectedDetail(content ScreenContent, state *staticTa
 		title = append(title, tuiSubtleStyle.Render("("+item.Subtitle+")"))
 	}
 
-	lines := []string{strings.Join(title, "  ")}
+	lines := []string{joinHorizontalParts("  ", title...)}
 	if item.Summary != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(item.Summary, width)))
 	}
@@ -507,7 +507,7 @@ func (m staticScreenModel) selectedDetail(content ScreenContent, state *staticTa
 	}
 
 	style := tuiSelectedCardStyle.Width(max(20, m.width-2))
-	return style.Render(strings.Join(lines, "\n"))
+	return style.Render(joinVerticalParts(lines...))
 }
 
 func RunScreenTUI(w io.Writer, options Options, screen Screen) error {

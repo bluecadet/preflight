@@ -93,7 +93,7 @@ func (m tuiModel) renderTaskStream() (string, []int, []int) {
 			{Label: "skipped", Value: fmt.Sprintf("%d", host.recap.skipped), Tone: "skipped"},
 		}, width)
 		if recap != "" {
-			blocks = append(blocks, tuiSectionStyle.Render("Recap")+"\n"+recap)
+			blocks = append(blocks, joinVerticalParts(tuiSectionStyle.Render("Recap"), recap))
 		}
 	}
 	return joinVerticalBlocks(blocks), starts, ends
@@ -107,7 +107,7 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 	if task.message != "" && !task.expanded {
 		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, width/3))))
 	}
-	lines := []string{strings.Join(summaryParts, "  ")}
+	lines := []string{joinHorizontalParts("  ", summaryParts...)}
 	if task.running {
 		lines = append(lines, tuiSubtleStyle.Render("running"))
 	}
@@ -132,7 +132,7 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 		}
 	}
 
-	block := strings.Join(lines, "\n")
+	block := joinVerticalParts(lines...)
 	if selected {
 		return tuiSelectedCardStyle.Width(width).Render(block)
 	}
@@ -195,11 +195,11 @@ func (m tuiModel) renderPhase(phase phaseView) string {
 	label := phaseLabel(phase.name)
 	switch {
 	case phase.running:
-		return m.spinner.View() + " " + label
+		return joinHorizontalParts(" ", m.spinner.View(), label)
 	case phase.status != "":
-		return statusGlyph(phase.status) + " " + label
+		return joinHorizontalParts(" ", statusGlyph(phase.status), label)
 	default:
-		return "• " + label
+		return joinHorizontalParts(" ", "•", label)
 	}
 }
 

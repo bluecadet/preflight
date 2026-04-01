@@ -192,7 +192,7 @@ func renderStats(stats []ScreenStat, width int) string {
 		}
 		part := toneStyle(stat.Tone).Render(value)
 		if stat.Label != "" && stat.Value != "" {
-			part = tuiSubtleStyle.Render(stat.Label+" ") + toneStyle(stat.Tone).Render(stat.Value)
+			part = joinHorizontalParts(" ", tuiSubtleStyle.Render(stat.Label), toneStyle(stat.Tone).Render(stat.Value))
 		}
 		partWidth := lipgloss.Width(part)
 		if used > 0 {
@@ -205,6 +205,20 @@ func renderStats(stats []ScreenStat, width int) string {
 		used += partWidth
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(parts, "  ")...)
+}
+
+func joinHorizontalParts(separator string, parts ...string) string {
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Left, withHorizontalSpacing(filtered, separator)...)
 }
 
 func newTUITabPager() paginator.Model {
@@ -314,6 +328,20 @@ func joinVerticalBlocks(blocks []string) string {
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
+func joinVerticalParts(parts ...string) string {
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, filtered...)
+}
+
 func spaceBetween(width int, left, right string) string {
 	switch {
 	case right == "":
@@ -349,7 +377,7 @@ func joinMeta(parts ...string) string {
 		}
 		filtered = append(filtered, part)
 	}
-	return strings.Join(filtered, "  ")
+	return joinHorizontalParts("  ", filtered...)
 }
 
 func truncateText(text string, width int) string {
@@ -413,31 +441,35 @@ func renderScreenLines(lines []ScreenLine, width int) string {
 	}
 	rendered := make([]string, 0, len(lines))
 	for _, line := range lines {
-		prefix := line.Prefix
-		if prefix != "" {
-			prefix = streamStyle(line.Prefix).Render(prefix + ">")
+		prefixText := ""
+		prefixWidth := 0
+		if line.Prefix != "" {
+			prefixText = streamStyle(line.Prefix).Render(line.Prefix + ">")
+			prefixWidth = lipgloss.Width(prefixText)
 		}
 		contentWidth := width
-		if prefix != "" {
-			contentWidth -= lipgloss.Width(prefix) + 1
+		if prefixWidth > 0 {
+			contentWidth -= prefixWidth + 1
 		}
 		if contentWidth < 12 {
 			contentWidth = 12
 		}
 		wrapped := wrapText(line.Text, contentWidth)
+		tone := toneStyle(line.Tone)
 		for i, wrappedLine := range wrapped {
-			if prefix != "" && i == 0 {
-				rendered = append(rendered, prefix+" "+toneStyle(line.Tone).Render(wrappedLine))
+			content := tone.Render(wrappedLine)
+			if prefixWidth > 0 && i == 0 {
+				rendered = append(rendered, joinHorizontalParts(" ", prefixText, content))
 				continue
 			}
-			indent := ""
-			if prefix != "" {
-				indent = strings.Repeat(" ", lipgloss.Width(prefix)+1)
+			if prefixWidth > 0 {
+				rendered = append(rendered, lipgloss.NewStyle().PaddingLeft(prefixWidth+1).Render(content))
+				continue
 			}
-			rendered = append(rendered, indent+toneStyle(line.Tone).Render(wrappedLine))
+			rendered = append(rendered, content)
 		}
 	}
-	return strings.Join(rendered, "\n")
+	return joinVerticalParts(rendered...)
 }
 
 func viewportBodyHeight(totalHeight int, chromeParts ...string) int {
