@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 func TestNewTUIRenderer_NoPanel(t *testing.T) {
@@ -195,6 +196,36 @@ func TestRenderTaskCard_ExpandedDoesNotDuplicatePreviewLogs(t *testing.T) {
 	}
 	if strings.Count(rendered, "boom") != 1 {
 		t.Fatalf("expected expanded card to avoid repeating the failure message, got %q", rendered)
+	}
+}
+
+func TestRenderTaskCard_AlignsPreviewWithTaskContent(t *testing.T) {
+	model := newTUIModel(make(chan Event, 1), Options{})
+	task := &taskView{
+		name:    "Install Chrome",
+		module:  "shell",
+		status:  "failed",
+		logs:    []taskLogLine{{stream: "stdout", line: "Downloading package metadata..."}},
+		message: "exit code 1",
+	}
+
+	rendered := model.renderTaskCard(task, false, 80)
+	lines := strings.Split(rendered, "\n")
+	if len(lines) < 2 {
+		t.Fatalf("expected multi-line rendered card, got %q", rendered)
+	}
+
+	titleLine := ansi.Strip(lines[0])
+	logLine := ansi.Strip(lines[1])
+	titlePrefix, _, titleFound := strings.Cut(titleLine, "Install Chrome")
+	logPrefix, _, logFound := strings.Cut(logLine, "out>")
+	if !titleFound || !logFound {
+		t.Fatalf("expected task title and preview log markers in rendered card, got %q", rendered)
+	}
+	titleColumn := lipgloss.Width(titlePrefix)
+	logColumn := lipgloss.Width(logPrefix)
+	if titleColumn != logColumn {
+		t.Fatalf("expected preview logs to align with task content: title=%d log=%d\n%s", titleColumn, logColumn, rendered)
 	}
 }
 

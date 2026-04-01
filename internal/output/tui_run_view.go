@@ -100,12 +100,17 @@ func (m tuiModel) renderTaskStream() (string, []int, []int) {
 }
 
 func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) string {
-	summaryParts := []string{m.taskStatusGlyph(task), truncateText(task.name, max(20, width-8))}
+	glyph := m.taskStatusGlyph(task)
+	glyphWidth := max(1, lipgloss.Width(glyph))
+	gapWidth := 2
+	contentWidth := max(16, width-glyphWidth-gapWidth)
+
+	summaryParts := []string{truncateText(task.name, max(20, contentWidth-8))}
 	if task.module != "" {
 		summaryParts = append(summaryParts, tuiSubtleStyle.Render("("+task.module+")"))
 	}
 	if task.message != "" && !task.expanded {
-		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, width/3))))
+		summaryParts = append(summaryParts, tuiSubtleStyle.Render(truncateText(task.message, max(14, contentWidth/3))))
 	}
 	lines := []string{joinHorizontalParts("  ", summaryParts...)}
 	if task.running {
@@ -121,18 +126,21 @@ func (m tuiModel) renderTaskCard(task *taskView, selected bool, width int) strin
 				Tone:   lineTone(line.stream),
 			})
 		}
-		lines = append(lines, renderScreenLines(previewLines, width-2))
+		lines = append(lines, renderScreenLines(previewLines, contentWidth))
 	}
 
 	if task.expanded {
 		detail := m.expandedTaskLines(task)
 		if len(detail) > 0 {
 			lines = append(lines, tuiSectionStyle.Render(m.expandedTaskTitle(task)))
-			lines = append(lines, renderScreenLines(detail, width-2))
+			lines = append(lines, renderScreenLines(detail, contentWidth))
 		}
 	}
 
-	block := joinVerticalParts(lines...)
+	content := lipgloss.NewStyle().Width(contentWidth).Render(joinVerticalParts(lines...))
+	glyphColumn := lipgloss.NewStyle().Width(glyphWidth).Align(lipgloss.Left, lipgloss.Top).Render(glyph)
+	gap := lipgloss.NewStyle().Width(gapWidth).Render("")
+	block := lipgloss.JoinHorizontal(lipgloss.Top, glyphColumn, gap, content)
 	if selected {
 		return tuiSelectedCardStyle.Width(width).Render(block)
 	}
