@@ -171,10 +171,15 @@ func TestShellModule_ApplyStreamsTaskLogs(t *testing.T) {
 	if len(sink.entries) != 2 {
 		t.Fatalf("expected 2 streamed log entries, got %d", len(sink.entries))
 	}
-	if sink.entries[0].Stream != "stdout" || sink.entries[0].Line != "hello" {
-		t.Fatalf("unexpected stdout log entry: %#v", sink.entries[0])
+
+	got := map[string]string{}
+	for _, entry := range sink.entries {
+		got[entry.Stream] = entry.Line
 	}
-	if sink.entries[1].Stream != "stderr" || sink.entries[1].Line != "oops" {
-		t.Fatalf("unexpected stderr log entry: %#v", sink.entries[1])
+	if got["stdout"] != "hello" {
+		t.Fatalf("unexpected stdout log entry set: %#v", sink.entries)
+	}
+	if got["stderr"] != "oops" {
+		t.Fatalf("unexpected stderr log entry set: %#v", sink.entries)
 	}
 }

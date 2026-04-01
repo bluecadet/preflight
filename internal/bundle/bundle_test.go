@@ -82,7 +82,11 @@ func TestExtractSucceedsForValidBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Extract: %v", err)
 	}
-	defer extracted.Cleanup()
+	defer func() {
+		if err := extracted.Cleanup(); err != nil {
+			t.Fatalf("Cleanup: %v", err)
+		}
+	}()
 
 	if extracted.Manifest == nil || extracted.Manifest.PlaybookName != "test" {
 		t.Fatalf("unexpected manifest: %#v", extracted.Manifest)
@@ -102,10 +106,18 @@ func writeRawBundle(t *testing.T, path string, manifest *Manifest, files map[str
 	if err != nil {
 		t.Fatalf("Create(%q): %v", path, err)
 	}
-	defer out.Close()
+	defer func() {
+		if err := out.Close(); err != nil {
+			t.Fatalf("Close(%q): %v", path, err)
+		}
+	}()
 
 	zw := zip.NewWriter(out)
-	defer zw.Close()
+	defer func() {
+		if err := zw.Close(); err != nil {
+			t.Fatalf("Close zip writer: %v", err)
+		}
+	}()
 
 	manifestBytes, err := json.Marshal(manifest)
 	if err != nil {

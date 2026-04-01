@@ -2,7 +2,6 @@ package module
 
 import (
 	"fmt"
-	"maps"
 
 	"github.com/bluecadet/preflight/internal/target"
 )
@@ -92,13 +91,4 @@ func paramStringSlice(params map[string]any, key string) ([]string, error) {
 		return out, nil
 	}
 	return nil, fmt.Errorf("module: param %q must be a list of strings, got %T", key, v)
-}
-
-func cloneParams(params map[string]any) map[string]any {
-	if params == nil {
-		return nil
-	}
-	cloned := make(map[string]any, len(params))
-	maps.Copy(cloned, params)
-	return cloned
 }

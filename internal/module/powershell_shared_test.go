@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -150,10 +151,5 @@ func TestPowershellApply_FileScript(t *testing.T) {
 }
 
 func containsArg(args []string, want string) bool {
-	for _, arg := range args {
-		if arg == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(args, want)
 }

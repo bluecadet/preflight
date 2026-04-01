@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -72,21 +70,4 @@ func comparisonTone(status runner.ComparisonStatus) string {
 	default:
 		return "info"
 	}
-}
-
-func documentFromSections(sections map[string][]string) string {
-	if len(sections) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(sections))
-	for key := range sections {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	blocks := make([]string, 0, len(keys))
-	for _, key := range keys {
-		lines := append([]string{key}, sections[key]...)
-		blocks = append(blocks, strings.Join(lines, "\n"))
-	}
-	return strings.Join(blocks, "\n\n")
 }

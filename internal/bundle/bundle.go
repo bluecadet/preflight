@@ -90,10 +90,14 @@ func Write(path string, manifest *Manifest, files []FileSpec) error {
 	if err != nil {
 		return fmt.Errorf("bundle: create %q: %w", path, err)
 	}
-	defer out.Close()
+	defer func() {
+		_ = out.Close()
+	}()
 
 	zw := zip.NewWriter(out)
-	defer zw.Close()
+	defer func() {
+		_ = zw.Close()
+	}()
 
 	manifestBytes, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
@@ -124,7 +128,9 @@ func Extract(path string) (*ExtractedBundle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bundle: open %q: %w", path, err)
 	}
-	defer reader.Close()
+	defer func() {
+		_ = reader.Close()
+	}()
 
 	manifest, err := readManifest(reader.File)
 	if err != nil {
@@ -150,22 +156,22 @@ func Extract(path string) (*ExtractedBundle, error) {
 
 		outPath, err := extractionPath(tempDir, file.Name)
 		if err != nil {
-			loaded.Cleanup()
+			_ = loaded.Cleanup()
 			return nil, err
 		}
 
 		data, err := readZipEntry(file)
 		if err != nil {
-			loaded.Cleanup()
+			_ = loaded.Cleanup()
 			return nil, err
 		}
 		if err := verifyExtractedChecksum(manifest.Checksums, file.Name, data, seenChecksums); err != nil {
-			loaded.Cleanup()
+			_ = loaded.Cleanup()
 			return nil, err
 		}
 
 		if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
-			loaded.Cleanup()
+			_ = loaded.Cleanup()
 			return nil, fmt.Errorf("bundle: mkdir %q: %w", filepath.Dir(outPath), err)
 		}
 		mode := file.Mode()
@@ -173,7 +179,7 @@ func Extract(path string) (*ExtractedBundle, error) {
 			mode = 0o644
 		}
 		if err := os.WriteFile(outPath, data, mode); err != nil {
-			loaded.Cleanup()
+			_ = loaded.Cleanup()
 			return nil, fmt.Errorf("bundle: write %q: %w", outPath, err)
 		}
 
@@ -191,11 +197,11 @@ func Extract(path string) (*ExtractedBundle, error) {
 	}
 
 	if err := verifyExpectedChecksums(manifest.Checksums, seenChecksums); err != nil {
-		loaded.Cleanup()
+		_ = loaded.Cleanup()
 		return nil, err
 	}
 	if loaded.PlanPath == "" {
-		loaded.Cleanup()
+		_ = loaded.Cleanup()
 		return nil, fmt.Errorf("bundle: missing plan payload")
 	}
 	return loaded, nil
@@ -251,7 +257,9 @@ func readZipEntry(file *zip.File) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("bundle: open entry %q: %w", file.Name, err)
 	}
-	defer rc.Close()
+	defer func() {
+		_ = rc.Close()
+	}()
 
 	data, err := io.ReadAll(rc)
 	if err != nil {

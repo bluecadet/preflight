@@ -2,6 +2,7 @@ package winutil
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"strconv"
@@ -490,8 +491,6 @@ func cloneParams(params map[string]any) map[string]any {
 		return nil
 	}
 	cloned := make(map[string]any, len(params))
-	for key, value := range params {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, params)
 	return cloned
 }

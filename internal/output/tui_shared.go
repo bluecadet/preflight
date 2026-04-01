@@ -381,39 +381,17 @@ func renderScreenLines(lines []ScreenLine, width int) string {
 	return strings.Join(rendered, "\n")
 }
 
-func renderKeyValueBlock(values map[string]string, width int) string {
-	if len(values) == 0 {
-		return ""
-	}
-	keys := make([]string, 0, len(values))
-	longest := 0
-	for key := range values {
-		keys = append(keys, key)
-		if len(key) > longest {
-			longest = len(key)
+func viewportBodyHeight(totalHeight int, chromeParts ...string) int {
+	used := 0
+	nonEmpty := 0
+	for _, part := range chromeParts {
+		if part == "" {
+			continue
 		}
+		used += lipgloss.Height(part)
+		nonEmpty++
 	}
-	lines := make([]string, 0, len(keys))
-	for _, key := range keys {
-		label := fmt.Sprintf("%-*s", longest, key)
-		value := truncateText(values[key], max(12, width-longest-2))
-		lines = append(lines, tuiSubtleStyle.Render(label)+" "+value)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
+	return max(4, totalHeight-used-nonEmpty)
 }
 
 type helpKeyMap interface {

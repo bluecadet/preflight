@@ -6,15 +6,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/masterzen/winrm"
+
 	"github.com/bluecadet/preflight/internal/tasklog"
 	"github.com/bluecadet/preflight/internal/winutil"
-	"github.com/masterzen/winrm"
 )
 
 type WinRMConfig struct {
@@ -232,10 +234,7 @@ if ($dir) {
 
 	const chunkSize = 24 * 1024
 	for start := 0; start < len(data); start += chunkSize {
-		end := start + chunkSize
-		if end > len(data) {
-			end = len(data)
-		}
+		end := min(start+chunkSize, len(data))
 		encoded := base64.StdEncoding.EncodeToString(data[start:end])
 		appendScript, err := powershellJSONVar("path", dst)
 		if err != nil {
@@ -885,9 +884,7 @@ func cloneParams(params map[string]any) map[string]any {
 		return nil
 	}
 	cloned := make(map[string]any, len(params))
-	for key, value := range params {
-		cloned[key] = value
-	}
+	maps.Copy(cloned, params)
 	return cloned
 }
 

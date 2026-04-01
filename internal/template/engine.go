@@ -80,7 +80,7 @@ func (e *Engine) WithPreserveUnknown() *Engine {
 func (e *Engine) Render(s string) (string, error) {
 	current := s
 	seen := map[string]struct{}{current: {}}
-	for i := 0; i < maxRenderPasses; i++ {
+	for range maxRenderPasses {
 		rendered, err := e.renderOnce(current)
 		if err != nil {
 			return "", err

@@ -91,11 +91,11 @@ func runPlan(cmd *cobra.Command, args []string) error {
 				meta = append(meta, "tags: "+fmt.Sprintf("%v", preview.Tags))
 			}
 			items = append(items, output.ScreenItem{
-				Title:    preview.Name,
-				Status:   "pending",
-				Subtitle: preview.Module,
-				Summary:  preview.ID,
-				Meta:     meta,
+				Title:       preview.Name,
+				Status:      "pending",
+				Subtitle:    preview.Module,
+				Summary:     preview.ID,
+				Meta:        meta,
 				DetailTitle: "Task",
 				Detail: []output.ScreenLine{
 					{Prefix: "inf", Text: "task id: " + preview.ID, Tone: "info"},

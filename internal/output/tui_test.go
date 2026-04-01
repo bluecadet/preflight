@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestNewTUIRenderer_NoPanel(t *testing.T) {
@@ -166,7 +167,7 @@ func TestTUIModel_KeyNavigationAndFilters(t *testing.T) {
 
 func TestTaskView_LogBufferIsBounded(t *testing.T) {
 	task := &taskView{}
-	for i := 0; i < maxTaskLogLines+25; i++ {
+	for range maxTaskLogLines + 25 {
 		task.appendLog("stdout", "line")
 	}
 	if len(task.logs) != maxTaskLogLines {
@@ -194,5 +195,49 @@ func TestRenderTaskCard_ExpandedDoesNotDuplicatePreviewLogs(t *testing.T) {
 	}
 	if strings.Count(rendered, "boom") != 1 {
 		t.Fatalf("expected expanded card to avoid repeating the failure message, got %q", rendered)
+	}
+}
+
+func TestTUIModel_ViewRespectsWindowHeight(t *testing.T) {
+	model := newTUIModel(make(chan Event, 1), Options{})
+	model.width = 60
+	model.height = 12
+	model = model.applyEvent(Event{Type: EventPlayStart, PlayName: "play", Target: "host-a"})
+	model = model.applyEvent(Event{Type: EventPhaseStart, Target: "host-a", Phase: "plan"})
+	model = model.applyEvent(Event{Type: EventPhaseEnd, Target: "host-a", Phase: "plan", Status: "ok", TaskTotal: 8})
+	for i := range 8 {
+		taskID := "task-" + string(rune('a'+i))
+		model = model.applyEvent(Event{Type: EventTaskStart, Target: "host-a", TaskID: taskID, TaskName: "task", Module: "shell"})
+		model = model.applyEvent(Event{Type: EventTaskResult, Target: "host-a", TaskID: taskID, TaskName: "task", Status: "ok"})
+	}
+
+	rendered := model.View()
+	if lipgloss.Height(rendered) > model.height {
+		t.Fatalf("expected rendered view height <= %d, got %d\n%s", model.height, lipgloss.Height(rendered), rendered)
+	}
+}
+
+func TestStaticScreenModel_ViewRespectsWindowHeight(t *testing.T) {
+	model := newStaticScreenModel(Screen{
+		Command: "plan",
+		Subject: "play: demo",
+		Status:  "ready",
+		Content: ScreenContent{
+			Kind: ScreenKindList,
+			Items: []ScreenItem{
+				{Title: "one", Status: "ok"},
+				{Title: "two", Status: "ok"},
+				{Title: "three", Status: "ok"},
+				{Title: "four", Status: "ok"},
+			},
+		},
+	})
+	model.width = 60
+	model.height = 10
+	model.initialized = true
+
+	rendered := model.View()
+	if lipgloss.Height(rendered) > model.height {
+		t.Fatalf("expected static rendered view height <= %d, got %d\n%s", model.height, lipgloss.Height(rendered), rendered)
 	}
 }

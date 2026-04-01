@@ -2,7 +2,6 @@ package module
 
 import (
 	"context"
-	"io"
 	"os/exec"
 	"strings"
 
@@ -94,13 +93,4 @@ func joinCommandOutput(stdout, stderr string) string {
 	default:
 		return stderr
 	}
-}
-
-func copyStreamedOutput(ctx context.Context, stream string, reader io.Reader) (string, error) {
-	recorder := newStreamRecorder(ctx, stream)
-	if _, err := io.Copy(recorder, reader); err != nil {
-		return "", err
-	}
-	recorder.Flush()
-	return recorder.String(), nil
 }

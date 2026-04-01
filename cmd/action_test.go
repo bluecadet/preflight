@@ -34,7 +34,11 @@ func TestRunActionFetchRecursesRemoteDependencies(t *testing.T) {
 	if err := os.Chdir(projectDir); err != nil {
 		t.Fatalf("Chdir(%q): %v", projectDir, err)
 	}
-	defer os.Chdir(cwd)
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("Chdir(%q): %v", cwd, err)
+		}
+	}()
 
 	oldChain := newActionChain
 	defer func() { newActionChain = oldChain }()

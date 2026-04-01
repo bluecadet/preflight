@@ -58,7 +58,7 @@ func EmitLines(ctx context.Context, stream, text string) {
 	}
 	normalized := strings.ReplaceAll(text, "\r\n", "\n")
 	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-	for _, line := range strings.Split(normalized, "\n") {
+	for line := range strings.SplitSeq(normalized, "\n") {
 		if line == "" {
 			continue
 		}

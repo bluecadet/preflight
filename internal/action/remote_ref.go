@@ -3,6 +3,7 @@ package action
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
@@ -40,10 +41,8 @@ func ParseRemoteRef(ref string) (*RemoteRef, error) {
 	if !strings.Contains(segments[0], ".") {
 		return nil, fmt.Errorf("remote ref %q must start with a hostname", ref)
 	}
-	for _, segment := range segments[:3] {
-		if segment == "" {
-			return nil, fmt.Errorf("remote ref %q contains an empty repository path segment", ref)
-		}
+	if slices.Contains(segments[:3], "") {
+		return nil, fmt.Errorf("remote ref %q contains an empty repository path segment", ref)
 	}
 	for _, segment := range segments[3:] {
 		if segment == ".." || strings.ContainsAny(segment, `/\`) {

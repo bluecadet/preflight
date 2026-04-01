@@ -192,7 +192,7 @@ func (m staticScreenModel) View() string {
 	header := m.renderHeader()
 	tabs := m.renderTabs()
 	footer := m.renderFooter()
-	bodyHeight := max(4, m.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(footer)-2)
+	bodyHeight := viewportBodyHeight(m.height, header, tabs, footer)
 	m.viewport.Width = max(20, m.width)
 	m.viewport.Height = bodyHeight
 	m.syncViewport()

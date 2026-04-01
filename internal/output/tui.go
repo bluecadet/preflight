@@ -274,7 +274,7 @@ func (m *tuiModel) syncViewport() {
 	header := m.renderHeader()
 	tabs := m.renderTabs()
 	footer := m.renderFooter()
-	bodyHeight := max(4, m.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(footer)-2)
+	bodyHeight := viewportBodyHeight(m.height, header, tabs, footer)
 	m.viewport.Width = max(20, m.width)
 	m.viewport.Height = bodyHeight
 
@@ -505,7 +505,7 @@ func (m tuiModel) View() string {
 	tabs := m.renderTabs()
 	footer := m.renderFooter()
 
-	bodyHeight := max(4, m.height-lipgloss.Height(header)-lipgloss.Height(tabs)-lipgloss.Height(footer)-2)
+	bodyHeight := viewportBodyHeight(m.height, header, tabs, footer)
 	m.viewport.Width = max(20, m.width)
 	m.viewport.Height = bodyHeight
 	m.syncViewport()
@@ -529,11 +529,15 @@ func (m tuiModel) renderHeader() string {
 	if subject := m.subjectLine(); subject != "" {
 		lines = append(lines, tuiSubtleStyle.Render(truncateText(subject, m.width)))
 	}
-	if phases := m.phaseLine(); phases != "" {
+	phases := m.phaseLine()
+	progress := m.progressView()
+	switch {
+	case phases != "" && progress != "":
+		lines = append(lines, spaceBetween(m.width, phases, progress))
+	case phases != "":
 		lines = append(lines, phases)
-	}
-	if progressLine := m.progressLine(); progressLine != "" {
-		lines = append(lines, progressLine)
+	case progress != "":
+		lines = append(lines, progress)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -699,7 +703,7 @@ func (m tuiModel) phaseLine() string {
 }
 
 func (m tuiModel) renderPhase(phase phaseView) string {
-	label := strings.Title(phase.name)
+	label := phaseLabel(phase.name)
 	switch {
 	case phase.running:
 		return m.spinner.View() + " " + label
@@ -710,7 +714,7 @@ func (m tuiModel) renderPhase(phase phaseView) string {
 	}
 }
 
-func (m tuiModel) progressLine() string {
+func (m tuiModel) progressView() string {
 	completed, total := m.progressCounts()
 	if total == 0 {
 		return ""
@@ -719,7 +723,7 @@ func (m tuiModel) progressLine() string {
 	m.progress.Width = barWidth
 	percent := float64(completed) / float64(total)
 	bar := m.progress.ViewAs(percent)
-	return spaceBetween(m.width, bar, tuiSubtleStyle.Render(fmt.Sprintf("%d/%d", completed, total)))
+	return lipgloss.JoinHorizontal(lipgloss.Left, bar, " ", tuiSubtleStyle.Render(fmt.Sprintf("%d/%d", completed, total)))
 }
 
 func (m tuiModel) progressCounts() (int, int) {
@@ -827,6 +831,15 @@ func (m tuiModel) logContainsMessage(task *taskView) bool {
 		}
 	}
 	return false
+}
+
+func phaseLabel(name string) string {
+	if name == "" {
+		return ""
+	}
+	runes := []rune(name)
+	runes[0] = []rune(strings.ToUpper(string(runes[0])))[0]
+	return string(runes)
 }
 
 func lineTone(stream string) string {

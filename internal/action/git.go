@@ -86,7 +86,9 @@ func (r *GitResolver) Fetch(ctx context.Context, ref string) (*FetchResult, erro
 	if err != nil {
 		return nil, fmt.Errorf("git resolver: create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		_ = os.RemoveAll(tmpDir)
+	}()
 
 	sha, err := r.checkoutRemote(ctx, remote, tmpDir)
 	if err != nil {

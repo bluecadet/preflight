@@ -9,9 +9,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/bluecadet/preflight/internal/tasklog"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
+
+	"github.com/bluecadet/preflight/internal/tasklog"
 )
 
 type SSHConfig struct {
@@ -251,7 +252,7 @@ func (t *SSHTarget) applyModule(ctx context.Context, module string, params map[s
 		workingDir, _ := params["working_dir"].(string)
 		var shellCmd strings.Builder
 		if workingDir != "" {
-			shellCmd.WriteString(fmt.Sprintf("cd %q && ", workingDir))
+			_, _ = fmt.Fprintf(&shellCmd, "cd %q && ", workingDir)
 		}
 		shellCmd.WriteString(shellQuoteExec(cmd, args))
 		return t.mustRun(ctx, shellCmd.String())
@@ -332,7 +333,9 @@ func (r *sshClientRunner) Run(ctx context.Context, command string, stdin []byte)
 	if err != nil {
 		return "", "", 0, err
 	}
-	defer session.Close()
+	defer func() {
+		_ = session.Close()
+	}()
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
