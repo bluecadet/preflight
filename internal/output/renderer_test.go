@@ -9,7 +9,7 @@ import (
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
 func newTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false}
+	return &TextRenderer{w: w, color: false, taskOutput: make(map[string][]string)}
 }
 
 func TestTextRenderer_PlayStart(t *testing.T) {
@@ -174,11 +174,47 @@ func TestTextRenderer_TaskOutput(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_TaskOutputAppearsBelowTaskResult(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+
+	r.Emit(Event{
+		Type:     EventTaskOutput,
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Lines:    []string{"line1", "line2"},
+	})
+	r.Emit(Event{
+		Type:     EventTaskResult,
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Status:   "changed",
+		Message:  "task completed",
+	})
+
+	out := buf.String()
+	taskPos := strings.Index(out, "TASK [Run smoke test]")
+	linePos := strings.Index(out, "line1")
+	if taskPos < 0 || linePos < 0 {
+		t.Fatalf("expected task line and buffered output, got %q", out)
+	}
+	if linePos < taskPos {
+		t.Fatalf("expected buffered task output below the task result, got %q", out)
+	}
+}
+
 func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
 	r.Emit(Event{
+		Type:     EventTaskOutput,
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Lines:    []string{"Launching kiosk application..."},
+	})
+	r.Emit(Event{
 		Type:     EventTaskResult,
+		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Status:   "failed",
 		Message:  "process exited with code 1",
@@ -194,6 +230,9 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	}
 	if !strings.Contains(out, "Smoke test timeout after 15s") {
 		t.Errorf("expected second failure log in output, got: %q", out)
+	}
+	if strings.Count(out, "Launching kiosk application...") != 1 {
+		t.Errorf("expected failure logs not to be duplicated, got: %q", out)
 	}
 }
 

@@ -74,15 +74,17 @@ func isTTY(w io.Writer) bool {
 
 // TextRenderer writes Ansible-style human-readable output.
 type TextRenderer struct {
-	w     io.Writer
-	color bool
+	w          io.Writer
+	color      bool
+	taskOutput map[string][]string
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
 func NewTextRenderer(w io.Writer) *TextRenderer {
 	return &TextRenderer{
-		w:     w,
-		color: isTTY(w),
+		w:          w,
+		color:      isTTY(w),
+		taskOutput: make(map[string][]string),
 	}
 }
 
@@ -107,6 +109,35 @@ func (r *TextRenderer) writeOutputLines(lines []string) {
 	}
 }
 
+func (r *TextRenderer) taskKey(event Event) string {
+	if event.TaskID != "" {
+		return event.TaskID
+	}
+	return event.TaskName
+}
+
+func (r *TextRenderer) bufferTaskOutput(event Event) bool {
+	key := r.taskKey(event)
+	if key == "" {
+		return false
+	}
+	if r.taskOutput == nil {
+		r.taskOutput = make(map[string][]string)
+	}
+	r.taskOutput[key] = append(r.taskOutput[key], event.Lines...)
+	return true
+}
+
+func (r *TextRenderer) takeBufferedOutput(event Event) []string {
+	key := r.taskKey(event)
+	if key == "" || r.taskOutput == nil {
+		return nil
+	}
+	lines := r.taskOutput[key]
+	delete(r.taskOutput, key)
+	return lines
+}
+
 // Emit writes a formatted line (or block) for the given event.
 func (r *TextRenderer) Emit(event Event) {
 	switch event.Type {
@@ -117,7 +148,9 @@ func (r *TextRenderer) Emit(event Event) {
 		_, _ = fmt.Fprintln(r.w)
 
 	case EventTaskOutput:
-		r.writeOutputLines(event.Lines)
+		if !r.bufferTaskOutput(event) {
+			r.writeOutputLines(event.Lines)
+		}
 
 	case EventTaskResult:
 		label := fmt.Sprintf("TASK [%s]", event.TaskName)
@@ -127,8 +160,14 @@ func (r *TextRenderer) Emit(event Event) {
 		dotsNeeded = max(dotsNeeded, 1)
 		dots := strings.Repeat(".", dotsNeeded)
 		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
-		if event.Status == "failed" && len(event.Output) > 0 {
-			r.writeOutputLines(event.Output)
+		lines := event.Output
+		if len(lines) > 0 {
+			_ = r.takeBufferedOutput(event)
+		} else {
+			lines = r.takeBufferedOutput(event)
+		}
+		if len(lines) > 0 {
+			r.writeOutputLines(lines)
 		}
 
 	case EventPlayEnd:
