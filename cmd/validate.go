@@ -3,10 +3,12 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 var validateCmd = &cobra.Command{
@@ -35,6 +37,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	// Resolve every action ref referenced in the playbook.
 	var errs []error
+	presenter := output.NewPresenter(os.Stdout)
 	for _, task := range pb.Tasks {
 		if task.Uses == "" {
 			continue
@@ -46,11 +49,11 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	if len(errs) > 0 {
 		for _, e := range errs {
-			fmt.Printf("ERROR: %v\n", e)
+			fmt.Fprintln(os.Stdout, presenter.Notice("error", e.Error()))
 		}
 		return fmt.Errorf("validation failed with %d error(s)", len(errs))
 	}
 
-	fmt.Println("OK")
+	fmt.Fprintln(os.Stdout, presenter.Notice("success", "Playbook validated successfully."))
 	return nil
 }

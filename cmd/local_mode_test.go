@@ -66,7 +66,7 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 
 			if tc.name == "plan" {
 				out := stdout.String()
-				if !strings.Contains(out, "Target: kiosk-a") || !strings.Contains(out, "Target: kiosk-b") {
+				if !strings.Contains(out, "kiosk-a") || !strings.Contains(out, "kiosk-b") {
 					t.Fatalf("expected per-target plan output, got %q", out)
 				}
 			}
@@ -244,7 +244,7 @@ func TestRunApplyBundlePlaintextSecretsWithoutIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply bundle: %v", err)
 	}
-	if !strings.Contains(out, "WARNING: bundle contains plaintext secrets") {
+	if !strings.Contains(out, "bundle contains plaintext secrets") {
 		t.Fatalf("expected plaintext bundle warning, got %q", out)
 	}
 }
@@ -405,7 +405,7 @@ groups:
 	if err != nil {
 		t.Fatalf("runDiff: %v", err)
 	}
-	if !strings.Contains(out, "Target: kiosk-a") {
+	if !strings.Contains(out, "Target") || !strings.Contains(out, "kiosk-a") {
 		t.Fatalf("expected target section for kiosk-a, got %q", out)
 	}
 	if !strings.Contains(out, "echo kiosk-a") {

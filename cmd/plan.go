@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -53,9 +54,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.New(outFmt, os.Stdout)
-	defer renderer.Close()
+	presenter := output.NewPresenter(os.Stdout)
 
 	for idx, host := range hosts {
 		cfg := runner.Config{
@@ -68,7 +67,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
 			Phase:          "plan",
-			Renderer:       renderer,
 			Secrets:        secretsResolver,
 			ModuleRegistry: registry,
 		}
@@ -79,26 +77,44 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
 		}
 
-		if idx > 0 {
-			fmt.Println()
-		}
-		fmt.Printf("Target: %s\n", host.Name)
-		fmt.Printf("Playbook: %s\n", plan.PlaybookName)
-		fmt.Printf("Tasks (%d):\n", len(plan.Tasks))
+		rows := make([][]string, 0, len(plan.Tasks))
 		for i, pt := range plan.Tasks {
 			preview, err := runner.PreviewTask(pt, host.TargetVars)
 			if err != nil {
 				return fmt.Errorf("preview task %q for %s: %w", pt.Name, host.Name, err)
 			}
-			fmt.Printf("  %d. [%s] %s", i+1, preview.Module, preview.Name)
-			if preview.When != "" {
-				fmt.Printf(" (when: %s)", preview.When)
+			when := preview.When
+			if when == "" {
+				when = presenter.Muted("always")
 			}
+			tags := "-"
 			if len(preview.Tags) > 0 {
-				fmt.Printf(" [tags: %v]", preview.Tags)
+				tags = strings.Join(preview.Tags, ", ")
 			}
-			fmt.Println()
+			rows = append(rows, []string{
+				fmt.Sprintf("%d", i+1),
+				preview.Module,
+				preview.Name,
+				when,
+				tags,
+			})
 		}
+
+		if idx > 0 {
+			fmt.Fprintln(os.Stdout)
+		}
+		fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+			presenter.Title("Execution plan", "Resolved task order and rendered previews"),
+			presenter.Section("Context", presenter.KeyValues([]output.KeyValue{
+				{Label: "Target", Value: presenter.Host(host.Name)},
+				{Label: "Playbook", Value: plan.PlaybookName},
+				{Label: "Tasks", Value: fmt.Sprintf("%d", len(plan.Tasks))},
+			})),
+			presenter.Section("Tasks", presenter.Table(
+				[]string{"#", "MODULE", "TASK", "WHEN", "TAGS"},
+				rows,
+			)),
+		))
 	}
 
 	return nil

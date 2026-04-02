@@ -583,6 +583,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	// Track which tasks have succeeded for dependency checking.
 	succeeded := make(map[string]bool)
 	failed := make(map[string]bool)
+	taskTotal := len(ordered)
 
 	finishApply := func() error {
 		state.LastApplied = time.Now()
@@ -597,6 +598,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				Type:         output.EventPlayEnd,
 				PlayName:     plan.PlaybookName,
 				Target:       r.targetName(),
+				TaskTotal:    taskTotal,
 				OKCount:      okCount,
 				ChangedCount: changedCount,
 				FailedCount:  failedCount,
@@ -610,14 +612,15 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		return nil
 	}
 
-	for _, pt := range ordered {
+	for idx, pt := range ordered {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		taskIndex := idx + 1
 
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
-			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered")
+			r.emitTaskResult(pt, pt.Name, target.StatusSkipped, "tag-filtered", taskIndex, taskTotal)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			succeeded[pt.ID] = false
@@ -634,7 +637,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 		if depFailed && !pt.IgnoreErrors {
-			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed")
+			r.emitTaskResult(pt, pt.Name, target.StatusSkipped, "dependency-failed", taskIndex, taskTotal)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
 			succeeded[pt.ID] = false
@@ -648,7 +651,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 			}
 			if !ok {
-				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false")
+				r.emitTaskResult(pt, pt.Name, target.StatusSkipped, "when-condition-false", taskIndex, taskTotal)
 				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
 				succeeded[pt.ID] = false
@@ -668,11 +671,13 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
+		r.emitTaskStart(pt, taskName, taskIndex, taskTotal)
+
 		// Execute the task against the target.
 		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, r.config.DryRun)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
-				r.emitTaskResult(pt, target.StatusFailed, execErr.Error())
+				r.emitTaskResult(pt, taskName, target.StatusFailed, execErr.Error(), taskIndex, taskTotal)
 				state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
@@ -688,7 +693,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, result.Status, result.Message, dag))
 
-		r.emitTaskResult(pt, result.Status, result.Message)
+		r.emitTaskResult(pt, taskName, result.Status, result.Message, taskIndex, taskTotal)
 
 		switch result.Status {
 		case target.StatusOK:
@@ -740,17 +745,35 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	return true
 }
 
-// emitTaskResult emits a task_result event to the renderer.
-func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message string) {
+// emitTaskStart emits a task_start event to the renderer.
+func (r *Runner) emitTaskStart(pt *PlanTask, taskName string, taskIndex, taskTotal int) {
 	if r.config.Renderer == nil {
 		return
 	}
 	r.config.Renderer.Emit(output.Event{
-		Type:     output.EventTaskResult,
-		TaskName: pt.Name,
-		Target:   r.targetName(),
-		Status:   string(status),
-		Message:  message,
+		Type:      output.EventTaskStart,
+		TaskName:  taskName,
+		Module:    pt.Module,
+		Target:    r.targetName(),
+		TaskIndex: taskIndex,
+		TaskTotal: taskTotal,
+	})
+}
+
+// emitTaskResult emits a task_result event to the renderer.
+func (r *Runner) emitTaskResult(pt *PlanTask, taskName string, status target.Status, message string, taskIndex, taskTotal int) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.Event{
+		Type:      output.EventTaskResult,
+		TaskName:  taskName,
+		Module:    pt.Module,
+		Target:    r.targetName(),
+		Status:    string(status),
+		Message:   message,
+		TaskIndex: taskIndex,
+		TaskTotal: taskTotal,
 	})
 }
 

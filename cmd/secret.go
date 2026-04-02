@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/config"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
 )
 
@@ -58,15 +59,24 @@ func runSecretList(_ *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	presenter := output.NewPresenter(os.Stdout)
 	if len(cfg.Secrets.Entries) == 0 {
-		fmt.Println("No secrets configured.")
+		fmt.Fprintln(os.Stdout, presenter.Notice("info", "No secrets configured."))
 		return nil
 	}
 	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
+	rows := make([][]string, 0, len(provider.List()))
 	for _, name := range provider.List() {
 		entry := cfg.Secrets.Entries[name]
-		fmt.Printf("%-24s %s\n", name, entry.File)
+		rows = append(rows, []string{name, entry.File})
 	}
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+		presenter.Title("Secrets", "Configured repository-backed secrets"),
+		presenter.Section("Entries", presenter.Table(
+			[]string{"NAME", "FILE"},
+			rows,
+		)),
+	))
 	return nil
 }
 
@@ -122,7 +132,7 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Encrypted secret %q to %s\n", name, entry.File)
+	fmt.Fprintln(os.Stdout, output.NewPresenter(os.Stdout).Notice("success", fmt.Sprintf("Encrypted secret %q to %s", name, entry.File)))
 	return nil
 }
 
@@ -189,7 +199,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Updated secret %q\n", name)
+	fmt.Fprintln(os.Stdout, output.NewPresenter(os.Stdout).Notice("success", fmt.Sprintf("Updated secret %q", name)))
 	return nil
 }
 

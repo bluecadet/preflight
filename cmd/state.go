@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
@@ -160,24 +161,39 @@ func printStateComparison(
 	state *runner.State,
 	comparisons []runner.TaskComparison,
 ) {
-	fmt.Printf("State diff for playbook: %s\n", plan.PlaybookName)
-	fmt.Printf("Target: %s\n", host.Name)
-	fmt.Printf("State file: %s\n", statePath)
-	fmt.Printf("Last applied: %s\n\n", func() string {
+	presenter := output.NewPresenter(os.Stdout)
+	lastApplied := func() string {
 		if state.LastApplied.IsZero() {
 			return "(never)"
 		}
 		return state.LastApplied.UTC().Format("2006-01-02 15:04:05 UTC")
-	}())
+	}()
 
-	fmt.Printf("%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
-	fmt.Printf("%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
-
+	rows := make([][]string, 0, len(comparisons))
 	for _, comparison := range comparisons {
 		recordedStatus := "(not recorded)"
 		if comparison.Status != runner.ComparisonStatusNew {
 			recordedStatus = string(comparison.RecordedStatus)
 		}
-		fmt.Printf("%-12s %-28s %-16s %s\n", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
+		rows = append(rows, []string{
+			presenter.StatusBadge(string(comparison.Status)),
+			comparison.TaskName,
+			comparison.Module,
+			recordedStatus,
+		})
 	}
+
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+		presenter.Title("State diff", "Recorded state compared against the current plan"),
+		presenter.Section("Context", presenter.KeyValues([]output.KeyValue{
+			{Label: "Playbook", Value: plan.PlaybookName},
+			{Label: "Target", Value: presenter.Host(host.Name)},
+			{Label: "State file", Value: statePath},
+			{Label: "Last applied", Value: lastApplied},
+		})),
+		presenter.Section("Tasks", presenter.Table(
+			[]string{"STATUS", "TASK", "MODULE", "RECORDED"},
+			rows,
+		)),
+	))
 }

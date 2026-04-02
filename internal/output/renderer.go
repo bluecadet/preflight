@@ -5,6 +5,8 @@ import (
 	"io"
 	"os"
 	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 // EventType identifies the kind of output event.
@@ -12,6 +14,7 @@ type EventType string
 
 const (
 	EventPlayStart  EventType = "play_start"
+	EventTaskStart  EventType = "task_start"
 	EventTaskResult EventType = "task_result"
 	EventPlayEnd    EventType = "play_end"
 	EventWarning    EventType = "warning"
@@ -20,13 +23,16 @@ const (
 
 // Event carries all data for a single renderer call.
 type Event struct {
-	Type     EventType
-	PlayName string // for play_start / play_end
-	TaskName string // for task_result
-	Target   string // hostname
-	Status   string // "ok", "changed", "failed", "skipped"
-	Message  string
-	Error    error
+	Type      EventType
+	PlayName  string // for play_start / play_end
+	TaskName  string // for task_result
+	Module    string // for task_start / task_result
+	Target    string // hostname
+	Status    string // "ok", "changed", "failed", "skipped"
+	Message   string
+	Error     error
+	TaskIndex int
+	TaskTotal int
 	// For play_end recap:
 	OKCount      int
 	ChangedCount int
@@ -39,19 +45,6 @@ type Renderer interface {
 	Emit(event Event)
 	Close()
 }
-
-// ANSI color codes.
-const (
-	ansiReset  = "\033[0m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiRed    = "\033[31m"
-	ansiGrey   = "\033[90m"
-	ansiBold   = "\033[1m"
-	ansiCyan   = "\033[36m"
-)
-
-const lineWidth = 80
 
 // isTTY returns true if w is os.Stdout or os.Stderr and the fd is a terminal.
 func isTTY(w io.Writer) bool {
@@ -70,22 +63,17 @@ func isTTY(w io.Writer) bool {
 // TextRenderer writes Ansible-style human-readable output.
 type TextRenderer struct {
 	w     io.Writer
-	color bool
+	width int
+	theme terminalTheme
 }
 
-// NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
+// NewTextRenderer creates a TextRenderer using the shared lipgloss theme.
 func NewTextRenderer(w io.Writer) *TextRenderer {
 	return &TextRenderer{
 		w:     w,
-		color: isTTY(w),
+		width: detectTerminalWidth(w),
+		theme: newTerminalTheme(w),
 	}
-}
-
-func (r *TextRenderer) colorize(code, text string) string {
-	if !r.color {
-		return text
-	}
-	return code + text + ansiReset
 }
 
 func fillLine(prefix, fill string, width int) string {
@@ -100,34 +88,70 @@ func fillLine(prefix, fill string, width int) string {
 func (r *TextRenderer) Emit(event Event) {
 	switch event.Type {
 	case EventPlayStart:
-		title := fmt.Sprintf("PLAY [%s]", event.PlayName)
-		line := fillLine(title, "*", lineWidth)
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
+		title := lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			r.theme.pill.Render("PLAY"),
+			" ",
+			r.theme.title.Render(event.PlayName),
+		)
+		if event.Target != "" {
+			title = lipgloss.JoinHorizontal(lipgloss.Center, title, " ", r.theme.host(event.Target))
+		}
+		if event.TaskTotal > 0 {
+			title = lipgloss.JoinHorizontal(
+				lipgloss.Center,
+				title,
+				" ",
+				r.theme.muted.Render(fmt.Sprintf("%d tasks", event.TaskTotal)),
+			)
+		}
+		_, _ = fmt.Fprintln(r.w, title)
 		_, _ = fmt.Fprintln(r.w)
 
+	case EventTaskStart:
+		line := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			r.theme.statusBadge("running"),
+			" ",
+			r.renderTaskLabel(event, true),
+		)
+		_, _ = fmt.Fprintln(r.w, line)
+
 	case EventTaskResult:
-		label := fmt.Sprintf("TASK [%s]", event.TaskName)
-		// Build dots then status
-		statusStr := r.statusColored(event.Status, event.Message)
-		dotsNeeded := lineWidth - len(label) - len(event.Status) - 3
-		dotsNeeded = max(dotsNeeded, 1)
-		dots := strings.Repeat(".", dotsNeeded)
-		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
+		line := lipgloss.JoinHorizontal(
+			lipgloss.Top,
+			r.theme.statusBadge(event.Status),
+			" ",
+			r.renderTaskLabel(event, false),
+		)
+		_, _ = fmt.Fprintln(r.w, line)
 
 	case EventPlayEnd:
-		title := "PLAY RECAP"
-		line := fillLine(title, "*", lineWidth)
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		target := event.Target
 		if target == "" {
 			target = "localhost"
 		}
-		recap := fmt.Sprintf("%-14s : ok=%-4d changed=%-4d failed=%-4d skipped=%-4d",
-			target,
-			event.OKCount,
-			event.ChangedCount,
-			event.FailedCount,
-			event.SkippedCount,
+		recap := lipgloss.JoinHorizontal(
+			lipgloss.Center,
+			r.theme.pill.Render("RECAP"),
+			" ",
+			r.theme.host(target),
+			"  ",
+			r.theme.statusBadge("ok"),
+			" ",
+			r.theme.value.Render(fmt.Sprintf("%d", event.OKCount)),
+			"  ",
+			r.theme.statusBadge("changed"),
+			" ",
+			r.theme.value.Render(fmt.Sprintf("%d", event.ChangedCount)),
+			"  ",
+			r.theme.statusBadge("failed"),
+			" ",
+			r.theme.value.Render(fmt.Sprintf("%d", event.FailedCount)),
+			"  ",
+			r.theme.statusBadge("skipped"),
+			" ",
+			r.theme.value.Render(fmt.Sprintf("%d", event.SkippedCount)),
 		)
 		_, _ = fmt.Fprintln(r.w, recap)
 		_, _ = fmt.Fprintln(r.w)
@@ -137,34 +161,35 @@ func (r *TextRenderer) Emit(event Event) {
 		if event.Error != nil {
 			msg = event.Error.Error()
 		}
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
+		_, _ = fmt.Fprintln(r.w, r.theme.note("error", msg))
 
 	case EventWarning:
 		msg := event.Message
 		if event.Error != nil {
 			msg = event.Error.Error()
 		}
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiYellow, "WARNING: "+msg))
+		_, _ = fmt.Fprintln(r.w, r.theme.note("warning", msg))
 	}
 }
 
-func (r *TextRenderer) statusColored(status, message string) string {
-	label := status
-	if message != "" {
-		label = fmt.Sprintf("%s (%s)", status, message)
+func (r *TextRenderer) renderTaskLabel(event Event, showModule bool) string {
+	parts := make([]string, 0, 5)
+	if event.Target != "" {
+		parts = append(parts, r.theme.host(event.Target))
 	}
-	switch status {
-	case "ok":
-		return r.colorize(ansiGreen, label)
-	case "changed":
-		return r.colorize(ansiYellow, label)
-	case "failed":
-		return r.colorize(ansiRed, label)
-	case "skipped":
-		return r.colorize(ansiGrey, label)
-	default:
-		return label
+	if showModule && event.Module != "" {
+		parts = append(parts, r.theme.pill.Render(event.Module))
 	}
+	if event.TaskName != "" {
+		parts = append(parts, r.theme.value.Render(event.TaskName))
+	}
+	if event.Message != "" {
+		parts = append(parts, r.theme.muted.Render(event.Message))
+	}
+	if event.TaskTotal > 0 && event.TaskIndex > 0 {
+		parts = append(parts, r.theme.muted.Render(fmt.Sprintf("%d/%d", event.TaskIndex, event.TaskTotal)))
+	}
+	return strings.Join(parts, "  ")
 }
 
 // Close is a no-op for TextRenderer.

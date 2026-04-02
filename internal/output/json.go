@@ -11,9 +11,12 @@ type jsonEvent struct {
 	Type         EventType `json:"type"`
 	PlayName     string    `json:"play,omitempty"`
 	Task         string    `json:"task,omitempty"`
+	Module       string    `json:"module,omitempty"`
 	Target       string    `json:"target,omitempty"`
 	Status       string    `json:"status,omitempty"`
 	Message      string    `json:"message,omitempty"`
+	TaskIndex    int       `json:"task_index,omitempty"`
+	TaskTotal    int       `json:"task_total,omitempty"`
 	Error        string    `json:"error,omitempty"`
 	OKCount      *int      `json:"ok_count,omitempty"`
 	ChangedCount *int      `json:"changed_count,omitempty"`
@@ -38,13 +41,16 @@ func NewJSONRenderer(w io.Writer) *JSONRenderer {
 // Emit serialises the event as a single JSON line.
 func (r *JSONRenderer) Emit(event Event) {
 	je := jsonEvent{
-		Type:     event.Type,
-		PlayName: event.PlayName,
-		Task:     event.TaskName,
-		Target:   event.Target,
-		Status:   event.Status,
-		Message:  event.Message,
-		TS:       time.Now().UTC().Format(time.RFC3339),
+		Type:      event.Type,
+		PlayName:  event.PlayName,
+		Task:      event.TaskName,
+		Module:    event.Module,
+		Target:    event.Target,
+		Status:    event.Status,
+		Message:   event.Message,
+		TaskIndex: event.TaskIndex,
+		TaskTotal: event.TaskTotal,
+		TS:        time.Now().UTC().Format(time.RFC3339),
 	}
 	if event.Error != nil {
 		je.Error = event.Error.Error()

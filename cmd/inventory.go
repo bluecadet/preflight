@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 var inventoryCmd = &cobra.Command{
@@ -41,7 +42,7 @@ func runInventoryList(cmd *cobra.Command, _ []string) error {
 
 	hosts := inv.AllHosts()
 	if len(hosts) == 0 {
-		fmt.Println("No hosts found in inventory.")
+		fmt.Fprintln(os.Stdout, output.NewPresenter(os.Stdout).Notice("info", "No hosts found in inventory."))
 		return nil
 	}
 
@@ -56,25 +57,28 @@ func runInventoryList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	fmt.Printf("%-20s %-20s %-10s %-6s %s\n", "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS")
-	fmt.Printf("%-20s %-20s %-10s %-6s %s\n",
-		strings.Repeat("-", 20),
-		strings.Repeat("-", 20),
-		strings.Repeat("-", 10),
-		strings.Repeat("-", 6),
-		strings.Repeat("-", 20),
-	)
-
+	presenter := output.NewPresenter(os.Stdout)
+	rows := make([][]string, 0, len(hosts))
 	for _, h := range hosts {
 		groups := strings.Join(hostGroups[h.Name], ", ")
-		fmt.Printf("%-20s %-20s %-10s %-6d %s\n",
-			h.Name,
+		if groups == "" {
+			groups = presenter.Muted("-")
+		}
+		rows = append(rows, []string{
+			presenter.Host(h.Name),
 			h.Address,
 			string(h.Transport),
-			h.Port,
+			fmt.Sprintf("%d", h.Port),
 			groups,
-		)
+		})
 	}
 
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+		presenter.Title("Inventory", "Resolved hosts from the current inventory file"),
+		presenter.Section("Hosts", presenter.Table(
+			[]string{"NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS"},
+			rows,
+		)),
+	))
 	return nil
 }

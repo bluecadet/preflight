@@ -147,18 +147,18 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			BuildDate:                     buildDate,
 		}
 
-		if renderer != nil {
-			renderer.Emit(output.Event{
-				Type:     output.EventPlayStart,
-				PlayName: pb.Name,
-				Target:   host.Name,
-			})
-		}
-
 		r := runner.New(host.Target, chain, cfg)
 		plan, err := r.Plan(runCtx, pb)
 		if err != nil {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
+		}
+		if renderer != nil {
+			renderer.Emit(output.Event{
+				Type:      output.EventPlayStart,
+				PlayName:  pb.Name,
+				Target:    host.Name,
+				TaskTotal: len(plan.Tasks),
+			})
 		}
 
 		if phase == "stage" {
@@ -229,9 +229,10 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	}
 	if renderer != nil {
 		renderer.Emit(output.Event{
-			Type:     output.EventPlayStart,
-			PlayName: plan.PlaybookName,
-			Target:   extracted.Manifest.TargetName,
+			Type:      output.EventPlayStart,
+			PlayName:  plan.PlaybookName,
+			Target:    extracted.Manifest.TargetName,
+			TaskTotal: len(plan.Tasks),
 		})
 	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{

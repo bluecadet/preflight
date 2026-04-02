@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
@@ -48,33 +49,32 @@ func init() {
 }
 
 func runActionList(_ *cobra.Command, _ []string) error {
-	// List embedded stdlib actions.
-	fmt.Println("=== Embedded stdlib actions (preflight/) ===")
+	presenter := output.NewPresenter(os.Stdout)
 	embeddedRefs, err := listEmbeddedActions()
 	if err != nil {
 		return fmt.Errorf("action list: embedded: %w", err)
 	}
 	sort.Strings(embeddedRefs)
-	for _, ref := range embeddedRefs {
-		fmt.Printf("  %s\n", ref)
-	}
 
-	// List local ./actions/ actions.
 	cwd, _ := os.Getwd()
 	localActionsDir := filepath.Join(cwd, "actions")
-	fmt.Printf("\n=== Local actions (%s) ===\n", localActionsDir)
 	localRefs, err := listLocalActions(localActionsDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("action list: local: %w", err)
 	}
 	sort.Strings(localRefs)
-	for _, ref := range localRefs {
-		fmt.Printf("  %s\n", ref)
-	}
 	if len(localRefs) == 0 {
-		fmt.Println("  (none)")
+		localRefs = []string{presenter.Muted("(none)")}
 	}
 
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+		presenter.Title("Actions", "Available embedded and local action references"),
+		presenter.Section("Embedded stdlib", presenter.Bullets(embeddedRefs)),
+		presenter.Section("Local actions", presenter.JoinBlocks(
+			presenter.Muted(localActionsDir),
+			presenter.Bullets(localRefs),
+		)),
+	))
 	return nil
 }
 
@@ -122,52 +122,69 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Name:        %s\n", a.Name)
-	fmt.Printf("Version:     %s\n", a.Version)
-	fmt.Printf("Description: %s\n", a.Description)
+	presenter := output.NewPresenter(os.Stdout)
+	meta := []output.KeyValue{
+		{Label: "Name", Value: a.Name},
+		{Label: "Version", Value: a.Version},
+		{Label: "Description", Value: a.Description},
+	}
 	if a.Author != "" {
-		fmt.Printf("Author:      %s\n", a.Author)
+		meta = append(meta, output.KeyValue{Label: "Author", Value: a.Author})
 	}
 
+	blocks := []string{
+		presenter.Title("Action details", "Metadata, contract, and expanded task list"),
+		presenter.Section("Action", presenter.KeyValues(meta)),
+	}
 	if len(a.Inputs) > 0 {
-		fmt.Println("\nInputs:")
 		keys := make([]string, 0, len(a.Inputs))
 		for k := range a.Inputs {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		rows := make([][]string, 0, len(keys))
 		for _, k := range keys {
 			inp := a.Inputs[k]
-			req := ""
+			required := presenter.Muted("optional")
 			if inp.Required {
-				req = " (required)"
+				required = presenter.StatusBadge("required")
 			}
-			def := ""
+			def := "-"
 			if inp.Default != nil {
-				def = fmt.Sprintf(" [default: %v]", inp.Default)
+				def = fmt.Sprintf("%v", inp.Default)
 			}
-			fmt.Printf("  %-20s %s%s%s\n", k+":", inp.Description, req, def)
+			rows = append(rows, []string{k, inp.Description, required, def})
 		}
+		blocks = append(blocks, presenter.Section("Inputs", presenter.Table(
+			[]string{"NAME", "DESCRIPTION", "REQUIRED", "DEFAULT"},
+			rows,
+		)))
 	}
 
 	if len(a.Outputs) > 0 {
-		fmt.Println("\nOutputs:")
 		keys := make([]string, 0, len(a.Outputs))
 		for k := range a.Outputs {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
+		rows := make([][]string, 0, len(keys))
 		for _, k := range keys {
 			out := a.Outputs[k]
-			fmt.Printf("  %-20s %s\n", k+":", out.Description)
+			rows = append(rows, []string{k, out.Description})
 		}
+		blocks = append(blocks, presenter.Section("Outputs", presenter.Table(
+			[]string{"NAME", "DESCRIPTION"},
+			rows,
+		)))
 	}
 
-	fmt.Printf("\nTasks (%d):\n", len(a.Tasks))
+	taskItems := make([]string, 0, len(a.Tasks))
 	for i, t := range a.Tasks {
-		fmt.Printf("  %d. %s\n", i+1, t.Name)
+		taskItems = append(taskItems, fmt.Sprintf("%d. %s", i+1, t.Name))
 	}
+	blocks = append(blocks, presenter.Section("Tasks", presenter.Bullets(taskItems)))
 
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(blocks...))
 	return nil
 }
 
@@ -190,8 +207,9 @@ func runActionFetch(_ *cobra.Command, args []string) error {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Ref < entries[j].Ref
 	})
+	presenter := output.NewPresenter(os.Stdout)
 	for _, entry := range entries {
-		fmt.Printf("Fetched %s -> %s\n", entry.Ref, entry.SHA)
+		fmt.Fprintln(os.Stdout, presenter.Notice("success", fmt.Sprintf("Fetched %s -> %s", entry.Ref, entry.SHA)))
 	}
 	return nil
 }

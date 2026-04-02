@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
@@ -40,7 +42,7 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 	}
 
 	if len(plugins) == 0 {
-		fmt.Println("No plugins found.")
+		fmt.Fprintln(os.Stdout, output.NewPresenter(os.Stdout).Notice("info", "No plugins found."))
 		return nil
 	}
 
@@ -51,16 +53,28 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 		return plugins[i].Name < plugins[j].Name
 	})
 
-	fmt.Printf("%-24s %-12s %-8s %s\n", "NAME", "VERSION", "STATUS", "PATH")
-	fmt.Printf("%-24s %-12s %-8s %s\n", "----", "-------", "------", "----")
+	presenter := output.NewPresenter(os.Stdout)
+	rows := make([][]string, 0, len(plugins))
 	for _, plugin := range plugins {
 		status := "ready"
 		if !plugin.Initialized {
 			status = "error"
 		}
-		fmt.Printf("%-24s %-12s %-8s %s\n", plugin.Name, plugin.Version, status, plugin.Path)
+		rows = append(rows, []string{
+			plugin.Name,
+			plugin.Version,
+			presenter.StatusBadge(status),
+			plugin.Path,
+		})
 	}
 
+	fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+		presenter.Title("Plugins", "Discovered plugin binaries and initialization status"),
+		presenter.Section("Plugins", presenter.Table(
+			[]string{"NAME", "VERSION", "STATUS", "PATH"},
+			rows,
+		)),
+	))
 	return nil
 }
 
@@ -75,15 +89,23 @@ func runPluginInfo(_ *cobra.Command, args []string) error {
 		if plugin.Name != name {
 			continue
 		}
-		fmt.Printf("Name:        %s\n", plugin.Name)
-		fmt.Printf("Version:     %s\n", plugin.Version)
-		fmt.Printf("Path:        %s\n", plugin.Path)
-		fmt.Printf("Source:      %s\n", plugin.Source)
+		presenter := output.NewPresenter(os.Stdout)
+		initialize := presenter.StatusBadge("ready")
 		if plugin.Initialized {
-			fmt.Println("Initialize:  ok")
+			initialize = presenter.StatusBadge("ready")
 		} else {
-			fmt.Printf("Initialize:  error (%s)\n", plugin.ErrorMessage)
+			initialize = presenter.StatusBadge("error") + " " + plugin.ErrorMessage
 		}
+		fmt.Fprintln(os.Stdout, presenter.JoinBlocks(
+			presenter.Title("Plugin details", "Discovery metadata and initialization health"),
+			presenter.Section("Plugin", presenter.KeyValues([]output.KeyValue{
+				{Label: "Name", Value: plugin.Name},
+				{Label: "Version", Value: plugin.Version},
+				{Label: "Path", Value: plugin.Path},
+				{Label: "Source", Value: plugin.Source},
+				{Label: "Initialize", Value: initialize},
+			})),
+		))
 		return nil
 	}
 

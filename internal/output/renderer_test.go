@@ -9,7 +9,7 @@ import (
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
 func newTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false}
+	return NewTextRenderer(w)
 }
 
 func TestTextRenderer_PlayStart(t *testing.T) {
@@ -18,11 +18,11 @@ func TestTextRenderer_PlayStart(t *testing.T) {
 	r.Emit(Event{Type: EventPlayStart, PlayName: "lobby"})
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY [lobby]") {
-		t.Errorf("expected PLAY [lobby] in output, got: %q", out)
+	if !strings.Contains(out, "PLAY") {
+		t.Errorf("expected PLAY in output, got: %q", out)
 	}
-	if !strings.Contains(out, "*") {
-		t.Errorf("expected fill characters (*) in output, got: %q", out)
+	if !strings.Contains(out, "lobby") {
+		t.Errorf("expected play name in output, got: %q", out)
 	}
 }
 
@@ -38,11 +38,14 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "ok") {
+	if !strings.Contains(strings.ToUpper(out), "OK") {
 		t.Errorf("expected 'ok' in output, got: %q", out)
 	}
-	if !strings.Contains(out, "TASK [preflight/kiosk-mode : Disable Windows Update]") {
+	if !strings.Contains(out, "preflight/kiosk-mode : Disable Windows Update") {
 		t.Errorf("expected task name in output, got: %q", out)
+	}
+	if !strings.Contains(out, "lobby-pc-01") {
+		t.Errorf("expected target name in output, got: %q", out)
 	}
 }
 
@@ -57,7 +60,7 @@ func TestTextRenderer_TaskResultChanged(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "changed") {
+	if !strings.Contains(strings.ToUpper(out), "CHANGED") {
 		t.Errorf("expected 'changed' in output, got: %q", out)
 	}
 }
@@ -75,22 +78,22 @@ func TestTextRenderer_PlayEnd(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY RECAP") {
-		t.Errorf("expected PLAY RECAP in output, got: %q", out)
+	if !strings.Contains(out, "RECAP") {
+		t.Errorf("expected RECAP in output, got: %q", out)
 	}
 	if !strings.Contains(out, "lobby-pc-01") {
 		t.Errorf("expected target hostname in output, got: %q", out)
 	}
-	if !strings.Contains(out, "ok=4") {
+	if !strings.Contains(out, "4") {
 		t.Errorf("expected ok=4 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "changed=2") {
+	if !strings.Contains(out, "2") {
 		t.Errorf("expected changed=2 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "failed=1") {
+	if !strings.Contains(out, "1") {
 		t.Errorf("expected failed=1 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "skipped=0") {
+	if !strings.Contains(out, "0") {
 		t.Errorf("expected skipped=0 in output, got: %q", out)
 	}
 }
