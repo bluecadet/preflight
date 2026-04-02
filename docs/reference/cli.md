@@ -240,3 +240,5 @@ Behavior notes:
 | `tui` | Interactive terminal UI renderer |
 | `json` | Newline-delimited JSON events |
 | `jsonl` | Same renderer and event shape as `json` |
+
+When a task streams output during `apply`, the `json` and `jsonl` renderers emit `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.

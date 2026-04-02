@@ -162,6 +162,12 @@ Notes:
 - `json` and `jsonl` both emit newline-delimited JSON events.
 - With no explicit flag, interactive terminals auto-select `tui`; non-TTY output falls back to `text`.
 
+When a module supports streamed output, Preflight forwards each line while the task is still running:
+
+- `text` prints the lines directly under the active task.
+- `tui` shows a rolling preview for running tasks and prints captured output blocks on failures.
+- `json` and `jsonl` emit `task_output` events with `task_id`, `task`, `target`, and `lines`. Failed `task_result` events may also include an `output` array with the captured task output.
+
 ## Control Host Parallelism
 
 Cap concurrent host execution:

@@ -123,7 +123,7 @@ Implemented today:
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply
-- Output renderers for `text`, `tui`, `json`, and `jsonl`
+- Output renderers for `text`, `tui`, `json`, and `jsonl`, including streamed task output during apply
 
 Important current limits:
 
@@ -136,6 +136,14 @@ Important current limits:
 go test ./...
 go test ./internal/runner/...
 go vet ./...
+```
+
+For output and renderer work, you can preview scenarios without running a full playbook:
+
+```bash
+go run ./tools/sim list
+go run ./tools/sim streaming --format tui
+go run ./tools/sim failures --format json
 ```
 
 Build commands:

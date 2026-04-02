@@ -82,7 +82,7 @@ The codebase already supports:
 - Embedded Windows baseline stdlib actions for machine, shell, input, quiet mode, updates, power, and apps
 - Repo-backed `age` secrets
 - Staged bundle creation and bundle apply
-- Structured output in `text`, `tui`, `json`, and `jsonl`
+- Structured output in `text`, `tui`, `json`, and `jsonl`, including streamed task output during apply
 - Plugin discovery plus plugin-backed module execution
 
 Important current limits:

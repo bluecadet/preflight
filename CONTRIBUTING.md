@@ -75,6 +75,15 @@ go test ./internal/module/...
 go test ./pkg/plugin/sdk/...
 ```
 
+For output and renderer changes, also exercise the simulator so text, TUI, and JSON output stay aligned:
+
+```bash
+go run ./tools/sim list
+go run ./tools/sim streaming --format tui
+go run ./tools/sim failures --format text
+go run ./tools/sim basic --format json
+```
+
 **Run vet:**
 
 ```bash
@@ -127,6 +136,7 @@ Rules:
 - `Apply` must be idempotent — calling it twice must not break anything.
 - Built-in modules currently receive `map[string]any`; validate and normalize params early so the module still has a clear internal contract.
 - Add a `_windows.go` / `_stub.go` pair if the module is Windows-only so the binary still compiles on other platforms.
+- Modules that produce user-visible command output can also implement the optional streaming `ApplyWithOutput(ctx, params, onOutput)` hook via `target.StreamingModule` so renderers receive line-by-line updates during `apply`.
 
 ---
 
