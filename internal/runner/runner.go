@@ -65,10 +65,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
 	}
 
 	if r.config.Renderer != nil {
-		r.config.Renderer.Emit(output.Event{
-			Type:     output.EventPlayStart,
-			PlayName: playbook.Name,
-		})
+		r.config.Renderer.Emit(output.PlayStartEvent{PlayName: playbook.Name})
 	}
 
 	if r.config.Phase == "plan" {
@@ -112,10 +109,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
 
 func (r *Runner) emitError(err error) {
 	if r.config.Renderer != nil {
-		r.config.Renderer.Emit(output.Event{
-			Type:  output.EventError,
-			Error: err,
-		})
+		r.config.Renderer.Emit(output.ErrorEvent{Message: err.Error()})
 	}
 }
 
@@ -123,8 +117,7 @@ func (r *Runner) emitTaskStart(pt *PlanTask) {
 	if r.config.Renderer == nil {
 		return
 	}
-	r.config.Renderer.Emit(output.Event{
-		Type:     output.EventTaskStart,
+	r.config.Renderer.Emit(output.TaskStartEvent{
 		TaskID:   pt.ID,
 		TaskName: pt.Name,
 		Target:   r.targetName(),
@@ -133,10 +126,7 @@ func (r *Runner) emitTaskStart(pt *PlanTask) {
 
 func (r *Runner) emitWarning(message string) {
 	if r.config.Renderer != nil && message != "" {
-		r.config.Renderer.Emit(output.Event{
-			Type:    output.EventWarning,
-			Message: message,
-		})
+		r.config.Renderer.Emit(output.WarningEvent{Message: message})
 	}
 }
 

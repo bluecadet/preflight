@@ -168,9 +168,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
-	switch e.Type {
+	switch e := e.(type) {
 
-	case EventPlayStart:
+	case PlayStartEvent:
 		if !m.playStarted {
 			m.playStarted = true
 			m.playName = e.PlayName
@@ -179,7 +179,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			return m, tea.Println(line)
 		}
 
-	case EventTaskStart:
+	case TaskStartEvent:
 		if e.Target == "" {
 			break
 		}
@@ -200,7 +200,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			m.hostColWidth = w
 		}
 
-	case EventTaskOutput:
+	case TaskOutputEvent:
 		if e.Target == "" || e.TaskID == "" {
 			break
 		}
@@ -214,7 +214,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		}
 		return m, nil
 
-	case EventTaskResult:
+	case TaskResultEvent:
 		var cmds []tea.Cmd
 
 		// Determine elapsed time from when the task started.
@@ -267,7 +267,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 
 		return m, tea.Sequence(cmds...)
 
-	case EventPlayEnd:
+	case PlayEndEvent:
 		m.recaps = append(m.recaps, hostRecap{
 			target:  e.Target,
 			ok:      e.OKCount,
@@ -276,20 +276,12 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			skipped: e.SkippedCount,
 		})
 
-	case EventWarning:
-		msg := e.Message
-		if e.Error != nil {
-			msg = e.Error.Error()
-		}
-		line := "  " + tsChanged.Render("⚠") + "  " + tsMuted.Render(msg)
+	case WarningEvent:
+		line := "  " + tsChanged.Render("⚠") + "  " + tsMuted.Render(e.Message)
 		return m, tea.Println(line)
 
-	case EventError:
-		msg := e.Message
-		if e.Error != nil {
-			msg = e.Error.Error()
-		}
-		line := "  " + tsFailed.Render("✗") + "  " + tsFailed.Render(msg)
+	case ErrorEvent:
+		line := "  " + tsFailed.Render("✗") + "  " + tsFailed.Render(e.Message)
 		return m, tea.Println(line)
 	}
 
@@ -375,7 +367,7 @@ func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 }
 
 // renderCommitted formats a completed task line for permanent scroll history.
-func (m tuiModel) renderCommitted(e Event, elapsed time.Duration) string {
+func (m tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) string {
 	icon := tsIcon(e.Status)
 	hostFmt := fmt.Sprintf("%-*s", m.hostColWidth, tsTruncate(e.Target, m.hostColWidth))
 	host := tsHost.Render(hostFmt)

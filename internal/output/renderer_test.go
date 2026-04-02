@@ -19,7 +19,7 @@ func newVerboseTextRenderer(w *bytes.Buffer) *TextRenderer {
 func TestTextRenderer_PlayStart(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{Type: EventPlayStart, PlayName: "lobby"})
+	r.Emit(PlayStartEvent{PlayName: "lobby"})
 
 	out := buf.String()
 	if !strings.Contains(out, "PLAY [lobby]") {
@@ -33,8 +33,7 @@ func TestTextRenderer_PlayStart(t *testing.T) {
 func TestTextRenderer_TaskResultOK(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskName: "preflight/kiosk-mode : Disable Windows Update",
 		Target:   "lobby-pc-01",
 		Status:   "ok",
@@ -53,8 +52,7 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 func TestTextRenderer_TaskResultChanged(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskName: "preflight/kiosk-mode : Set shell to app",
 		Target:   "lobby-pc-01",
 		Status:   "changed",
@@ -69,8 +67,7 @@ func TestTextRenderer_TaskResultChanged(t *testing.T) {
 func TestTextRenderer_PlayEnd(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{
-		Type:         EventPlayEnd,
+	r.Emit(PlayEndEvent{
 		Target:       "lobby-pc-01",
 		OKCount:      4,
 		ChangedCount: 2,
@@ -103,15 +100,13 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewJSONRenderer(&buf)
 
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskName: "Configure firewall",
 		Target:   "lobby-pc-01",
 		Status:   "ok",
 		Message:  "",
 	})
-	r.Emit(Event{
-		Type:         EventPlayEnd,
+	r.Emit(PlayEndEvent{
 		Target:       "lobby-pc-01",
 		OKCount:      1,
 		ChangedCount: 0,
@@ -161,8 +156,7 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 func TestTextRenderer_TaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{
-		Type:  EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		Lines: []string{"line1", "line2"},
 	})
 
@@ -182,14 +176,12 @@ func TestTextRenderer_DefaultHidesSuccessfulTaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
 
-	r.Emit(Event{
-		Type:     EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Lines:    []string{"line1", "line2"},
 	})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Status:   "changed",
@@ -206,14 +198,12 @@ func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing
 	var buf bytes.Buffer
 	r := newVerboseTextRenderer(&buf)
 
-	r.Emit(Event{
-		Type:     EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Lines:    []string{"line1", "line2"},
 	})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Status:   "changed",
@@ -234,14 +224,12 @@ func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing
 func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(Event{
-		Type:     EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Lines:    []string{"Launching kiosk application..."},
 	})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Status:   "failed",
@@ -268,29 +256,25 @@ func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 	var buf bytes.Buffer
 	r := newVerboseTextRenderer(&buf)
 
-	r.Emit(Event{
-		Type:     EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		Target:   "gallery-01",
 		TaskID:   "sync-assets",
 		TaskName: "Sync assets on gallery-01",
 		Lines:    []string{"gallery-01 line"},
 	})
-	r.Emit(Event{
-		Type:     EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		Target:   "gallery-02",
 		TaskID:   "sync-assets",
 		TaskName: "Sync assets on gallery-02",
 		Lines:    []string{"gallery-02 line"},
 	})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		Target:   "gallery-02",
 		TaskID:   "sync-assets",
 		TaskName: "Sync assets on gallery-02",
 		Status:   "changed",
 	})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(TaskResultEvent{
 		Target:   "gallery-01",
 		TaskID:   "sync-assets",
 		TaskName: "Sync assets on gallery-01",
@@ -319,8 +303,7 @@ func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 func TestJSONRenderer_TaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewJSONRenderer(&buf)
-	r.Emit(Event{
-		Type:   EventTaskOutput,
+	r.Emit(TaskOutputEvent{
 		TaskID: "task-1",
 		Target: "host-a",
 		Lines:  []string{"hello"},

@@ -38,15 +38,13 @@ func TestTUIRenderer_PlayStartTaskResultPlayEnd(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTUIRenderer(&buf)
 
-	r.Emit(Event{Type: EventPlayStart, PlayName: "test-play"})
-	r.Emit(Event{
-		Type:     EventTaskResult,
+	r.Emit(PlayStartEvent{PlayName: "test-play"})
+	r.Emit(TaskResultEvent{
 		TaskName: "Configure firewall",
 		Target:   "test-host",
 		Status:   "ok",
 	})
-	r.Emit(Event{
-		Type:         EventPlayEnd,
+	r.Emit(PlayEndEvent{
 		Target:       "test-host",
 		OKCount:      1,
 		ChangedCount: 0,
@@ -72,16 +70,14 @@ func TestTUIRenderer_MultipleStatuses(t *testing.T) {
 
 	statuses := []string{"ok", "changed", "failed", "skipped"}
 	for i, s := range statuses {
-		r.Emit(Event{
-			Type:     EventTaskResult,
+		r.Emit(TaskResultEvent{
 			TaskName: "task-" + s,
 			Target:   "host",
 			Status:   s,
 		})
 		_ = i
 	}
-	r.Emit(Event{
-		Type:         EventPlayEnd,
+	r.Emit(PlayEndEvent{
 		Target:       "host",
 		OKCount:      1,
 		ChangedCount: 1,
@@ -121,7 +117,7 @@ func TestAutoDetect_AnotherNonTTY(t *testing.T) {
 func TestTUIModel_ApplyEvent_PlayStart(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
-	m, _ = m.applyEvent(Event{Type: EventPlayStart, PlayName: "my-play"})
+	m, _ = m.applyEvent(PlayStartEvent{PlayName: "my-play"})
 	if m.playName != "my-play" {
 		t.Errorf("expected playName=my-play, got %q", m.playName)
 	}
@@ -131,8 +127,7 @@ func TestTUIModel_ApplyEvent_TaskResult(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m, _ = m.applyEvent(Event{
-		Type:     EventTaskResult,
+	m, _ = m.applyEvent(TaskResultEvent{
 		TaskName: "do-thing",
 		Target:   "host-a",
 		TaskID:   "task-1",
@@ -151,8 +146,7 @@ func TestTUIModel_ApplyEvent_PlayEnd(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m, _ = m.applyEvent(Event{
-		Type:         EventPlayEnd,
+	m, _ = m.applyEvent(PlayEndEvent{
 		Target:       "host-a",
 		OKCount:      3,
 		ChangedCount: 2,
@@ -178,14 +172,12 @@ func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m, _ = m.applyEvent(Event{
-		Type:     EventTaskStart,
+	m, _ = m.applyEvent(TaskStartEvent{
 		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "stream logs",
 	})
-	m, _ = m.applyEvent(Event{
-		Type:   EventTaskOutput,
+	m, _ = m.applyEvent(TaskOutputEvent{
 		Target: "host-a",
 		TaskID: "task-1",
 		Lines:  []string{"line1", "line2", "line3", "line4"},
@@ -209,15 +201,13 @@ func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 func TestTUIModel_VerboseCommitsOutputForSuccessfulTasks(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModelWithOptions(events, Options{Verbose: true})
-	m, _ = m.applyEvent(Event{
-		Type:     EventTaskStart,
+	m, _ = m.applyEvent(TaskStartEvent{
 		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "stream logs",
 	})
 
-	_, cmd := m.applyEvent(Event{
-		Type:     EventTaskResult,
+	_, cmd := m.applyEvent(TaskResultEvent{
 		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "stream logs",

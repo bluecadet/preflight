@@ -593,9 +593,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 
 		if r.config.Renderer != nil {
-			r.config.Renderer.Emit(output.Event{
-				Type:         output.EventPlayEnd,
-				PlayName:     plan.PlaybookName,
+			r.config.Renderer.Emit(output.PlayEndEvent{
 				Target:       r.targetName(),
 				OKCount:      okCount,
 				ChangedCount: changedCount,
@@ -673,8 +671,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		var onOutput target.OutputFunc
 		if r.config.Renderer != nil {
 			onOutput = func(line string) {
-				r.config.Renderer.Emit(output.Event{
-					Type:     output.EventTaskOutput,
+				r.config.Renderer.Emit(output.TaskOutputEvent{
 					TaskID:   pt.ID,
 					TaskName: taskName,
 					Target:   r.targetName(),
@@ -759,8 +756,7 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 	if r.config.Renderer == nil {
 		return
 	}
-	r.config.Renderer.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.config.Renderer.Emit(output.TaskResultEvent{
 		TaskID:   pt.ID,
 		TaskName: pt.Name,
 		Target:   r.targetName(),

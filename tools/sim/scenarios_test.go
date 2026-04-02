@@ -35,10 +35,11 @@ func TestRunStreamingEmitsMoreThanThreePreviewLines(t *testing.T) {
 
 	var lines []string
 	for _, event := range rec.snapshot() {
-		if event.Type != output.EventTaskOutput || event.TaskID != "download-package" {
+		e, ok := event.(output.TaskOutputEvent)
+		if !ok || e.TaskID != "download-package" {
 			continue
 		}
-		lines = append(lines, event.Lines...)
+		lines = append(lines, e.Lines...)
 	}
 	if len(lines) < 5 {
 		t.Fatalf("expected at least 5 streamed lines for download-package, got %d: %v", len(lines), lines)
@@ -51,17 +52,18 @@ func TestRunFailuresIncludesCapturedLogsForFailedTask(t *testing.T) {
 	runFailures(rec, 0)
 
 	for _, event := range rec.snapshot() {
-		if event.Type != output.EventTaskResult || event.TaskID != "run-migrations" {
+		e, ok := event.(output.TaskResultEvent)
+		if !ok || e.TaskID != "run-migrations" {
 			continue
 		}
-		if event.Status != "failed" {
-			t.Fatalf("expected failed status, got %q", event.Status)
+		if e.Status != "failed" {
+			t.Fatalf("expected failed status, got %q", e.Status)
 		}
-		if len(event.Output) == 0 {
+		if len(e.Output) == 0 {
 			t.Fatal("expected captured output on failed task result")
 		}
-		if !slices.Contains(event.Output, "Migration aborted: connection refused: postgres:5432") {
-			t.Fatalf("expected failure diagnostics in output block, got %v", event.Output)
+		if !slices.Contains(e.Output, "Migration aborted: connection refused: postgres:5432") {
+			t.Fatalf("expected failure diagnostics in output block, got %v", e.Output)
 		}
 		return
 	}
@@ -75,14 +77,15 @@ func TestRunStreamingCapturesOutputForSuccessfulTaskResults(t *testing.T) {
 	runStreaming(rec, 0)
 
 	for _, event := range rec.snapshot() {
-		if event.Type != output.EventTaskResult || event.TaskID != "download-package" {
+		e, ok := event.(output.TaskResultEvent)
+		if !ok || e.TaskID != "download-package" {
 			continue
 		}
-		if event.Status != "changed" {
-			t.Fatalf("expected changed status, got %q", event.Status)
+		if e.Status != "changed" {
+			t.Fatalf("expected changed status, got %q", e.Status)
 		}
-		if len(event.Output) < 5 {
-			t.Fatalf("expected captured output on successful streamed task, got %v", event.Output)
+		if len(e.Output) < 5 {
+			t.Fatalf("expected captured output on successful streamed task, got %v", e.Output)
 		}
 		return
 	}
@@ -97,10 +100,11 @@ func TestRunStreamingMultiHostStreamsAcrossHosts(t *testing.T) {
 
 	hosts := make(map[string]struct{})
 	for _, event := range rec.snapshot() {
-		if event.Type != output.EventTaskOutput {
+		e, ok := event.(output.TaskOutputEvent)
+		if !ok {
 			continue
 		}
-		hosts[event.Target] = struct{}{}
+		hosts[e.Target] = struct{}{}
 	}
 	if len(hosts) < 2 {
 		t.Fatalf("expected streamed output from multiple hosts, got %d hosts", len(hosts))

@@ -20,24 +20,33 @@ const (
 	EventError      EventType = "error"
 )
 
-// Event carries all data for a single renderer call.
-type Event struct {
-	Type     EventType
-	PlayName string // for play_start / play_end
-	TaskName string // for task_start / task_output / task_result
-	TaskID   string // for task_start / task_output / task_result; slash-separated nesting path e.g. "action/subtask"
-	Target   string // hostname
-	Status   string // "ok", "changed", "failed", "skipped"
-	Message  string
-	Error    error
-	Lines    []string // for task_output: one or more streamed output lines
-	Output   []string // for task_result: full captured output for failed tasks
-	// For play_end recap:
-	OKCount      int
-	ChangedCount int
-	FailedCount  int
-	SkippedCount int
+// Event is the sealed interface implemented by all renderer event types.
+type Event interface{ isEvent() }
+
+type PlayStartEvent struct{ PlayName string }
+type TaskStartEvent struct{ TaskName, TaskID, Target string }
+type TaskOutputEvent struct {
+	TaskName, TaskID, Target string
+	Lines                    []string
 }
+type TaskResultEvent struct {
+	TaskName, TaskID, Target, Status, Message string
+	Output                                    []string
+}
+type PlayEndEvent struct {
+	Target                                           string
+	OKCount, ChangedCount, FailedCount, SkippedCount int
+}
+type WarningEvent struct{ Message string }
+type ErrorEvent struct{ Message string }
+
+func (PlayStartEvent) isEvent()  {}
+func (TaskStartEvent) isEvent()  {}
+func (TaskOutputEvent) isEvent() {}
+func (TaskResultEvent) isEvent() {}
+func (PlayEndEvent) isEvent()    {}
+func (WarningEvent) isEvent()    {}
+func (ErrorEvent) isEvent()      {}
 
 // Renderer is the interface that all output renderers implement.
 type Renderer interface {
@@ -116,33 +125,33 @@ func (r *TextRenderer) writeOutputLines(lines []string) {
 	}
 }
 
-func (r *TextRenderer) taskKey(event Event) string {
+func taskBufferKey(taskID, taskName, target string) string {
 	var base string
-	if event.TaskID != "" {
-		base = event.TaskID
+	if taskID != "" {
+		base = taskID
 	} else {
-		base = event.TaskName
+		base = taskName
 	}
-	if event.Target == "" {
+	if target == "" {
 		return base
 	}
-	return event.Target + "\x00" + base
+	return target + "\x00" + base
 }
 
-func (r *TextRenderer) bufferTaskOutput(event Event) bool {
-	key := r.taskKey(event)
+func (r *TextRenderer) bufferTaskOutput(e TaskOutputEvent) bool {
+	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
 	if key == "" {
 		return false
 	}
 	if r.taskOutput == nil {
 		r.taskOutput = make(map[string][]string)
 	}
-	r.taskOutput[key] = append(r.taskOutput[key], event.Lines...)
+	r.taskOutput[key] = append(r.taskOutput[key], e.Lines...)
 	return true
 }
 
-func (r *TextRenderer) takeBufferedOutput(event Event) []string {
-	key := r.taskKey(event)
+func (r *TextRenderer) takeBufferedOutput(e TaskResultEvent) []string {
+	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
 	if key == "" || r.taskOutput == nil {
 		return nil
 	}
@@ -153,66 +162,57 @@ func (r *TextRenderer) takeBufferedOutput(event Event) []string {
 
 // Emit writes a formatted line (or block) for the given event.
 func (r *TextRenderer) Emit(event Event) {
-	switch event.Type {
-	case EventPlayStart:
-		title := fmt.Sprintf("PLAY [%s]", event.PlayName)
+	switch e := event.(type) {
+	case PlayStartEvent:
+		title := fmt.Sprintf("PLAY [%s]", e.PlayName)
 		line := fillLine(title, "*", lineWidth)
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		_, _ = fmt.Fprintln(r.w)
 
-	case EventTaskOutput:
-		if !r.bufferTaskOutput(event) {
-			r.writeOutputLines(event.Lines)
+	case TaskOutputEvent:
+		if !r.bufferTaskOutput(e) {
+			r.writeOutputLines(e.Lines)
 		}
 
-	case EventTaskResult:
-		label := fmt.Sprintf("TASK [%s]", event.TaskName)
-		// Build dots then status
-		statusStr := r.statusColored(event.Status, event.Message)
-		dotsNeeded := lineWidth - len(label) - len(event.Status) - 3
+	case TaskResultEvent:
+		label := fmt.Sprintf("TASK [%s]", e.TaskName)
+		statusStr := r.statusColored(e.Status, e.Message)
+		dotsNeeded := lineWidth - len(label) - len(e.Status) - 3
 		dotsNeeded = max(dotsNeeded, 1)
 		dots := strings.Repeat(".", dotsNeeded)
 		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
-		buffered := r.takeBufferedOutput(event)
+		buffered := r.takeBufferedOutput(e)
 		lines := buffered
-		if len(event.Output) > 0 {
-			lines = event.Output
+		if len(e.Output) > 0 {
+			lines = e.Output
 		}
-		if len(lines) > 0 && (r.verbose || event.Status == "failed") {
+		if len(lines) > 0 && (r.verbose || e.Status == "failed") {
 			r.writeOutputLines(lines)
 		}
 
-	case EventPlayEnd:
+	case PlayEndEvent:
 		title := "PLAY RECAP"
 		line := fillLine(title, "*", lineWidth)
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
-		target := event.Target
+		target := e.Target
 		if target == "" {
 			target = "localhost"
 		}
 		recap := fmt.Sprintf("%-14s : ok=%-4d changed=%-4d failed=%-4d skipped=%-4d",
 			target,
-			event.OKCount,
-			event.ChangedCount,
-			event.FailedCount,
-			event.SkippedCount,
+			e.OKCount,
+			e.ChangedCount,
+			e.FailedCount,
+			e.SkippedCount,
 		)
 		_, _ = fmt.Fprintln(r.w, recap)
 		_, _ = fmt.Fprintln(r.w)
 
-	case EventError:
-		msg := event.Message
-		if event.Error != nil {
-			msg = event.Error.Error()
-		}
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+msg))
+	case ErrorEvent:
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiRed, "ERROR: "+e.Message))
 
-	case EventWarning:
-		msg := event.Message
-		if event.Error != nil {
-			msg = event.Error.Error()
-		}
-		_, _ = fmt.Fprintln(r.w, r.colorize(ansiYellow, "WARNING: "+msg))
+	case WarningEvent:
+		_, _ = fmt.Fprintln(r.w, r.colorize(ansiYellow, "WARNING: "+e.Message))
 	}
 }
 

@@ -11,11 +11,11 @@ import (
 // emit helpers
 
 func playStart(r output.Renderer, name string) {
-	r.Emit(output.Event{Type: output.EventPlayStart, PlayName: name})
+	r.Emit(output.PlayStartEvent{PlayName: name})
 }
 
 func taskStart(r output.Renderer, host, id, name string) {
-	r.Emit(output.Event{Type: output.EventTaskStart, Target: host, TaskID: id, TaskName: name})
+	r.Emit(output.TaskStartEvent{Target: host, TaskID: id, TaskName: name})
 }
 
 func taskDone(r output.Renderer, host, id, name, status, msg string) {
@@ -23,8 +23,7 @@ func taskDone(r output.Renderer, host, id, name, status, msg string) {
 }
 
 func taskDoneWithOutput(r output.Renderer, host, id, name, status, msg string, outputLines []string) {
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   id,
 		TaskName: name,
@@ -35,8 +34,7 @@ func taskDoneWithOutput(r output.Renderer, host, id, name, status, msg string, o
 }
 
 func taskOutput(r output.Renderer, host, id, name string, lines ...string) {
-	r.Emit(output.Event{
-		Type:     output.EventTaskOutput,
+	r.Emit(output.TaskOutputEvent{
 		Target:   host,
 		TaskID:   id,
 		TaskName: name,
@@ -45,8 +43,7 @@ func taskOutput(r output.Renderer, host, id, name string, lines ...string) {
 }
 
 func playEnd(r output.Renderer, host string, ok, changed, failed, skipped int) {
-	r.Emit(output.Event{
-		Type:         output.EventPlayEnd,
+	r.Emit(output.PlayEndEvent{
 		Target:       host,
 		OKCount:      ok,
 		ChangedCount: changed,
@@ -163,16 +160,14 @@ func runFailures(r output.Renderer, delay time.Duration) {
 	}, delay*2)
 
 	// dependent tasks get skipped
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   "start-service",
 		TaskName: "Start service",
 		Status:   "skipped",
 		Message:  "dependency-failed",
 	})
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   "smoke-test",
 		TaskName: "Smoke test",
@@ -180,11 +175,7 @@ func runFailures(r output.Renderer, delay time.Duration) {
 		Message:  "dependency-failed",
 	})
 
-	r.Emit(output.Event{
-		Type:    output.EventError,
-		Target:  host,
-		Message: "play aborted: 1 task failed",
-	})
+	r.Emit(output.ErrorEvent{Message: "play aborted: 1 task failed"})
 
 	playEnd(r, host, 1, 1, 1, 2)
 }
@@ -247,8 +238,7 @@ func runSkipped(r output.Renderer, delay time.Duration) {
 
 	runTask(r, host, "check-os", "Check OS version", "ok", "", delay/2)
 
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   "install-directx",
 		TaskName: "Install DirectX",
@@ -258,16 +248,14 @@ func runSkipped(r output.Renderer, delay time.Duration) {
 
 	runTask(r, host, "install-codec", "Install codec pack", "changed", "", delay)
 
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   "enable-gpu-debug",
 		TaskName: "Enable GPU debug layer",
 		Status:   "skipped",
 		Message:  "tag-filtered",
 	})
-	r.Emit(output.Event{
-		Type:     output.EventTaskResult,
+	r.Emit(output.TaskResultEvent{
 		Target:   host,
 		TaskID:   "install-pix",
 		TaskName: "Install PIX profiler",

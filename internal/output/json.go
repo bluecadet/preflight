@@ -40,37 +40,62 @@ func NewJSONRenderer(w io.Writer) *JSONRenderer {
 
 // Emit serialises the event as a single JSON line.
 func (r *JSONRenderer) Emit(event Event) {
-	je := jsonEvent{
-		Type:     event.Type,
-		PlayName: event.PlayName,
-		Task:     event.TaskName,
-		Target:   event.Target,
-		Status:   event.Status,
-		Message:  event.Message,
-		TS:       time.Now().UTC().Format(time.RFC3339),
-	}
-	if event.Error != nil {
-		je.Error = event.Error.Error()
-	}
-	if event.Type == EventPlayEnd {
-		ok := event.OKCount
-		ch := event.ChangedCount
-		fa := event.FailedCount
-		sk := event.SkippedCount
+	ts := time.Now().UTC().Format(time.RFC3339)
+	var je jsonEvent
+	je.TS = ts
+
+	switch e := event.(type) {
+	case PlayStartEvent:
+		je.Type = EventPlayStart
+		je.PlayName = e.PlayName
+
+	case TaskStartEvent:
+		je.Type = EventTaskStart
+		je.Task = e.TaskName
+		je.TaskID = e.TaskID
+		je.Target = e.Target
+
+	case TaskOutputEvent:
+		je.Type = EventTaskOutput
+		je.Task = e.TaskName
+		je.TaskID = e.TaskID
+		je.Target = e.Target
+		if len(e.Lines) > 0 {
+			je.Lines = e.Lines
+		}
+
+	case TaskResultEvent:
+		je.Type = EventTaskResult
+		je.Task = e.TaskName
+		je.TaskID = e.TaskID
+		je.Target = e.Target
+		je.Status = e.Status
+		je.Message = e.Message
+		if len(e.Output) > 0 {
+			je.Output = e.Output
+		}
+
+	case PlayEndEvent:
+		je.Type = EventPlayEnd
+		je.Target = e.Target
+		ok := e.OKCount
+		ch := e.ChangedCount
+		fa := e.FailedCount
+		sk := e.SkippedCount
 		je.OKCount = &ok
 		je.ChangedCount = &ch
 		je.FailedCount = &fa
 		je.SkippedCount = &sk
+
+	case WarningEvent:
+		je.Type = EventWarning
+		je.Message = e.Message
+
+	case ErrorEvent:
+		je.Type = EventError
+		je.Error = e.Message
 	}
-	if event.Type == EventTaskStart || event.Type == EventTaskOutput || event.Type == EventTaskResult {
-		je.TaskID = event.TaskID
-	}
-	if event.Type == EventTaskOutput && len(event.Lines) > 0 {
-		je.Lines = event.Lines
-	}
-	if event.Type == EventTaskResult && len(event.Output) > 0 {
-		je.Output = event.Output
-	}
+
 	// Ignore encode errors — nothing useful to do with them at render time.
 	_ = r.enc.Encode(je)
 }

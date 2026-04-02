@@ -148,11 +148,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		}
 
 		if renderer != nil {
-			renderer.Emit(output.Event{
-				Type:     output.EventPlayStart,
-				PlayName: pb.Name,
-				Target:   host.Name,
-			})
+			renderer.Emit(output.PlayStartEvent{PlayName: pb.Name})
 		}
 
 		r := runner.New(host.Target, chain, cfg)
@@ -222,17 +218,10 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	// TargetName is set from the bundle manifest so the state file and recap
 	// output correctly identify the original target, not the local machine.
 	if extracted.Manifest.SecretMode == bundle.SecretModePlaintext && renderer != nil {
-		renderer.Emit(output.Event{
-			Type:    output.EventWarning,
-			Message: "bundle contains plaintext secrets",
-		})
+		renderer.Emit(output.WarningEvent{Message: "bundle contains plaintext secrets"})
 	}
 	if renderer != nil {
-		renderer.Emit(output.Event{
-			Type:     output.EventPlayStart,
-			PlayName: plan.PlaybookName,
-			Target:   extracted.Manifest.TargetName,
-		})
+		renderer.Emit(output.PlayStartEvent{PlayName: plan.PlaybookName})
 	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,

@@ -429,10 +429,10 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 
 	var taskResults, playEnds int
 	for _, e := range rec.events {
-		switch e.Type {
-		case output.EventTaskResult:
+		switch e.(type) {
+		case output.TaskResultEvent:
 			taskResults++
-		case output.EventPlayEnd:
+		case output.PlayEndEvent:
 			playEnds++
 		}
 	}
@@ -466,10 +466,10 @@ func TestApplyEmitsTaskOutputEventsWithTargetContext(t *testing.T) {
 		t.Fatalf("Apply error: %v", err)
 	}
 
-	var taskOutputs []output.Event
+	var taskOutputs []output.TaskOutputEvent
 	for _, e := range rec.events {
-		if e.Type == output.EventTaskOutput {
-			taskOutputs = append(taskOutputs, e)
+		if toe, ok := e.(output.TaskOutputEvent); ok {
+			taskOutputs = append(taskOutputs, toe)
 		}
 	}
 	if len(taskOutputs) != 2 {
