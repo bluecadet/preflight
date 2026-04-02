@@ -121,7 +121,7 @@ func TestAutoDetect_AnotherNonTTY(t *testing.T) {
 func TestTUIModel_ApplyEvent_PlayStart(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
-	m = m.applyEvent(Event{Type: EventPlayStart, PlayName: "my-play"})
+	m, _ = m.applyEvent(Event{Type: EventPlayStart, PlayName: "my-play"})
 	if m.playName != "my-play" {
 		t.Errorf("expected playName=my-play, got %q", m.playName)
 	}
@@ -131,23 +131,19 @@ func TestTUIModel_ApplyEvent_TaskResult(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m = m.applyEvent(Event{
+	m, _ = m.applyEvent(Event{
 		Type:     EventTaskResult,
 		TaskName: "do-thing",
+		Target:   "host-a",
+		TaskID:   "task-1",
 		Status:   "ok",
 	})
 
-	if len(m.tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(m.tasks))
+	if m.okCount != 1 {
+		t.Errorf("expected okCount=1, got %d", m.okCount)
 	}
-	if m.tasks[0].name != "do-thing" {
-		t.Errorf("expected task name do-thing, got %q", m.tasks[0].name)
-	}
-	if m.tasks[0].status != "ok" {
-		t.Errorf("expected status ok, got %q", m.tasks[0].status)
-	}
-	if m.recap.ok != 1 {
-		t.Errorf("expected recap.ok=1, got %d", m.recap.ok)
+	if m.changedCount != 0 {
+		t.Errorf("expected changedCount=0, got %d", m.changedCount)
 	}
 }
 
@@ -155,21 +151,25 @@ func TestTUIModel_ApplyEvent_PlayEnd(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m = m.applyEvent(Event{
+	m, _ = m.applyEvent(Event{
 		Type:         EventPlayEnd,
+		Target:       "host-a",
 		OKCount:      3,
 		ChangedCount: 2,
 		FailedCount:  1,
 		SkippedCount: 0,
 	})
 
-	if m.recap.ok != 3 {
-		t.Errorf("expected recap.ok=3, got %d", m.recap.ok)
+	if len(m.recaps) != 1 {
+		t.Fatalf("expected 1 recap, got %d", len(m.recaps))
 	}
-	if m.recap.changed != 2 {
-		t.Errorf("expected recap.changed=2, got %d", m.recap.changed)
+	if m.recaps[0].ok != 3 {
+		t.Errorf("expected recap.ok=3, got %d", m.recaps[0].ok)
 	}
-	if m.recap.failed != 1 {
-		t.Errorf("expected recap.failed=1, got %d", m.recap.failed)
+	if m.recaps[0].changed != 2 {
+		t.Errorf("expected recap.changed=2, got %d", m.recaps[0].changed)
+	}
+	if m.recaps[0].failed != 1 {
+		t.Errorf("expected recap.failed=1, got %d", m.recaps[0].failed)
 	}
 }
