@@ -69,6 +69,27 @@ func TestRunFailuresIncludesCapturedLogsForFailedTask(t *testing.T) {
 	t.Fatal("failed task result not found")
 }
 
+func TestRunStreamingCapturesOutputForSuccessfulTaskResults(t *testing.T) {
+	rec := &recordingRenderer{}
+
+	runStreaming(rec, 0)
+
+	for _, event := range rec.snapshot() {
+		if event.Type != output.EventTaskResult || event.TaskID != "download-package" {
+			continue
+		}
+		if event.Status != "changed" {
+			t.Fatalf("expected changed status, got %q", event.Status)
+		}
+		if len(event.Output) < 5 {
+			t.Fatalf("expected captured output on successful streamed task, got %v", event.Output)
+		}
+		return
+	}
+
+	t.Fatal("successful streamed task result not found")
+}
+
 func TestRunStreamingMultiHostStreamsAcrossHosts(t *testing.T) {
 	rec := &recordingRenderer{}
 

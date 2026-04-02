@@ -265,7 +265,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
 		}
 
-		return m, tea.Batch(cmds...)
+		return m, tea.Sequence(cmds...)
 
 	case EventPlayEnd:
 		m.recaps = append(m.recaps, hostRecap{

@@ -73,6 +73,9 @@ func runStreamingTask(r output.Renderer, host, id, name, status, msg string, liv
 		taskOutput(r, host, id, name, line)
 	}
 	time.Sleep(stepDelay)
+	if outputLines == nil {
+		outputLines = append([]string(nil), liveLines...)
+	}
 	taskDoneWithOutput(r, host, id, name, status, msg, outputLines)
 }
 
