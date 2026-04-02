@@ -1,7 +1,7 @@
 // Simulator for preflight terminal output. Not compiled into the main binary.
 // Usage:
 //
-//	go run ./tools/sim [scenario] [--format tui|text|json|jsonl] [--delay 100ms]
+//	go run ./tools/sim [scenario] [--format tui|text|json|jsonl] [--verbose] [--delay 100ms]
 package main
 
 import (
@@ -73,6 +73,7 @@ func init() {
 
 func main() {
 	formatFlag := flag.String("format", "auto", "output format: auto, tui, text, json, jsonl")
+	verboseFlag := flag.Bool("verbose", false, "show logs for all completed tasks")
 	delayFlag := flag.Duration("delay", 80*time.Millisecond, "simulated task duration")
 
 	// Extract the scenario name (first non-flag arg) so that flags can appear
@@ -109,7 +110,7 @@ func main() {
 				time.Sleep(300 * time.Millisecond)
 			}
 			fmt.Printf("\n--- scenario: %s ---\n\n", s.name)
-			r := output.New(format, os.Stdout)
+			r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 			s.run(r, *delayFlag)
 			r.Close()
 		}
@@ -118,7 +119,7 @@ func main() {
 
 	for _, s := range scenarios {
 		if s.name == scenarioName {
-			r := output.New(format, os.Stdout)
+			r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 			s.run(r, *delayFlag)
 			r.Close()
 			return
@@ -133,7 +134,7 @@ func main() {
 		}
 	}
 	if len(matches) == 1 {
-		r := output.New(format, os.Stdout)
+		r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 		matches[0].run(r, *delayFlag)
 		r.Close()
 		return

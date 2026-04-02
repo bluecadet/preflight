@@ -12,6 +12,10 @@ func newTextRenderer(w *bytes.Buffer) *TextRenderer {
 	return &TextRenderer{w: w, color: false, taskOutput: make(map[string][]string)}
 }
 
+func newVerboseTextRenderer(w *bytes.Buffer) *TextRenderer {
+	return &TextRenderer{w: w, color: false, verbose: true, taskOutput: make(map[string][]string)}
+}
+
 func TestTextRenderer_PlayStart(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
@@ -174,9 +178,33 @@ func TestTextRenderer_TaskOutput(t *testing.T) {
 	}
 }
 
-func TestTextRenderer_TaskOutputAppearsBelowTaskResult(t *testing.T) {
+func TestTextRenderer_DefaultHidesSuccessfulTaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
+
+	r.Emit(Event{
+		Type:     EventTaskOutput,
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Lines:    []string{"line1", "line2"},
+	})
+	r.Emit(Event{
+		Type:     EventTaskResult,
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Status:   "changed",
+		Message:  "task completed",
+	})
+
+	out := buf.String()
+	if strings.Contains(out, "line1") || strings.Contains(out, "line2") {
+		t.Fatalf("expected successful task output to stay hidden by default, got %q", out)
+	}
+}
+
+func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing.T) {
+	var buf bytes.Buffer
+	r := newVerboseTextRenderer(&buf)
 
 	r.Emit(Event{
 		Type:     EventTaskOutput,
@@ -199,7 +227,7 @@ func TestTextRenderer_TaskOutputAppearsBelowTaskResult(t *testing.T) {
 		t.Fatalf("expected task line and buffered output, got %q", out)
 	}
 	if linePos < taskPos {
-		t.Fatalf("expected buffered task output below the task result, got %q", out)
+		t.Fatalf("expected verbose task output below the task result, got %q", out)
 	}
 }
 
@@ -233,6 +261,58 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	}
 	if strings.Count(out, "Launching kiosk application...") != 1 {
 		t.Errorf("expected failure logs not to be duplicated, got: %q", out)
+	}
+}
+
+func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
+	var buf bytes.Buffer
+	r := newVerboseTextRenderer(&buf)
+
+	r.Emit(Event{
+		Type:     EventTaskOutput,
+		Target:   "gallery-01",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-01",
+		Lines:    []string{"gallery-01 line"},
+	})
+	r.Emit(Event{
+		Type:     EventTaskOutput,
+		Target:   "gallery-02",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-02",
+		Lines:    []string{"gallery-02 line"},
+	})
+	r.Emit(Event{
+		Type:     EventTaskResult,
+		Target:   "gallery-02",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-02",
+		Status:   "changed",
+	})
+	r.Emit(Event{
+		Type:     EventTaskResult,
+		Target:   "gallery-01",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-01",
+		Status:   "changed",
+	})
+
+	out := buf.String()
+	host2TaskPos := strings.Index(out, "TASK [Sync assets on gallery-02]")
+	host2LinePos := strings.Index(out, "gallery-02 line")
+	host1TaskPos := strings.Index(out, "TASK [Sync assets on gallery-01]")
+	host1LinePos := strings.Index(out, "gallery-01 line")
+	if host2TaskPos < 0 || host2LinePos < 0 || host1TaskPos < 0 || host1LinePos < 0 {
+		t.Fatalf("expected per-host task output, got %q", out)
+	}
+	if host2LinePos < host2TaskPos {
+		t.Fatalf("expected gallery-02 output below its task result, got %q", out)
+	}
+	if host1LinePos < host1TaskPos {
+		t.Fatalf("expected gallery-01 output below its task result, got %q", out)
+	}
+	if strings.Contains(out[host2TaskPos:host1TaskPos], "gallery-01 line") {
+		t.Fatalf("expected gallery-01 output not to leak under gallery-02 task, got %q", out)
 	}
 }
 

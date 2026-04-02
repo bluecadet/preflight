@@ -164,8 +164,8 @@ Notes:
 
 When a module supports streamed output, Preflight forwards each line while the task is still running:
 
-- `text` prints task logs under the related task result and shows captured failure logs below failed tasks.
-- `tui` shows a rolling preview of the last three lines for running tasks and prints captured output blocks on failures.
+- `text` shows captured failure logs below failed tasks by default. With `--verbose`, it prints logs below every completed task that produced output.
+- `tui` shows a rolling preview of the last three lines for running tasks and prints captured output blocks on failures. With `--verbose`, it also prints captured output blocks for successful tasks after they complete.
 - `json` and `jsonl` emit `task_output` events with `task_id`, `task`, `target`, and `lines`. Failed `task_result` events may also include an `output` array with the captured task output.
 
 ## Control Host Parallelism

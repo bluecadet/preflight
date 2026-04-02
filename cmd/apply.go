@@ -86,7 +86,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	}
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.New(outFmt, os.Stdout))
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
@@ -183,7 +183,7 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	defer cancel()
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.New(outFmt, os.Stdout))
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
 	defer renderer.Close()
 
 	extracted, err := bundle.Extract(bundlePath)

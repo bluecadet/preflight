@@ -205,3 +205,26 @@ func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 		}
 	}
 }
+
+func TestTUIModel_VerboseCommitsOutputForSuccessfulTasks(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModelWithOptions(events, Options{Verbose: true})
+	m, _ = m.applyEvent(Event{
+		Type:     EventTaskStart,
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "stream logs",
+	})
+
+	_, cmd := m.applyEvent(Event{
+		Type:     EventTaskResult,
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "stream logs",
+		Status:   "changed",
+		Output:   []string{"line1"},
+	})
+	if cmd == nil {
+		t.Fatal("expected verbose TUI to emit a committed output block")
+	}
+}

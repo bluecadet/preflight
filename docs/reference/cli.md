@@ -243,4 +243,4 @@ Behavior notes:
 
 When a task streams output during `apply`, the `json` and `jsonl` renderers emit `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
 
-For human-readable output, the `text` renderer prints task logs below the related task result and includes captured failure logs under failed tasks, while the `tui` renderer shows a rolling preview of the last three streamed lines for each active task.
+For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, and includes successful-task logs after completion when `--verbose` is enabled.

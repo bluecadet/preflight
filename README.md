@@ -143,7 +143,7 @@ For output and renderer work, you can preview scenarios without running a full p
 ```bash
 go run ./tools/sim list
 go run ./tools/sim streaming --format tui
-go run ./tools/sim streaming-multi-host --format tui
+go run ./tools/sim streaming-multi-host --format tui --verbose
 go run ./tools/sim failures --format jsonl
 ```
 

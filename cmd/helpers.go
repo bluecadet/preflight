@@ -52,6 +52,11 @@ func getOutputFormat(cmd *cobra.Command) output.Format {
 	}
 }
 
+func getRendererOptions(cmd *cobra.Command) output.Options {
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	return output.Options{Verbose: verbose}
+}
+
 // getPlaybookPath returns the first element of args (the playbook path).
 func getPlaybookPath(args []string) string {
 	if len(args) == 0 {

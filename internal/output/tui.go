@@ -81,6 +81,7 @@ type tuiModel struct {
 	spinner     spinner.Model
 	width       int
 	events      chan Event
+	verbose     bool
 	playName    string
 	startedAt   time.Time
 	playStarted bool
@@ -109,6 +110,10 @@ type tuiDoneMsg struct{}
 // ── constructor ───────────────────────────────────────────────────────────────
 
 func newTUIModel(events chan Event) tuiModel {
+	return newTUIModelWithOptions(events, Options{})
+}
+
+func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 	s := spinner.New(
 		spinner.WithSpinner(spinner.Dot),
 		spinner.WithStyle(tsSpin),
@@ -116,6 +121,7 @@ func newTUIModel(events chan Event) tuiModel {
 	return tuiModel{
 		spinner:      s,
 		events:       events,
+		verbose:      opts.Verbose,
 		width:        80,
 		hosts:        make(map[string]map[string]*activeTask),
 		taskOrder:    make(map[string][]string),
@@ -253,8 +259,9 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		if e.Status == "failed" && e.Message != "" {
 			cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message)))
 		}
-		// On failure, commit the full captured output block if present.
-		if e.Status == "failed" && len(e.Output) > 0 {
+		// In verbose mode, print logs for every task with captured output.
+		// Otherwise only print logs for failed tasks.
+		if len(e.Output) > 0 && (m.verbose || e.Status == "failed") {
 			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
 		}
 
@@ -619,8 +626,13 @@ type TUIRenderer struct {
 
 // NewTUIRenderer creates a TUIRenderer that writes to w.
 func NewTUIRenderer(w io.Writer) *TUIRenderer {
+	return NewTUIRendererWithOptions(w, Options{})
+}
+
+// NewTUIRendererWithOptions creates a TUIRenderer that writes to w.
+func NewTUIRendererWithOptions(w io.Writer, opts Options) *TUIRenderer {
 	events := make(chan Event, 64)
-	model := newTUIModel(events)
+	model := newTUIModelWithOptions(events, opts)
 	prog := tea.NewProgram(
 		model,
 		tea.WithOutput(w),

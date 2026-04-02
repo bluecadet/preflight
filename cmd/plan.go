@@ -54,7 +54,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	}
 
 	outFmt := getOutputFormat(cmd)
-	renderer := output.New(outFmt, os.Stdout)
+	renderer := output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd))
 	defer renderer.Close()
 
 	for idx, host := range hosts {

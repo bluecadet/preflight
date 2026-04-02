@@ -76,14 +76,21 @@ func isTTY(w io.Writer) bool {
 type TextRenderer struct {
 	w          io.Writer
 	color      bool
+	verbose    bool
 	taskOutput map[string][]string
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
 func NewTextRenderer(w io.Writer) *TextRenderer {
+	return NewTextRendererWithOptions(w, Options{})
+}
+
+// NewTextRendererWithOptions creates a TextRenderer with the provided options.
+func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	return &TextRenderer{
 		w:          w,
 		color:      isTTY(w),
+		verbose:    opts.Verbose,
 		taskOutput: make(map[string][]string),
 	}
 }
@@ -110,10 +117,16 @@ func (r *TextRenderer) writeOutputLines(lines []string) {
 }
 
 func (r *TextRenderer) taskKey(event Event) string {
+	var base string
 	if event.TaskID != "" {
-		return event.TaskID
+		base = event.TaskID
+	} else {
+		base = event.TaskName
 	}
-	return event.TaskName
+	if event.Target == "" {
+		return base
+	}
+	return event.Target + "\x00" + base
 }
 
 func (r *TextRenderer) bufferTaskOutput(event Event) bool {
@@ -160,13 +173,12 @@ func (r *TextRenderer) Emit(event Event) {
 		dotsNeeded = max(dotsNeeded, 1)
 		dots := strings.Repeat(".", dotsNeeded)
 		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
-		lines := event.Output
-		if len(lines) > 0 {
-			_ = r.takeBufferedOutput(event)
-		} else {
-			lines = r.takeBufferedOutput(event)
+		buffered := r.takeBufferedOutput(event)
+		lines := buffered
+		if len(event.Output) > 0 {
+			lines = event.Output
 		}
-		if len(lines) > 0 {
+		if len(lines) > 0 && (r.verbose || event.Status == "failed") {
 			r.writeOutputLines(lines)
 		}
 
