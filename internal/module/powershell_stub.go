@@ -2,7 +2,11 @@
 
 package module
 
-import "context"
+import (
+	"context"
+
+	"github.com/bluecadet/preflight/internal/target"
+)
 
 // PowershellModule runs PowerShell scripts or files.
 // On non-Windows platforms, attempts to exec `powershell` (WSL/cross-platform compat).
@@ -19,5 +23,9 @@ func (m *PowershellModule) Check(ctx context.Context, params map[string]any) (bo
 }
 
 func (m *PowershellModule) Apply(ctx context.Context, params map[string]any) error {
-	return powershellApply(ctx, params)
+	return m.ApplyWithOutput(ctx, params, nil)
+}
+
+func (m *PowershellModule) ApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
+	return powershellApplyWithOutput(ctx, params, onOutput)
 }

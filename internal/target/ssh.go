@@ -95,7 +95,7 @@ func NewSSHTarget(cfg SSHConfig) *SSHTarget {
 	}
 }
 
-func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error) {
+func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	needsChange, err := t.checkModule(ctx, module, params)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
@@ -106,10 +106,23 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 	if dryRun {
 		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
 	}
-	if err := t.applyModule(ctx, module, params); err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	outputStr, err := t.applyModuleWithOutput(ctx, module, params)
+	result := Result{TaskID: taskID, Status: StatusChanged, Message: "change applied"}
+	if outputStr != "" {
+		lines := strings.Split(strings.TrimRight(outputStr, "\n"), "\n")
+		result.Output = lines
+		if onOutput != nil {
+			for _, l := range lines {
+				onOutput(l)
+			}
+		}
 	}
-	return Result{TaskID: taskID, Status: StatusChanged, Message: "change applied"}, nil
+	if err != nil {
+		result.Status = StatusFailed
+		result.Error = err
+		return result, err
+	}
+	return result, nil
 }
 
 func (t *SSHTarget) CopyFile(ctx context.Context, src, dst string) error {
@@ -219,30 +232,30 @@ func (t *SSHTarget) checkModule(ctx context.Context, module string, params map[s
 	}
 }
 
-func (t *SSHTarget) applyModule(ctx context.Context, module string, params map[string]any) error {
+func (t *SSHTarget) applyModuleWithOutput(ctx context.Context, module string, params map[string]any) (string, error) {
 	switch module {
 	case "directory":
 		path, _ := params["path"].(string)
 		ensure, _ := params["ensure"].(string)
 		if ensure == "absent" {
-			return t.mustRun(ctx, fmt.Sprintf("rm -rf %q", path))
+			return "", t.mustRun(ctx, fmt.Sprintf("rm -rf %q", path))
 		}
-		return t.mustRun(ctx, fmt.Sprintf("mkdir -p %q", path))
+		return "", t.mustRun(ctx, fmt.Sprintf("mkdir -p %q", path))
 	case "file":
 		dest, _ := params["dest"].(string)
 		ensure, _ := params["ensure"].(string)
 		if ensure == "absent" {
-			return t.mustRun(ctx, fmt.Sprintf("rm -f %q", dest))
+			return "", t.mustRun(ctx, fmt.Sprintf("rm -f %q", dest))
 		}
 		if src, _ := params["src"].(string); src != "" {
-			return t.CopyFile(ctx, src, dest)
+			return "", t.CopyFile(ctx, src, dest)
 		}
-		return t.mustRun(ctx, fmt.Sprintf("mkdir -p %q && : > %q", shellDir(dest), dest))
+		return "", t.mustRun(ctx, fmt.Sprintf("mkdir -p %q && : > %q", shellDir(dest), dest))
 	case "shell":
 		cmd, _ := params["cmd"].(string)
 		args, err := sshStringSlice(params["args"])
 		if err != nil {
-			return err
+			return "", err
 		}
 		workingDir, _ := params["working_dir"].(string)
 		var shellCmd strings.Builder
@@ -250,9 +263,16 @@ func (t *SSHTarget) applyModule(ctx context.Context, module string, params map[s
 			fmt.Fprintf(&shellCmd, "cd %q && ", workingDir)
 		}
 		shellCmd.WriteString(shellQuoteExec(cmd, args))
-		return t.mustRun(ctx, shellCmd.String())
+		stdout, stderr, code, err := t.run(ctx, shellCmd.String(), nil)
+		if err != nil {
+			return stdout, err
+		}
+		if code != 0 {
+			return stdout, fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		}
+		return stdout, nil
 	default:
-		return fmt.Errorf("ssh: module %q is not supported yet", module)
+		return "", fmt.Errorf("ssh: module %q is not supported yet", module)
 	}
 }
 

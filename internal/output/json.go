@@ -20,6 +20,8 @@ type jsonEvent struct {
 	ChangedCount *int      `json:"changed_count,omitempty"`
 	FailedCount  *int      `json:"failed_count,omitempty"`
 	SkippedCount *int      `json:"skipped_count,omitempty"`
+	Lines        []string  `json:"lines,omitempty"`
+	Output       []string  `json:"output,omitempty"`
 	TS           string    `json:"ts"`
 }
 
@@ -60,8 +62,14 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.FailedCount = &fa
 		je.SkippedCount = &sk
 	}
-	if event.Type == EventTaskStart || event.Type == EventTaskResult {
+	if event.Type == EventTaskStart || event.Type == EventTaskOutput || event.Type == EventTaskResult {
 		je.TaskID = event.TaskID
+	}
+	if event.Type == EventTaskOutput && len(event.Lines) > 0 {
+		je.Lines = event.Lines
+	}
+	if event.Type == EventTaskResult && len(event.Output) > 0 {
+		je.Output = event.Output
 	}
 	// Ignore encode errors — nothing useful to do with them at render time.
 	_ = r.enc.Encode(je)

@@ -62,7 +62,7 @@ func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	}
 }
 
-func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error) {
+func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	needsChange, checkOutput, err := t.checkModule(ctx, module, params)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
@@ -78,14 +78,24 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
 	}
 	applyOutput, err := t.applyModule(ctx, module, params)
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-	}
 	msg := "change applied"
+	result := Result{TaskID: taskID, Status: StatusChanged, Message: msg}
 	if strings.TrimSpace(applyOutput) != "" {
-		msg = strings.TrimSpace(applyOutput)
+		result.Message = strings.TrimSpace(applyOutput)
+		lines := strings.Split(strings.TrimRight(applyOutput, "\n"), "\n")
+		result.Output = lines
+		if onOutput != nil {
+			for _, l := range lines {
+				onOutput(l)
+			}
+		}
 	}
-	return Result{TaskID: taskID, Status: StatusChanged, Message: msg}, nil
+	if err != nil {
+		result.Status = StatusFailed
+		result.Error = err
+		return result, err
+	}
+	return result, nil
 }
 
 func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {

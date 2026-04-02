@@ -41,7 +41,7 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-2", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'applied'",
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}

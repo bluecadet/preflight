@@ -30,7 +30,7 @@ func TestSSHTarget_ExecuteShell(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, false)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}

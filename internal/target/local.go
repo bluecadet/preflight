@@ -8,17 +8,6 @@ import (
 	"runtime"
 )
 
-// Module is the interface every built-in (and plugin-backed) module must satisfy.
-// Check reports whether a change is needed; Apply makes it so.
-// The runner always calls Check first and only calls Apply when Check returns true.
-type Module interface {
-	// Check returns true when the system is NOT yet in the desired state.
-	Check(ctx context.Context, params map[string]any) (needsChange bool, err error)
-
-	// Apply transitions the system to the desired state.
-	Apply(ctx context.Context, params map[string]any) error
-}
-
 // ModuleRegistry maps module names to their implementations.
 type ModuleRegistry map[string]Module
 
@@ -37,7 +26,8 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
-func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error) {
+// If the module implements StreamingModule, ApplyWithOutput is used and lines are forwarded to onOutput.
+func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	mod, ok := t.registry[module]
 	if !ok {
 		return Result{}, fmt.Errorf("target/local: unknown module %q", module)
@@ -57,11 +47,25 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
 	}
 
-	if err := mod.Apply(ctx, params); err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	var captured []string
+	captureOnOutput := func(line string) {
+		captured = append(captured, line)
+		if onOutput != nil {
+			onOutput(line)
+		}
 	}
 
-	return Result{TaskID: taskID, Status: StatusChanged, Message: "change applied"}, nil
+	var applyErr error
+	if sm, ok := mod.(StreamingModule); ok {
+		applyErr = sm.ApplyWithOutput(ctx, params, captureOnOutput)
+	} else {
+		applyErr = mod.Apply(ctx, params)
+	}
+	if applyErr != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: applyErr}, applyErr
+	}
+
+	return Result{TaskID: taskID, Status: StatusChanged, Message: "change applied", Output: captured}, nil
 }
 
 // CopyFile copies src (local path) to dst (local path).

@@ -23,6 +23,7 @@ import (
 type mockTarget struct {
 	results []target.Result // in order; last result is reused if list is exhausted
 	calls   []mockCall
+	output  []string
 	execErr error
 }
 
@@ -33,18 +34,23 @@ type mockCall struct {
 	Params map[string]any
 }
 
-func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool) (target.Result, error) {
+func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
 	var copied map[string]any
 	if params != nil {
 		copied = make(map[string]any, len(params))
 		maps.Copy(copied, params)
 	}
 	m.calls = append(m.calls, mockCall{TaskID: taskID, Module: module, DryRun: dryRun, Params: copied})
+	if onOutput != nil {
+		for _, line := range m.output {
+			onOutput(line)
+		}
+	}
 	if m.execErr != nil {
-		return target.Result{}, m.execErr
+		return target.Result{TaskID: taskID, Output: append([]string(nil), m.output...)}, m.execErr
 	}
 	if len(m.results) == 0 {
-		return target.Result{TaskID: taskID, Status: target.StatusOK}, nil
+		return target.Result{TaskID: taskID, Status: target.StatusOK, Output: append([]string(nil), m.output...)}, nil
 	}
 	idx := len(m.calls) - 1
 	if idx >= len(m.results) {
@@ -52,6 +58,9 @@ func (m *mockTarget) Execute(_ context.Context, taskID, module string, params ma
 	}
 	r := m.results[idx]
 	r.TaskID = taskID
+	if len(m.output) > 0 && len(r.Output) == 0 {
+		r.Output = append([]string(nil), m.output...)
+	}
 	return r, nil
 }
 
@@ -432,6 +441,53 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	}
 	if playEnds != 1 {
 		t.Errorf("expected 1 play_end event, got %d", playEnds)
+	}
+}
+
+func TestApplyEmitsTaskOutputEventsWithTargetContext(t *testing.T) {
+	mt := &mockTarget{
+		results: []target.Result{{Status: target.StatusChanged}},
+		output:  []string{"line1", "line2"},
+	}
+	rec := &recordingRenderer{}
+	cfg := Config{
+		Renderer:   rec,
+		TargetName: "gallery-01",
+	}
+	r := New(mt, emptyResolver(), cfg)
+
+	pb := newShellPlaybook("emit-output-test")
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+
+	var taskOutputs []output.Event
+	for _, e := range rec.events {
+		if e.Type == output.EventTaskOutput {
+			taskOutputs = append(taskOutputs, e)
+		}
+	}
+	if len(taskOutputs) != 2 {
+		t.Fatalf("expected 2 task_output events, got %d", len(taskOutputs))
+	}
+	for i, e := range taskOutputs {
+		if e.Target != "gallery-01" {
+			t.Fatalf("task_output[%d] target = %q, want %q", i, e.Target, "gallery-01")
+		}
+		if e.TaskID == "" {
+			t.Fatalf("task_output[%d] missing task id", i)
+		}
+		if e.TaskName != "run echo" {
+			t.Fatalf("task_output[%d] task name = %q, want %q", i, e.TaskName, "run echo")
+		}
+		if len(e.Lines) != 1 || e.Lines[0] != mt.output[i] {
+			t.Fatalf("task_output[%d] lines = %v, want [%q]", i, e.Lines, mt.output[i])
+		}
 	}
 }
 

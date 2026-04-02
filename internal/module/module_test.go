@@ -4,9 +4,11 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 func TestRegistry_NotEmpty(t *testing.T) {
@@ -139,5 +141,47 @@ func TestShellModule_Apply(t *testing.T) {
 	}
 	if _, err := os.Stat(out); os.IsNotExist(err) {
 		t.Error("expected file to be created by shell apply")
+	}
+}
+
+func TestShellModule_ApplyWithOutput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: uses sh -c")
+	}
+
+	reg := module.Registry()
+	raw := reg["shell"]
+	sm, ok := raw.(target.StreamingModule)
+	if !ok {
+		t.Fatal("shell module does not implement ApplyWithOutput")
+	}
+
+	var collected []string
+	err := sm.ApplyWithOutput(context.Background(), map[string]any{
+		"cmd":  "sh",
+		"args": []any{"-c", "printf 'line1\\nline2\\n'"},
+	}, func(line string) {
+		collected = append(collected, line)
+	})
+	if err != nil {
+		t.Fatalf("ApplyWithOutput returned error: %v", err)
+	}
+	if len(collected) != 2 {
+		t.Fatalf("expected 2 lines, got %d: %v", len(collected), collected)
+	}
+	if collected[0] != "line1" {
+		t.Errorf("expected collected[0]=%q, got %q", "line1", collected[0])
+	}
+	if collected[1] != "line2" {
+		t.Errorf("expected collected[1]=%q, got %q", "line2", collected[1])
+	}
+
+	// nil onOutput must not panic.
+	err = sm.ApplyWithOutput(context.Background(), map[string]any{
+		"cmd":  "sh",
+		"args": []any{"-c", "printf 'hello\\n'"},
+	}, nil)
+	if err != nil {
+		t.Fatalf("ApplyWithOutput with nil onOutput returned error: %v", err)
 	}
 }

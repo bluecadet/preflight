@@ -51,12 +51,12 @@ func tsIcon(status string) string {
 
 // activeTask represents a task currently being executed.
 type activeTask struct {
-	id         string
-	name       string
-	actionPath string // parent action prefix from TaskID, e.g. "configure-kiosk"
-	target     string
-	startAt    time.Time
-	lastOutput string
+	id          string
+	name        string
+	actionPath  string // parent action prefix from TaskID, e.g. "configure-kiosk"
+	target      string
+	startAt     time.Time
+	recentLines []string
 }
 
 // hostRecap stores the final counts emitted by EventPlayEnd for one host.
@@ -191,6 +191,20 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			m.hostColWidth = w
 		}
 
+	case EventTaskOutput:
+		if e.Target == "" || e.TaskID == "" {
+			break
+		}
+		if host := m.hosts[e.Target]; host != nil {
+			if at := host[e.TaskID]; at != nil {
+				at.recentLines = append(at.recentLines, e.Lines...)
+				if len(at.recentLines) > 5 {
+					at.recentLines = at.recentLines[len(at.recentLines)-5:]
+				}
+			}
+		}
+		return m, nil
+
 	case EventTaskResult:
 		var cmds []tea.Cmd
 
@@ -235,6 +249,10 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		// On failure, commit the error message block too.
 		if e.Status == "failed" && e.Message != "" {
 			cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message)))
+		}
+		// On failure, commit the full captured output block if present.
+		if e.Status == "failed" && len(e.Output) > 0 {
+			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
 		}
 
 		return m, tea.Batch(cmds...)
@@ -330,15 +348,20 @@ func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 		line = left + "  " + timer
 	}
 
-	if dense || at.lastOutput == "" {
+	if dense || len(at.recentLines) == 0 {
 		return line
 	}
 
-	preview := fmt.Sprintf("     %s  %s",
-		tsMuted.Render("└"),
-		tsOutput.Render(tsTruncate(at.lastOutput, m.width-12)),
-	)
-	return line + "\n" + preview
+	maxW := max(m.width-12, 10)
+	var sb strings.Builder
+	sb.WriteString(line)
+	for _, l := range at.recentLines {
+		_, _ = fmt.Fprintf(&sb, "\n     %s  %s",
+			tsMuted.Render("│"),
+			tsOutput.Render(tsTruncate(l, maxW)),
+		)
+	}
+	return sb.String()
 }
 
 // renderCommitted formats a completed task line for permanent scroll history.

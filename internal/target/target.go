@@ -2,6 +2,9 @@ package target
 
 import "context"
 
+// OutputFunc is a callback invoked with each line of output emitted by a module during Apply.
+type OutputFunc func(line string)
+
 // Status represents the outcome of a task execution.
 type Status string
 
@@ -12,11 +15,25 @@ const (
 	StatusSkipped Status = "skipped"
 )
 
+// Module is the interface implemented by all built-in modules.
+type Module interface {
+	Check(ctx context.Context, params map[string]any) (needed bool, err error)
+	Apply(ctx context.Context, params map[string]any) error
+}
+
+// StreamingModule is an optional extension of Module for implementations
+// that can emit output line-by-line during Apply.
+type StreamingModule interface {
+	Module
+	ApplyWithOutput(ctx context.Context, params map[string]any, onOutput OutputFunc) error
+}
+
 // Result holds the outcome of a single task execution.
 type Result struct {
 	TaskID  string
 	Status  Status
 	Message string
+	Output  []string
 	Error   error
 }
 
@@ -33,7 +50,7 @@ type TargetInfo struct {
 type Target interface {
 	// Execute runs a named module with the given params against the target.
 	// If dryRun is true, only Check() is called — no changes are made.
-	Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool) (Result, error)
+	Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error)
 
 	// CopyFile copies a local file to dst on the target.
 	CopyFile(ctx context.Context, src, dst string) error

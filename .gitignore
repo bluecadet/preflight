@@ -1,4 +1,5 @@
 dist/
 state/
 *.exe
+/sim
 !internal/target/

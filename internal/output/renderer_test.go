@@ -154,6 +154,61 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_TaskOutput(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(Event{
+		Type:  EventTaskOutput,
+		Lines: []string{"line1", "line2"},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "│") {
+		t.Errorf("expected │ border character in output, got: %q", out)
+	}
+	if !strings.Contains(out, "line1") {
+		t.Errorf("expected 'line1' in output, got: %q", out)
+	}
+	if !strings.Contains(out, "line2") {
+		t.Errorf("expected 'line2' in output, got: %q", out)
+	}
+}
+
+func TestJSONRenderer_TaskOutput(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewJSONRenderer(&buf)
+	r.Emit(Event{
+		Type:   EventTaskOutput,
+		TaskID: "task-1",
+		Target: "host-a",
+		Lines:  []string{"hello"},
+	})
+
+	var m map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &m); err != nil {
+		t.Fatalf("output is not valid JSON: %v — %q", err, buf.String())
+	}
+	if m["type"] != string(EventTaskOutput) {
+		t.Errorf("expected type=%q, got %q", EventTaskOutput, m["type"])
+	}
+	if m["task_id"] != "task-1" {
+		t.Errorf("expected task_id=%q, got %q", "task-1", m["task_id"])
+	}
+	if m["target"] != "host-a" {
+		t.Errorf("expected target=%q, got %q", "host-a", m["target"])
+	}
+	lines, ok := m["lines"].([]any)
+	if !ok {
+		t.Fatalf("expected 'lines' field to be an array, got: %v", m["lines"])
+	}
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 line, got %d: %v", len(lines), lines)
+	}
+	if lines[0] != "hello" {
+		t.Errorf("expected lines[0]=%q, got %q", "hello", lines[0])
+	}
+}
+
 func TestFactory_New(t *testing.T) {
 	var buf bytes.Buffer
 	if _, ok := New(FormatText, &buf).(*TextRenderer); !ok {

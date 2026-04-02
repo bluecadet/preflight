@@ -13,6 +13,7 @@ type EventType string
 const (
 	EventPlayStart  EventType = "play_start"
 	EventTaskStart  EventType = "task_start"
+	EventTaskOutput EventType = "task_output"
 	EventTaskResult EventType = "task_result"
 	EventPlayEnd    EventType = "play_end"
 	EventWarning    EventType = "warning"
@@ -23,12 +24,14 @@ const (
 type Event struct {
 	Type     EventType
 	PlayName string // for play_start / play_end
-	TaskName string // for task_result
-	TaskID   string // for task_start and task_result; slash-separated nesting path e.g. "action/subtask"
+	TaskName string // for task_start / task_output / task_result
+	TaskID   string // for task_start / task_output / task_result; slash-separated nesting path e.g. "action/subtask"
 	Target   string // hostname
 	Status   string // "ok", "changed", "failed", "skipped"
 	Message  string
 	Error    error
+	Lines    []string // for task_output: one or more streamed output lines
+	Output   []string // for task_result: full captured output for failed tasks
 	// For play_end recap:
 	OKCount      int
 	ChangedCount int
@@ -106,6 +109,11 @@ func (r *TextRenderer) Emit(event Event) {
 		line := fillLine(title, "*", lineWidth)
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		_, _ = fmt.Fprintln(r.w)
+
+	case EventTaskOutput:
+		for _, line := range event.Lines {
+			_, _ = fmt.Fprintf(r.w, "  │ %s\n", line)
+		}
 
 	case EventTaskResult:
 		label := fmt.Sprintf("TASK [%s]", event.TaskName)
