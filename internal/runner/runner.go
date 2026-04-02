@@ -119,6 +119,18 @@ func (r *Runner) emitError(err error) {
 	}
 }
 
+func (r *Runner) emitTaskStart(pt *PlanTask) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.Event{
+		Type:     output.EventTaskStart,
+		TaskID:   pt.ID,
+		TaskName: pt.Name,
+		Target:   r.targetName(),
+	})
+}
+
 func (r *Runner) emitWarning(message string) {
 	if r.config.Renderer != nil && message != "" {
 		r.config.Renderer.Emit(output.Event{

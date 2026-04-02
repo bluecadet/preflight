@@ -10,6 +10,7 @@ import (
 type jsonEvent struct {
 	Type         EventType `json:"type"`
 	PlayName     string    `json:"play,omitempty"`
+	TaskID       string    `json:"task_id,omitempty"`
 	Task         string    `json:"task,omitempty"`
 	Target       string    `json:"target,omitempty"`
 	Status       string    `json:"status,omitempty"`
@@ -58,6 +59,9 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.ChangedCount = &ch
 		je.FailedCount = &fa
 		je.SkippedCount = &sk
+	}
+	if event.Type == EventTaskStart || event.Type == EventTaskResult {
+		je.TaskID = event.TaskID
 	}
 	// Ignore encode errors — nothing useful to do with them at render time.
 	_ = r.enc.Encode(je)

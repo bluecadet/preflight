@@ -12,6 +12,7 @@ type EventType string
 
 const (
 	EventPlayStart  EventType = "play_start"
+	EventTaskStart  EventType = "task_start"
 	EventTaskResult EventType = "task_result"
 	EventPlayEnd    EventType = "play_end"
 	EventWarning    EventType = "warning"
@@ -23,6 +24,7 @@ type Event struct {
 	Type     EventType
 	PlayName string // for play_start / play_end
 	TaskName string // for task_result
+	TaskID   string // for task_start and task_result; slash-separated nesting path e.g. "action/subtask"
 	Target   string // hostname
 	Status   string // "ok", "changed", "failed", "skipped"
 	Message  string

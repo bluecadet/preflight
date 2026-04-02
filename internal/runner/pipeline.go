@@ -669,6 +669,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 
 		// Execute the task against the target.
+		r.emitTaskStart(pt)
 		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, r.config.DryRun)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
@@ -747,6 +748,7 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 	}
 	r.config.Renderer.Emit(output.Event{
 		Type:     output.EventTaskResult,
+		TaskID:   pt.ID,
 		TaskName: pt.Name,
 		Target:   r.targetName(),
 		Status:   string(status),
