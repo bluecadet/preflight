@@ -242,3 +242,5 @@ Behavior notes:
 | `jsonl` | Same renderer and event shape as `json` |
 
 When a task streams output during `apply`, the `json` and `jsonl` renderers emit `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
+
+For human-readable output, the `text` renderer prints streamed lines inline and includes captured logs again under failed tasks, while the `tui` renderer shows a rolling preview of the last three streamed lines for each active task.

@@ -101,6 +101,12 @@ func fillLine(prefix, fill string, width int) string {
 	return prefix + " " + strings.Repeat(fill, remaining-1)
 }
 
+func (r *TextRenderer) writeOutputLines(lines []string) {
+	for _, line := range lines {
+		_, _ = fmt.Fprintf(r.w, "  │ %s\n", line)
+	}
+}
+
 // Emit writes a formatted line (or block) for the given event.
 func (r *TextRenderer) Emit(event Event) {
 	switch event.Type {
@@ -111,9 +117,7 @@ func (r *TextRenderer) Emit(event Event) {
 		_, _ = fmt.Fprintln(r.w)
 
 	case EventTaskOutput:
-		for _, line := range event.Lines {
-			_, _ = fmt.Fprintf(r.w, "  │ %s\n", line)
-		}
+		r.writeOutputLines(event.Lines)
 
 	case EventTaskResult:
 		label := fmt.Sprintf("TASK [%s]", event.TaskName)
@@ -123,6 +127,9 @@ func (r *TextRenderer) Emit(event Event) {
 		dotsNeeded = max(dotsNeeded, 1)
 		dots := strings.Repeat(".", dotsNeeded)
 		_, _ = fmt.Fprintf(r.w, "%s %s %s\n", label, dots, statusStr)
+		if event.Status == "failed" && len(event.Output) > 0 {
+			r.writeOutputLines(event.Output)
+		}
 
 	case EventPlayEnd:
 		title := "PLAY RECAP"

@@ -14,6 +14,9 @@ import (
 // maxLiveLines is the threshold above which output previews are hidden (dense mode).
 const maxLiveLines = 8
 
+// maxTaskPreviewLines is the number of recent output lines shown for an active task.
+const maxTaskPreviewLines = 3
+
 // ── styles ────────────────────────────────────────────────────────────────────
 
 var (
@@ -198,8 +201,8 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		if host := m.hosts[e.Target]; host != nil {
 			if at := host[e.TaskID]; at != nil {
 				at.recentLines = append(at.recentLines, e.Lines...)
-				if len(at.recentLines) > 5 {
-					at.recentLines = at.recentLines[len(at.recentLines)-5:]
+				if len(at.recentLines) > maxTaskPreviewLines {
+					at.recentLines = at.recentLines[len(at.recentLines)-maxTaskPreviewLines:]
 				}
 			}
 		}

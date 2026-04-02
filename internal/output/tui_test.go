@@ -173,3 +173,35 @@ func TestTUIModel_ApplyEvent_PlayEnd(t *testing.T) {
 		t.Errorf("expected recap.failed=1, got %d", m.recaps[0].failed)
 	}
 }
+
+func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModel(events)
+
+	m, _ = m.applyEvent(Event{
+		Type:     EventTaskStart,
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "stream logs",
+	})
+	m, _ = m.applyEvent(Event{
+		Type:   EventTaskOutput,
+		Target: "host-a",
+		TaskID: "task-1",
+		Lines:  []string{"line1", "line2", "line3", "line4"},
+	})
+
+	at := m.hosts["host-a"]["task-1"]
+	if at == nil {
+		t.Fatal("expected active task to exist")
+	}
+	if len(at.recentLines) != maxTaskPreviewLines {
+		t.Fatalf("expected %d preview lines, got %d", maxTaskPreviewLines, len(at.recentLines))
+	}
+	want := []string{"line2", "line3", "line4"}
+	for i, line := range want {
+		if at.recentLines[i] != line {
+			t.Fatalf("recentLines[%d] = %q, want %q", i, at.recentLines[i], line)
+		}
+	}
+}

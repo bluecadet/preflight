@@ -174,6 +174,29 @@ func TestTextRenderer_TaskOutput(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(Event{
+		Type:     EventTaskResult,
+		TaskName: "Run smoke test",
+		Status:   "failed",
+		Message:  "process exited with code 1",
+		Output:   []string{"Launching kiosk application...", "Smoke test timeout after 15s"},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "TASK [Run smoke test]") {
+		t.Fatalf("expected task header in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Launching kiosk application...") {
+		t.Errorf("expected first failure log in output, got: %q", out)
+	}
+	if !strings.Contains(out, "Smoke test timeout after 15s") {
+		t.Errorf("expected second failure log in output, got: %q", out)
+	}
+}
+
 func TestJSONRenderer_TaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewJSONRenderer(&buf)
