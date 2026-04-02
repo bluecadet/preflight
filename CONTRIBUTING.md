@@ -80,8 +80,9 @@ For output and renderer changes, also exercise the simulator so text, TUI, and J
 ```bash
 go run ./tools/sim list
 go run ./tools/sim streaming --format tui
+go run ./tools/sim streaming-multi-host --format tui
 go run ./tools/sim failures --format text
-go run ./tools/sim basic --format json
+go run ./tools/sim basic --format jsonl
 ```
 
 **Run vet:**

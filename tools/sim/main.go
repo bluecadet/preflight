@@ -1,7 +1,7 @@
 // Simulator for preflight terminal output. Not compiled into the main binary.
 // Usage:
 //
-//	go run ./tools/sim [scenario] [--format tui|text|json] [--delay 100ms]
+//	go run ./tools/sim [scenario] [--format tui|text|json|jsonl] [--delay 100ms]
 package main
 
 import (
@@ -63,11 +63,16 @@ func init() {
 			description: "tasks that emit streamed output while running",
 			run:         runStreaming,
 		},
+		{
+			name:        "streaming-multi-host",
+			description: "multiple hosts emitting streamed output concurrently",
+			run:         runStreamingMultiHost,
+		},
 	}
 }
 
 func main() {
-	formatFlag := flag.String("format", "auto", "output format: auto, tui, text, json")
+	formatFlag := flag.String("format", "auto", "output format: auto, tui, text, json, jsonl")
 	delayFlag := flag.Duration("delay", 80*time.Millisecond, "simulated task duration")
 
 	// Extract the scenario name (first non-flag arg) so that flags can appear
@@ -92,18 +97,9 @@ func main() {
 		return
 	}
 
-	var format output.Format
-	switch *formatFlag {
-	case "auto":
-		format = output.AutoDetect(os.Stdout)
-	case "tui":
-		format = output.FormatTUI
-	case "text":
-		format = output.FormatText
-	case "json":
-		format = output.FormatJSON
-	default:
-		fmt.Fprintf(os.Stderr, "unknown format %q\n", *formatFlag)
+	format, err := parseFormat(*formatFlag, os.Stdout)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 
@@ -145,6 +141,23 @@ func main() {
 
 	fmt.Fprintf(os.Stderr, "unknown scenario %q\nrun 'go run ./tools/sim list' to see available scenarios\n", scenarioName)
 	os.Exit(1)
+}
+
+func parseFormat(raw string, w *os.File) (output.Format, error) {
+	switch raw {
+	case "auto":
+		return output.AutoDetect(w), nil
+	case "tui":
+		return output.FormatTUI, nil
+	case "text":
+		return output.FormatText, nil
+	case "json":
+		return output.FormatJSON, nil
+	case "jsonl":
+		return output.FormatJSONL, nil
+	default:
+		return "", fmt.Errorf("unknown format %q", raw)
+	}
 }
 
 func containsFold(s, sub string) bool {

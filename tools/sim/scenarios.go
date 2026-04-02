@@ -61,6 +61,21 @@ func runTask(r output.Renderer, host, id, name, status, msg string, delay time.D
 	taskDone(r, host, id, name, status, msg)
 }
 
+func runStreamingTask(r output.Renderer, host, id, name, status, msg string, liveLines, outputLines []string, delay time.Duration) {
+	taskStart(r, host, id, name)
+
+	stepDelay := delay
+	if steps := len(liveLines) + 1; steps > 0 {
+		stepDelay = delay / time.Duration(steps)
+	}
+	for _, line := range liveLines {
+		time.Sleep(stepDelay)
+		taskOutput(r, host, id, name, line)
+	}
+	time.Sleep(stepDelay)
+	taskDoneWithOutput(r, host, id, name, status, msg, outputLines)
+}
+
 // jitter returns delay scaled by a random factor in [low, high].
 func jitter(delay time.Duration, low, high float64) time.Duration {
 	f := low + rand.Float64()*(high-low)
@@ -133,10 +148,16 @@ func runFailures(r output.Renderer, delay time.Duration) {
 
 	runTask(r, host, "check-disk", "Check disk space", "ok", "", delay)
 	runTask(r, host, "pull-image", "Pull container image", "changed", "Pulled 3 layers", delay)
-
-	taskStart(r, host, "run-migrations", "Run database migrations")
-	time.Sleep(delay * 2)
-	taskDone(r, host, "run-migrations", "Run database migrations", "failed", "connection refused: postgres:5432")
+	runStreamingTask(r, host, "run-migrations", "Run database migrations", "failed", "connection refused: postgres:5432", []string{
+		"Connecting to postgres...",
+		"Applying migration 20260402_add_sessions...",
+		"Retrying connection after transient failure...",
+	}, []string{
+		"Connecting to postgres...",
+		"Applying migration 20260402_add_sessions...",
+		"Retrying connection after transient failure...",
+		"Migration aborted: connection refused: postgres:5432",
+	}, delay*2)
 
 	// dependent tasks get skipped
 	r.Emit(output.Event{
@@ -347,27 +368,72 @@ func runStreaming(r output.Renderer, delay time.Duration) {
 
 	host := "exhibit-pc-03"
 
-	taskStart(r, host, "download-package", "Download package")
-	time.Sleep(delay / 2)
-	taskOutput(r, host, "download-package", "Download package", "Resolving release manifest...")
-	time.Sleep(delay / 2)
-	taskOutput(r, host, "download-package", "Download package", "Downloading package payload...")
-	time.Sleep(delay / 2)
-	taskOutput(r, host, "download-package", "Download package", "Verifying checksum...")
-	time.Sleep(delay / 2)
-	taskDone(r, host, "download-package", "Download package", "changed", "package downloaded")
+	runStreamingTask(r, host, "download-package", "Download package", "changed", "package downloaded", []string{
+		"Resolving release manifest...",
+		"Downloading package metadata...",
+		"Downloading package payload...",
+		"Verifying checksum...",
+		"Extracting artifact into staging directory...",
+	}, nil, delay)
 
-	taskStart(r, host, "run-smoke-test", "Run smoke test")
-	time.Sleep(delay / 2)
-	taskOutput(r, host, "run-smoke-test", "Run smoke test", "Launching kiosk application...")
-	time.Sleep(delay / 2)
-	taskOutput(r, host, "run-smoke-test", "Run smoke test", "Waiting for HTTP listener on :8080...")
-	time.Sleep(delay / 2)
-	taskDoneWithOutput(r, host, "run-smoke-test", "Run smoke test", "failed", "process exited with code 1", []string{
+	runStreamingTask(r, host, "run-smoke-test", "Run smoke test", "failed", "process exited with code 1", []string{
 		"Launching kiosk application...",
 		"Waiting for HTTP listener on :8080...",
+		"Checking splash-screen readiness signal...",
+		"Capturing failure diagnostics bundle...",
+	}, []string{
+		"Launching kiosk application...",
+		"Waiting for HTTP listener on :8080...",
+		"Checking splash-screen readiness signal...",
+		"Capturing failure diagnostics bundle...",
 		"Smoke test timeout after 15s",
-	})
+	}, delay)
 
 	playEnd(r, host, 0, 1, 1, 0)
+}
+
+func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
+	playStart(r, "streaming multi-host rollout")
+
+	sr := output.Synchronized(r)
+
+	hosts := []struct {
+		name string
+		fail bool
+	}{
+		{name: "gallery-01"},
+		{name: "gallery-02", fail: true},
+		{name: "gallery-03"},
+	}
+
+	var wg sync.WaitGroup
+	for _, h := range hosts {
+		wg.Go(func() {
+			runStreamingTask(sr, h.name, "sync-assets", "Sync assets", "changed", "assets synchronized", []string{
+				"Inspecting existing asset manifest...",
+				"Downloading changed assets...",
+				"Verifying transferred files...",
+				"Activating new asset bundle...",
+			}, nil, jitter(delay, 0.6, 1.4))
+
+			if h.fail {
+				runStreamingTask(sr, h.name, "smoke-test", "Smoke test", "failed", "HTTP 500 from kiosk app", []string{
+					"Launching kiosk runtime...",
+					"Waiting for health endpoint...",
+					"Fetching diagnostics from /debug/status...",
+				}, []string{
+					"Launching kiosk runtime...",
+					"Waiting for health endpoint...",
+					"Fetching diagnostics from /debug/status...",
+					"Smoke test failed: HTTP 500 from kiosk app",
+				}, jitter(delay, 0.6, 1.4))
+				playEnd(sr, h.name, 0, 1, 1, 0)
+				return
+			}
+
+			runTask(sr, h.name, "smoke-test", "Smoke test", "ok", "", jitter(delay, 0.6, 1.4))
+			playEnd(sr, h.name, 1, 1, 0, 0)
+		})
+	}
+	wg.Wait()
 }
