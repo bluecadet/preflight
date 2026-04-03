@@ -34,6 +34,7 @@ type ExecutionPlan struct {
 type PlanTask struct {
 	ID           string // unique ID, e.g. "task-0", "task-1"
 	Name         string
+	ActionPath   string // human-readable parent path, e.g. "Apply machine baseline/Configure computer name"
 	Module       string
 	Params       map[string]any
 	TemplateVars map[string]any
@@ -65,7 +66,7 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, nil, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -99,7 +100,7 @@ func (s *expansionScope) next(base string) string {
 	return base + "-" + strconv.Itoa(count)
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, label string) error {
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, displayLineage []string, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -110,9 +111,11 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 
 	segment := scope.next(taskLineageSegment(task))
 	currentLineage := append(append([]string{}, lineage...), segment)
+	displaySegment := taskDisplaySegment(task)
+	currentDisplayLineage := append(append([]string{}, displayLineage...), displaySegment)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, currentLineage, vars)
+		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, vars)
 		if err != nil {
 			return err
 		}
@@ -134,7 +137,7 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, childLabel); err != nil {
+		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, currentDisplayLineage, childLabel); err != nil {
 			return err
 		}
 	}
@@ -173,14 +176,20 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, lineage []string, vars map[string]any) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, vars map[string]any) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
+	// ActionPath is the display lineage minus the leaf (the task's own name).
+	var actionPath string
+	if len(displayLineage) > 1 {
+		actionPath = strings.Join(displayLineage[:len(displayLineage)-1], "/")
+	}
 	rawParams := cloneMap(t.Params)
 	templateVars := cloneMap(vars)
 
 	return &PlanTask{
 		ID:           id,
 		Name:         t.Name,
+		ActionPath:   actionPath,
 		Module:       t.Module,
 		Params:       rawParams,
 		TemplateVars: templateVars,
@@ -191,19 +200,40 @@ func buildPlanTask(t *action.Task, lineage []string, vars map[string]any) (*Plan
 	}, nil
 }
 
-func taskLineageSegment(task *action.Task) string {
+// taskDisplaySegment returns the human-readable label for a task in the display lineage.
+func taskDisplaySegment(task *action.Task) string {
+	if task.Name != "" {
+		return task.Name
+	}
 	kind := task.Uses
 	if kind == "" {
 		kind = task.Module
 	}
 	if kind == "" {
-		kind = "task"
+		return "task"
 	}
-	name := task.Name
-	if name == "" {
-		name = kind
+	if i := strings.LastIndex(kind, "/"); i >= 0 {
+		kind = kind[i+1:]
 	}
-	return sanitizeLineageSegment(kind + "-" + name)
+	return kind
+}
+
+func taskLineageSegment(task *action.Task) string {
+	if task.Name != "" {
+		return sanitizeLineageSegment(task.Name)
+	}
+	kind := task.Uses
+	if kind == "" {
+		kind = task.Module
+	}
+	if kind == "" {
+		return "task"
+	}
+	// Use only the leaf of the action ref (e.g. "windows-power" from "preflight/windows-power").
+	if i := strings.LastIndex(kind, "/"); i >= 0 {
+		kind = kind[i+1:]
+	}
+	return sanitizeLineageSegment(kind)
 }
 
 func sanitizeLineageSegment(s string) string {
@@ -757,12 +787,13 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 		return
 	}
 	r.config.Renderer.Emit(output.TaskResultEvent{
-		TaskID:   pt.ID,
-		TaskName: pt.Name,
-		Target:   r.targetName(),
-		Status:   string(status),
-		Message:  message,
-		Output:   taskOutput,
+		TaskID:     pt.ID,
+		TaskName:   pt.Name,
+		ActionPath: pt.ActionPath,
+		Target:     r.targetName(),
+		Status:     string(status),
+		Message:    message,
+		Output:     taskOutput,
 	})
 }
 

@@ -26,7 +26,7 @@ var (
 	tsSkipped = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	tsMuted   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	tsBold    = lipgloss.NewStyle().Bold(true)
-	tsHost    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "6", Dark: "14"}).Bold(true)
+	tsHost    = lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true)
 	tsAction  = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 	tsSpin    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
 	tsDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
@@ -74,6 +74,7 @@ type failedTask struct {
 	actionPath string
 	name       string
 	message    string
+	output     []string
 }
 
 // tuiModel is the Bubbletea model for the TUI renderer.
@@ -98,10 +99,9 @@ type tuiModel struct {
 	skippedCount int
 
 	// per-host final recap (from EventPlayEnd)
-	recaps       []hostRecap
-	failedTasks  []failedTask // accumulated for final summary
-	hostColWidth int          // dynamic host column width, tracked across events
-	done         bool
+	recaps      []hostRecap
+	failedTasks []failedTask // accumulated for final summary
+	done        bool
 }
 
 type tuiEventMsg struct{ event Event }
@@ -115,17 +115,16 @@ func newTUIModel(events chan Event) tuiModel {
 
 func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 	s := spinner.New(
-		spinner.WithSpinner(spinner.Dot),
+		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(tsSpin),
 	)
 	return tuiModel{
-		spinner:      s,
-		events:       events,
-		verbose:      opts.Verbose,
-		width:        80,
-		hosts:        make(map[string]map[string]*activeTask),
-		taskOrder:    make(map[string][]string),
-		hostColWidth: 16,
+		spinner:   s,
+		events:    events,
+		verbose:   opts.Verbose,
+		width:     80,
+		hosts:     make(map[string]map[string]*activeTask),
+		taskOrder: make(map[string][]string),
 	}
 }
 
@@ -175,7 +174,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			m.playStarted = true
 			m.playName = e.PlayName
 			m.startedAt = time.Now()
-			line := "\n  " + tsSpin.Render("▶") + "  " + tsBold.Render(e.PlayName)
+			line := m.renderDivider() + "\n  " + tsSpin.Render("▶") + "  " + tsBold.Render(e.PlayName) + "\n"
 			return m, tea.Println(line)
 		}
 
@@ -190,15 +189,12 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		at := &activeTask{
 			id:         e.TaskID,
 			name:       e.TaskName,
-			actionPath: tsParseActionPath(e.TaskID),
+			actionPath: e.ActionPath,
 			target:     e.Target,
 			startAt:    time.Now(),
 		}
 		m.hosts[e.Target][e.TaskID] = at
 		m.taskOrder[e.Target] = append(m.taskOrder[e.Target], e.TaskID)
-		if w := len(e.Target) + 2; w > m.hostColWidth && w <= 26 {
-			m.hostColWidth = w
-		}
 
 	case TaskOutputEvent:
 		if e.Target == "" || e.TaskID == "" {
@@ -207,7 +203,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		if host := m.hosts[e.Target]; host != nil {
 			if at := host[e.TaskID]; at != nil {
 				at.recentLines = append(at.recentLines, e.Lines...)
-				if len(at.recentLines) > maxTaskPreviewLines {
+				if !m.verbose && len(at.recentLines) > maxTaskPreviewLines {
 					at.recentLines = at.recentLines[len(at.recentLines)-maxTaskPreviewLines:]
 				}
 			}
@@ -244,9 +240,10 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			m.failedCount++
 			m.failedTasks = append(m.failedTasks, failedTask{
 				target:     e.Target,
-				actionPath: tsParseActionPath(e.TaskID),
+				actionPath: e.ActionPath,
 				name:       e.TaskName,
 				message:    e.Message,
+				output:     e.Output,
 			})
 		case "skipped":
 			m.skippedCount++
@@ -255,14 +252,14 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		// Commit the completed task line permanently to scroll history.
 		cmds = append(cmds, tea.Println(m.renderCommitted(e, elapsed)))
 
-		// On failure, commit the error message block too.
-		if e.Status == "failed" && e.Message != "" {
-			cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message)))
-		}
-		// In verbose mode, print logs for every task with captured output.
-		// Otherwise only print logs for failed tasks.
-		if len(e.Output) > 0 && (m.verbose || e.Status == "failed") {
-			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
+		// In verbose mode, print message and logs inline for every completed task.
+		if m.verbose {
+			if e.Message != "" {
+				cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message)))
+			}
+			if len(e.Output) > 0 {
+				cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
+			}
 		}
 
 		return m, tea.Sequence(cmds...)
@@ -314,7 +311,6 @@ func (m tuiModel) View() string {
 	}
 
 	var b strings.Builder
-	b.WriteString("\n")
 
 	dense := len(running) > maxLiveLines
 
@@ -334,21 +330,13 @@ func (m tuiModel) View() string {
 // renderRunning formats a single running task line for the live zone.
 func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 	elapsed := time.Since(at.startAt)
-	spin := tsSpin.Render(m.spinner.View())
-	hostFmt := fmt.Sprintf("%-*s", m.hostColWidth, tsTruncate(at.target, m.hostColWidth))
-	host := tsHost.Render(hostFmt)
-	path := tsRenderPath(at.actionPath, at.name)
+	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
+	host := tsHost.Render(at.target)
 	timer := tsElapsed.Render("[" + tsFmtElapsed(elapsed) + "]")
+	pathMax := m.width - lipgloss.Width(spin) - lipgloss.Width(host) - lipgloss.Width(timer) - 10
+	path := tsRenderPath(at.actionPath, at.name, pathMax)
 
-	left := fmt.Sprintf("  %s  %s  %s", spin, host, path)
-	lw := lipgloss.Width(left)
-	tw := lipgloss.Width(timer)
-	var line string
-	if pad := m.width - lw - tw - 2; pad > 1 {
-		line = left + strings.Repeat(" ", pad) + timer
-	} else {
-		line = left + "  " + timer
-	}
+	line := tsRow(spin, host, path, timer)
 
 	if dense || len(at.recentLines) == 0 {
 		return line
@@ -358,10 +346,7 @@ func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 	var sb strings.Builder
 	sb.WriteString(line)
 	for _, l := range at.recentLines {
-		_, _ = fmt.Fprintf(&sb, "\n     %s  %s",
-			tsMuted.Render("│"),
-			tsOutput.Render(tsTruncate(l, maxW)),
-		)
+		sb.WriteString("\n" + tsOutputLine(5, tsTruncate(l, maxW)))
 	}
 	return sb.String()
 }
@@ -369,12 +354,7 @@ func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 // renderCommitted formats a completed task line for permanent scroll history.
 func (m tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) string {
 	icon := tsIcon(e.Status)
-	hostFmt := fmt.Sprintf("%-*s", m.hostColWidth, tsTruncate(e.Target, m.hostColWidth))
-	host := tsHost.Render(hostFmt)
-	actionPath := tsParseActionPath(e.TaskID)
-	path := tsRenderPath(actionPath, e.TaskName)
-
-	left := fmt.Sprintf("  %s  %s  %s", icon, host, path)
+	host := tsHost.Render(e.Target)
 
 	var right string
 	switch {
@@ -384,15 +364,9 @@ func (m tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) stri
 		right = tsElapsed.Render(tsFmtElapsed(elapsed))
 	}
 
-	if right == "" {
-		return left
-	}
-	lw := lipgloss.Width(left)
-	rw := lipgloss.Width(right)
-	if pad := m.width - lw - rw - 2; pad > 1 {
-		return left + strings.Repeat(" ", pad) + right
-	}
-	return left + "  " + right
+	pathMax := m.width - lipgloss.Width(icon) - lipgloss.Width(host) - lipgloss.Width(right) - 10
+	path := tsRenderPath(e.ActionPath, e.TaskName, pathMax)
+	return tsRow(icon, host, path, right)
 }
 
 // renderFinalSummary renders the closing block shown after execution completes.
@@ -416,12 +390,9 @@ func (m tuiModel) renderFinalSummary() string {
 		failedByHost[ft.target] = append(failedByHost[ft.target], ft)
 	}
 
-	w := m.divWidth()
-	div := tsDivider.Render(strings.Repeat("─", w))
-
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(div)
+	b.WriteString(m.renderDivider())
 	b.WriteString("\n")
 
 	overallIcon := tsOK.Render("✓")
@@ -429,15 +400,9 @@ func (m tuiModel) renderFinalSummary() string {
 		overallIcon = tsFailed.Render("✗")
 	}
 	hostLabel := fmt.Sprintf("%d %s", len(m.recaps), tsPluralize(len(m.recaps), "host", "hosts"))
-	fmt.Fprintf(&b, "  %s  %s  %s  %s\n",
-		overallIcon,
-		tsBold.Render(m.playName),
-		tsMuted.Render("·  "+hostLabel),
-		tsElapsed.Render(tsFmtElapsed(totalElapsed)),
-	)
+	b.WriteString(tsRow(overallIcon, tsBold.Render(m.playName), tsMuted.Render("·  "+hostLabel), tsElapsed.Render(tsFmtElapsed(totalElapsed))) + "\n")
 	b.WriteString("\n")
 
-	colW := m.hostColWidth
 	for _, r := range m.recaps {
 		hostIcon := tsOK.Render("✓")
 		if r.failed > 0 {
@@ -445,48 +410,35 @@ func (m tuiModel) renderFinalSummary() string {
 		} else if r.changed > 0 {
 			hostIcon = tsChanged.Render("◆")
 		}
-
-		var parts []string
-		if r.ok > 0 {
-			parts = append(parts, tsOK.Render(fmt.Sprintf("%d ok", r.ok)))
-		}
-		if r.changed > 0 {
-			parts = append(parts, tsChanged.Render(fmt.Sprintf("%d changed", r.changed)))
-		}
-		if r.failed > 0 {
-			parts = append(parts, tsFailed.Render(fmt.Sprintf("%d failed", r.failed)))
-		}
-		if r.skipped > 0 {
-			parts = append(parts, tsSkipped.Render(fmt.Sprintf("%d skipped", r.skipped)))
-		}
-
-		hostFmt := fmt.Sprintf("%-*s", colW, tsTruncate(r.target, colW))
-		fmt.Fprintf(&b, "     %s  %s  %s\n",
-			hostIcon,
-			tsHost.Render(hostFmt),
-			strings.Join(parts, tsMuted.Render("  ")),
-		)
+		stats := strings.Join([]string{
+			tsStat(tsOK, "✓", r.ok),
+			tsStat(tsChanged, "◆", r.changed),
+			tsStat(tsFailed, "✗", r.failed),
+			tsStat(tsSkipped, "–", r.skipped),
+		}, "  ")
+		b.WriteString(tsRow(hostIcon, tsHost.Render(r.target), stats) + "\n")
 
 		// Indent failed task names under the host line.
 		for _, ft := range failedByHost[r.target] {
-			path := tsRenderPath(ft.actionPath, ft.name)
-			fmt.Fprintf(&b, "        %s  %s\n", tsFailed.Render("✗"), path)
+			path := tsRenderPath(ft.actionPath, ft.name, 0)
+			b.WriteString("      " + tsFailed.Render("✗") + "  " + path + "\n")
 			if ft.message != "" {
 				for line := range strings.SplitSeq(strings.TrimSpace(ft.message), "\n") {
 					line = strings.TrimSpace(line)
 					if line != "" {
-						fmt.Fprintf(&b, "           %s  %s\n",
-							tsMuted.Render("│"),
-							tsOutput.Render(line),
-						)
+						b.WriteString(tsOutputLine(9, line) + "\n")
 					}
+				}
+			}
+			for _, line := range ft.output {
+				line = strings.TrimSpace(line)
+				if line != "" {
+					b.WriteString(tsOutputLine(9, line) + "\n")
 				}
 			}
 		}
 	}
 
-	b.WriteString("\n")
-	b.WriteString(div)
 	b.WriteString("\n")
 	return b.String()
 }
@@ -498,36 +450,25 @@ func (m tuiModel) renderDivider() string {
 
 // renderFooter renders the status summary line below the live zone divider.
 func (m tuiModel) renderFooter(runningCount int) string {
-	var parts []string
-
-	if runningCount > 0 {
-		parts = append(parts, tsSpin.Render(fmt.Sprintf("%d running", runningCount)))
-	}
-	if m.okCount > 0 {
-		parts = append(parts, tsOK.Render(fmt.Sprintf("%d ✓", m.okCount)))
-	}
-	if m.changedCount > 0 {
-		parts = append(parts, tsChanged.Render(fmt.Sprintf("%d ◆", m.changedCount)))
-	}
-	if m.skippedCount > 0 {
-		parts = append(parts, tsSkipped.Render(fmt.Sprintf("%d –", m.skippedCount)))
-	}
-	if m.failedCount > 0 {
-		parts = append(parts, tsFailed.Render(fmt.Sprintf("%d ✗", m.failedCount)))
-	}
-
-	if len(parts) == 0 {
+	if runningCount == 0 && m.total() == 0 {
 		return ""
 	}
-	return "  " + strings.Join(parts, tsMuted.Render("  ·  "))
+	parts := []string{
+		tsStat(tsSpin, "running", runningCount),
+		tsStat(tsOK, "✓", m.okCount),
+		tsStat(tsChanged, "◆", m.changedCount),
+		tsStat(tsFailed, "✗", m.failedCount),
+		tsStat(tsSkipped, "–", m.skippedCount),
+	}
+	return "  " + strings.Join(parts, "  ")
 }
 
 // divWidth returns a capped terminal width for divider lines.
 func (m tuiModel) divWidth() int {
 	if m.width <= 0 {
-		return 60
+		return 50
 	}
-	return min(m.width, 80)
+	return min(m.width, 50)
 }
 
 // total returns the count of all committed (non-running) tasks.
@@ -537,26 +478,51 @@ func (m tuiModel) total() int {
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-// tsParseActionPath extracts the parent action prefix from a TaskID.
-// "configure-kiosk/set-wallpaper" → "configure-kiosk"
-// "a/b/c"                         → "a/b"
-// "top-level-task"                → ""
-func tsParseActionPath(taskID string) string {
-	idx := strings.LastIndex(taskID, "/")
-	if idx < 0 {
-		return ""
-	}
-	return taskID[:idx]
-}
-
-// tsRenderPath formats a display path for a task.
-// With parent action: "configure-kiosk  ›  set wallpaper"
-// Top-level:          "install-chrome"
-func tsRenderPath(actionPath, taskName string) string {
+// tsRenderPath formats a display path for a task, collapsing middle segments if
+// the rendered width exceeds maxWidth. Pass maxWidth <= 0 for no limit.
+//
+// Tiers (widest to narrowest):
+//
+//	Full:     A › B › C › task name
+//	Collapsed: A › … › task name
+//	Leaf only: task name
+func tsRenderPath(actionPath, taskName string, maxWidth int) string {
 	if actionPath == "" {
 		return taskName
 	}
-	return tsAction.Render(actionPath) + tsMuted.Render(" › ") + taskName
+	sep := tsMuted.Render(" › ")
+	ellipsis := tsMuted.Render("…")
+
+	render := func(segs []string, useDots bool) string {
+		var b strings.Builder
+		for i, seg := range segs {
+			if useDots && i == 1 {
+				b.WriteString(ellipsis)
+			} else {
+				b.WriteString(tsAction.Render(seg))
+			}
+			b.WriteString(sep)
+		}
+		b.WriteString(taskName)
+		return b.String()
+	}
+
+	segs := strings.Split(actionPath, "/")
+
+	full := render(segs, false)
+	if maxWidth <= 0 || lipgloss.Width(full) <= maxWidth {
+		return full
+	}
+
+	// Collapse middle segments to a single ellipsis: first › … › task name
+	if len(segs) > 1 {
+		collapsed := tsAction.Render(segs[0]) + sep + ellipsis + sep + taskName
+		if lipgloss.Width(collapsed) <= maxWidth {
+			return collapsed
+		}
+	}
+
+	return taskName
 }
 
 // tsRenderOutputBlock formats a (possibly multi-line) message as an indented output block.
@@ -567,10 +533,7 @@ func tsRenderOutputBlock(message string) string {
 		if l == "" {
 			continue
 		}
-		parts = append(parts, fmt.Sprintf("     %s  %s",
-			tsMuted.Render("│"),
-			tsOutput.Render(l),
-		))
+		parts = append(parts, tsOutputLine(5, l))
 	}
 	return strings.Join(parts, "\n")
 }
@@ -605,6 +568,24 @@ func tsPluralize(n int, singular, plural string) string {
 		return singular
 	}
 	return plural
+}
+
+// tsStat renders a colored glyph+count pair, dimmed when the count is zero.
+func tsStat(style lipgloss.Style, glyph string, n int) string {
+	if n == 0 {
+		return tsMuted.Render(glyph + " 0")
+	}
+	return style.Render(glyph) + " " + fmt.Sprintf("%d", n)
+}
+
+// tsRow renders a left-indented row with elements separated by two spaces.
+func tsRow(elems ...string) string {
+	return "  " + strings.Join(elems, "  ")
+}
+
+// tsOutputLine renders a pipe-gutter content line at the given indent depth.
+func tsOutputLine(depth int, content string) string {
+	return strings.Repeat(" ", depth) + tsOutput.Render(content)
 }
 
 // ── TUIRenderer ───────────────────────────────────────────────────────────────

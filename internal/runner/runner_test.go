@@ -409,6 +409,40 @@ func TestApplyStdlibWindowsMachineRendersNestedExecutionTimeInputs(t *testing.T)
 	}
 }
 
+func TestApplyStdlibWindowsMachineSkipsOptionalTasksWhenInputsOmitted(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	mt := &mockTarget{
+		results: []target.Result{
+			{Status: target.StatusOK},
+			{Status: target.StatusOK},
+		},
+	}
+	r := New(mt, resolver, Config{})
+	pb := &action.Playbook{
+		Name: "windows-machine",
+		Tasks: []action.Task{
+			{
+				Name: "machine baseline",
+				Uses: "preflight/windows-machine",
+				With: map[string]any{},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	// computer_name and timezone tasks should be skipped; only long_paths and
+	// ps1_execution_policy should execute.
+	if len(mt.calls) != 2 {
+		t.Fatalf("expected 2 executed tasks (skipped computer_name and timezone), got %d", len(mt.calls))
+	}
+}
+
 func TestApplyEmitsTaskResultEvents(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusOK}},

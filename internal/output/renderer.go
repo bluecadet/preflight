@@ -24,14 +24,14 @@ const (
 type Event interface{ isEvent() }
 
 type PlayStartEvent struct{ PlayName string }
-type TaskStartEvent struct{ TaskName, TaskID, Target string }
+type TaskStartEvent struct{ TaskName, TaskID, ActionPath, Target string }
 type TaskOutputEvent struct {
 	TaskName, TaskID, Target string
 	Lines                    []string
 }
 type TaskResultEvent struct {
-	TaskName, TaskID, Target, Status, Message string
-	Output                                    []string
+	TaskName, TaskID, ActionPath, Target, Status, Message string
+	Output                                                []string
 }
 type PlayEndEvent struct {
 	Target                                           string

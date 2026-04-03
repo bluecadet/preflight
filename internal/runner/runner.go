@@ -118,9 +118,10 @@ func (r *Runner) emitTaskStart(pt *PlanTask) {
 		return
 	}
 	r.config.Renderer.Emit(output.TaskStartEvent{
-		TaskID:   pt.ID,
-		TaskName: pt.Name,
-		Target:   r.targetName(),
+		TaskID:     pt.ID,
+		TaskName:   pt.Name,
+		ActionPath: pt.ActionPath,
+		Target:     r.targetName(),
 	})
 }
 
