@@ -930,15 +930,6 @@ func paramStringSlice(params map[string]any, key string) ([]string, error) {
 	}
 }
 
-func cloneParams(params map[string]any) map[string]any {
-	if params == nil {
-		return nil
-	}
-	cloned := make(map[string]any, len(params))
-	maps.Copy(cloned, params)
-	return cloned
-}
-
 const registryCheckScript = `
 $path = [string]$params.path
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }

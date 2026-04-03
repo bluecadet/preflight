@@ -93,7 +93,7 @@ func (e *Engine) Render(s string) (string, error) {
 		seen[rendered] = struct{}{}
 		current = rendered
 	}
-	return "", fmt.Errorf("template: exceeded recursive render depth")
+	return "", fmt.Errorf("exceeded recursive render depth")
 }
 
 func (e *Engine) renderOnce(s string) (string, error) {
@@ -154,7 +154,7 @@ func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
 	for k, v := range m {
 		rendered, err := e.renderValue(v)
 		if err != nil {
-			return nil, fmt.Errorf("template: key %q: %w", k, err)
+			return nil, fmt.Errorf("key %q: %w", k, err)
 		}
 		result[k] = rendered
 	}
@@ -203,7 +203,7 @@ func (e *Engine) renderValue(v any) (any, error) {
 		for i := range val {
 			rendered, err := e.renderValue(val[i])
 			if err != nil {
-				return nil, fmt.Errorf("template: index %d: %w", i, err)
+				return nil, fmt.Errorf("index %d: %w", i, err)
 			}
 			out[i] = rendered
 		}
@@ -229,7 +229,7 @@ func (e *Engine) evalExpr(expr string) (string, bool, error) {
 func (e *Engine) evalExprValue(expr string) (any, bool, error) {
 	parts := strings.Split(expr, ".")
 	if len(parts) == 0 || parts[0] == "" {
-		return nil, false, fmt.Errorf("template: empty expression")
+		return nil, false, fmt.Errorf("empty template expression")
 	}
 
 	namespace := parts[0]
@@ -252,7 +252,7 @@ func (e *Engine) evalExprValue(expr string) (any, bool, error) {
 	val, err := dotLookup(root, rest)
 	if err != nil {
 		if namespace == "vars" {
-			return nil, false, fmt.Errorf("template: undefined variable %q", expr)
+			return nil, false, fmt.Errorf("undefined variable %q", expr)
 		}
 		return nil, false, nil
 	}

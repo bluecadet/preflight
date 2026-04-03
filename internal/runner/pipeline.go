@@ -686,7 +686,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		params, taskName, err := renderTaskParams(pt, execCtx)
 		if err != nil {
-			return fmt.Errorf("apply: task %q: render params: %w", pt.Name, err)
+			return fmt.Errorf("task %q: %w", pt.Name, err)
 		}
 		stateSource := params
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {

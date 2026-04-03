@@ -62,24 +62,24 @@ type Task struct {
 	Tags         []string       `yaml:"tags"`
 
 	// Inline module fields — at most one may be non-nil per task.
-	Registry       map[string]any `yaml:"registry"`
-	Service        map[string]any `yaml:"service"`
-	File           map[string]any `yaml:"file"`
-	Directory      map[string]any `yaml:"directory"`
-	Package        map[string]any `yaml:"package"`
-	Shortcut       map[string]any `yaml:"shortcut"`
-	ScheduledTask  map[string]any `yaml:"scheduled_task"`
-	User           map[string]any `yaml:"user"`
-	WingetPackage  map[string]any `yaml:"winget_package"`
+	Registry           map[string]any `yaml:"registry"`
+	Service            map[string]any `yaml:"service"`
+	File               map[string]any `yaml:"file"`
+	Directory          map[string]any `yaml:"directory"`
+	Package            map[string]any `yaml:"package"`
+	Shortcut           map[string]any `yaml:"shortcut"`
+	ScheduledTask      map[string]any `yaml:"scheduled_task"`
+	User               map[string]any `yaml:"user"`
+	WingetPackage      map[string]any `yaml:"winget_package"`
 	RemoveAppxPackages map[string]any `yaml:"remove_appx_packages"`
-	PowerPlan      map[string]any `yaml:"power_plan"`
-	WindowsFeature map[string]any `yaml:"windows_feature"`
-	Environment    map[string]any `yaml:"environment"`
-	FirewallRule   map[string]any `yaml:"firewall_rule"`
-	Powershell     map[string]any `yaml:"powershell"`
-	Shell          map[string]any `yaml:"shell"`
-	Reboot         map[string]any `yaml:"reboot"`
-	Wait           map[string]any `yaml:"wait"`
+	PowerPlan          map[string]any `yaml:"power_plan"`
+	WindowsFeature     map[string]any `yaml:"windows_feature"`
+	Environment        map[string]any `yaml:"environment"`
+	FirewallRule       map[string]any `yaml:"firewall_rule"`
+	Powershell         map[string]any `yaml:"powershell"`
+	Shell              map[string]any `yaml:"shell"`
+	Reboot             map[string]any `yaml:"reboot"`
+	Wait               map[string]any `yaml:"wait"`
 }
 
 // ResolveModule inspects inline module fields and sets Module + Params.
