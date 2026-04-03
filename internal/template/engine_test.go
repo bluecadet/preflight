@@ -160,6 +160,9 @@ func TestRenderBool(t *testing.T) {
 		{"0", false},
 		{"yes", true},
 		{"no", false},
+		{"", false},
+		{"Gallery-Kiosk-01", true},
+		{"Eastern Standard Time", true},
 	}
 	e := New(nil)
 	for _, tc := range cases {
@@ -207,6 +210,87 @@ func TestRenderMap(t *testing.T) {
 	}
 	if got["version"] != 42 {
 		t.Errorf("version: got %v, want 42", got["version"])
+	}
+}
+
+func TestRenderMap_WholeValueList(t *testing.T) {
+	pkgs := []any{
+		map[string]any{"id": "Microsoft.VisualStudioCode", "version": "1.85.0"},
+		map[string]any{"id": "Git.Git"},
+	}
+	e := New(map[string]any{"packages": pkgs})
+	input := map[string]any{
+		"packages": "{{ vars.packages }}",
+	}
+	got, err := e.RenderMap(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, ok := got["packages"].([]any)
+	if !ok {
+		t.Fatalf("packages is not []any: %T", got["packages"])
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 packages, got %d", len(result))
+	}
+	first, ok := result[0].(map[string]any)
+	if !ok {
+		t.Fatalf("packages[0] is not map[string]any: %T", result[0])
+	}
+	if first["id"] != "Microsoft.VisualStudioCode" {
+		t.Errorf("packages[0].id = %v, want Microsoft.VisualStudioCode", first["id"])
+	}
+}
+
+func TestRenderMap_WholeValueMap(t *testing.T) {
+	cfg := map[string]any{"timeout": 30, "retry": true}
+	e := New(map[string]any{"config": cfg})
+	input := map[string]any{"config": "{{ vars.config }}"}
+	got, err := e.RenderMap(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	result, ok := got["config"].(map[string]any)
+	if !ok {
+		t.Fatalf("config is not map[string]any: %T", got["config"])
+	}
+	if result["timeout"] != 30 {
+		t.Errorf("config.timeout = %v, want 30", result["timeout"])
+	}
+}
+
+func TestRenderMap_WholeValueScalarStringifies(t *testing.T) {
+	// Integers and booleans in a string template field should still stringify.
+	// A user who writes `ac_value: "{{ vars.count }}"` expects a string result.
+	e := New(map[string]any{"count": 5, "flag": true})
+	input := map[string]any{
+		"ac_value": "{{ vars.count }}",
+		"enabled":  "{{ vars.flag }}",
+	}
+	got, err := e.RenderMap(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["ac_value"] != "5" {
+		t.Errorf("ac_value = %v (%T), want \"5\"", got["ac_value"], got["ac_value"])
+	}
+	if got["enabled"] != "true" {
+		t.Errorf("enabled = %v (%T), want \"true\"", got["enabled"], got["enabled"])
+	}
+}
+
+func TestRenderMap_WholeValueString_StillRecurses(t *testing.T) {
+	e := New(map[string]any{
+		"name":   "{{ vars.device }}",
+		"device": "Kiosk-01",
+	})
+	input := map[string]any{"label": "{{ vars.name }}"}
+	got, err := e.RenderMap(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["label"] != "Kiosk-01" {
+		t.Errorf("label = %v, want Kiosk-01", got["label"])
 	}
 }
 

@@ -3,7 +3,6 @@ package template
 import (
 	"fmt"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -128,26 +127,23 @@ func (e *Engine) renderOnce(s string) (string, error) {
 	return result, nil
 }
 
-// RenderBool renders s and parses the result as a boolean.
-// Accepted truthy strings: "true", "1", "yes". Everything else is false.
+// RenderBool renders s and interprets the result as a boolean using truthy
+// semantics. Empty string and explicit false values ("false", "0", "no") are
+// false; everything else is true. This allows when: conditions to gate on
+// optional string inputs — an empty or unset var is falsy, a non-empty value
+// (including rendered template expressions) is truthy.
 func (e *Engine) RenderBool(s string) (bool, error) {
 	rendered, err := e.Render(s)
 	if err != nil {
 		return false, err
 	}
 	rendered = strings.TrimSpace(strings.ToLower(rendered))
-	b, err := strconv.ParseBool(rendered)
-	if err != nil {
-		// Accept "yes" / "no" as extensions
-		switch rendered {
-		case "yes":
-			return true, nil
-		case "no":
-			return false, nil
-		}
-		return false, fmt.Errorf("template: cannot parse %q as bool", rendered)
+	switch rendered {
+	case "", "false", "0", "no":
+		return false, nil
+	default:
+		return true, nil
 	}
-	return b, nil
 }
 
 // RenderMap renders all string values in m and returns a new map.
@@ -168,6 +164,37 @@ func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
 func (e *Engine) renderValue(v any) (any, error) {
 	switch val := v.(type) {
 	case string:
+		// Whole-value substitution: if the entire string is a single {{ expr }},
+		// return the actual typed value rather than stringifying. This lets
+		// non-string vars (lists, maps, booleans) flow through action inputs
+		// without being coerced to their string representation.
+		// If the resolved value is itself a string, fall through to normal
+		// rendering so recursive variable references still work.
+		if m := exprRe.FindStringIndex(val); m != nil && m[0] == 0 && m[1] == len(val) {
+			inner := strings.TrimSpace(exprRe.FindStringSubmatch(val)[1])
+			raw, resolved, err := e.evalExprValue(inner)
+			if err != nil {
+				return nil, err
+			}
+			if resolved {
+				if strVal, ok := raw.(string); ok {
+					return e.Render(strVal)
+				}
+				// Only bypass stringification for structural types (lists, maps).
+				// Scalars (int, bool, float64, etc.) still stringify so that
+				// `ac_value: "{{ vars.count }}"` keeps behaving as a string field.
+				switch raw.(type) {
+				case map[string]any, []any:
+					return raw, nil
+				default:
+					return fmt.Sprintf("%v", raw), nil
+				}
+			}
+			if e.preserveUnknown {
+				return val, nil
+			}
+			return "", nil
+		}
 		return e.Render(val)
 	case map[string]any:
 		return e.RenderMap(val)
@@ -187,12 +214,22 @@ func (e *Engine) renderValue(v any) (any, error) {
 }
 
 // evalExpr resolves a dot-path expression such as "vars.foo.bar" against the
-// engine's context. Undefined vars.* paths are errors; unknown env.*, target.*,
-// and facts.* paths are treated as unresolved.
+// engine's context and returns its string representation. Undefined vars.*
+// paths are errors; unknown env.*, target.*, and facts.* paths are unresolved.
 func (e *Engine) evalExpr(expr string) (string, bool, error) {
+	val, resolved, err := e.evalExprValue(expr)
+	if !resolved || err != nil {
+		return "", resolved, err
+	}
+	return fmt.Sprintf("%v", val), true, nil
+}
+
+// evalExprValue is like evalExpr but returns the raw typed value without
+// stringifying it, enabling whole-value substitution for non-string types.
+func (e *Engine) evalExprValue(expr string) (any, bool, error) {
 	parts := strings.Split(expr, ".")
 	if len(parts) == 0 || parts[0] == "" {
-		return "", false, fmt.Errorf("template: empty expression")
+		return nil, false, fmt.Errorf("template: empty expression")
 	}
 
 	namespace := parts[0]
@@ -209,19 +246,17 @@ func (e *Engine) evalExpr(expr string) (string, bool, error) {
 	case "facts":
 		root = mapToIface(e.facts)
 	default:
-		// Unknown namespace — return empty string (not an error).
-		return "", false, nil
+		return nil, false, nil
 	}
 
 	val, err := dotLookup(root, rest)
 	if err != nil {
 		if namespace == "vars" {
-			return "", false, fmt.Errorf("template: undefined variable %q", expr)
+			return nil, false, fmt.Errorf("template: undefined variable %q", expr)
 		}
-		// Facts/target/env may legitimately be unavailable during planning.
-		return "", false, nil
+		return nil, false, nil
 	}
-	return fmt.Sprintf("%v", val), true, nil
+	return val, true, nil
 }
 
 // dotLookup traverses a nested map structure following the given path segments.
