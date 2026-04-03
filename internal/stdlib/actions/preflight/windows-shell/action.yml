@@ -34,7 +34,7 @@ inputs:
     description: Replace Start pins with an empty pinned list
   start_pins_json:
     type: string
-    required: false
+    default: ""
     description: JSON content for the ConfigureStartPins policy value
 
 tasks:
@@ -166,13 +166,10 @@ tasks:
         }
 
   - name: Clear desktop shortcuts
+    when: "{{ vars.clear_desktop_shortcuts }}"
     powershell:
       check_script: |
         $scopeBias = '{{ vars.scope_bias }}'
-        $clearShortcuts = [System.Convert]::ToBoolean('{{ vars.clear_desktop_shortcuts }}')
-        if (-not $clearShortcuts) {
-          return $false
-        }
 
         function Get-DesktopPaths() {
           $paths = @()
@@ -200,10 +197,6 @@ tasks:
         return $false
       script: |
         $scopeBias = '{{ vars.scope_bias }}'
-        $clearShortcuts = [System.Convert]::ToBoolean('{{ vars.clear_desktop_shortcuts }}')
-        if (-not $clearShortcuts) {
-          exit 0
-        }
 
         function Get-DesktopPaths() {
           $paths = @()

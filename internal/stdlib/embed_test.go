@@ -20,8 +20,6 @@ func TestEmbeddedActions(t *testing.T) {
 func TestAllStdlibActions(t *testing.T) {
 	for _, name := range []string{
 		"autologin",
-		"computer-name",
-		"timezone",
 		"windows-apps",
 		"windows-input",
 		"windows-machine",

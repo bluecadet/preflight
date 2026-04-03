@@ -64,15 +64,20 @@ That is why `plan` may still show `{{ facts... }}` placeholders while `check` an
 
 ## `when:` Conditions
 
-`when:` uses the same template engine, then parses the rendered result as a boolean.
+`when:` uses the same template engine, then interprets the rendered result with truthy semantics:
 
-Accepted values include:
+- **False** (task skipped): empty string, `false`, `0`, `no`
+- **True** (task runs): anything else
 
-- `true` and `false`
-- `1` and `0`
-- `yes` and `no`
+This means `when:` works naturally for both boolean inputs and optional string inputs:
 
-If the rendered value is not a parseable boolean, the task errors.
+```yaml
+# gate on a boolean input
+when: "{{ vars.winget_enabled }}"
+
+# gate on an optional string — skips if computer_name was not provided
+when: "{{ vars.computer_name }}"
+```
 
 Preflight does not currently support comparison or arithmetic expressions such as `{{ vars.count > 1 }}` in `when:`. Action authors should pass a boolean input or compute the decision inside a module-specific script.
 

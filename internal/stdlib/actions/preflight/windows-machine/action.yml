@@ -6,11 +6,11 @@ author: preflight
 inputs:
   computer_name:
     type: string
-    required: false
+    default: ""
     description: Desired Windows computer name
   timezone:
     type: string
-    required: false
+    default: ""
     description: Windows time zone ID
   enable_long_paths:
     type: bool
@@ -22,15 +22,22 @@ inputs:
     description: PowerShell execution policy for LocalMachine scope
 
 tasks:
-  - name: Configure computer name
-    uses: preflight/computer-name
-    with:
-      name: "{{ vars.computer_name }}"
+  - name: Set Windows computer name
+    when: "{{ vars.computer_name }}"
+    powershell:
+      check_script: |
+        return ($env:COMPUTERNAME -ine '{{ vars.computer_name }}')
+      script: |
+        Rename-Computer -NewName '{{ vars.computer_name }}' -Force
 
-  - name: Configure time zone
-    uses: preflight/timezone
-    with:
-      timezone: "{{ vars.timezone }}"
+  - name: Set Windows time zone
+    when: "{{ vars.timezone }}"
+    powershell:
+      check_script: |
+        return ((Get-TimeZone).Id -ne '{{ vars.timezone }}')
+      script: |
+        Set-TimeZone -Id '{{ vars.timezone }}'
+
 
   - name: Configure Windows long paths
     powershell:
