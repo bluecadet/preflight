@@ -26,13 +26,24 @@ var (
 	tsSkipped = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	tsMuted   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	tsBold    = lipgloss.NewStyle().Bold(true)
-	tsHost    = lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true)
 	tsAction  = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
 	tsSpin    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
 	tsDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
 	tsOutput  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
 	tsElapsed = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 )
+
+// tsHostPalette is the ordered set of colors cycled through for host labels.
+var tsHostPalette = []lipgloss.Style{
+	lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true), // steel blue
+	lipgloss.NewStyle().Foreground(lipgloss.Color("150")).Bold(true), // sage green
+	lipgloss.NewStyle().Foreground(lipgloss.Color("179")).Bold(true), // gold
+	lipgloss.NewStyle().Foreground(lipgloss.Color("183")).Bold(true), // lavender
+	lipgloss.NewStyle().Foreground(lipgloss.Color("73")).Bold(true),  // teal
+	lipgloss.NewStyle().Foreground(lipgloss.Color("174")).Bold(true), // salmon
+	lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true), // cornflower
+	lipgloss.NewStyle().Foreground(lipgloss.Color("222")).Bold(true), // wheat
+}
 
 // tsIcon returns a colored glyph representing a completed task status.
 func tsIcon(status string) string {
@@ -88,9 +99,10 @@ type tuiModel struct {
 	playStarted bool
 
 	// running tasks, per host
-	hosts     map[string]map[string]*activeTask // host → taskID → task
-	hostOrder []string                          // hosts seen, in order
-	taskOrder map[string][]string               // host → ordered task IDs
+	hosts      map[string]map[string]*activeTask // host → taskID → task
+	hostOrder  []string                          // hosts seen, in order
+	taskOrder  map[string][]string               // host → ordered task IDs
+	hostColors map[string]lipgloss.Style         // host → assigned palette color
 
 	// committed task counts
 	okCount      int
@@ -119,12 +131,13 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		spinner.WithStyle(tsSpin),
 	)
 	return tuiModel{
-		spinner:   s,
-		events:    events,
-		verbose:   opts.Verbose,
-		width:     80,
-		hosts:     make(map[string]map[string]*activeTask),
-		taskOrder: make(map[string][]string),
+		spinner:    s,
+		events:     events,
+		verbose:    opts.Verbose,
+		width:      80,
+		hosts:      make(map[string]map[string]*activeTask),
+		taskOrder:  make(map[string][]string),
+		hostColors: make(map[string]lipgloss.Style),
 	}
 }
 
@@ -185,6 +198,7 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		if m.hosts[e.Target] == nil {
 			m.hosts[e.Target] = make(map[string]*activeTask)
 			m.hostOrder = append(m.hostOrder, e.Target)
+			m.hostColors[e.Target] = tsHostPalette[(len(m.hostOrder)-1)%len(tsHostPalette)]
 		}
 		at := &activeTask{
 			id:         e.TaskID,
@@ -331,7 +345,7 @@ func (m tuiModel) View() string {
 func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 	elapsed := time.Since(at.startAt)
 	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
-	host := tsHost.Render(at.target)
+	host := m.hostStyle(at.target).Render(at.target)
 	timer := tsElapsed.Render("[" + tsFmtElapsed(elapsed) + "]")
 	pathMax := m.width - lipgloss.Width(spin) - lipgloss.Width(host) - lipgloss.Width(timer) - 10
 	path := tsRenderPath(at.actionPath, at.name, pathMax)
@@ -354,7 +368,7 @@ func (m tuiModel) renderRunning(at *activeTask, dense bool) string {
 // renderCommitted formats a completed task line for permanent scroll history.
 func (m tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) string {
 	icon := tsIcon(e.Status)
-	host := tsHost.Render(e.Target)
+	host := m.hostStyle(e.Target).Render(e.Target)
 
 	var right string
 	switch {
@@ -416,7 +430,7 @@ func (m tuiModel) renderFinalSummary() string {
 			tsStat(tsFailed, "✗", r.failed),
 			tsStat(tsSkipped, "–", r.skipped),
 		}, "  ")
-		b.WriteString(tsRow(hostIcon, tsHost.Render(r.target), stats) + "\n")
+		b.WriteString(tsRow(hostIcon, m.hostStyle(r.target).Render(r.target), stats) + "\n")
 
 		// Indent failed task names under the host line.
 		for _, ft := range failedByHost[r.target] {
@@ -477,6 +491,14 @@ func (m tuiModel) total() int {
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+
+// hostStyle returns the palette color assigned to target, falling back to the first palette entry.
+func (m tuiModel) hostStyle(target string) lipgloss.Style {
+	if s, ok := m.hostColors[target]; ok {
+		return s
+	}
+	return tsHostPalette[0]
+}
 
 // tsRenderPath formats a display path for a task, collapsing middle segments if
 // the rendered width exceeds maxWidth. Pass maxWidth <= 0 for no limit.
