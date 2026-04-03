@@ -127,7 +127,7 @@
         "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
         "user": { "$ref": "#/$defs/moduleUser" },
         "winget_package": { "$ref": "#/$defs/moduleWingetPackage" },
-        "appx_package": { "$ref": "#/$defs/moduleAppxPackage" },
+        "remove_appx_packages": { "$ref": "#/$defs/moduleRemoveAppxPackages" },
         "power_plan": { "$ref": "#/$defs/modulePowerPlan" },
         "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
         "environment": { "$ref": "#/$defs/moduleEnvironment" },
@@ -262,9 +262,24 @@
       "description": "Manage installed packages (MSI/EXE)",
       "additionalProperties": false,
       "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of packages to manage",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["product_id"],
+            "properties": {
+              "product_id": { "type": "string", "description": "MSI product GUID for idempotency check" },
+              "source": { "type": "string", "description": "Path or UNC path to MSI or EXE installer" },
+              "args": { "type": "array", "items": { "type": "string" } },
+              "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+            }
+          }
+        },
         "source": {
           "type": "string",
-          "description": "Path or UNC path to MSI or EXE installer"
+          "description": "Legacy: path or UNC path to MSI or EXE installer (use 'packages' instead)"
         },
         "args": {
           "type": "array",
@@ -273,7 +288,7 @@
         },
         "product_id": {
           "type": "string",
-          "description": "MSI product GUID for idempotency check"
+          "description": "Legacy: MSI product GUID for idempotency check (use 'packages' instead)"
         },
         "ensure": {
           "type": "string",
@@ -405,15 +420,36 @@
       "description": "Manage packages through Windows Package Manager",
       "additionalProperties": false,
       "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of packages to manage",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+              "id": { "type": "string" },
+              "version": { "type": "string" },
+              "source": { "type": "string" },
+              "scope": {
+                "type": "string",
+                "enum": ["machine", "user"],
+                "default": "machine"
+              },
+              "ensure": {
+                "type": "string",
+                "enum": ["present", "absent"],
+                "default": "present"
+              }
+            }
+          }
+        },
         "id": {
-          "type": "string"
+          "type": "string",
+          "description": "Legacy: single package identifier (use 'packages' instead)"
         },
-        "version": {
-          "type": "string"
-        },
-        "source": {
-          "type": "string"
-        },
+        "version": { "type": "string" },
+        "source": { "type": "string" },
         "scope": {
           "type": "string",
           "enum": ["machine", "user"],
@@ -426,13 +462,32 @@
         }
       }
     },
-    "moduleAppxPackage": {
+    "moduleRemoveAppxPackages": {
       "type": "object",
       "description": "Remove built-in Windows Store-style apps",
       "additionalProperties": false,
       "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of packages to remove",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string" },
+              "scope": {
+                "type": "string",
+                "enum": ["current_user", "all_users", "provisioned", "both"],
+                "default": "both"
+              },
+              "ensure": { "type": "string", "enum": ["absent"], "default": "absent" }
+            }
+          }
+        },
         "name": {
-          "type": "string"
+          "type": "string",
+          "description": "Legacy: package name or wildcard (use 'packages' instead)"
         },
         "scope": {
           "type": "string",

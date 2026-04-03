@@ -13,7 +13,7 @@ func addWindowsModules(reg target.ModuleRegistry) {
 	reg["scheduled_task"] = &ScheduledTaskModule{}
 	reg["user"] = &UserModule{}
 	reg["winget_package"] = &WingetPackageModule{}
-	reg["appx_package"] = &AppxPackageModule{}
+	reg["remove_appx_packages"] = &RemoveAppxPackagesModule{}
 	reg["power_plan"] = &PowerPlanModule{}
 	reg["windows_feature"] = &WindowsFeatureModule{}
 	reg["firewall_rule"] = &FirewallRuleModule{}

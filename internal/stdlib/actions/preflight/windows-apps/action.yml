@@ -1,33 +1,9 @@
 name: preflight/windows-apps
 version: "1.0.0"
-description: Install required apps and remove common built-in Windows apps
+description: Remove common built-in Windows apps
 author: preflight
 
 inputs:
-  winget_enabled:
-    type: bool
-    default: false
-    description: Whether to manage a winget package
-  winget_package_id:
-    type: string
-    required: false
-    description: Winget package identifier
-  winget_package_version:
-    type: string
-    required: false
-    description: Optional winget package version
-  winget_package_source:
-    type: string
-    required: false
-    description: Optional winget source name
-  winget_package_scope:
-    type: string
-    default: machine
-    description: Winget install scope
-  winget_package_ensure:
-    type: string
-    default: present
-    description: Whether the winget package should be present or absent
   remove_xbox:
     type: bool
     default: true
@@ -50,46 +26,37 @@ inputs:
     description: Remove consumer communication apps such as Teams and Skype
 
 tasks:
-  - name: Manage winget package
-    when: "{{ vars.winget_enabled }}"
-    winget_package:
-      id: "{{ vars.winget_package_id }}"
-      version: "{{ vars.winget_package_version }}"
-      source: "{{ vars.winget_package_source }}"
-      scope: "{{ vars.winget_package_scope }}"
-      ensure: "{{ vars.winget_package_ensure }}"
-
   - name: Remove Xbox apps
     when: "{{ vars.remove_xbox }}"
-    appx_package:
+    remove_appx_packages:
       name: Microsoft.Xbox*
       scope: both
       ensure: absent
 
   - name: Remove Cortana
     when: "{{ vars.remove_cortana }}"
-    appx_package:
+    remove_appx_packages:
       name: Microsoft.549981C3F5F10
       scope: both
       ensure: absent
 
   - name: Remove Microsoft News
     when: "{{ vars.remove_news }}"
-    appx_package:
+    remove_appx_packages:
       name: Microsoft.BingNews
       scope: both
       ensure: absent
 
   - name: Remove Microsoft Weather
     when: "{{ vars.remove_weather }}"
-    appx_package:
+    remove_appx_packages:
       name: Microsoft.BingWeather
       scope: both
       ensure: absent
 
   - name: Remove consumer communication apps
     when: "{{ vars.remove_communications_apps }}"
-    appx_package:
+    remove_appx_packages:
       name: MicrosoftTeams*
       scope: both
       ensure: absent

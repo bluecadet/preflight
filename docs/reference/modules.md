@@ -45,7 +45,7 @@ or as explicit modules:
 | `service` | Windows only | Yes | No |
 | `package` | Windows only | Yes | No |
 | `winget_package` | Windows only | Yes | No |
-| `appx_package` | Windows only | Yes | No |
+| `remove_appx_packages` | Windows only | Yes | No |
 | `shortcut` | Windows only | Yes | No |
 | `scheduled_task` | Windows only | Yes | No |
 | `user` | Windows only | Yes | No |
@@ -114,14 +114,29 @@ Manage directories.
 
 ### `package`
 
-Manage local MSI or EXE installation on Windows.
+Manage local MSI or EXE installations on Windows.
+
+```yaml
+- name: Install packages
+  package:
+    packages:
+      - product_id: "{D5E71B88-9A6C-4B6B-89C0-123456789ABC}"
+        source: "C:\\Installers\\app.msi"
+      - product_id: "{AAAA-...}"
+        source: "C:\\Installers\\tool.exe"
+        args: ["/silent", "/norestart"]
+      - product_id: "{OLD-GUID}"
+        ensure: absent
+```
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `source` | string | MSI or EXE installer path |
+| `product_id` | string (required) | MSI product GUID used for idempotency |
+| `source` | string | MSI or EXE installer path (required when `ensure=present`) |
 | `args` | string[] | Extra installer arguments |
-| `product_id` | string | MSI product GUID used for idempotency |
-| `ensure` | `present` or `absent` | Desired state |
+| `ensure` | `present` or `absent` | Desired state (default: `present`) |
+
+The legacy single-package form (`product_id` at the top level) is still accepted.
 
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
 
@@ -129,25 +144,58 @@ Use `package` when you already have a staged or local installer path. Use `winge
 
 Manage packages through `winget`.
 
+```yaml
+- name: Install packages
+  winget_package:
+    packages:
+      - id: Microsoft.VisualStudioCode
+        version: "1.85.0"
+      - id: Git.Git
+        scope: machine
+      - id: OldApp
+        ensure: absent
+```
+
+The `packages` list is the primary interface. Each entry supports:
+
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `id` | string | `winget` package identifier |
-| `version` | string | Optional package version |
-| `source` | string | Optional `winget` source name |
-| `scope` | `machine` or `user` | Install scope |
-| `ensure` | `present` or `absent` | Desired state |
+| `id` | string (required) | `winget` package identifier |
+| `version` | string | Pin to an exact version |
+| `source` | string | `winget` source name |
+| `scope` | `machine` or `user` | Install scope (default: `machine`) |
+| `ensure` | `present` or `absent` | Desired state (default: `present`) |
 
-### `appx_package`
+**Legacy single-package form** — `id` at the top level is still accepted for backward compatibility and behaves identically to a one-entry `packages` list:
+
+```yaml
+winget_package:
+  id: Microsoft.VisualStudioCode
+  version: "1.85.0"
+```
+
+### `remove_appx_packages`
 
 Remove built-in Windows Store-style packages.
 
+```yaml
+- name: Remove bloatware
+  remove_appx_packages:
+    packages:
+      - name: Microsoft.Xbox*
+        scope: both
+      - name: Microsoft.BingNews
+      - name: Microsoft.549981C3F5F10
+        scope: provisioned
+```
+
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `name` | string | Package name or wildcard pattern |
-| `scope` | `current_user`, `all_users`, `provisioned`, or `both` | Removal scope |
+| `name` | string (required) | Package name or wildcard pattern |
+| `scope` | `current_user`, `all_users`, `provisioned`, or `both` | Removal scope (default: `both`) |
 | `ensure` | `absent` | Desired state |
 
-`appx_package` currently supports removal only.
+`remove_appx_packages` supports removal only. The legacy single-package form (`name` at the top level) is still accepted.
 
 ### `shortcut`
 

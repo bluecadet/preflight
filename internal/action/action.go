@@ -36,7 +36,7 @@ var inlineModuleFields = []struct {
 	{"scheduled_task", func(t *Task) map[string]any { return t.ScheduledTask }},
 	{"user", func(t *Task) map[string]any { return t.User }},
 	{"winget_package", func(t *Task) map[string]any { return t.WingetPackage }},
-	{"appx_package", func(t *Task) map[string]any { return t.AppxPackage }},
+	{"remove_appx_packages", func(t *Task) map[string]any { return t.RemoveAppxPackages }},
 	{"power_plan", func(t *Task) map[string]any { return t.PowerPlan }},
 	{"windows_feature", func(t *Task) map[string]any { return t.WindowsFeature }},
 	{"environment", func(t *Task) map[string]any { return t.Environment }},
@@ -71,7 +71,7 @@ type Task struct {
 	ScheduledTask  map[string]any `yaml:"scheduled_task"`
 	User           map[string]any `yaml:"user"`
 	WingetPackage  map[string]any `yaml:"winget_package"`
-	AppxPackage    map[string]any `yaml:"appx_package"`
+	RemoveAppxPackages map[string]any `yaml:"remove_appx_packages"`
 	PowerPlan      map[string]any `yaml:"power_plan"`
 	WindowsFeature map[string]any `yaml:"windows_feature"`
 	Environment    map[string]any `yaml:"environment"`

@@ -2,31 +2,25 @@
 
 package module
 
-import "context"
+import (
+	"context"
+
+	"github.com/bluecadet/preflight/internal/winutil"
+)
 
 type WingetPackageModule struct{}
 
 func (m *WingetPackageModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "id"); err != nil {
+	normalized, err := winutil.NormalizeWingetParams(params)
+	if err != nil {
 		return false, err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, err
-	}
-
-	return runWindowsPowerShellBool(ctx, params, `
-$id = [string]$params.id
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$source = if ($params.source) { [string]$params.source } else { '' }
-$version = if ($params.version) { [string]$params.version } else { '' }
+	return runWindowsPowerShellBool(ctx, normalized, `
+$pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
 try {
-  $args = @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
-  if ($source) {
-    $args += @('--source', $source)
-  }
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
   if ($process.ExitCode -ne 0) {
     throw "winget export failed with exit code $($process.ExitCode)"
   }
@@ -35,63 +29,80 @@ try {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-$packages = @()
+$installedMap = @{}
 foreach ($src in @($doc.Sources)) {
   foreach ($pkg in @($src.Packages)) {
-    $packages += $pkg
+    $installedMap[$pkg.PackageIdentifier] = $pkg
   }
 }
-$match = $packages | Where-Object { $_.PackageIdentifier -eq $id } | Select-Object -First 1
-$installed = $null -ne $match
-if ($ensure -eq 'absent') {
-  Write-Output $installed
-  exit 0
-}
-if (-not $installed) {
-  Write-Output 'true'
-  exit 0
-}
-if ($version -and [string]$match.Version -ne $version) {
-  Write-Output 'true'
-  exit 0
+
+foreach ($spec in $pkgs) {
+  $id = [string]$spec.id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $version = if ($spec.version) { [string]$spec.version } else { '' }
+  $match = $installedMap[$id]
+  $isInstalled = $null -ne $match
+  if ($ensure -eq 'absent') {
+    if ($isInstalled) { Write-Output 'true'; exit 0 }
+  } else {
+    if (-not $isInstalled) { Write-Output 'true'; exit 0 }
+    if ($version -and [string]$match.Version -ne $version) { Write-Output 'true'; exit 0 }
+  }
 }
 Write-Output 'false'
 `)
 }
 
 func (m *WingetPackageModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "id"); err != nil {
+	normalized, err := winutil.NormalizeWingetParams(params)
+	if err != nil {
 		return err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return err
-	}
-
-	_, err := runWindowsPowerShellWithParams(ctx, params, `
-$id = [string]$params.id
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$source = if ($params.source) { [string]$params.source } else { '' }
-$version = if ($params.version) { [string]$params.version } else { '' }
-$scope = if ($params.scope) { [string]$params.scope } else { 'machine' }
+	_, err = runWindowsPowerShellWithParams(ctx, normalized, `
+$pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
-
-$args = @()
-if ($ensure -eq 'absent') {
-  $args = @('uninstall', '--id', $id, '--exact', '--disable-interactivity', '--accept-source-agreements')
-} else {
-  $args = @('install', '--id', $id, '--exact', '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements', '--scope', $scope)
-}
-if ($version) {
-  $args += @('--version', $version)
-}
-if ($source) {
-  $args += @('--source', $source)
+$tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
+try {
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
+  if ($process.ExitCode -ne 0) {
+    throw "winget export failed with exit code $($process.ExitCode)"
+  }
+  $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
+} finally {
+  Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 
-$process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
-if ($process.ExitCode -ne 0) {
-  throw "winget command failed with exit code $($process.ExitCode)"
+$installedMap = @{}
+foreach ($src in @($doc.Sources)) {
+  foreach ($pkg in @($src.Packages)) {
+    $installedMap[$pkg.PackageIdentifier] = $pkg
+  }
+}
+
+foreach ($spec in $pkgs) {
+  $id = [string]$spec.id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $version = if ($spec.version) { [string]$spec.version } else { '' }
+  $source = if ($spec.source) { [string]$spec.source } else { '' }
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'machine' }
+  $match = $installedMap[$id]
+  $isInstalled = $null -ne $match
+  if ($ensure -eq 'absent' -and -not $isInstalled) { continue }
+  if ($ensure -ne 'absent' -and $isInstalled -and (-not $version -or [string]$match.Version -eq $version)) { continue }
+  $args = @()
+  if ($ensure -eq 'absent') {
+    $args = @('uninstall', '--id', $id, '--exact', '--disable-interactivity', '--accept-source-agreements')
+  } else {
+    $args = @('install', '--id', $id, '--exact', '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements', '--scope', $scope)
+  }
+  if ($version) { $args += @('--version', $version) }
+  if ($source) { $args += @('--source', $source) }
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
+  if ($process.ExitCode -ne 0) {
+    throw "winget command failed for '$id' with exit code $($process.ExitCode)"
+  }
 }
 `)
 	return err
 }
+

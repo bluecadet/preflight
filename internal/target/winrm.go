@@ -289,9 +289,9 @@ func (t *WinRMTarget) checkModule(ctx context.Context, module string, params map
 	case "user":
 		return t.checkBooleanScript(ctx, params, userCheckScript)
 	case "winget_package":
-		return t.checkBooleanScript(ctx, params, wingetPackageCheckScript)
-	case "appx_package":
-		return t.checkBooleanScript(ctx, params, appxPackageCheckScript)
+		return t.checkWingetPackage(ctx, params)
+	case "remove_appx_packages":
+		return t.checkRemoveAppxPackages(ctx, params)
 	case "power_plan":
 		return t.checkBooleanScript(ctx, params, powerPlanCheckScript)
 	case "windows_feature":
@@ -332,9 +332,9 @@ func (t *WinRMTarget) applyModule(ctx context.Context, module string, params map
 	case "user":
 		return t.runScript(ctx, params, userApplyScript)
 	case "winget_package":
-		return t.runScript(ctx, params, wingetPackageApplyScript)
-	case "appx_package":
-		return t.runScript(ctx, params, appxPackageApplyScript)
+		return t.applyWingetPackage(ctx, params)
+	case "remove_appx_packages":
+		return t.applyRemoveAppxPackages(ctx, params)
 	case "power_plan":
 		return t.runScript(ctx, params, powerPlanApplyScript)
 	case "windows_feature":
@@ -757,18 +757,64 @@ func (t *WinRMTarget) checkBooleanScript(ctx context.Context, params map[string]
 	return value, "", err
 }
 
+func (t *WinRMTarget) checkWingetPackage(ctx context.Context, params map[string]any) (bool, string, error) {
+	normalized, err := winutil.NormalizeWingetParams(params)
+	if err != nil {
+		return false, "", err
+	}
+	return t.checkBooleanScript(ctx, normalized, wingetPackageCheckScript)
+}
+
+func (t *WinRMTarget) applyWingetPackage(ctx context.Context, params map[string]any) (string, error) {
+	normalized, err := winutil.NormalizeWingetParams(params)
+	if err != nil {
+		return "", err
+	}
+	return t.runScript(ctx, normalized, wingetPackageApplyScript)
+}
+
+func (t *WinRMTarget) checkRemoveAppxPackages(ctx context.Context, params map[string]any) (bool, string, error) {
+	normalized, err := winutil.NormalizeRemoveAppxParams(params)
+	if err != nil {
+		return false, "", err
+	}
+	return t.checkBooleanScript(ctx, normalized, removeAppxPackagesCheckScript)
+}
+
+func (t *WinRMTarget) applyRemoveAppxPackages(ctx context.Context, params map[string]any) (string, error) {
+	normalized, err := winutil.NormalizeRemoveAppxParams(params)
+	if err != nil {
+		return "", err
+	}
+	return t.runScript(ctx, normalized, removeAppxPackagesApplyScript)
+}
+
 func (t *WinRMTarget) applyPackage(ctx context.Context, params map[string]any) (string, error) {
-	source, _ := params["source"].(string)
-	if source != "" {
+	normalized, err := winutil.NormalizePackageParams(params)
+	if err != nil {
+		return "", err
+	}
+	// Copy any local installer files to the remote machine.
+	list := normalized["packages"].([]any)
+	for i, item := range list {
+		spec := item.(map[string]any)
+		source, _ := spec["source"].(string)
+		ensure, _ := spec["ensure"].(string)
+		if source == "" || ensure == "absent" {
+			continue
+		}
 		tempName := filepath.Base(source)
 		remotePath := filepath.Join(os.TempDir(), "preflight", tempName)
 		if err := t.CopyFile(ctx, source, remotePath); err != nil {
 			return "", err
 		}
-		params = cloneParams(params)
-		params["source"] = remotePath
+		newSpec := make(map[string]any, len(spec))
+		maps.Copy(newSpec, spec)
+		newSpec["source"] = remotePath
+		list[i] = newSpec
 	}
-	return t.runScript(ctx, params, packageApplyScript)
+	normalized["packages"] = list
+	return t.runScript(ctx, normalized, packageApplyScript)
 }
 
 func (t *WinRMTarget) checkRegistry(ctx context.Context, params map[string]any) (bool, string, error) {
@@ -1074,41 +1120,59 @@ if ($desiredState -eq 'stopped') {
 `
 
 const packageCheckScript = `
-$productId = if ($params.product_id) { [string]$params.product_id } else { '' }
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-if (-not $productId) {
-  Write-Output 'true'
-  exit 0
+$pkgs = @($params.packages)
+$entries = Get-ItemProperty -Path @(
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+) -ErrorAction SilentlyContinue
+foreach ($spec in $pkgs) {
+  $productId = [string]$spec.product_id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $installed = $null -ne ($entries | Where-Object {
+    $_.PSChildName -eq $productId -or $_.ProductID -eq $productId
+  } | Select-Object -First 1)
+  if ($ensure -eq 'absent' -and $installed) { Write-Output 'true'; exit 0 }
+  if ($ensure -ne 'absent' -and -not $installed) { Write-Output 'true'; exit 0 }
 }
-$installed = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*, HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\* -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -eq $productId }
-if ($ensure -eq 'absent') {
-  Write-Output ([bool]($installed))
-  exit 0
-}
-Write-Output ([bool](-not $installed))
+Write-Output 'false'
 `
 
 const packageApplyScript = `
-$source = [string]$params.source
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$args = @()
-if ($params.args) {
-  foreach ($item in $params.args) {
-    $args += [string]$item
+$pkgs = @($params.packages)
+$entries = Get-ItemProperty -Path @(
+  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'
+) -ErrorAction SilentlyContinue
+foreach ($spec in $pkgs) {
+  $productId = [string]$spec.product_id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $installed = $null -ne ($entries | Where-Object {
+    $_.PSChildName -eq $productId -or $_.ProductID -eq $productId
+  } | Select-Object -First 1)
+  if ($ensure -eq 'absent' -and -not $installed) { continue }
+  if ($ensure -ne 'absent' -and $installed) { continue }
+  $argsList = @()
+  if ($spec.args) {
+    foreach ($arg in $spec.args) { $argsList += [string]$arg }
   }
-}
-if ($ensure -eq 'absent') {
-  if ($params.product_id) {
-    Start-Process msiexec.exe -ArgumentList @('/x', [string]$params.product_id, '/qn') -Wait -NoNewWindow
+  if ($ensure -eq 'absent') {
+    $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList @('/x', $productId, '/qn', '/norestart') -Wait -PassThru
+    if ($process.ExitCode -ne 0) {
+      throw "package uninstall failed for '$productId' with exit code $($process.ExitCode)"
+    }
+  } else {
+    $source = [string]$spec.source
+    if ($source.ToLower().EndsWith('.msi')) {
+      $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList (@('/i', $source, '/qn', '/norestart') + $argsList) -Wait -PassThru
+    } else {
+      $process = Start-Process -FilePath $source -ArgumentList $argsList -Wait -PassThru
+    }
+    if ($process.ExitCode -ne 0) {
+      throw "package install failed for '$productId' with exit code $($process.ExitCode)"
+    }
   }
-  exit 0
-}
-if (-not $source) { throw "package source is required" }
-$extension = [IO.Path]::GetExtension($source).ToLowerInvariant()
-if ($extension -eq '.msi') {
-  Start-Process msiexec.exe -ArgumentList (@('/i', $source, '/qn') + $args) -Wait -NoNewWindow
-} else {
-  Start-Process -FilePath $source -ArgumentList $args -Wait -NoNewWindow
 }
 `
 
@@ -1229,18 +1293,11 @@ if ($null -ne $params.enabled -and -not [bool]$params.enabled) {
 `
 
 const wingetPackageCheckScript = `
-$id = [string]$params.id
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$source = if ($params.source) { [string]$params.source } else { '' }
-$version = if ($params.version) { [string]$params.version } else { '' }
+$pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
 try {
-  $args = @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
-  if ($source) {
-    $args += @('--source', $source)
-  }
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
   if ($process.ExitCode -ne 0) {
     throw "winget export failed with exit code $($process.ExitCode)"
   }
@@ -1248,105 +1305,122 @@ try {
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
-$packages = @()
+$installedMap = @{}
 foreach ($src in @($doc.Sources)) {
   foreach ($pkg in @($src.Packages)) {
-    $packages += $pkg
+    $installedMap[$pkg.PackageIdentifier] = $pkg
   }
 }
-$match = $packages | Where-Object { $_.PackageIdentifier -eq $id } | Select-Object -First 1
-$installed = $null -ne $match
-if ($ensure -eq 'absent') {
-  Write-Output $installed
-  exit 0
-}
-if (-not $installed) {
-  Write-Output 'true'
-  exit 0
-}
-if ($version -and [string]$match.Version -ne $version) {
-  Write-Output 'true'
-  exit 0
+foreach ($spec in $pkgs) {
+  $id = [string]$spec.id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $version = if ($spec.version) { [string]$spec.version } else { '' }
+  $match = $installedMap[$id]
+  $isInstalled = $null -ne $match
+  if ($ensure -eq 'absent') {
+    if ($isInstalled) { Write-Output 'true'; exit 0 }
+  } else {
+    if (-not $isInstalled) { Write-Output 'true'; exit 0 }
+    if ($version -and [string]$match.Version -ne $version) { Write-Output 'true'; exit 0 }
+  }
 }
 Write-Output 'false'
 `
 
 const wingetPackageApplyScript = `
-$id = [string]$params.id
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$source = if ($params.source) { [string]$params.source } else { '' }
-$version = if ($params.version) { [string]$params.version } else { '' }
-$scope = if ($params.scope) { [string]$params.scope } else { 'machine' }
+$pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
-$args = @()
-if ($ensure -eq 'absent') {
-  $args = @('uninstall', '--id', $id, '--exact', '--disable-interactivity', '--accept-source-agreements')
-} else {
-  $args = @('install', '--id', $id, '--exact', '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements', '--scope', $scope)
-}
-if ($version) {
-  $args += @('--version', $version)
-}
-if ($source) {
-  $args += @('--source', $source)
-}
-$process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
-if ($process.ExitCode -ne 0) {
-  throw "winget command failed with exit code $($process.ExitCode)"
-}
-`
-
-const appxPackageCheckScript = `
-$name = [string]$params.name
-$scope = if ($params.scope) { [string]$params.scope } else { 'both' }
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'absent' }
-if ($ensure -ne 'absent') {
-  throw "appx_package: only ensure=absent is supported"
-}
-$hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-$installed = @()
-switch ($scope) {
-  'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
-  'all_users' { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-  'provisioned' { $installed = @() }
-  'both' { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-  default { throw "appx_package: unsupported scope $scope" }
-}
-$provisioned = @()
-if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-  $provisioned = @(Get-AppxProvisionedPackage -Online | Where-Object {
-    if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
-  })
-}
-Write-Output ([bool](($installed.Count + $provisioned.Count) -gt 0))
-`
-
-const appxPackageApplyScript = `
-$name = [string]$params.name
-$scope = if ($params.scope) { [string]$params.scope } else { 'both' }
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'absent' }
-if ($ensure -ne 'absent') {
-  throw "appx_package: only ensure=absent is supported"
-}
-if ($scope -eq 'current_user') {
-  Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-    Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+$tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
+try {
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
+  if ($process.ExitCode -ne 0) {
+    throw "winget export failed with exit code $($process.ExitCode)"
   }
-} elseif ($scope -eq 'all_users' -or $scope -eq 'both') {
-  Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-      Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop
-    } catch {
+  $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
+} finally {
+  Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+}
+$installedMap = @{}
+foreach ($src in @($doc.Sources)) {
+  foreach ($pkg in @($src.Packages)) {
+    $installedMap[$pkg.PackageIdentifier] = $pkg
+  }
+}
+foreach ($spec in $pkgs) {
+  $id = [string]$spec.id
+  $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+  $version = if ($spec.version) { [string]$spec.version } else { '' }
+  $source = if ($spec.source) { [string]$spec.source } else { '' }
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'machine' }
+  $match = $installedMap[$id]
+  $isInstalled = $null -ne $match
+  if ($ensure -eq 'absent' -and -not $isInstalled) { continue }
+  if ($ensure -ne 'absent' -and $isInstalled -and (-not $version -or [string]$match.Version -eq $version)) { continue }
+  $args = @()
+  if ($ensure -eq 'absent') {
+    $args = @('uninstall', '--id', $id, '--exact', '--disable-interactivity', '--accept-source-agreements')
+  } else {
+    $args = @('install', '--id', $id, '--exact', '--silent', '--disable-interactivity', '--accept-package-agreements', '--accept-source-agreements', '--scope', $scope)
+  }
+  if ($version) { $args += @('--version', $version) }
+  if ($source) { $args += @('--source', $source) }
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
+  if ($process.ExitCode -ne 0) {
+    throw "winget command failed for '$id' with exit code $($process.ExitCode)"
+  }
+}
+`
+
+const removeAppxPackagesCheckScript = `
+$pkgs = @($params.packages)
+foreach ($spec in $pkgs) {
+  $name = [string]$spec.name
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
+  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  $installed = @()
+  switch ($scope) {
+    'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
+    'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    'provisioned'  { $installed = @() }
+    'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    default { throw "remove_appx_packages: unsupported scope $scope" }
+  }
+  $provisioned = @()
+  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
+    $provisioned = @(Get-AppxProvisionedPackage -Online | Where-Object {
+      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
+    })
+  }
+  if (($installed.Count + $provisioned.Count) -gt 0) { Write-Output 'true'; exit 0 }
+}
+Write-Output 'false'
+`
+
+const removeAppxPackagesApplyScript = `
+$pkgs = @($params.packages)
+foreach ($spec in $pkgs) {
+  $name = [string]$spec.name
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
+  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  if ($scope -eq 'current_user') {
+    Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
       Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
     }
+  } elseif ($scope -eq 'all_users' -or $scope -eq 'both') {
+    Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+      try {
+        Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop
+      } catch {
+        Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+      }
+    }
   }
-}
-if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-  Get-AppxProvisionedPackage -Online | Where-Object {
-    if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
-  } | ForEach-Object {
-    Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
+  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
+    Get-AppxProvisionedPackage -Online | Where-Object {
+      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
+    } | ForEach-Object {
+      Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
+    }
   }
 }
 `

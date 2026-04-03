@@ -20,7 +20,7 @@ func TestWindowsOnlyModulesUseNonWindowsStubs(t *testing.T) {
 		"scheduled_task",
 		"user",
 		"winget_package",
-		"appx_package",
+		"remove_appx_packages",
 		"power_plan",
 		"windows_feature",
 		"firewall_rule",
