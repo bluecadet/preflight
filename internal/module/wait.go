@@ -53,7 +53,14 @@ func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 	}
 
 	deadline := time.Now().Add(timeout)
+	pollTimer := time.NewTimer(0) // fire immediately for first check
+	defer pollTimer.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-pollTimer.C:
+		}
 		met, err := checkCondition(condition, tgt)
 		if err != nil {
 			return err
@@ -64,11 +71,7 @@ func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("wait: timeout after %s waiting for condition %q on %q", timeoutStr, condition, tgt)
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(5 * time.Second):
-		}
+		pollTimer.Reset(5 * time.Second)
 	}
 }
 
