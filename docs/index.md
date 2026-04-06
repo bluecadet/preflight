@@ -48,6 +48,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 ## Explanation
 
 - [Architecture](./explanation/architecture.md)
+- [Why use Preflight (and when not to)](./explanation/why-preflight.md)
 - [Execution model](./explanation/execution-model.md)
 - [Actions, stdlib, and lockfiles](./explanation/actions-and-lockfiles.md)
 - [Targets, transports, and plugins](./explanation/targets-and-transports.md)

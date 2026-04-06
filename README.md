@@ -110,6 +110,7 @@ The full docs live under [`docs/`](docs/):
 - [CLI reference](docs/reference/cli.md)
 - [Embedded stdlib action reference](docs/reference/stdlib-actions.md)
 - [Built-in module reference](docs/reference/modules.md)
+- [Why use Preflight (and when not to)](docs/explanation/why-preflight.md)
 - [Architecture](docs/explanation/architecture.md)
 
 ## Current Scope

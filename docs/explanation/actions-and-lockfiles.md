@@ -4,7 +4,7 @@ Actions are where Preflight stops being just a collection of modules and becomes
 
 ## Why Actions Exist
 
-Modules are intentionally small. They are the primitive operations. Actions sit one level above them so teams can:
+Modules are intentionally small. They are the primitive operations. Actions sit one level above them so operators can:
 
 - package repeatable task sequences
 - give those sequences named inputs
