@@ -17,6 +17,7 @@ This command is equivalent to: preflight apply --check <playbook>`,
 }
 
 func init() {
+	checkCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(checkCmd)
 }
 

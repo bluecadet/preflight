@@ -12,6 +12,7 @@ var stageCmd = &cobra.Command{
 func init() {
 	stageCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")
 	stageCmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "allow staging bundles that contain plaintext secrets")
+	stageCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(stageCmd)
 }
 

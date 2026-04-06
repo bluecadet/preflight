@@ -44,8 +44,8 @@ func init() {
 	rootCmd.PersistentFlags().Bool("check", false, "dry-run mode: check what would change without applying")
 	rootCmd.PersistentFlags().Bool("diff", false, "show diffs for file changes")
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
-	rootCmd.PersistentFlags().String("output", "text", "output format: text, tui, json, or jsonl")
+	rootCmd.PersistentFlags().String("output", "", "output format: text, tui, json, or jsonl (default: tui when interactive, text otherwise)")
 	rootCmd.PersistentFlags().Int("concurrency", 0, "max number of targets to operate on in parallel (0 = unlimited)")
 	rootCmd.PersistentFlags().String("timeout", "", "overall execution timeout (e.g. 30m, 1h)")
-	rootCmd.PersistentFlags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
+	_ = rootCmd.PersistentFlags().MarkHidden("diff")
 }

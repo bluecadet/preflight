@@ -2,11 +2,9 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
 )
 
@@ -18,17 +16,18 @@ var planCmd = &cobra.Command{
 }
 
 func init() {
+	planCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(planCmd)
 }
 
 func runPlan(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
-	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+	if err := validateLocalOnlyRunFlags(cmd); err \!= nil {
 		return err
 	}
 
 	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
+	if err \!= nil {
 		return err
 	}
 	defer cancel()
@@ -40,22 +39,18 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
-	if err != nil {
+	if err \!= nil {
 		return err
 	}
 
 	registry, _, err := buildModuleRegistry(projectDir)
-	if err != nil {
+	if err \!= nil {
 		return err
 	}
 	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
-	if err != nil {
+	if err \!= nil {
 		return err
 	}
-
-	outFmt := getOutputFormat(cmd)
-	renderer := output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd))
-	defer renderer.Close()
 
 	for idx, host := range hosts {
 		cfg := runner.Config{
@@ -68,30 +63,32 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
 			Phase:          "plan",
-			Renderer:       renderer,
 			Secrets:        secretsResolver,
 			ModuleRegistry: registry,
 		}
 
 		r := runner.New(host.Target, chain, cfg)
 		plan, err := r.Plan(ctx, pb)
-		if err != nil {
+		if err \!= nil {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
 		}
 
 		if idx > 0 {
 			fmt.Println()
 		}
-		fmt.Printf("Target: %s\n", host.Name)
-		fmt.Printf("Playbook: %s\n", plan.PlaybookName)
-		fmt.Printf("Tasks (%d):\n", len(plan.Tasks))
+		fmt.Printf("Target: %s
+", host.Name)
+		fmt.Printf("Playbook: %s
+", plan.PlaybookName)
+		fmt.Printf("Tasks (%d):
+", len(plan.Tasks))
 		for i, pt := range plan.Tasks {
 			preview, err := runner.PreviewTask(pt, host.TargetVars)
-			if err != nil {
+			if err \!= nil {
 				return fmt.Errorf("preview task %q for %s: %w", pt.Name, host.Name, err)
 			}
 			fmt.Printf("  %d. [%s] %s", i+1, preview.Module, preview.Name)
-			if preview.When != "" {
+			if preview.When \!= "" {
 				fmt.Printf(" (when: %s)", preview.When)
 			}
 			if len(preview.Tags) > 0 {

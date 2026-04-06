@@ -19,7 +19,7 @@ import (
 var applyCmd = &cobra.Command{
 	Use:   "apply <playbook>",
 	Short: "Apply a playbook to targets",
-	Args:  cobra.ArbitraryArgs,
+	Args:  cobra.RangeArgs(0, 1),
 	RunE:  runApply,
 }
 
@@ -28,6 +28,7 @@ func init() {
 	applyCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")
 	applyCmd.Flags().String("secret-identity", "", "path to an age identity file used to decrypt bundled encrypted secrets")
 	applyCmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "allow staging bundles that contain plaintext secrets")
+	applyCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(applyCmd)
 }
 
