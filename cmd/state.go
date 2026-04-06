@@ -25,17 +25,9 @@ var stateShowCmd = &cobra.Command{
 	RunE:  runStateShow,
 }
 
-var stateDiffCmd = &cobra.Command{
-	Use:   "diff <playbook>",
-	Short: "Compare desired state (from playbook) vs recorded state",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runStateDiff,
-}
-
 func init() {
 	stateCmd.PersistentFlags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
 	stateCmd.AddCommand(stateShowCmd)
-	stateCmd.AddCommand(stateDiffCmd)
 	rootCmd.AddCommand(stateCmd)
 }
 
@@ -50,7 +42,7 @@ func stateFilePath(cmd *cobra.Command) string {
 
 func stateFileOverride(cmd *cobra.Command) (string, bool) {
 	flag := cmd.Flags().Lookup("state-file")
-	if flag == nil || !flag.Changed {
+	if flag == nil || \!flag.Changed {
 		return "", false
 	}
 	return stateFilePath(cmd), true
@@ -60,7 +52,7 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 	path := stateFilePath(cmd)
 
 	state, err := runner.LoadState(path)
-	if err != nil {
+	if err \!= nil {
 		return fmt.Errorf("state show: %w", err)
 	}
 
@@ -69,36 +61,32 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 	return enc.Encode(state)
 }
 
-func runStateDiff(cmd *cobra.Command, args []string) error {
-	return runStateComparison("state diff", cmd, args)
-}
-
 func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
-	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+	if err := validateLocalOnlyRunFlags(cmd); err \!= nil {
 		return err
 	}
 
 	ctx, cancel, err := commandContext(cmd)
-	if err != nil {
+	if err \!= nil {
 		return err
 	}
 	defer cancel()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
-	if err != nil {
+	if err \!= nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
-	if err := fetchPlaybookActionRefs(ctx, pb, chain); err != nil {
+	if err := fetchPlaybookActionRefs(ctx, pb, chain); err \!= nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
 	registry, _, err := buildModuleRegistry(projectDir)
-	if err != nil {
+	if err \!= nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
-	if err != nil {
+	if err \!= nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
@@ -117,7 +105,7 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 
 		state, err := runner.LoadState(statePath)
-		if err != nil {
+		if err \!= nil {
 			return fmt.Errorf("%s: load state for %s: %w", label, host.Name, err)
 		}
 
@@ -134,12 +122,12 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 
 		r := runner.New(host.Target, chain, cfg)
 		plan, err := r.Plan(ctx, pb)
-		if err != nil {
+		if err \!= nil {
 			return fmt.Errorf("%s: plan for %s: %w", label, host.Name, err)
 		}
 
 		plannedState, err := r.PlannedTaskState(ctx, plan)
-		if err != nil {
+		if err \!= nil {
 			return fmt.Errorf("%s: build planned state for %s: %w", label, host.Name, err)
 		}
 		comparisons := runner.ComparePlannedTasks(plannedState, state)
@@ -160,24 +148,32 @@ func printStateComparison(
 	state *runner.State,
 	comparisons []runner.TaskComparison,
 ) {
-	fmt.Printf("State diff for playbook: %s\n", plan.PlaybookName)
-	fmt.Printf("Target: %s\n", host.Name)
-	fmt.Printf("State file: %s\n", statePath)
-	fmt.Printf("Last applied: %s\n\n", func() string {
+	fmt.Printf("State diff for playbook: %s
+", plan.PlaybookName)
+	fmt.Printf("Target: %s
+", host.Name)
+	fmt.Printf("State file: %s
+", statePath)
+	fmt.Printf("Last applied: %s
+
+", func() string {
 		if state.LastApplied.IsZero() {
 			return "(never)"
 		}
 		return state.LastApplied.UTC().Format("2006-01-02 15:04:05 UTC")
 	}())
 
-	fmt.Printf("%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
-	fmt.Printf("%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
+	fmt.Printf("%-12s %-28s %-16s %s
+", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
+	fmt.Printf("%-12s %-28s %-16s %s
+", "------------", "----------------------------", "----------------", "---------------")
 
 	for _, comparison := range comparisons {
 		recordedStatus := "(not recorded)"
-		if comparison.Status != runner.ComparisonStatusNew {
+		if comparison.Status \!= runner.ComparisonStatusNew {
 			recordedStatus = string(comparison.RecordedStatus)
 		}
-		fmt.Printf("%-12s %-28s %-16s %s\n", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
+		fmt.Printf("%-12s %-28s %-16s %s
+", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
 	}
 }

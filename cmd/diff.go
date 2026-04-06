@@ -7,12 +7,17 @@ import (
 var diffCmd = &cobra.Command{
 	Use:   "diff <playbook>",
 	Short: "Compare the current plan against recorded state",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runDiff,
+	Long: `Compare the desired state (from a playbook) against the last recorded state.
+
+This command is a shortcut for: preflight state diff <playbook>
+
+The --state-file flag is inherited from the state parent command.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDiff,
 }
 
 func init() {
-	diffCmd.Flags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
+	stateCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(diffCmd)
 }
 
