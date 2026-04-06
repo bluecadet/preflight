@@ -338,12 +338,21 @@ Request a reboot.
 
 ### `wait`
 
-Wait for a condition.
+Wait for a condition to be met before continuing.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `condition` | `port_open`, `file_exists`, or `service_running` | Wait condition |
-| `timeout` | integer | Timeout in seconds |
+| `target` | string | What to wait on — interpretation depends on `condition` (see below) |
+| `timeout` | duration string | Maximum time to wait, e.g. `"5m"`, `"30s"` (default: `"5m"`) |
+
+The `target` field is required and interpreted per condition:
+
+| `condition` | `target` format | Example |
+| --- | --- | --- |
+| `port_open` | `address:port` TCP endpoint | `"localhost:8080"` |
+| `file_exists` | File system path | `"C:\\Exhibits\\ready.txt"` |
+| `service_running` | Windows service name | `"W32Time"` |
 
 ## Related Docs
 

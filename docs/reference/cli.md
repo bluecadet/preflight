@@ -68,7 +68,7 @@ preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
 
 ### `preflight diff <playbook>`
 
-Compare the current plan to the selected recorded state file.
+Compare the current plan to the selected recorded state file. `preflight diff` is an alias for `preflight state diff` — both commands are registered and share the same implementation. The `--state-file` flag is available on both.
 
 ```bash
 preflight diff playbooks/lobby.yml

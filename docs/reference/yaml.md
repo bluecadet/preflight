@@ -184,6 +184,31 @@ github.com/acme/actions/collections/autologin@0123456789abcdef
 
 Remote refs are pinned to exact commit SHAs in `preflight.lock` for reproducible resolution.
 
+## Editor Schema Wiring
+
+The JSON schemas in `schema/` enable live validation and autocompletion in editors that support the YAML Language Server protocol (e.g. VS Code with the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)).
+
+**Inline file comment** (works in any editor with yaml-language-server support):
+
+```yaml
+# yaml-language-server: $schema=https://preflight.dev/schema/action.schema.json
+name: myorg/my-action
+...
+```
+
+**VS Code `settings.json`** (applies to all matching files in the workspace):
+
+```json
+{
+  "yaml.schemas": {
+    "https://preflight.dev/schema/action.schema.json": "**/actions/**/action.yml",
+    "https://preflight.dev/schema/playbook.schema.json": "**/playbooks/*.yml",
+    "https://preflight.dev/schema/inventory.schema.json": "**/inventory.yml",
+    "https://preflight.dev/schema/config.schema.json": "**/preflight.yml"
+  }
+}
+```
+
 ## Related Docs
 
 - [Project config reference](./config.md)
