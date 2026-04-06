@@ -26,12 +26,12 @@ func init() {
 
 func runFacts(cmd *cobra.Command, _ []string) error {
 	selectors, _ := cmd.Flags().GetStringSlice("target")
-	if err := validateConcurrency(cmd); err \!= nil {
+	if err := validateConcurrency(cmd); err != nil {
 		return err
 	}
 
 	ctx, cancel, err := commandContext(cmd)
-	if err \!= nil {
+	if err != nil {
 		return err
 	}
 	defer cancel()
@@ -40,22 +40,22 @@ func runFacts(cmd *cobra.Command, _ []string) error {
 	var hosts []targeting.ResolvedHost
 	if len(selectors) == 0 || selectorsAreLocal(selectors) {
 		registry, _, err := buildModuleRegistry("")
-		if err \!= nil {
+		if err != nil {
 			return err
 		}
 		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}
 	} else {
 		invPath := inventoryFilePath(cmd, "")
 		inv, projectDir, _, secretsResolver, err := loadInventoryRunContext(invPath)
-		if err \!= nil {
+		if err != nil {
 			return fmt.Errorf("facts: load inventory %q: %w", invPath, err)
 		}
 		registry, _, err := buildModuleRegistry(projectDir)
-		if err \!= nil {
+		if err != nil {
 			return err
 		}
 		hosts, err = resolveInventoryHosts(ctx, inv, selectors, registry, secretsResolver, stateFilePath(cmd))
-		if err \!= nil {
+		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
 	}
@@ -65,7 +65,7 @@ func runFacts(cmd *cobra.Command, _ []string) error {
 	if len(hosts) == 1 {
 		g := facts.New(hosts[0].Target)
 		f, err := g.Gather(ctx)
-		if err \!= nil {
+		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
 		return enc.Encode(f.AsMap())
@@ -76,14 +76,14 @@ func runFacts(cmd *cobra.Command, _ []string) error {
 	if err := runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		g := facts.New(host.Target)
 		f, err := g.Gather(runCtx)
-		if err \!= nil {
+		if err != nil {
 			return fmt.Errorf("facts for %s: %w", host.Name, err)
 		}
 		mu.Lock()
 		result[host.Name] = f.AsMap()
 		mu.Unlock()
 		return nil
-	}); err \!= nil {
+	}); err != nil {
 		return err
 	}
 	return enc.Encode(result)

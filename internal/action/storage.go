@@ -1,6 +1,7 @@
 package action
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -43,7 +44,7 @@ func loadActionFromCache(cacheDir, ref string) (*Action, error) {
 	}
 	data, err := os.ReadFile(actionFile)
 	if err != nil {
-		if errorsIsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("read cached action %q: %w", ref, err)
