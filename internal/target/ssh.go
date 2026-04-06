@@ -285,7 +285,7 @@ func (t *SSHTarget) nonZeroExitMeansChange(ctx context.Context, command string) 
 		return false, nil
 	}
 	if stderr != "" {
-		return true, nil
+		return false, fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
 	}
 	return true, nil
 }
