@@ -51,6 +51,13 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("validation failed with %d error(s)", len(errs))
 	}
 
-	fmt.Println("OK")
+	taskCount := len(pb.Tasks)
+	refCount := 0
+	for _, task := range pb.Tasks {
+		if task.Uses != "" {
+			refCount++
+		}
+	}
+	fmt.Printf("Validated: %s (%d tasks, %d action refs resolved)\n", playbookPath, taskCount, refCount)
 	return nil
 }

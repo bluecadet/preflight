@@ -56,24 +56,33 @@ func runInventoryList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	fmt.Printf("%-20s %-20s %-10s %-6s %s\n", "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS")
-	fmt.Printf("%-20s %-20s %-10s %-6s %s\n",
-		strings.Repeat("-", 20),
-		strings.Repeat("-", 20),
+	// Compute column widths from actual data.
+	nameW, addrW := len("NAME"), len("ADDRESS")
+	for _, h := range hosts {
+		if len(h.Name) > nameW {
+			nameW = len(h.Name)
+		}
+		if len(h.Address) > addrW {
+			addrW = len(h.Address)
+		}
+	}
+	nameW += 2
+	addrW += 2
+
+	row := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6s %%s\n", nameW, addrW)
+	fmt.Printf(row, "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS")
+	fmt.Printf(row,
+		strings.Repeat("-", nameW-2),
+		strings.Repeat("-", addrW-2),
 		strings.Repeat("-", 10),
 		strings.Repeat("-", 6),
 		strings.Repeat("-", 20),
 	)
 
+	rowData := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6d %%s\n", nameW, addrW)
 	for _, h := range hosts {
 		groups := strings.Join(hostGroups[h.Name], ", ")
-		fmt.Printf("%-20s %-20s %-10s %-6d %s\n",
-			h.Name,
-			h.Address,
-			string(h.Transport),
-			h.Port,
-			groups,
-		)
+		fmt.Printf(rowData, h.Name, h.Address, string(h.Transport), h.Port, groups)
 	}
 
 	return nil

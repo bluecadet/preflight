@@ -49,12 +49,12 @@ func init() {
 
 func runActionList(_ *cobra.Command, _ []string) error {
 	// List embedded stdlib actions.
-	fmt.Println("=== Embedded stdlib actions (preflight/) ===")
 	embeddedRefs, err := listEmbeddedActions()
 	if err != nil {
 		return fmt.Errorf("action list: embedded: %w", err)
 	}
 	sort.Strings(embeddedRefs)
+	fmt.Println("Embedded actions (preflight/):")
 	for _, ref := range embeddedRefs {
 		fmt.Printf("  %s\n", ref)
 	}
@@ -62,17 +62,17 @@ func runActionList(_ *cobra.Command, _ []string) error {
 	// List local ./actions/ actions.
 	cwd, _ := os.Getwd()
 	localActionsDir := filepath.Join(cwd, "actions")
-	fmt.Printf("\n=== Local actions (%s) ===\n", localActionsDir)
 	localRefs, err := listLocalActions(localActionsDir)
 	if err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("action list: local: %w", err)
 	}
 	sort.Strings(localRefs)
-	for _, ref := range localRefs {
-		fmt.Printf("  %s\n", ref)
-	}
+	fmt.Printf("\nLocal actions (%s):\n", localActionsDir)
 	if len(localRefs) == 0 {
 		fmt.Println("  (none)")
+	}
+	for _, ref := range localRefs {
+		fmt.Printf("  %s\n", ref)
 	}
 
 	return nil
