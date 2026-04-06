@@ -610,8 +610,6 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 	// Track outcome counts for the play recap.
 	var okCount, changedCount, failedCount, skippedCount int
 
-	// Track which tasks have succeeded for dependency checking.
-	succeeded := make(map[string]bool)
 	failed := make(map[string]bool)
 
 	finishApply := func() error {
@@ -648,7 +646,6 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
-			succeeded[pt.ID] = false
 			continue
 		}
 
@@ -665,7 +662,6 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
-			succeeded[pt.ID] = false
 			continue
 		}
 
@@ -679,7 +675,6 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
 				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
-				succeeded[pt.ID] = false
 				continue
 			}
 		}
@@ -734,21 +729,16 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		switch result.Status {
 		case target.StatusOK:
 			okCount++
-			succeeded[pt.ID] = true
 		case target.StatusChanged:
 			changedCount++
-			succeeded[pt.ID] = true
 		case target.StatusFailed:
 			failedCount++
 			if !pt.IgnoreErrors {
 				failed[pt.ID] = true
 				return finishApply()
-			} else {
-				succeeded[pt.ID] = true
 			}
 		case target.StatusSkipped:
 			skippedCount++
-			succeeded[pt.ID] = false
 		}
 	}
 

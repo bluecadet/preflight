@@ -68,13 +68,17 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 	return Result{TaskID: taskID, Status: StatusChanged, Message: "change applied", Output: captured}, nil
 }
 
-// CopyFile copies src (local path) to dst (local path).
+// CopyFile copies src (local path) to dst (local path), preserving file permissions.
 func (t *LocalTarget) CopyFile(_ context.Context, src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return fmt.Errorf("target/local: stat src %q: %w", src, err)
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return fmt.Errorf("target/local: read src %q: %w", src, err)
 	}
-	if err := os.WriteFile(dst, data, 0644); err != nil {
+	if err := os.WriteFile(dst, data, info.Mode()); err != nil {
 		return fmt.Errorf("target/local: write dst %q: %w", dst, err)
 	}
 	return nil

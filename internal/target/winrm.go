@@ -245,6 +245,9 @@ if ($dir) {
 		if err != nil {
 			return err
 		}
+		// encoded is safe to interpolate directly into a single-quoted PS string:
+		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
+		// All other parameters use powershellJSONVar for injection safety.
 		if _, err := t.runPS(ctx, appendScript+fmt.Sprintf(`
 $bytes = [Convert]::FromBase64String('%s')
 $stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)

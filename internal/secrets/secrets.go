@@ -158,5 +158,5 @@ func RedactError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("secret resolution failed")
+	return fmt.Errorf("secret resolution failed: %w", err)
 }
