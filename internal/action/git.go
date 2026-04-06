@@ -107,7 +107,7 @@ func (r *GitResolver) Fetch(ctx context.Context, ref string) (*FetchResult, erro
 		return nil, fmt.Errorf("git resolver: %w", err)
 	}
 	if _, err := os.Stat(cachedFile); err != nil {
-		if !errorsIsNotExist(err) {
+		if !errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("git resolver: stat cached action %q: %w", pinnedRef, err)
 		}
 		if _, err := os.Stat(filepath.Join(srcDir, "action.yml")); err != nil {
@@ -288,8 +288,4 @@ func resolveGitRevision(repo *git.Repository, revision string) (*plumbing.Hash, 
 		}
 	}
 	return nil, fmt.Errorf("unknown revision %q", revision)
-}
-
-func errorsIsNotExist(err error) bool {
-	return os.IsNotExist(err)
 }
