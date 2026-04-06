@@ -7,7 +7,7 @@ Thanks for your interest in contributing. This document covers how to get set up
 ## Getting Started
 
 **Prerequisites:**
-- Go 1.25+
+- Go 1.25.3+
 - A Windows VM or machine for testing Windows-specific modules (or use the stub layer for non-Windows code paths)
 - `golangci-lint` for local linting
 
