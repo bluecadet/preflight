@@ -3,7 +3,6 @@ package secrets
 import (
 	"context"
 	"fmt"
-	"maps"
 	"sort"
 	"strings"
 )
@@ -141,7 +140,7 @@ func (r *Resolver) ProviderNames() []string {
 		return nil
 	}
 	names := make([]string, 0, len(r.providers))
-	for name := range maps.Keys(r.providers) {
+	for name := range r.providers {
 		names = append(names, name)
 	}
 	sort.Strings(names)

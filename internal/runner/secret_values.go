@@ -1,7 +1,6 @@
 package runner
 
 import (
-	"maps"
 	"slices"
 	"strings"
 
@@ -100,7 +99,7 @@ func normalizeStateValue(key string, source, resolved any) any {
 		}
 		out := make(map[string]any, len(resolvedMap))
 		keys := make([]string, 0, len(resolvedMap))
-		for key := range maps.Keys(resolvedMap) {
+		for key := range resolvedMap {
 			keys = append(keys, key)
 		}
 		slices.Sort(keys)
