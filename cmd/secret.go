@@ -41,6 +41,7 @@ var secretEditCmd = &cobra.Command{
 
 func init() {
 	secretEncryptCmd.Flags().String("from-file", "", "path to a plaintext file to encrypt")
+	_ = secretEncryptCmd.MarkFlagRequired("from-file")
 	secretEncryptCmd.Flags().StringSlice("recipient", nil, "age recipient(s) to encrypt to")
 	secretEncryptCmd.Flags().String("identity", "", "path to an age identity file used for future decrypt/edit operations")
 	secretEditCmd.Flags().StringSlice("recipient", nil, "override age recipient(s) for re-encryption")
@@ -73,9 +74,6 @@ func runSecretList(_ *cobra.Command, _ []string) error {
 func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	fromFile, _ := cmd.Flags().GetString("from-file")
-	if fromFile == "" {
-		return fmt.Errorf("secret encrypt: --from-file is required")
-	}
 
 	cwd, _ := os.Getwd()
 	cfgPath := projectConfigPath(cwd)
