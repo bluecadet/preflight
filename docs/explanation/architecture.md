@@ -90,7 +90,7 @@ That is why the `preflight/` namespace resolves first and is versioned with the 
 
 - users get predictable built-in actions
 - maintainers keep version compatibility simple
-- teams that need independently pinned behavior can still use remote actions and `preflight.lock`
+- environments that need independently pinned behavior can still use remote actions and `preflight.lock`
 
 ## Why Plugins Are Executables
 

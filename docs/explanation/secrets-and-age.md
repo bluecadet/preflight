@@ -112,7 +112,7 @@ That is usually a better mental model than "one key per project" or "one key per
 
 Usually no.
 
-For teams, the better default is:
+For multi-person workflows, the better default is:
 
 - each developer or operator has their own identity
 - each person's public recipient is added to `secrets.recipients`
@@ -171,7 +171,7 @@ It can still be acceptable in a very small or tightly controlled environment, es
 
 ## A Practical Recommendation
 
-For most teams, a good starting model is:
+A good starting model is:
 
 - one identity per developer or operator
 - optional additional identities for specific deployment machines or automation
@@ -250,7 +250,7 @@ But external managers also add:
 - connectivity requirements
 - more setup and maintenance
 
-For offline-friendly deployments or smaller teams, repo-backed `age` encryption is often a practical middle ground.
+For offline-friendly deployments or smaller environments, repo-backed `age` encryption is often a practical middle ground.
 
 ## A Good Rule Of Thumb
 
