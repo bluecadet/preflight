@@ -21,22 +21,6 @@ Configure Windows automatic logon.
 | `password_from` | string | Secret reference for the password |
 | `domain` | string | Domain or `.` for local accounts |
 
-### `preflight/computer-name`
-
-Configure the Windows computer name without scheduling a reboot.
-
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Desired computer name |
-
-### `preflight/timezone`
-
-Configure the Windows time zone.
-
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `timezone` | string | Windows time zone ID such as `Eastern Standard Time` |
-
 ## Grouped Windows Baseline Actions
 
 ### `preflight/windows-machine`
@@ -124,12 +108,6 @@ Install required applications and remove common built-in Windows apps.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `winget_enabled` | bool | Whether to manage a `winget` package |
-| `winget_package_id` | string | `winget` package identifier |
-| `winget_package_version` | string | Optional package version |
-| `winget_package_source` | string | Optional `winget` source |
-| `winget_package_scope` | string | `machine` or `user` install scope |
-| `winget_package_ensure` | string | `present` or `absent` |
 | `remove_xbox` | bool | Remove Xbox packages |
 | `remove_cortana` | bool | Remove Cortana |
 | `remove_news` | bool | Remove Microsoft News |
