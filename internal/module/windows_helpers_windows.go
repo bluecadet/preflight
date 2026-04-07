@@ -64,38 +64,9 @@ func parseWindowsBool(out []byte) (bool, error) {
 }
 
 func firewallPortsArg(params map[string]any) (string, error) {
-	value, ok := params["ports"]
-	if !ok || value == nil {
-		return "", nil
+	ports, err := winutil.NormalizeFirewallPorts(params["ports"])
+	if err != nil {
+		return "", fmt.Errorf("firewall_rule: %w", err)
 	}
-
-	switch typed := value.(type) {
-	case int:
-		return fmt.Sprintf("%d", typed), nil
-	case int64:
-		return fmt.Sprintf("%d", typed), nil
-	case float64:
-		return fmt.Sprintf("%g", typed), nil
-	case string:
-		return typed, nil
-	case []any:
-		parts := make([]string, 0, len(typed))
-		for i, item := range typed {
-			switch cast := item.(type) {
-			case int:
-				parts = append(parts, fmt.Sprintf("%d", cast))
-			case int64:
-				parts = append(parts, fmt.Sprintf("%d", cast))
-			case float64:
-				parts = append(parts, fmt.Sprintf("%g", cast))
-			case string:
-				parts = append(parts, cast)
-			default:
-				return "", fmt.Errorf("firewall_rule: ports[%d] must be a string or number, got %T", i, item)
-			}
-		}
-		return strings.Join(parts, ","), nil
-	default:
-		return "", fmt.Errorf("firewall_rule: ports must be a string, number, or list, got %T", value)
-	}
+	return ports, nil
 }

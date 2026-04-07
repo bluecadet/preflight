@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -105,10 +104,10 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 		},
 		"shortcut": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkWindowsBooleanScript(ctx, backend, params, shortcutCheckScript)
+				return checkWindowsShortcut(ctx, backend, params)
 			},
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, shortcutApplyScript)
+				return applyWindowsShortcut(ctx, backend, params)
 			},
 		},
 		"scheduled_task": remoteModuleFuncs{
@@ -121,10 +120,10 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 		},
 		"user": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkWindowsBooleanScript(ctx, backend, params, userCheckScript)
+				return checkWindowsUser(ctx, backend, params)
 			},
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, userApplyScript)
+				return applyWindowsUser(ctx, backend, params)
 			},
 		},
 		"winget_package": remoteModuleFuncs{
@@ -161,10 +160,10 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 		},
 		"firewall_rule": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkWindowsBooleanScript(ctx, backend, params, firewallRuleCheckScript)
+				return checkWindowsFirewallRule(ctx, backend, params)
 			},
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, firewallRuleApplyScript)
+				return applyWindowsFirewallRule(ctx, backend, params)
 			},
 		},
 	}
@@ -580,8 +579,7 @@ func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, 
 		if source == "" || ensure == "absent" {
 			continue
 		}
-		tempName := filepath.Base(source)
-		remotePath := joinWindowsPath(backend.RemoteTempDir(), tempName)
+		remotePath := winRMPackageRemotePath(i, source)
 		if err := backend.CopyFile(ctx, source, remotePath); err != nil {
 			return "", err
 		}
@@ -592,6 +590,74 @@ func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, 
 	}
 	normalized["packages"] = list
 	return windowsRunScript(ctx, backend, normalized, packageApplyScript)
+}
+
+func checkWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+	if _, err := paramStringRequired(params, "destination"); err != nil {
+		return false, "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return false, "", err
+	}
+	return checkWindowsBooleanScript(ctx, backend, params, shortcutCheckScript)
+}
+
+func applyWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+	if _, err := paramStringRequired(params, "destination"); err != nil {
+		return "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return "", err
+	}
+	return windowsRunScript(ctx, backend, params, shortcutApplyScript)
+}
+
+func checkWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+	if _, err := paramStringRequired(params, "name"); err != nil {
+		return false, "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return false, "", err
+	}
+	return checkWindowsBooleanScript(ctx, backend, params, userCheckScript)
+}
+
+func applyWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+	if _, err := paramStringRequired(params, "name"); err != nil {
+		return "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return "", err
+	}
+	return windowsRunScript(ctx, backend, params, userApplyScript)
+}
+
+func checkWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+	if _, err := paramStringRequired(params, "name"); err != nil {
+		return false, "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return false, "", err
+	}
+	normalized, err := normalizeFirewallRuleParams(params)
+	if err != nil {
+		return false, "", err
+	}
+	return checkWindowsBooleanScript(ctx, backend, normalized, firewallRuleCheckScript)
+}
+
+func applyWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+	if _, err := paramStringRequired(params, "name"); err != nil {
+		return "", err
+	}
+	if _, err := paramString(params, "ensure", "present"); err != nil {
+		return "", err
+	}
+	normalized, err := normalizeFirewallRuleParams(params)
+	if err != nil {
+		return "", err
+	}
+	return windowsRunScript(ctx, backend, normalized, firewallRuleApplyScript)
 }
 
 func checkWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
@@ -630,27 +696,4 @@ func applyWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBac
 		return "", err
 	}
 	return windowsRunScript(ctx, backend, normalized, scheduledTaskApplyScript)
-}
-
-func joinWindowsPath(base, elem string) string {
-	if strings.HasSuffix(base, `\`) {
-		return base + elem
-	}
-	return base + `\` + elem
-}
-
-type winRMWindowsBackend struct {
-	target *WinRMTarget
-}
-
-func (b winRMWindowsBackend) RunPowerShellScript(ctx context.Context, script string) (string, error) {
-	return b.target.runPS(ctx, script)
-}
-
-func (b winRMWindowsBackend) CopyFile(ctx context.Context, src, dst string) error {
-	return b.target.CopyFile(ctx, src, dst)
-}
-
-func (b winRMWindowsBackend) RemoteTempDir() string {
-	return `C:\Windows\Temp\preflight`
 }
