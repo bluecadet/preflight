@@ -37,26 +37,29 @@ or as explicit modules:
 | `file` | Yes | Yes | Yes |
 | `directory` | Yes | Yes | Yes |
 | `shell` | Yes | Yes | Yes |
-| `powershell` | Yes | Yes | No |
-| `environment` | Yes | Yes | No |
-| `wait` | Yes | Yes | No |
-| `reboot` | Yes | Yes | No |
-| `registry` | Windows only | Yes | No |
-| `service` | Windows only | Yes | No |
-| `package` | Windows only | Yes | No |
-| `winget_package` | Windows only | Yes | No |
-| `remove_appx_packages` | Windows only | Yes | No |
-| `shortcut` | Windows only | Yes | No |
-| `scheduled_task` | Windows only | Yes | No |
-| `user` | Windows only | Yes | No |
-| `power_plan` | Windows only | Yes | No |
-| `windows_feature` | Windows only | Yes | No |
-| `firewall_rule` | Windows only | Yes | No |
+| `powershell` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH when `pwsh` or `powershell` is installed |
+| `environment` | Yes | Yes | Windows-over-SSH only |
+| `wait` | Yes | Yes | Yes on Windows-over-SSH; partial on POSIX-over-SSH (`file_exists`, `port_open`) |
+| `reboot` | Yes | Yes | Windows-over-SSH only |
+| `registry` | Windows only | Yes | Windows-over-SSH only |
+| `service` | Windows only | Yes | Windows-over-SSH only |
+| `package` | Windows only | Yes | Windows-over-SSH only |
+| `winget_package` | Windows only | Yes | Windows-over-SSH only |
+| `remove_appx_packages` | Windows only | Yes | Windows-over-SSH only |
+| `shortcut` | Windows only | Yes | Windows-over-SSH only |
+| `scheduled_task` | Windows only | Yes | Windows-over-SSH only |
+| `user` | Windows only | Yes | Windows-over-SSH only |
+| `power_plan` | Windows only | Yes | Windows-over-SSH only |
+| `windows_feature` | Windows only | Yes | Windows-over-SSH only |
+| `firewall_rule` | Windows only | Yes | Windows-over-SSH only |
 
 Notes:
 
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
-- SSH currently implements only `file`, `directory`, and `shell`.
+- SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
+- Windows-over-SSH shares the built-in Windows module surface with WinRM.
+- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when a remote PowerShell binary is available.
+- Plugin modules are not yet supported over SSH.
 
 ## Module Fields
 

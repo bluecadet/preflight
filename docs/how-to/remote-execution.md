@@ -168,7 +168,13 @@ If the password is a secret reference, make sure the initiating machine can decr
 
 ### SSH connects but a task still fails
 
-That usually means the playbook is using a module that SSH does not implement yet. The SSH target currently supports `directory`, `file`, and `shell`. Use WinRM for Windows-native modules such as `registry`, `service`, `user`, or `windows_feature`.
+That usually means the playbook is hitting a runtime-specific limit. SSH now auto-detects either a Windows PowerShell runtime or a POSIX shell runtime:
+
+- Windows-over-SSH supports the built-in Windows module set.
+- POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
+- Plugin modules are not yet supported over SSH.
+
+If the target is Windows but does not expose a usable PowerShell runtime over SSH, use WinRM or a staged bundle instead.
 
 ### I expected one shared state file
 

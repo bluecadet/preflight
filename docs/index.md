@@ -90,5 +90,5 @@ The codebase already supports:
 
 Important current limits:
 
-- SSH currently implements `directory`, `file`, and `shell` tasks; Windows-native modules belong on WinRM targets.
+- SSH auto-detects a Windows PowerShell or POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH stays focused on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed. Plugin modules are not yet supported over SSH.
 - `--diff` exists on the CLI surface but is not yet wired into task execution output.

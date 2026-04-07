@@ -63,13 +63,12 @@ That means your inventory entry points at the forwarded endpoint rather than the
   private_key_from: secret:signage-key
 ```
 
-This pattern is useful when outbound SSH is approved and you only need the current SSH module surface. Today that means:
+This pattern is useful when outbound SSH is approved and the target fits one of the supported SSH runtimes:
 
-- `directory`
-- `file`
-- `shell`
+- Windows hosts with a usable PowerShell runtime over SSH can use the built-in Windows module set.
+- POSIX hosts can use the narrower POSIX-over-SSH surface: `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed.
 
-That is the important limit. Reverse SSH tunneling can make SSH reachable, but it does not expand SSH into the full Windows management surface. If the playbook needs registry edits, service control, Windows features, or other Windows-native modules, use WinRM from a reachable controller or switch to bundle-based local execution.
+That is still the important limit. Reverse SSH tunneling can make SSH reachable, but it does not add plugin-module execution and it does not expand POSIX SSH into the full Windows management surface. If the environment cannot provide the right SSH runtime, use WinRM from a reachable controller or switch to bundle-based local execution.
 
 ## Stage Bundles When No Inbound Management Path Is Available
 
@@ -94,7 +93,7 @@ The main tradeoffs are operational:
 | Pattern | Best when | Strengths | Limits |
 | --- | --- | --- | --- |
 | Run Preflight inside the secure network with WinRM | A controller or bastion can reach Windows hosts | Full Windows module support with the normal remote model | Requires a trusted machine inside the environment or another approved path to WinRM |
-| Direct SSH or reverse-tunneled SSH | Outbound SSH is allowed and the playbook is simple | Useful for file copies and command execution without direct inbound access to the target | SSH currently supports only `directory`, `file`, and `shell` |
+| Direct SSH or reverse-tunneled SSH | Outbound SSH is allowed and the target matches a supported SSH runtime | Useful for Windows built-ins over PowerShell or portable tasks over POSIX without direct inbound access | Plugin modules are not yet supported over SSH, and POSIX-over-SSH remains a narrower runtime |
 | Stage bundles and apply locally | No live inbound management path can be approved | No remote transport during apply and full local module behavior | Requires bundle transfer plus local execution on each target |
 
 ## Practical Recommendation
