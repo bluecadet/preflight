@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -226,7 +227,44 @@ func (e *Engine) evalExpr(expr string) (string, bool, error) {
 
 // evalExprValue is like evalExpr but returns the raw typed value without
 // stringifying it, enabling whole-value substitution for non-string types.
+//
+// Comparison operators are evaluated before dot-path lookup. Supported
+// operators: ==, !=, >=, <=, >, <.
+//
+// Coercion rules:
+//   - == and !=: both operands rendered to strings, then compared.
+//   - >, >=, <, <=: both operands coerced to float64; error if not numeric.
 func (e *Engine) evalExprValue(expr string) (any, bool, error) {
+	// Check for comparison operators (longest first to avoid mis-splitting on >=/>).
+	for _, op := range []string{">=", "<=", "!=", "==", ">", "<"} {
+		lhsRaw, rhsRaw, found := strings.Cut(expr, op)
+		if !found {
+			continue
+		}
+		lhsExpr := strings.TrimSpace(lhsRaw)
+		rhsExpr := strings.TrimSpace(rhsRaw)
+
+		lhsStr, lhsResolved, err := e.evalOperand(lhsExpr)
+		if err != nil {
+			return nil, false, err
+		}
+		rhsStr, rhsResolved, err := e.evalOperand(rhsExpr)
+		if err != nil {
+			return nil, false, err
+		}
+
+		// If either operand is an unresolved non-vars reference treat as false.
+		if !lhsResolved || !rhsResolved {
+			return false, true, nil
+		}
+
+		result, err := evalComparison(op, lhsStr, rhsStr)
+		if err != nil {
+			return nil, false, err
+		}
+		return result, true, nil
+	}
+
 	parts := strings.Split(expr, ".")
 	if len(parts) == 0 || parts[0] == "" {
 		return nil, false, fmt.Errorf("empty template expression")
@@ -257,6 +295,63 @@ func (e *Engine) evalExprValue(expr string) (any, bool, error) {
 		return nil, false, nil
 	}
 	return val, true, nil
+}
+
+// evalOperand resolves a single comparison operand. It renders dot-path
+// expressions and strips surrounding single or double quotes from literals.
+// Bare numeric literals (e.g. 5 or 3.14) are returned as-is so numeric
+// comparisons work. Unresolved dot-path expressions propagate resolved=false.
+func (e *Engine) evalOperand(operand string) (string, bool, error) {
+	// Quoted string literal.
+	if (strings.HasPrefix(operand, "'") && strings.HasSuffix(operand, "'")) ||
+		(strings.HasPrefix(operand, `"`) && strings.HasSuffix(operand, `"`)) {
+		return operand[1 : len(operand)-1], true, nil
+	}
+	// Dot-path expression (must start with a known namespace).
+	val, resolved, err := e.evalExprValue(operand)
+	if err != nil {
+		return "", false, err
+	}
+	if resolved {
+		return fmt.Sprintf("%v", val), true, nil
+	}
+	// Bare numeric literal (e.g. 5, 3.14). Only treat as resolved if it
+	// parses as a number; unknown namespaces or unresolved refs propagate false.
+	if _, err := strconv.ParseFloat(operand, 64); err == nil {
+		return operand, true, nil
+	}
+	return operand, false, nil
+}
+
+// evalComparison applies op to two already-rendered string operands.
+func evalComparison(op, lhs, rhs string) (bool, error) {
+	switch op {
+	case "==":
+		return lhs == rhs, nil
+	case "!=":
+		return lhs != rhs, nil
+	}
+	// Numeric operators.
+	l, err := strconv.ParseFloat(lhs, 64)
+	if err != nil {
+		return false, fmt.Errorf("template: numeric comparison %q: left operand %q is not a number", op, lhs)
+	}
+	r, err := strconv.ParseFloat(rhs, 64)
+	if err != nil {
+		return false, fmt.Errorf("template: numeric comparison %q: right operand %q is not a number", op, rhs)
+	}
+	switch op {
+	case ">":
+		return l > r, nil
+	case ">=":
+		return l >= r, nil
+	case "<":
+		return l < r, nil
+	case "<=":
+		return l <= r, nil
+	default:
+		return false, fmt.Errorf("template: unknown comparison operator %q", op)
+	}
 }
 
 // dotLookup traverses a nested map structure following the given path segments.
