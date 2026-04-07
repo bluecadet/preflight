@@ -85,6 +85,7 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 - `winrm` is the full Windows-native transport and supports all built-in modules.
 - `ssh` currently supports `directory`, `file`, and `shell`.
 - `local` still participates in inventory selection, but execution happens on the initiating machine.
+- For locked-down environments where targets cannot accept controller-initiated access, see [Deploy across restricted networks](../explanation/restricted-network-deployment.md).
 
 ## Related Docs
 
