@@ -46,7 +46,7 @@ groups:
 | `private_key` | string | SSH private key value or path |
 | `private_key_from` | string | Secret reference for the SSH private key |
 | `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped (insecure; acceptable only on isolated networks). |
-| `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms (e.g. `[ssh-ed25519, ssh-rsa]`). Only meaningful when `known_hosts_file` is set. When omitted, all algorithms supported by the known_hosts file are accepted. |
+| `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms (e.g. `[ssh-ed25519, ssh-rsa]`). When omitted, the SSH library's built-in default host-key algorithm list is used. This setting still applies even when `known_hosts_file` is omitted, in which case host-key verification is skipped but the negotiated host-key algorithm is still constrained if you set this field explicitly. |
 | `https` | bool | Use HTTPS for WinRM |
 | `vars` | object | Host-specific variable overrides |
 

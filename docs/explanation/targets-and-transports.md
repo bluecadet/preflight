@@ -93,7 +93,7 @@ hosts:
       - ssh-ed25519
 ```
 
-`host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, all algorithms supported by the known_hosts file are accepted.
+`host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.
 
 ## Why Plugin Modules Fit Cleanly
 
