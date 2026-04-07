@@ -247,7 +247,7 @@ New-Item -ItemType Directory -Path $path -Force | Out-Null
 func checkWindowsFile(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
 	dest, ok := params["dest"].(string)
 	if !ok || dest == "" {
-		return false, "", fmt.Errorf("winrm file: required param %q is missing", "dest")
+		return false, "", fmt.Errorf("windows file: required param %q is missing", "dest")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -295,14 +295,14 @@ Write-Output ("present:" + $hash)
 		remoteHash := strings.TrimPrefix(trimmed, "present:")
 		return localHash != remoteHash, "", nil
 	default:
-		return false, "", fmt.Errorf("winrm file: unknown ensure value %q", ensure)
+		return false, "", fmt.Errorf("windows file: unknown ensure value %q", ensure)
 	}
 }
 
 func applyWindowsFile(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) error {
 	dest, ok := params["dest"].(string)
 	if !ok || dest == "" {
-		return fmt.Errorf("winrm file: required param %q is missing", "dest")
+		return fmt.Errorf("windows file: required param %q is missing", "dest")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -329,7 +329,7 @@ if ($dir) {
 `)
 		return err
 	default:
-		return fmt.Errorf("winrm file: unknown ensure value %q", ensure)
+		return fmt.Errorf("windows file: unknown ensure value %q", ensure)
 	}
 }
 

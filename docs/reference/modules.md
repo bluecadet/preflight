@@ -4,12 +4,19 @@ This page describes the built-in modules registered by [`internal/module/`](/Use
 
 ## Execution Contract
 
-Every module implements the same two-method contract:
+The built-in modules exposed through the local registry implement the same two-method contract:
 
 - `Check(ctx, params) -> (needsChange, error)`
 - `Apply(ctx, params) -> error`
 
 The runner always calls `Check()` first. If it returns `false`, the task is reported as already in the desired state. If it returns `true`, `Apply()` runs unless the command is in dry-run mode.
+
+Remote transports adapt that contract into the shared runtime dispatcher:
+
+- `Check(ctx, params) -> (needsChange, message, error)`
+- `Apply(ctx, params) -> (output, error)`
+
+That allows remote runtimes to return a no-op message from `Check()` and captured command output from `Apply()` while preserving the same dry-run and idempotency flow.
 
 ## Task Forms
 
