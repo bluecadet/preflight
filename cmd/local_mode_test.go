@@ -476,7 +476,6 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().StringSlice("tags", nil, "")
 	cmd.Flags().StringSlice("skip-tags", nil, "")
 	cmd.Flags().Bool("check", false, "")
-	cmd.Flags().Bool("diff", false, "")
 	cmd.Flags().BoolP("verbose", "v", false, "")
 	cmd.Flags().String("output", "text", "")
 	cmd.Flags().Int("concurrency", 0, "")
