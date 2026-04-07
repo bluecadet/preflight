@@ -157,6 +157,15 @@ func (g *Gatherer) GatherDisks(ctx context.Context) ([]DiskFacts, error) {
 	return []DiskFacts{}, nil
 }
 
+// isLocalTarget reports whether t is the local machine target.
+func isLocalTarget(t target.Target) bool {
+	type localMarker interface{ IsLocal() bool }
+	if m, ok := t.(localMarker); ok {
+		return m.IsLocal()
+	}
+	return false
+}
+
 // isWindowsTarget returns true when the OS version string looks like Windows.
 func isWindowsTarget(osVersion string) bool {
 	lower := strings.ToLower(osVersion)
@@ -193,6 +202,8 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 
 // gatherEnv collects environment variables from the target.
 // On Windows it uses PowerShell; on a local non-Windows host it uses os.Environ.
+// On a remote non-Windows target it returns an empty map — remote env gathering
+// for non-Windows targets is not currently supported.
 func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -207,7 +218,12 @@ func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
 		return g.gatherWindowsEnv(ctx)
 	}
 
-	return gatherLocalEnv(), nil
+	// Only gather local env when running against the local machine.
+	if isLocalTarget(g.target) {
+		return gatherLocalEnv(), nil
+	}
+
+	return map[string]string{}, nil
 }
 
 // gatherWindowsEnv collects environment variables via PowerShell.

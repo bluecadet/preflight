@@ -24,6 +24,9 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 	return &LocalTarget{registry: registry}
 }
 
+// IsLocal implements the localMarker interface used by the facts package.
+func (t *LocalTarget) IsLocal() bool { return true }
+
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
 // If the module implements StreamingModule, ApplyWithOutput is used and lines are forwarded to onOutput.
