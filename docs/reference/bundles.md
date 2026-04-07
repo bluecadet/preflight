@@ -11,7 +11,7 @@ A bundle is a self-contained zip archive that lets you apply a staged execution 
 Every bundle contains:
 
 - `manifest.json`
-- `plan.json` — the task DAG with module names and target-scoped template variables resolved at stage time; conditions (`when:`), task name templates, and parameters that reference `facts` or `env` variables are resolved at apply time against the live execution context
+- `plan.json` — the staged execution plan, with the task DAG and module names resolved before bundling; template expressions are preserved and rendered at apply time, including conditions (`when:`), task name templates, and parameters that reference `target`, `facts`, or `env` values from the live execution context
 - the runtime binary under `runtime/`
 - zero or more plugin executables under `plugins/`
 
