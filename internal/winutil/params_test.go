@@ -1,6 +1,9 @@
 package winutil
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
 	legacy, err := NormalizeRegistryParams(map[string]any{
@@ -103,5 +106,39 @@ func TestValidateScheduledTaskParams_TriggerRules(t *testing.T) {
 		"start_at": "2026-04-01T04:30:00",
 	}); err != nil {
 		t.Fatalf("expected valid once trigger, got %v", err)
+	}
+}
+
+func TestNormalizeFirewallPorts(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   any
+		want    string
+		wantErr string
+	}{
+		{name: "nil", input: nil, want: ""},
+		{name: "int", input: 80, want: "80"},
+		{name: "string", input: "443", want: "443"},
+		{name: "list", input: []any{80, "443", 8080}, want: "80,443,8080"},
+		{name: "list with nil", input: []any{80, nil}, wantErr: "ports[1] must not be null"},
+		{name: "invalid", input: true, wantErr: "ports must be a string, number, or list"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := NormalizeFirewallPorts(tt.input)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("NormalizeFirewallPorts(%#v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
