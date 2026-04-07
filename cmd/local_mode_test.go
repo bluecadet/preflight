@@ -693,6 +693,78 @@ tasks:
 	return playbookPath, identityPath
 }
 
+func TestRunPlaybookPlanPhaseSkipsExecuteAndStateFile(t *testing.T) {
+	playbookPath := writeTestPlaybook(t)
+	stateDir := t.TempDir()
+	statePath := filepath.Join(stateDir, "state.json")
+
+	tt := &trackingTarget{}
+
+	oldResolveHosts := resolveInventoryHosts
+	resolveInventoryHosts = func(_ context.Context, _ *inventory.Inventory, _ []string, _ target.ModuleRegistry, _ *secrets.Resolver, _ string) ([]targeting.ResolvedHost, error) {
+		return []targeting.ResolvedHost{{
+			Name: "localhost",
+			Vars: map[string]any{},
+			TargetVars: map[string]any{
+				"name":      "localhost",
+				"hostname":  "localhost",
+				"address":   "localhost",
+				"transport": string(inventory.TransportLocal),
+			},
+			StatePath:    statePath,
+			Target:       tt,
+			InventoryRef: inventory.Host{Name: "localhost", Address: "localhost", Transport: inventory.TransportLocal},
+		}}, nil
+	}
+	defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+	tests := []struct {
+		name string
+		run  func(*cobra.Command, []string) error
+	}{
+		{name: "apply", run: runApply},
+		{name: "check", run: runCheck},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tt.calls = 0
+			cmd := newTestCommand()
+			if err := cmd.Flags().Set("phase", "plan"); err != nil {
+				t.Fatalf("Set phase: %v", err)
+			}
+			if err := cmd.Flags().Set("state-file", statePath); err != nil {
+				t.Fatalf("Set state-file: %v", err)
+			}
+			if err := tc.run(cmd, []string{playbookPath}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tt.calls != 0 {
+				t.Fatalf("expected no target Execute calls during plan phase, got %d", tt.calls)
+			}
+			if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+				t.Fatalf("expected no state file during plan phase, but stat returned: %v", err)
+			}
+		})
+	}
+}
+
+// trackingTarget counts Execute calls and satisfies target.Target with no-op implementations.
+type trackingTarget struct {
+	calls int
+}
+
+func (t *trackingTarget) Execute(_ context.Context, _, _ string, _ map[string]any, _ bool, _ target.OutputFunc) (target.Result, error) {
+	t.calls++
+	return target.Result{Status: target.StatusOK}, nil
+}
+func (t *trackingTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }
+func (t *trackingTarget) ReadFile(_ context.Context, _ string) ([]byte, error) { return nil, nil }
+func (t *trackingTarget) Reachable(_ context.Context) (bool, error)            { return true, nil }
+func (t *trackingTarget) Info(_ context.Context) (target.TargetInfo, error) {
+	return target.TargetInfo{}, nil
+}
+
 func mustOneBundleMatch(t *testing.T, projectDir string) string {
 	t.Helper()
 	matches, err := filepath.Glob(filepath.Join(projectDir, "dist", "bundles", "*.zip"))
