@@ -23,6 +23,12 @@ func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool,
 	if err != nil {
 		return false, err
 	}
+	if _, ok := params["owner"]; ok {
+		return false, fmt.Errorf("directory: owner is not supported on this platform")
+	}
+	if _, ok := params["permissions"]; ok {
+		return false, fmt.Errorf("directory: permissions is not supported on this platform")
+	}
 
 	info, statErr := os.Stat(path)
 
