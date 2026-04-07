@@ -96,7 +96,6 @@ jobs:
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: changes
-    if: needs.changes.outputs.build == 'true' && (github.event_name == 'push' || matrix.run_on_pr)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -104,27 +103,21 @@ jobs:
           - goos: windows
             goarch: amd64
             output: preflight-windows-amd64.exe
-            run_on_pr: true
           - goos: windows
             goarch: arm64
             output: preflight-windows-arm64.exe
-            run_on_pr: true
           - goos: darwin
             goarch: amd64
             output: preflight-darwin-amd64
-            run_on_pr: false
           - goos: darwin
             goarch: arm64
             output: preflight-darwin-arm64
-            run_on_pr: false
           - goos: linux
             goarch: amd64
             output: preflight-linux-amd64
-            run_on_pr: false
           - goos: linux
             goarch: arm64
             output: preflight-linux-arm64
-            run_on_pr: false
     steps:
       - uses: actions/checkout@v6
 
@@ -138,10 +131,3 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: go build -o dist/${{ matrix.output }} .
-
-      - uses: actions/upload-artifact@v6
-        if: github.event_name == 'push'
-        with:
-          name: ${{ matrix.output }}
-          path: dist/${{ matrix.output }}
-          retention-days: 7
