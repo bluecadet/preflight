@@ -46,7 +46,7 @@ The manifest records:
 - checksums
 - lockfile entries for fetched remote actions
 
-This design keeps staged execution reproducible. The offline machine runs the exact task DAG and module structure that was staged. Conditions and parameters that reference `facts` or `env` variables are resolved at apply time against the target.
+This design keeps staged execution reproducible. The offline machine runs the exact task DAG and module structure that was staged. Expressions in `when`, task name templates, and parameters that reference `facts`, `env`, or `target.*` values are rendered at apply time against the target.
 
 ## 3. Transfer The Correct Bundle
 
