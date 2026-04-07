@@ -58,6 +58,43 @@ That split matters:
 
 WinRM is still the clearest Windows-first remote transport when it is available, but SSH is no longer limited to simple file and shell tasks on Windows hosts.
 
+### SSH Module Support Matrix
+
+| Module | POSIX shell | Windows PowerShell SSH |
+|---|---|---|
+| `directory` | yes | yes |
+| `file` | yes | yes |
+| `shell` | yes | yes |
+| `wait` (`file_exists`, `port_open`) | yes | yes |
+| `powershell` | yes (requires `pwsh` or `powershell` installed) | yes |
+| `environment` | no | yes |
+| `registry` | no | yes |
+| `service` | no | yes |
+| `reboot` | no | yes |
+| `user` | no | yes |
+| `windows_feature` | no | yes |
+| plugin modules | no | no |
+
+Unsupported module usage is caught at first task execution and returns a clear error. There is no silent fallback.
+
+### SSH Host-Key Verification
+
+By default, when no `known_hosts_file` is configured in inventory, host-key checking is skipped. This is insecure and should only be used on isolated networks where host identity is established by other means.
+
+To enable host-key verification, set `known_hosts_file` on the host entry in inventory:
+
+```yaml
+hosts:
+  - name: kiosk-01
+    address: 10.0.0.5
+    transport: ssh
+    known_hosts_file: /home/operator/.ssh/known_hosts
+    host_key_algorithms:
+      - ssh-ed25519
+```
+
+`host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, all algorithms supported by the known_hosts file are accepted.
+
 ## Why Plugin Modules Fit Cleanly
 
 Plugin modules are adapted into the same module contract the targets already use. That is a strong architectural signal: plugins are not a sidecar feature. They are part of the execution model.
