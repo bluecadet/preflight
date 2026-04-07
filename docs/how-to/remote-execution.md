@@ -173,6 +173,7 @@ That usually means the playbook is hitting a runtime-specific limit. SSH now aut
 - Windows-over-SSH supports the built-in Windows module set.
 - POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
 - Plugin modules are not yet supported over SSH.
+- Using the `file` module with `ensure: absent` on a path that resolves to a directory returns an error. Use the `directory` module with `ensure: absent` instead.
 
 If the target is Windows but does not expose a usable PowerShell runtime over SSH, use WinRM or a staged bundle instead.
 

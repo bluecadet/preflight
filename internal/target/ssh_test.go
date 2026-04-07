@@ -3,9 +3,12 @@ package target
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"unicode/utf16"
 )
@@ -478,6 +481,50 @@ func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
 	}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "requires pwsh or powershell") {
 		t.Fatalf("expected missing powershell error, got %v", err)
+	}
+}
+
+func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
+	var detectionCount atomic.Int64
+
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				detectionCount.Add(1)
+				return "preflight", "", 0, nil
+			case strings.Contains(command, `"echo" "hello"`):
+				return "", "", 0, nil
+			default:
+				t.Errorf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	const goroutines = 10
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := range goroutines {
+		go func(n int) {
+			defer wg.Done()
+			taskID := fmt.Sprintf("task-%d", n)
+			_, err := tgt.Execute(context.Background(), taskID, "shell", map[string]any{
+				"cmd":  "echo",
+				"args": []any{"hello"},
+			}, false, nil)
+			if err != nil {
+				t.Errorf("goroutine %d: Execute returned error: %v", n, err)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if got := detectionCount.Load(); got != 1 {
+		t.Fatalf("expected runtime detection exactly once, got %d", got)
 	}
 }
 
