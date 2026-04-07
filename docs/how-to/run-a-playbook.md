@@ -225,6 +225,3 @@ preflight action fetch github.com/myorg/actions/signage@v2.1
 
 That is expected. `plan` does not contact targets. Final fact-dependent rendering happens during `check` and `apply`.
 
-### I expected file diffs from `--diff`
-
-The flag exists on the CLI surface, but it is not currently wired into execution output. Use `preflight diff` or `preflight state diff` for implemented comparison behavior today.
