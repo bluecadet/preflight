@@ -634,6 +634,40 @@ func NormalizePackageParams(params map[string]any) (map[string]any, error) {
 	return nil, fmt.Errorf("package: 'packages' or 'product_id' is required")
 }
 
+// NormalizeFirewallPorts canonicalizes firewall port values into the string
+// format expected by the Windows firewall PowerShell cmdlets.
+func NormalizeFirewallPorts(value any) (string, error) {
+	if value == nil {
+		return "", nil
+	}
+
+	switch typed := value.(type) {
+	case int:
+		return fmt.Sprintf("%d", typed), nil
+	case int64:
+		return fmt.Sprintf("%d", typed), nil
+	case float64:
+		return fmt.Sprintf("%g", typed), nil
+	case string:
+		return typed, nil
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for i, item := range typed {
+			if item == nil {
+				return "", fmt.Errorf("ports[%d] must not be null", i)
+			}
+			text, err := NormalizeFirewallPorts(item)
+			if err != nil {
+				return "", fmt.Errorf("ports[%d]: %w", i, err)
+			}
+			parts = append(parts, text)
+		}
+		return strings.Join(parts, ","), nil
+	default:
+		return "", fmt.Errorf("ports must be a string, number, or list, got %T", value)
+	}
+}
+
 func cloneParams(params map[string]any) map[string]any {
 	if params == nil {
 		return nil

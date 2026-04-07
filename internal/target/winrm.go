@@ -6,7 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -68,7 +70,7 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		params,
 		dryRun,
 		onOutput,
-		newWindowsPowerShellRegistry(winRMWindowsBackend{target: t}),
+		newWindowsPowerShellRegistry(t),
 		func(module string) error {
 			return fmt.Errorf("winrm: unknown module %q", module)
 		},
@@ -150,6 +152,14 @@ $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
 
 func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
 	return t.runPS(ctx, script)
+}
+
+func (t *WinRMTarget) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+	return t.runPS(ctx, script)
+}
+
+func (t *WinRMTarget) RemoteTempDir() string {
+	return `C:\Windows\Temp\preflight`
 }
 
 func (t *WinRMTarget) clientForUse() (winRMClient, error) {
@@ -275,6 +285,16 @@ func normalizeEnvScope(scope string) string {
 	}
 }
 
+func normalizeFirewallRuleParams(params map[string]any) (map[string]any, error) {
+	normalized := cloneParams(params)
+	ports, err := winutil.NormalizeFirewallPorts(normalized["ports"])
+	if err != nil {
+		return nil, fmt.Errorf("firewall_rule: %w", err)
+	}
+	normalized["ports"] = ports
+	return normalized, nil
+}
+
 func hashLocalFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -305,6 +325,49 @@ func paramStringSlice(params map[string]any, key string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("%s must be a string list, got %T", key, value)
 	}
+}
+
+func paramString(params map[string]any, key, defaultVal string) (string, error) {
+	value, ok := params[key]
+	if !ok || value == nil {
+		return defaultVal, nil
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string, got %T", key, value)
+	}
+	if text == "" {
+		return defaultVal, nil
+	}
+	return text, nil
+}
+
+func paramStringRequired(params map[string]any, key string) (string, error) {
+	value, ok := params[key]
+	if !ok || value == nil {
+		return "", fmt.Errorf("required param %q is missing", key)
+	}
+	text, ok := value.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string, got %T", key, value)
+	}
+	if text == "" {
+		return "", fmt.Errorf("required param %q must not be empty", key)
+	}
+	return text, nil
+}
+
+func cloneParams(params map[string]any) map[string]any {
+	if params == nil {
+		return nil
+	}
+	cloned := make(map[string]any, len(params))
+	maps.Copy(cloned, params)
+	return cloned
+}
+
+func winRMPackageRemotePath(index int, source string) string {
+	return fmt.Sprintf(`C:\Windows\Temp\preflight\%03d-%s`, index, filepath.Base(source))
 }
 
 const registryCheckScript = `
@@ -546,15 +609,39 @@ foreach ($spec in $pkgs) {
 
 const shortcutCheckScript = `
 $destination = [string]$params.destination
-Write-Output ([bool](-not (Test-Path -LiteralPath $destination)))
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Write-Output (Test-Path -LiteralPath $destination)
+  exit 0
+}
+if (-not (Test-Path -LiteralPath $destination)) {
+  Write-Output 'true'
+  exit 0
+}
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($destination)
+$args = if ($params.args) { [string]$params.args } else { '' }
+$icon = if ($params.icon) { [string]$params.icon } else { '' }
+$needs = $shortcut.TargetPath -ne [string]$params.target -or $shortcut.Arguments -ne $args -or $shortcut.IconLocation -ne $icon
+Write-Output $needs
 `
 
 const shortcutApplyScript = `
+$destination = [string]$params.destination
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+if ($ensure -eq 'absent') {
+  Remove-Item -LiteralPath $destination -Force -ErrorAction SilentlyContinue
+  exit 0
+}
+$parent = Split-Path -Parent $destination
+if ($parent) {
+  New-Item -ItemType Directory -Path $parent -Force | Out-Null
+}
 $shell = New-Object -ComObject WScript.Shell
-$shortcut = $shell.CreateShortcut([string]$params.destination)
+$shortcut = $shell.CreateShortcut($destination)
 $shortcut.TargetPath = [string]$params.target
-if ($params.args) { $shortcut.Arguments = [string]$params.args }
-if ($params.icon) { $shortcut.IconLocation = [string]$params.icon }
+$shortcut.Arguments = if ($params.args) { [string]$params.args } else { '' }
+$shortcut.IconLocation = if ($params.icon) { [string]$params.icon } else { '' }
 $shortcut.Save()
 `
 
@@ -942,10 +1029,27 @@ $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 $user = Get-LocalUser -Name $name -ErrorAction SilentlyContinue
 if ($ensure -eq 'absent') {
-  Write-Output ([bool]($user))
+  Write-Output ($null -ne $user)
   exit 0
 }
-Write-Output ([bool](-not $user))
+if ($null -eq $user) {
+  Write-Output 'true'
+  exit 0
+}
+$needs = $false
+if ($params.password) {
+  $needs = $true
+}
+if ($params.groups) {
+  foreach ($group in $params.groups) {
+    $members = Get-LocalGroupMember -Group ([string]$group) -ErrorAction SilentlyContinue
+    if (-not ($members | Where-Object { $_.Name -match ("(^|\\\\)" + [regex]::Escape($name) + "$") })) {
+      $needs = $true
+      break
+    }
+  }
+}
+Write-Output $needs
 `
 
 const userApplyScript = `
@@ -955,9 +1059,25 @@ if ($ensure -eq 'absent') {
   Remove-LocalUser -Name $name -ErrorAction SilentlyContinue
   exit 0
 }
-if (-not (Get-LocalUser -Name $name -ErrorAction SilentlyContinue)) {
-  $secure = ConvertTo-SecureString ([string]$params.password) -AsPlainText -Force
-  New-LocalUser -Name $name -Password $secure | Out-Null
+$passwordValue = if ($params.password) { [string]$params.password } else { '' }
+$securePassword = $null
+if ($passwordValue) {
+  $securePassword = ConvertTo-SecureString $passwordValue -AsPlainText -Force
+}
+$user = Get-LocalUser -Name $name -ErrorAction SilentlyContinue
+if ($null -eq $user) {
+  if ($securePassword) {
+    New-LocalUser -Name $name -Password $securePassword | Out-Null
+  } else {
+    New-LocalUser -Name $name -NoPassword | Out-Null
+  }
+} elseif ($securePassword) {
+  $user | Set-LocalUser -Password $securePassword
+}
+if ($params.groups) {
+  foreach ($group in $params.groups) {
+    Add-LocalGroupMember -Group ([string]$group) -Member $name -ErrorAction SilentlyContinue
+  }
 }
 `
 
@@ -985,13 +1105,28 @@ Enable-WindowsOptionalFeature -Online -FeatureName $name -NoRestart | Out-Null
 
 const firewallRuleCheckScript = `
 $name = [string]$params.name
-$rule = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+$rule = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($ensure -eq 'absent') {
-  Write-Output ([bool]($rule))
+  Write-Output ($null -ne $rule)
   exit 0
 }
-Write-Output ([bool](-not $rule))
+if ($null -eq $rule) {
+  Write-Output 'true'
+  exit 0
+}
+$directionMap = @{ inbound = 'Inbound'; outbound = 'Outbound' }
+$actionMap = @{ allow = 'Allow'; block = 'Block' }
+$protocolMap = @{ tcp = 'TCP'; udp = 'UDP'; any = 'Any' }
+$portFilter = $rule | Get-NetFirewallPortFilter
+$needs = $rule.Direction -ne $directionMap[[string]$params.direction] -or $rule.Action -ne $actionMap[[string]$params.action]
+if ([string]$params.protocol) {
+  $needs = $needs -or $portFilter.Protocol -ne $protocolMap[[string]$params.protocol]
+}
+if ([string]$params.ports) {
+  $needs = $needs -or [string]$portFilter.LocalPort -ne [string]$params.ports
+}
+Write-Output $needs
 `
 
 const firewallRuleApplyScript = `
@@ -1001,14 +1136,25 @@ if ($ensure -eq 'absent') {
   Remove-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue
   exit 0
 }
-$ports = $null
-if ($params.ports) {
-  if ($params.ports -is [System.Array]) {
-    $ports = (($params.ports | ForEach-Object { [string]$_ }) -join ',')
-  } else {
-    $ports = [string]$params.ports
+$directionMap = @{ inbound = 'Inbound'; outbound = 'Outbound' }
+$actionMap = @{ allow = 'Allow'; block = 'Block' }
+$protocolMap = @{ tcp = 'TCP'; udp = 'UDP'; any = 'Any' }
+$existing = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($null -eq $existing) {
+  $newParams = @{
+    DisplayName = $name
+    Direction = $directionMap[[string]$params.direction]
+    Action = $actionMap[[string]$params.action]
+    Protocol = $protocolMap[[string]$params.protocol]
   }
+  if ([string]$params.ports) {
+    $newParams['LocalPort'] = [string]$params.ports
+  }
+  New-NetFirewallRule @newParams | Out-Null
+  exit 0
 }
-$protocol = if ($params.protocol) { [string]$params.protocol } else { 'tcp' }
-New-NetFirewallRule -DisplayName $name -Direction ([string]$params.direction) -Action ([string]$params.action) -Protocol $protocol -LocalPort $ports | Out-Null
+Set-NetFirewallRule -DisplayName $name -Direction $directionMap[[string]$params.direction] -Action $actionMap[[string]$params.action] | Out-Null
+if ([string]$params.protocol -or [string]$params.ports) {
+  Set-NetFirewallRule -DisplayName $name -Protocol $protocolMap[[string]$params.protocol] -LocalPort ([string]$params.ports) | Out-Null
+}
 `
