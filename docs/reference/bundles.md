@@ -4,14 +4,14 @@ This page describes the staged offline bundle format implemented by [`internal/b
 
 ## Purpose
 
-A bundle is a self-contained zip archive that lets you apply a pre-rendered execution plan on another machine without re-reading the original playbook or refetching actions.
+A bundle is a self-contained zip archive that lets you apply a staged execution plan on another machine without re-reading the original playbook or refetching actions.
 
 ## Archive Contents
 
 Every bundle contains:
 
 - `manifest.json`
-- `plan.json`
+- `plan.json` — the task DAG with module names and target-scoped template variables resolved at stage time; conditions (`when:`), task name templates, and parameters that reference `facts` or `env` variables are resolved at apply time against the live execution context
 - the runtime binary under `runtime/`
 - zero or more plugin executables under `plugins/`
 
