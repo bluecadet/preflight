@@ -45,6 +45,56 @@ func TestRunHostsHonorsConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestMergeSelectors(t *testing.T) {
+	cases := []struct {
+		name       string
+		flagValues []string
+		positional []string
+		want       []string
+	}{
+		{
+			name:       "positional_only",
+			positional: []string{"host-a", "host-b"},
+			want:       []string{"host-a", "host-b"},
+		},
+		{
+			name:       "flag_only",
+			flagValues: []string{"host-a"},
+			want:       []string{"host-a"},
+		},
+		{
+			name:       "merged_no_overlap",
+			flagValues: []string{"host-a"},
+			positional: []string{"host-b"},
+			want:       []string{"host-a", "host-b"},
+		},
+		{
+			name:       "deduplication",
+			flagValues: []string{"host-a"},
+			positional: []string{"host-a", "host-b"},
+			want:       []string{"host-a", "host-b"},
+		},
+		{
+			name: "empty",
+			want: []string{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := mergeSelectors(tc.flagValues, tc.positional)
+			if len(got) != len(tc.want) {
+				t.Fatalf("mergeSelectors() = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Errorf("mergeSelectors()[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
+	}
+}
+
 func TestRunHostsPropagatesContextTimeout(t *testing.T) {
 	hosts := []targeting.ResolvedHost{
 		{Name: "a"},
