@@ -33,16 +33,35 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	ctx := context.Background()
 
-	// Resolve every action ref referenced in the playbook.
 	var errs []error
-	for _, task := range pb.Tasks {
-		if task.Uses == "" {
-			continue
-		}
-		if _, err := chain.Resolve(ctx, task.Uses); err != nil {
-			errs = append(errs, fmt.Errorf("task %q: %w", task.Name, err))
+	visited := make(map[string]bool)
+	totalRefs := 0
+
+	var resolveRefs func(tasks []action.Task)
+	resolveRefs = func(tasks []action.Task) {
+		for _, task := range tasks {
+			if task.Uses == "" {
+				continue
+			}
+			ref := task.Uses
+			if visited[ref] {
+				continue
+			}
+			visited[ref] = true
+
+			resolved, err := chain.Resolve(ctx, ref)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("task %q: %w", task.Name, err))
+				continue
+			}
+			totalRefs++
+			if resolved != nil {
+				resolveRefs(resolved.Tasks)
+			}
 		}
 	}
+
+	resolveRefs(pb.Tasks)
 
 	if len(errs) > 0 {
 		for _, e := range errs {
@@ -52,12 +71,6 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	}
 
 	taskCount := len(pb.Tasks)
-	refCount := 0
-	for _, task := range pb.Tasks {
-		if task.Uses != "" {
-			refCount++
-		}
-	}
-	fmt.Printf("Validated: %s (%d tasks, %d action refs resolved)\n", playbookPath, taskCount, refCount)
+	fmt.Printf("Validated: %s (%d tasks, %d action refs resolved)\n", playbookPath, taskCount, totalRefs)
 	return nil
 }
