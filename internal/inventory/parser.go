@@ -132,10 +132,12 @@ func defaultPort(transport string, https bool, port int) int {
 	switch Transport(transport) {
 	case TransportSSH:
 		return 22
-	default:
+	case TransportWinRM:
 		if https {
 			return 5986
 		}
 		return 5985
+	default:
+		return 0
 	}
 }
