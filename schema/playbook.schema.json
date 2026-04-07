@@ -357,9 +357,11 @@
     "moduleWait": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["condition", "target"],
       "properties": {
         "condition": { "type": "string", "enum": ["port_open", "file_exists", "service_running"] },
-        "timeout": { "type": "integer", "default": 60 }
+        "target": { "type": "string", "description": "The address:port, file path, or service name to check depending on condition" },
+        "timeout": { "type": "string", "default": "5m" }
       }
     }
   }
