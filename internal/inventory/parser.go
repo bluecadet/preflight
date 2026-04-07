@@ -25,9 +25,11 @@ type rawHost struct {
 	Username       string         `yaml:"username"`
 	Password       string         `yaml:"password"`
 	PasswordFrom   string         `yaml:"password_from"`
-	PrivateKey     string         `yaml:"private_key"`
-	PrivateKeyFrom string         `yaml:"private_key_from"`
-	HTTPS          bool           `yaml:"https"`
+	PrivateKey        string         `yaml:"private_key"`
+	PrivateKeyFrom    string         `yaml:"private_key_from"`
+	KnownHostsFile    string         `yaml:"known_hosts_file"`
+	HostKeyAlgorithms []string       `yaml:"host_key_algorithms"`
+	HTTPS             bool           `yaml:"https"`
 	Vars           map[string]any `yaml:"vars"`
 }
 
@@ -62,9 +64,11 @@ func Parse(data []byte) (*Inventory, error) {
 				Username:       rh.Username,
 				Password:       rh.Password,
 				PasswordFrom:   rh.PasswordFrom,
-				PrivateKey:     rh.PrivateKey,
-				PrivateKeyFrom: rh.PrivateKeyFrom,
-				HTTPS:          rh.HTTPS,
+				PrivateKey:        rh.PrivateKey,
+				PrivateKeyFrom:    rh.PrivateKeyFrom,
+				KnownHostsFile:    rh.KnownHostsFile,
+				HostKeyAlgorithms: rh.HostKeyAlgorithms,
+				HTTPS:             rh.HTTPS,
 				Vars:           rh.Vars,
 			}
 			hosts = append(hosts, h)
