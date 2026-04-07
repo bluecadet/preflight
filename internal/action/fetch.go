@@ -43,6 +43,9 @@ func (c Chain) Fetch(ctx context.Context, ref string) (*FetchResult, error) {
 }
 
 // FetchRefs fetches the full remote dependency closure reachable from refs.
+// It traverses the complete action graph, resolving local and embedded refs to
+// discover any remote deps they reference, so that nested remote actions under
+// local or stdlib roots are fetched correctly.
 func FetchRefs(ctx context.Context, chain Chain, refs []string) ([]LockEntry, error) {
 	seen := make(map[string]bool)
 	recorded := make(map[string]LockEntry)
@@ -55,20 +58,29 @@ func FetchRefs(ctx context.Context, chain Chain, refs []string) ([]LockEntry, er
 
 		ref := queue[0]
 		queue = queue[1:]
-		if !IsRemoteRef(ref) || seen[ref] {
+		if seen[ref] {
 			continue
 		}
 		seen[ref] = true
 
-		result, err := chain.Fetch(ctx, ref)
-		if err != nil {
-			return nil, err
+		if IsRemoteRef(ref) {
+			result, err := chain.Fetch(ctx, ref)
+			if err != nil {
+				return nil, err
+			}
+			if result == nil {
+				continue
+			}
+			recorded[result.Entry.Ref] = result.Entry
+			queue = append(queue, ActionUses(result.Action)...)
+		} else {
+			// Resolve local/embedded refs to discover any nested remote uses.
+			a, err := chain.Resolve(ctx, ref)
+			if err != nil {
+				return nil, err
+			}
+			queue = append(queue, ActionUses(a)...)
 		}
-		if result == nil {
-			continue
-		}
-		recorded[result.Entry.Ref] = result.Entry
-		queue = append(queue, ActionUses(result.Action)...)
 	}
 
 	entries := make([]LockEntry, 0, len(recorded))
