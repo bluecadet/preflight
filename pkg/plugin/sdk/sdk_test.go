@@ -14,15 +14,14 @@ func (mockModule) Name() string { return "mock" }
 
 func (mockModule) Check(_ map[string]any) (CheckResult, error) {
 	return CheckResult{
-		Changed: false,
-		State:   map[string]any{"status": "ok"},
+		NeedsChange: false,
+		State:       map[string]any{"status": "ok"},
 	}, nil
 }
 
 func (mockModule) Apply(_ map[string]any) (ApplyResult, error) {
 	return ApplyResult{
-		Changed: true,
-		State:   map[string]any{"status": "applied"},
+		State: map[string]any{"status": "applied"},
 	}, nil
 }
 
@@ -73,8 +72,8 @@ func TestServe_Check(t *testing.T) {
 		t.Fatalf("unmarshal CheckResult: %v", err)
 	}
 
-	if result.Changed {
-		t.Errorf("expected Changed=false, got true")
+	if result.NeedsChange {
+		t.Errorf("expected NeedsChange=false, got true")
 	}
 	if result.State["status"] != "ok" {
 		t.Errorf("expected state.status=ok, got %v", result.State["status"])
@@ -99,9 +98,6 @@ func TestServe_Apply(t *testing.T) {
 		t.Fatalf("unmarshal ApplyResult: %v", err)
 	}
 
-	if !result.Changed {
-		t.Errorf("expected Changed=true, got false")
-	}
 	if result.State["status"] != "applied" {
 		t.Errorf("expected state.status=applied, got %v", result.State["status"])
 	}

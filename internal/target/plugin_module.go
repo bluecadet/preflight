@@ -29,7 +29,7 @@ func (m *pluginModule) Check(ctx context.Context, params map[string]any) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("plugin %q check: %w", m.name, err)
 	}
-	return result.Changed, nil
+	return result.NeedsChange, nil
 }
 
 func (m *pluginModule) Apply(ctx context.Context, params map[string]any) error {
