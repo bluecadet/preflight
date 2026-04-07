@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/module"
@@ -99,6 +100,66 @@ func TestDirectoryModule_Check_Existing(t *testing.T) {
 	}
 	if needed {
 		t.Error("expected needsChange=false for existing directory")
+	}
+}
+
+func TestFileModule_Check_RejectsOwner(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	_, err := m.Check(context.Background(), map[string]any{
+		"dest":  "/some/path",
+		"owner": "admin",
+	})
+	if err == nil {
+		t.Fatal("expected error for owner param, got nil")
+	}
+	if !strings.Contains(err.Error(), "owner") {
+		t.Errorf("expected error to contain %q, got %q", "owner", err.Error())
+	}
+}
+
+func TestFileModule_Check_RejectsPermissions(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	_, err := m.Check(context.Background(), map[string]any{
+		"dest":        "/some/path",
+		"permissions": "0644",
+	})
+	if err == nil {
+		t.Fatal("expected error for permissions param, got nil")
+	}
+	if !strings.Contains(err.Error(), "permissions") {
+		t.Errorf("expected error to contain %q, got %q", "permissions", err.Error())
+	}
+}
+
+func TestDirectoryModule_Check_RejectsOwner(t *testing.T) {
+	reg := module.Registry()
+	m := reg["directory"]
+	_, err := m.Check(context.Background(), map[string]any{
+		"path":  "/some/path",
+		"owner": "admin",
+	})
+	if err == nil {
+		t.Fatal("expected error for owner param, got nil")
+	}
+	if !strings.Contains(err.Error(), "owner") {
+		t.Errorf("expected error to contain %q, got %q", "owner", err.Error())
+	}
+}
+
+func TestDirectoryModule_Check_RejectsPermissions(t *testing.T) {
+	reg := module.Registry()
+	m := reg["directory"]
+	_, err := m.Check(context.Background(), map[string]any{
+		"path":        "/some/path",
+		"permissions": "0755",
+	})
+	if err == nil {
+		t.Fatal("expected error for permissions param, got nil")
+	}
+	if !strings.Contains(err.Error(), "permissions") {
+		t.Errorf("expected error to contain %q, got %q", "permissions", err.Error())
 	}
 }
 

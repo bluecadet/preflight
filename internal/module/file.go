@@ -31,6 +31,12 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 	if err != nil {
 		return false, err
 	}
+	if _, ok := params["owner"]; ok {
+		return false, fmt.Errorf("file: owner is not supported on this platform")
+	}
+	if _, ok := params["permissions"]; ok {
+		return false, fmt.Errorf("file: permissions is not supported on this platform")
+	}
 
 	info, statErr := os.Stat(dest)
 
