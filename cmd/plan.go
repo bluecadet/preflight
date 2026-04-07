@@ -2,9 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
 )
 
@@ -38,6 +40,10 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	tags, _ := cmd.Flags().GetStringSlice("tags")
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
 		return err
@@ -52,7 +58,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for idx, host := range hosts {
+	for _, host := range hosts {
 		cfg := runner.Config{
 			DryRun:         false,
 			Tags:           tags,
@@ -73,26 +79,26 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
 		}
 
-		if idx > 0 {
-			fmt.Println()
-		}
-		fmt.Printf("Target: %s\n", host.Name)
-		fmt.Printf("Playbook: %s\n", plan.PlaybookName)
-		fmt.Printf("Tasks (%d):\n", len(plan.Tasks))
+		tasks := make([]output.PlanTaskEntry, 0, len(plan.Tasks))
 		for i, pt := range plan.Tasks {
 			preview, err := runner.PreviewTask(pt, host.TargetVars)
 			if err != nil {
 				return fmt.Errorf("preview task %q for %s: %w", pt.Name, host.Name, err)
 			}
-			fmt.Printf("  %d. [%s] %s", i+1, preview.Module, preview.Name)
-			if preview.When != "" {
-				fmt.Printf(" (when: %s)", preview.When)
-			}
-			if len(preview.Tags) > 0 {
-				fmt.Printf(" [tags: %v]", preview.Tags)
-			}
-			fmt.Println()
+			tasks = append(tasks, output.PlanTaskEntry{
+				Number: i + 1,
+				Module: preview.Module,
+				Name:   preview.Name,
+				When:   preview.When,
+				Tags:   preview.Tags,
+			})
 		}
+
+		renderer.Emit(output.PlanEvent{
+			Target:       host.Name,
+			PlaybookName: plan.PlaybookName,
+			Tasks:        tasks,
+		})
 	}
 
 	return nil

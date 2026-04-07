@@ -2,14 +2,13 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/facts"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
@@ -36,6 +35,10 @@ func runFacts(cmd *cobra.Command, _ []string) error {
 	}
 	defer cancel()
 
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	var hosts []targeting.ResolvedHost
 	if len(selectors) == 0 || selectorsAreLocal(selectors) {
@@ -60,31 +63,29 @@ func runFacts(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
 	if len(hosts) == 1 {
 		g := facts.New(hosts[0].Target)
 		f, err := g.Gather(ctx)
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
-		return enc.Encode(f.AsMap())
+		renderer.Emit(output.FactsEvent{
+			Target: hosts[0].Name,
+			Facts:  f.AsMap(),
+		})
+		return nil
 	}
 
-	result := make(map[string]any, len(hosts))
-	var mu sync.Mutex
-	if err := runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		g := facts.New(host.Target)
 		f, err := g.Gather(runCtx)
 		if err != nil {
 			return fmt.Errorf("facts for %s: %w", host.Name, err)
 		}
-		mu.Lock()
-		result[host.Name] = f.AsMap()
-		mu.Unlock()
+		renderer.Emit(output.FactsEvent{
+			Target: host.Name,
+			Facts:  f.AsMap(),
+		})
 		return nil
-	}); err != nil {
-		return err
-	}
-	return enc.Encode(result)
+	})
 }

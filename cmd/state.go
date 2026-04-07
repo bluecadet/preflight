@@ -1,15 +1,15 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
-	"github.com/bluecadet/preflight/internal/targeting"
 )
 
 const defaultStatePath = "state/provision.json"
@@ -56,9 +56,42 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("state show: %w", err)
 	}
 
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(state)
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
+	renderer.Emit(output.StateEvent{
+		StatePath:   path,
+		LastApplied: stateLastAppliedString(state),
+		Comparisons: stateComparisonsFromState(state),
+	})
+	return nil
+}
+
+func stateLastAppliedString(state *runner.State) string {
+	if state.LastApplied.IsZero() {
+		return "(never)"
+	}
+	return state.LastApplied.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+func stateComparisonsFromState(state *runner.State) []output.StateComparison {
+	keys := make([]string, 0, len(state.Tasks))
+	for k := range state.Tasks {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	comps := make([]output.StateComparison, 0, len(state.Tasks))
+	for _, k := range keys {
+		t := state.Tasks[k]
+		comps = append(comps, output.StateComparison{
+			Status:         "recorded",
+			TaskName:       t.TaskName,
+			Module:         t.Module,
+			RecordedStatus: string(t.Status),
+		})
+	}
+	return comps
 }
 
 func runStateComparison(label string, cmd *cobra.Command, args []string) error {
@@ -72,6 +105,10 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer cancel()
+
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
 	if err != nil {
@@ -98,7 +135,7 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	varFlags, _ := cmd.Flags().GetStringArray("var")
 	vars := parseVars(varFlags)
 
-	for idx, host := range hosts {
+	for _, host := range hosts {
 		statePath := host.StatePath
 		if hasStateOverride {
 			statePath = overrideStatePath
@@ -132,40 +169,28 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 		comparisons := runner.ComparePlannedTasks(plannedState, state)
 
-		if idx > 0 {
-			fmt.Println()
+		comps := make([]output.StateComparison, 0, len(comparisons))
+		for _, c := range comparisons {
+			recordedStatus := "(not recorded)"
+			if c.Status != runner.ComparisonStatusNew {
+				recordedStatus = string(c.RecordedStatus)
+			}
+			comps = append(comps, output.StateComparison{
+				Status:         string(c.Status),
+				TaskName:       c.TaskName,
+				Module:         c.Module,
+				RecordedStatus: recordedStatus,
+			})
 		}
-		printStateComparison(host, statePath, plan, state, comparisons)
+
+		renderer.Emit(output.StateEvent{
+			Target:       host.Name,
+			PlaybookName: plan.PlaybookName,
+			StatePath:    statePath,
+			LastApplied:  stateLastAppliedString(state),
+			Comparisons:  comps,
+		})
 	}
 
 	return nil
-}
-
-func printStateComparison(
-	host targeting.ResolvedHost,
-	statePath string,
-	plan *runner.ExecutionPlan,
-	state *runner.State,
-	comparisons []runner.TaskComparison,
-) {
-	fmt.Printf("State diff for playbook: %s\n", plan.PlaybookName)
-	fmt.Printf("Target: %s\n", host.Name)
-	fmt.Printf("State file: %s\n", statePath)
-	fmt.Printf("Last applied: %s\n\n", func() string {
-		if state.LastApplied.IsZero() {
-			return "(never)"
-		}
-		return state.LastApplied.UTC().Format("2006-01-02 15:04:05 UTC")
-	}())
-
-	fmt.Printf("%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
-	fmt.Printf("%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
-
-	for _, comparison := range comparisons {
-		recordedStatus := "(not recorded)"
-		if comparison.Status != runner.ComparisonStatusNew {
-			recordedStatus = string(comparison.RecordedStatus)
-		}
-		fmt.Printf("%-12s %-28s %-16s %s\n", comparison.Status, comparison.TaskName, comparison.Module, recordedStatus)
-	}
 }
