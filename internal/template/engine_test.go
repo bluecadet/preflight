@@ -367,3 +367,64 @@ func TestRenderMap_ListItems(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderBool_ComparisonOperators(t *testing.T) {
+	cases := []struct {
+		name  string
+		vars  map[string]any
+		expr  string
+		want  bool
+		isErr bool
+	}{
+		// String equality / inequality
+		{name: "eq_match", vars: map[string]any{"os": "windows"}, expr: "{{ vars.os == 'windows' }}", want: true},
+		{name: "eq_no_match", vars: map[string]any{"os": "linux"}, expr: "{{ vars.os == 'windows' }}", want: false},
+		{name: "neq_match", vars: map[string]any{"os": "linux"}, expr: "{{ vars.os != 'windows' }}", want: true},
+		{name: "neq_no_match", vars: map[string]any{"os": "windows"}, expr: "{{ vars.os != 'windows' }}", want: false},
+		{name: "eq_empty_string", vars: map[string]any{"version": ""}, expr: "{{ vars.version != '' }}", want: false},
+		{name: "neq_empty_nonempty", vars: map[string]any{"version": "1.0"}, expr: "{{ vars.version != '' }}", want: true},
+		// Numeric comparisons
+		{name: "gt_true", vars: map[string]any{"count": "10"}, expr: "{{ vars.count > 5 }}", want: true},
+		{name: "gt_false", vars: map[string]any{"count": "3"}, expr: "{{ vars.count > 5 }}", want: false},
+		{name: "gte_equal", vars: map[string]any{"count": "5"}, expr: "{{ vars.count >= 5 }}", want: true},
+		{name: "gte_greater", vars: map[string]any{"count": "6"}, expr: "{{ vars.count >= 5 }}", want: true},
+		{name: "lt_true", vars: map[string]any{"count": "3"}, expr: "{{ vars.count < 5 }}", want: true},
+		{name: "lt_false", vars: map[string]any{"count": "7"}, expr: "{{ vars.count < 5 }}", want: false},
+		{name: "lte_equal", vars: map[string]any{"count": "5"}, expr: "{{ vars.count <= 5 }}", want: true},
+		// Var vs var
+		{name: "vars_eq_vars", vars: map[string]any{"a": "hello", "b": "hello"}, expr: "{{ vars.a == vars.b }}", want: true},
+		{name: "vars_neq_vars", vars: map[string]any{"a": "hello", "b": "world"}, expr: "{{ vars.a == vars.b }}", want: false},
+		// Numeric type (int stored as int, not string)
+		{name: "int_var_gt", vars: map[string]any{"count": 10}, expr: "{{ vars.count > 5 }}", want: true},
+		// Non-numeric operand for numeric op is an error
+		{name: "non_numeric_gt", vars: map[string]any{"os": "windows"}, expr: "{{ vars.os > 5 }}", want: false, isErr: true},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(tc.vars)
+			got, err := e.RenderBool(tc.expr)
+			if tc.isErr {
+				if err == nil {
+					t.Fatalf("expected error, got nil (result=%v)", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("RenderBool(%q) = %v, want %v", tc.expr, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRenderBool_ComparisonUndefinedVar(t *testing.T) {
+	e := New(map[string]any{})
+	// Undefined vars.* should still error even in a comparison.
+	_, err := e.RenderBool("{{ vars.missing == 'x' }}")
+	if err == nil {
+		t.Fatal("expected error for undefined vars reference in comparison")
+	}
+}
