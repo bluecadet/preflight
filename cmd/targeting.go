@@ -60,6 +60,20 @@ func resolveRunHosts(
 	return hosts, nil
 }
 
+// mergeSelectors combines --target flag values with positional arguments,
+// deduplicating while preserving order.
+func mergeSelectors(flagSelectors, positional []string) []string {
+	seen := make(map[string]struct{}, len(flagSelectors)+len(positional))
+	merged := make([]string, 0, len(flagSelectors)+len(positional))
+	for _, s := range append(flagSelectors, positional...) {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			merged = append(merged, s)
+		}
+	}
+	return merged
+}
+
 func selectorsAreLocal(selectors []string) bool {
 	if len(selectors) == 0 {
 		return false

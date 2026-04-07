@@ -13,9 +13,9 @@ import (
 )
 
 var factsCmd = &cobra.Command{
-	Use:   "facts",
-	Short: "Gather facts for a target (default: local) and print as JSON",
-	Args:  cobra.NoArgs,
+	Use:   "facts [target...]",
+	Short: "Gather facts for one or more targets (default: local) using the selected output format",
+	Args:  cobra.ArbitraryArgs,
 	RunE:  runFacts,
 }
 
@@ -23,8 +23,9 @@ func init() {
 	rootCmd.AddCommand(factsCmd)
 }
 
-func runFacts(cmd *cobra.Command, _ []string) error {
-	selectors, _ := cmd.Flags().GetStringSlice("target")
+func runFacts(cmd *cobra.Command, args []string) error {
+	flagSelectors, _ := cmd.Flags().GetStringSlice("target")
+	selectors := mergeSelectors(flagSelectors, args)
 	if err := validateConcurrency(cmd); err != nil {
 		return err
 	}
