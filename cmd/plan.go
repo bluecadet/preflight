@@ -18,7 +18,6 @@ var planCmd = &cobra.Command{
 }
 
 func init() {
-	planCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(planCmd)
 }
 
