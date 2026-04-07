@@ -155,6 +155,53 @@ func TestDefaultPort_WinRM(t *testing.T) {
 	}
 }
 
+func TestDefaultPort_WinRMHTTPS(t *testing.T) {
+	data := `
+groups:
+  secure:
+    hosts:
+      - name: https-host
+        address: 10.0.0.1
+        transport: winrm
+        https: true
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("https-host")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Port != 5986 {
+		t.Errorf("expected default WinRM HTTPS port 5986, got %d", hosts[0].Port)
+	}
+}
+
+func TestDefaultPort_WinRMHTTPSExplicitPort(t *testing.T) {
+	data := `
+groups:
+  secure:
+    hosts:
+      - name: https-host-explicit
+        address: 10.0.0.2
+        transport: winrm
+        https: true
+        port: 9999
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("https-host-explicit")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Port != 9999 {
+		t.Errorf("expected explicit port 9999, got %d", hosts[0].Port)
+	}
+}
+
 func TestParseSecretReferenceFields(t *testing.T) {
 	data := `
 groups:

@@ -58,7 +58,7 @@ func Parse(data []byte) (*Inventory, error) {
 				Name:           rh.Name,
 				Address:        rh.Address,
 				Transport:      defaultTransport(rh.Transport),
-				Port:           defaultPort(rh.Transport, rh.Port),
+				Port:           defaultPort(rh.Transport, rh.HTTPS, rh.Port),
 				Username:       rh.Username,
 				Password:       rh.Password,
 				PasswordFrom:   rh.PasswordFrom,
@@ -125,7 +125,7 @@ func defaultTransport(t string) Transport {
 	}
 }
 
-func defaultPort(transport string, port int) int {
+func defaultPort(transport string, https bool, port int) int {
 	if port != 0 {
 		return port
 	}
@@ -133,6 +133,9 @@ func defaultPort(transport string, port int) int {
 	case TransportSSH:
 		return 22
 	default:
+		if https {
+			return 5986
+		}
 		return 5985
 	}
 }
