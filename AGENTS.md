@@ -41,10 +41,10 @@ The runner always calls `Check` first; `Apply` is only called when change is nee
 
 ### Execution Pipeline
 
-`Plan → Fetch → Stage → Apply`
+`Fetch → Plan → Stage → Apply`
 
-- **Plan**: parse playbook, resolve all action refs, expand into a flat task DAG, validate inputs, resolve variables. Pure computation — no I/O against targets.
 - **Fetch**: download remote action refs into cache.
+- **Plan**: parse playbook, resolve all action refs, expand into a flat task DAG, validate inputs, resolve variables. Pure computation — no I/O against targets.
 - **Stage**: optional — assemble a self-contained artifact bundle (zip) that can be pushed to air-gapped targets.
 - **Apply**: execute the task graph against targets via the `Target` interface.
 
