@@ -70,13 +70,13 @@ The codebase is intentionally split into a handful of major responsibilities:
 Preflight models four phases:
 
 ```text
-Plan -> Fetch -> Stage -> Apply
+Fetch -> Plan -> Stage -> Apply
 ```
 
 That separation is about more than code organization.
 
-- **Plan** is pure computation and should stay safe to run anywhere.
 - **Fetch** is dependency acquisition and cache pinning.
+- **Plan** is pure computation and should stay safe to run anywhere.
 - **Stage** is packaging for disconnected or delayed execution.
 - **Apply** is the only phase that should mutate machines.
 

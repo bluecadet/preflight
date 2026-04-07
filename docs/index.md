@@ -67,11 +67,11 @@ Preflight is built around three layers:
 Execution flows through four explicit phases:
 
 ```text
-Plan -> Fetch -> Stage -> Apply
+Fetch -> Plan -> Stage -> Apply
 ```
 
-- **Plan** loads playbooks, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
 - **Fetch** acquires remote action refs into the cache and records their pinned SHAs in `preflight.lock`.
+- **Plan** loads playbooks, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
 - **Stage** creates a per-target offline bundle that includes the rendered plan, runtime binary, manifest, and referenced plugins.
 - **Apply** gathers facts, renders execution-time templates, runs `Check()` first for every task, and only calls `Apply()` when change is required.
 
