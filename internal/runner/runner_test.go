@@ -1211,6 +1211,27 @@ func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
 	}
 }
 
+func TestRunPlanPhaseStopsBeforeApply(t *testing.T) {
+	mt := &mockTarget{}
+	stateDir := t.TempDir()
+	statePath := filepath.Join(stateDir, "state.json")
+
+	r := New(mt, emptyResolver(), Config{
+		Phase:     "plan",
+		StatePath: statePath,
+	})
+	pb := newShellPlaybook("plan-only")
+	if err := r.Run(context.Background(), pb); err != nil {
+		t.Fatalf("Run(plan): %v", err)
+	}
+	if len(mt.calls) != 0 {
+		t.Fatalf("expected no target execution during plan phase, got %#v", mt.calls)
+	}
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("expected no state file to be written during plan phase, but stat returned: %v", err)
+	}
+}
+
 func TestTargetNameNeverReturnsLocalhost(t *testing.T) {
 	// When no TargetName is configured and TargetVars is empty, targetName()
 	// must not return "localhost" — that would silently claim a local identity.

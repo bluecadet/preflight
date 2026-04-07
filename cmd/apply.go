@@ -158,6 +158,10 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
 		}
 
+		if phase == "plan" {
+			return nil
+		}
+
 		if phase == "stage" {
 			if err := r.Stage(runCtx, plan); err != nil {
 				return fmt.Errorf("stage for %s: %w", host.Name, err)
