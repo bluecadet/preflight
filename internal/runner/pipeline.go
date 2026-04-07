@@ -716,7 +716,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			// IgnoreErrors: treat as ok.
 			result = target.Result{
 				TaskID:  pt.ID,
-				Status:  target.StatusFailed,
+				Status:  target.StatusOK,
 				Message: execErr.Error(),
 				Output:  result.Output,
 			}
