@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -18,6 +19,9 @@ const (
 	EventPlayEnd    EventType = "play_end"
 	EventWarning    EventType = "warning"
 	EventError      EventType = "error"
+	EventFacts      EventType = "facts"
+	EventPlan       EventType = "plan"
+	EventState      EventType = "state"
 )
 
 // Event is the sealed interface implemented by all renderer event types.
@@ -40,6 +44,45 @@ type PlayEndEvent struct {
 type WarningEvent struct{ Message string }
 type ErrorEvent struct{ Message string }
 
+// FactsEvent carries gathered facts for a single target.
+type FactsEvent struct {
+	Target string
+	Facts  map[string]any
+}
+
+// PlanTaskEntry describes a single planned task for PlanEvent.
+type PlanTaskEntry struct {
+	Number int
+	Module string
+	Name   string
+	When   string
+	Tags   []string
+}
+
+// PlanEvent carries the resolved execution plan for a single target.
+type PlanEvent struct {
+	Target       string
+	PlaybookName string
+	Tasks        []PlanTaskEntry
+}
+
+// StateEvent carries the state comparison data for a single target.
+type StateEvent struct {
+	Target       string
+	PlaybookName string
+	StatePath    string
+	LastApplied  string
+	Comparisons  []StateComparison
+}
+
+// StateComparison is a single row in the state diff table.
+type StateComparison struct {
+	Status         string
+	TaskName       string
+	Module         string
+	RecordedStatus string
+}
+
 func (PlayStartEvent) isEvent()  {}
 func (TaskStartEvent) isEvent()  {}
 func (TaskOutputEvent) isEvent() {}
@@ -47,6 +90,9 @@ func (TaskResultEvent) isEvent() {}
 func (PlayEndEvent) isEvent()    {}
 func (WarningEvent) isEvent()    {}
 func (ErrorEvent) isEvent()      {}
+func (FactsEvent) isEvent()      {}
+func (PlanEvent) isEvent()       {}
+func (StateEvent) isEvent()      {}
 
 // Renderer is the interface that all output renderers implement.
 type Renderer interface {
@@ -213,6 +259,57 @@ func (r *TextRenderer) Emit(event Event) {
 
 	case WarningEvent:
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiYellow, "WARNING: "+e.Message))
+
+	case FactsEvent:
+		target := e.Target
+		if target == "" {
+			target = "localhost"
+		}
+		_, _ = fmt.Fprintf(r.w, "Facts for %s:\n", target)
+		keys := make([]string, 0, len(e.Facts))
+		for k := range e.Facts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			_, _ = fmt.Fprintf(r.w, "  %s: %v\n", k, e.Facts[k])
+		}
+
+	case PlanEvent:
+		target := e.Target
+		if target == "" {
+			target = "localhost"
+		}
+		_, _ = fmt.Fprintf(r.w, "Target: %s\n", target)
+		_, _ = fmt.Fprintf(r.w, "Playbook: %s\n", e.PlaybookName)
+		_, _ = fmt.Fprintf(r.w, "Tasks (%d):\n", len(e.Tasks))
+		for _, t := range e.Tasks {
+			_, _ = fmt.Fprintf(r.w, "  %d. [%s] %s", t.Number, t.Module, t.Name)
+			if t.When != "" {
+				_, _ = fmt.Fprintf(r.w, " (when: %s)", t.When)
+			}
+			if len(t.Tags) > 0 {
+				_, _ = fmt.Fprintf(r.w, " [tags: %v]", t.Tags)
+			}
+			_, _ = fmt.Fprintln(r.w)
+		}
+
+	case StateEvent:
+		if e.PlaybookName != "" {
+			_, _ = fmt.Fprintf(r.w, "State diff for playbook: %s\n", e.PlaybookName)
+		}
+		if e.Target != "" {
+			_, _ = fmt.Fprintf(r.w, "Target: %s\n", e.Target)
+		}
+		_, _ = fmt.Fprintf(r.w, "State file: %s\n", e.StatePath)
+		_, _ = fmt.Fprintf(r.w, "Last applied: %s\n\n", e.LastApplied)
+		if len(e.Comparisons) > 0 {
+			_, _ = fmt.Fprintf(r.w, "%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
+			_, _ = fmt.Fprintf(r.w, "%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
+			for _, c := range e.Comparisons {
+				_, _ = fmt.Fprintf(r.w, "%-12s %-28s %-16s %s\n", c.Status, c.TaskName, c.Module, c.RecordedStatus)
+			}
+		}
 	}
 }
 

@@ -74,7 +74,7 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 	}
 }
 
-func TestRunFactsWithInventoryMultipleHostsReturnsMap(t *testing.T) {
+func TestRunFactsWithInventoryMultipleHostsEmitsPerHostEvents(t *testing.T) {
 	_, inventoryPath := writeTestPlaybookWithInventory(t)
 	cmd := newTestCommand()
 	if err := cmd.Flags().Set("target", "lab"); err != nil {
@@ -106,8 +106,8 @@ func TestRunFactsWithInventoryMultipleHostsReturnsMap(t *testing.T) {
 	<-done
 
 	out := stdout.String()
-	if !strings.Contains(out, "\"kiosk-a\"") || !strings.Contains(out, "\"kiosk-b\"") {
-		t.Fatalf("expected multi-host facts map, got %q", out)
+	if !strings.Contains(out, "kiosk-a") || !strings.Contains(out, "kiosk-b") {
+		t.Fatalf("expected per-host facts output, got %q", out)
 	}
 }
 

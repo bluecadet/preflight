@@ -3,6 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 	"time"
 
@@ -294,6 +295,63 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 	case ErrorEvent:
 		line := "  " + tsFailed.Render("✗") + "  " + tsFailed.Render(e.Message)
 		return m, tea.Println(line)
+
+	case FactsEvent:
+		target := e.Target
+		if target == "" {
+			target = "localhost"
+		}
+		var b strings.Builder
+		b.WriteString(tsBold.Render("Facts for "+target+":") + "\n")
+		keys := make([]string, 0, len(e.Facts))
+		for k := range e.Facts {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "  %s: %v\n", k, e.Facts[k])
+		}
+		return m, tea.Println(b.String())
+
+	case PlanEvent:
+		target := e.Target
+		if target == "" {
+			target = "localhost"
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "Target: %s\n", target)
+		fmt.Fprintf(&b, "Playbook: %s\n", e.PlaybookName)
+		fmt.Fprintf(&b, "Tasks (%d):\n", len(e.Tasks))
+		for _, t := range e.Tasks {
+			fmt.Fprintf(&b, "  %d. [%s] %s", t.Number, t.Module, t.Name)
+			if t.When != "" {
+				fmt.Fprintf(&b, " (when: %s)", t.When)
+			}
+			if len(t.Tags) > 0 {
+				fmt.Fprintf(&b, " [tags: %v]", t.Tags)
+			}
+			b.WriteString("\n")
+		}
+		return m, tea.Println(b.String())
+
+	case StateEvent:
+		var b strings.Builder
+		if e.PlaybookName != "" {
+			fmt.Fprintf(&b, "State diff for playbook: %s\n", e.PlaybookName)
+		}
+		if e.Target != "" {
+			fmt.Fprintf(&b, "Target: %s\n", e.Target)
+		}
+		fmt.Fprintf(&b, "State file: %s\n", e.StatePath)
+		fmt.Fprintf(&b, "Last applied: %s\n\n", e.LastApplied)
+		if len(e.Comparisons) > 0 {
+			fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
+			fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
+			for _, c := range e.Comparisons {
+				fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", c.Status, c.TaskName, c.Module, c.RecordedStatus)
+			}
+		}
+		return m, tea.Println(b.String())
 	}
 
 	return m, nil
