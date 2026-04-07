@@ -18,19 +18,19 @@ type rawGroup struct {
 }
 
 type rawHost struct {
-	Name           string         `yaml:"name"`
-	Address        string         `yaml:"address"`
-	Transport      string         `yaml:"transport"`
-	Port           int            `yaml:"port"`
-	Username       string         `yaml:"username"`
-	Password       string         `yaml:"password"`
-	PasswordFrom   string         `yaml:"password_from"`
+	Name              string         `yaml:"name"`
+	Address           string         `yaml:"address"`
+	Transport         string         `yaml:"transport"`
+	Port              int            `yaml:"port"`
+	Username          string         `yaml:"username"`
+	Password          string         `yaml:"password"`
+	PasswordFrom      string         `yaml:"password_from"`
 	PrivateKey        string         `yaml:"private_key"`
 	PrivateKeyFrom    string         `yaml:"private_key_from"`
 	KnownHostsFile    string         `yaml:"known_hosts_file"`
 	HostKeyAlgorithms []string       `yaml:"host_key_algorithms"`
 	HTTPS             bool           `yaml:"https"`
-	Vars           map[string]any `yaml:"vars"`
+	Vars              map[string]any `yaml:"vars"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -57,19 +57,19 @@ func Parse(data []byte) (*Inventory, error) {
 				return nil, fmt.Errorf("inventory: host in group %q is missing a name", name)
 			}
 			h := Host{
-				Name:           rh.Name,
-				Address:        rh.Address,
-				Transport:      defaultTransport(rh.Transport),
-				Port:           defaultPort(rh.Transport, rh.HTTPS, rh.Port),
-				Username:       rh.Username,
-				Password:       rh.Password,
-				PasswordFrom:   rh.PasswordFrom,
+				Name:              rh.Name,
+				Address:           rh.Address,
+				Transport:         defaultTransport(rh.Transport),
+				Port:              defaultPort(rh.Transport, rh.HTTPS, rh.Port),
+				Username:          rh.Username,
+				Password:          rh.Password,
+				PasswordFrom:      rh.PasswordFrom,
 				PrivateKey:        rh.PrivateKey,
 				PrivateKeyFrom:    rh.PrivateKeyFrom,
 				KnownHostsFile:    rh.KnownHostsFile,
 				HostKeyAlgorithms: rh.HostKeyAlgorithms,
 				HTTPS:             rh.HTTPS,
-				Vars:           rh.Vars,
+				Vars:              rh.Vars,
 			}
 			hosts = append(hosts, h)
 		}

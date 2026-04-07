@@ -25,9 +25,10 @@ type SSHConfig struct {
 	// remote host key. When empty the connection proceeds without host key
 	// verification (insecure; only acceptable on isolated networks).
 	KnownHostsFile string
-	// HostKeyAlgorithms restricts the accepted host key algorithms when
-	// KnownHostsFile is set. If nil, all algorithms supported by the
-	// known_hosts file are accepted.
+	// HostKeyAlgorithms restricts the accepted host key algorithms during the
+	// SSH handshake. When nil, the SSH client library's built-in default
+	// host-key algorithm list is used. This field applies regardless of
+	// whether KnownHostsFile is set.
 	HostKeyAlgorithms []string
 }
 
@@ -109,6 +110,11 @@ func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
 		registry:      registry,
 		runnerFactory: defaultSSHRunnerFactory,
 	}
+}
+
+// Config returns the SSHConfig that was used to construct this target.
+func (t *SSHTarget) Config() SSHConfig {
+	return t.config
 }
 
 func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
