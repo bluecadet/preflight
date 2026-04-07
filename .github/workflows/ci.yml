@@ -3,12 +3,66 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "LICENSE"
   pull_request:
     branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
+      - "LICENSE"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      go: ${{ steps.filter.outputs.go }}
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - go.mod
+              - go.sum
+              - .golangci.yml
+              - .golangci.yaml
+              - .golangci.toml
+              - .golangci.json
+              - Makefile
+              - .github/workflows/ci.yml
+            build:
+              - '**/*.go'
+              - go.mod
+              - go.sum
+              - Makefile
+              - install.sh
+              - install.ps1
+              - .goreleaser.yaml
+              - .github/workflows/ci.yml
+              - .github/workflows/release.yml
+
   test:
     name: Test
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -16,12 +70,15 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Test
         run: go test ./...
 
   lint:
     name: Lint
+    needs: changes
+    if: needs.changes.outputs.go == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -29,6 +86,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
@@ -37,6 +95,8 @@ jobs:
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
+    needs: changes
+    if: needs.changes.outputs.build == 'true' && (github.event_name == 'push' || matrix.run_on_pr)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -44,27 +104,34 @@ jobs:
           - goos: windows
             goarch: amd64
             output: preflight-windows-amd64.exe
+            run_on_pr: true
           - goos: windows
             goarch: arm64
             output: preflight-windows-arm64.exe
+            run_on_pr: true
           - goos: darwin
             goarch: amd64
             output: preflight-darwin-amd64
+            run_on_pr: false
           - goos: darwin
             goarch: arm64
             output: preflight-darwin-arm64
+            run_on_pr: false
           - goos: linux
             goarch: amd64
             output: preflight-linux-amd64
+            run_on_pr: false
           - goos: linux
             goarch: arm64
             output: preflight-linux-arm64
+            run_on_pr: false
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
 
       - name: Build
         env:
@@ -73,6 +140,7 @@ jobs:
         run: go build -o dist/${{ matrix.output }} .
 
       - uses: actions/upload-artifact@v6
+        if: github.event_name == 'push'
         with:
           name: ${{ matrix.output }}
           path: dist/${{ matrix.output }}
