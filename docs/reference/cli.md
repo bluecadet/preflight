@@ -14,7 +14,6 @@ These flags are defined on the root command and are available to subcommands whe
 | `--tags` |  | Run only tasks that have any of the listed tags. |
 | `--skip-tags` |  | Skip tasks that have any of the listed tags. |
 | `--check` |  | Dry-run mode. |
-| `--diff` |  | Present on the CLI surface but not currently wired into task execution output. |
 | `--verbose` | `-v` | Reserved verbose flag. |
 | `--output` |  | Output format: `text`, `tui`, `json`, or `jsonl`. |
 | `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
