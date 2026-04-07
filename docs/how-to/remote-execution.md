@@ -11,6 +11,8 @@ Use this guide when you want to select hosts from `inventory.yml` and run Prefli
 
 If you want the local flow first, use [Run a playbook](./run-a-playbook.md).
 
+If the machine running Preflight cannot open controller-initiated connections to the targets, read [Deploy across restricted networks](../explanation/restricted-network-deployment.md) before choosing a transport.
+
 ## 1. Define Inventory Entries
 
 Example `inventory.yml`:

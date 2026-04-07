@@ -10,6 +10,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 | Install the CLI safely | [Install Preflight](./how-to/install-preflight.md) |
 | Run, dry-run, or inspect a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
+| Choose a deployment pattern for locked-down networks | [Deploy across restricted networks](./explanation/restricted-network-deployment.md) |
 | Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
 | Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
 | Use external plugin modules | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
@@ -51,6 +52,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Why use Preflight (and when not to)](./explanation/why-preflight.md)
 - [Execution model](./explanation/execution-model.md)
 - [Actions, stdlib, and lockfiles](./explanation/actions-and-lockfiles.md)
+- [Deploy across restricted networks](./explanation/restricted-network-deployment.md)
 - [Targets, transports, and plugins](./explanation/targets-and-transports.md)
 - [Secrets and `age`](./explanation/secrets-and-age.md)
 
