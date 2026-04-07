@@ -154,7 +154,14 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 
 	switch ensure {
 	case "absent":
-		return state != "missing", "", nil
+		switch state {
+		case "dir":
+			return false, "", fmt.Errorf("file module cannot remove directory %q: use the directory module with ensure:absent instead", dest)
+		case "file":
+			return true, "file exists, will remove", nil
+		default: // "missing"
+			return false, "", nil
+		}
 	case "present":
 		switch state {
 		case "missing":
@@ -350,6 +357,9 @@ func posixNonZeroExitMeansChange(ctx context.Context, backend posixShellBackend,
 	if stderr != "" {
 		return false, "", fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
 	}
+	// A non-zero exit with no stderr is treated as "condition not met" rather
+	// than an error. This is only safe for test(1) commands where exit code 1
+	// unambiguously means the condition is false, not a shell or command failure.
 	return true, "", nil
 }
 
