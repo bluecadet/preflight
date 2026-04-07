@@ -698,16 +698,21 @@
       "type": "object",
       "description": "Wait for a condition to be true",
       "additionalProperties": false,
+      "required": ["condition", "target"],
       "properties": {
         "condition": {
           "type": "string",
           "enum": ["port_open", "file_exists", "service_running"],
           "description": "Condition type to wait for"
         },
+        "target": {
+          "type": "string",
+          "description": "The address:port, file path, or service name to check depending on condition"
+        },
         "timeout": {
-          "type": "integer",
-          "description": "Maximum seconds to wait",
-          "default": 60
+          "type": "string",
+          "description": "Maximum time to wait, as a duration string (e.g. \"5m\", \"30s\", \"1h\")",
+          "default": "5m"
         }
       }
     }

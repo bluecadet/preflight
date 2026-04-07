@@ -82,6 +82,15 @@
         "vars": {
           "type": "object",
           "description": "Host-specific variable overrides"
+        },
+        "known_hosts_file": {
+          "type": "string",
+          "description": "Path to a known_hosts file for SSH host key verification"
+        },
+        "host_key_algorithms": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Restrict accepted SSH host key algorithms during handshake"
         }
       }
     }
