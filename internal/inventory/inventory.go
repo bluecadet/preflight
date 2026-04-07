@@ -24,9 +24,11 @@ type Host struct {
 	Username       string
 	Password       string
 	PasswordFrom   string
-	PrivateKey     string
-	PrivateKeyFrom string
-	HTTPS          bool
+	PrivateKey        string
+	PrivateKeyFrom    string
+	KnownHostsFile    string
+	HostKeyAlgorithms []string
+	HTTPS             bool
 	Vars           map[string]any
 }
 

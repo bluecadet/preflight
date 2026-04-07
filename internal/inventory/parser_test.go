@@ -251,6 +251,39 @@ groups:
 	}
 }
 
+func TestParseSSHHostKeyVerificationFields(t *testing.T) {
+	data := `
+groups:
+  staging:
+    hosts:
+      - name: staging-pc-01
+        address: 10.1.0.5
+        transport: ssh
+        known_hosts_file: /home/user/.ssh/known_hosts
+        host_key_algorithms:
+          - ssh-ed25519
+          - ssh-rsa
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	h := hosts[0]
+	if h.KnownHostsFile != "/home/user/.ssh/known_hosts" {
+		t.Errorf("expected known_hosts_file to be populated, got %q", h.KnownHostsFile)
+	}
+	if len(h.HostKeyAlgorithms) != 2 {
+		t.Fatalf("expected 2 host_key_algorithms, got %d", len(h.HostKeyAlgorithms))
+	}
+	if h.HostKeyAlgorithms[0] != "ssh-ed25519" || h.HostKeyAlgorithms[1] != "ssh-rsa" {
+		t.Errorf("unexpected host_key_algorithms: %v", h.HostKeyAlgorithms)
+	}
+}
+
 func TestSelectTargets_DedupesInSelectorOrder(t *testing.T) {
 	inv, err := inventory.Parse([]byte(sampleInventory))
 	if err != nil {
