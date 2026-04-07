@@ -253,6 +253,12 @@ Manage Windows local users.
 | `groups` | string[] | Group memberships |
 | `ensure` | `present` or `absent` | Desired state |
 
+When `ensure: present` is used without a `password`, Preflight creates the user
+without a password if the account does not already exist. If the user already
+exists, omitting `password` leaves the current password unchanged. Requested
+`groups` are additive and ensure membership in those groups without removing
+other existing memberships.
+
 ### `power_plan`
 
 Manage named Windows power plans.
