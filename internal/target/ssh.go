@@ -96,6 +96,8 @@ type SSHTarget struct {
 	mu            sync.Mutex
 	runner        sshRunner
 	runtime       sshRuntime
+	runtimeOnce   sync.Once
+	runtimeErr    error
 }
 
 func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
@@ -169,25 +171,10 @@ func (t *SSHTarget) clientRunner() (sshRunner, error) {
 }
 
 func (t *SSHTarget) runtimeForUse(ctx context.Context) (sshRuntime, error) {
-	t.mu.Lock()
-	if t.runtime != nil {
-		runtime := t.runtime
-		t.mu.Unlock()
-		return runtime, nil
-	}
-	t.mu.Unlock()
-
-	runtime, err := t.detectRuntime(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	if t.runtime == nil {
-		t.runtime = runtime
-	}
-	return t.runtime, nil
+	t.runtimeOnce.Do(func() {
+		t.runtime, t.runtimeErr = t.detectRuntime(ctx)
+	})
+	return t.runtime, t.runtimeErr
 }
 
 func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
