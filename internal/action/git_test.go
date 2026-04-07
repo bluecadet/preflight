@@ -164,7 +164,11 @@ type fakeFetchResolver struct {
 
 func (r *fakeFetchResolver) Name() string { return "fake-fetch" }
 
-func (r *fakeFetchResolver) Resolve(_ context.Context, _ string) (*Action, error) {
+func (r *fakeFetchResolver) Resolve(_ context.Context, ref string) (*Action, error) {
+	// Non-remote refs (local/embedded) are resolvable without fetching.
+	if !IsRemoteRef(ref) {
+		return &Action{}, nil
+	}
 	return nil, nil
 }
 
