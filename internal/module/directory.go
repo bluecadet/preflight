@@ -24,10 +24,10 @@ func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool,
 		return false, err
 	}
 	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("directory: owner is not supported on this platform")
+		return false, fmt.Errorf("directory: owner is not implemented by this module")
 	}
 	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("directory: permissions is not supported on this platform")
+		return false, fmt.Errorf("directory: permissions is not implemented by this module")
 	}
 
 	info, statErr := os.Stat(path)
@@ -67,6 +67,12 @@ func (m *DirectoryModule) Apply(_ context.Context, params map[string]any) error 
 	ensure, err := paramString(params, "ensure", "present")
 	if err != nil {
 		return err
+	}
+	if _, ok := params["owner"]; ok {
+		return fmt.Errorf("directory: owner is not implemented by this module")
+	}
+	if _, ok := params["permissions"]; ok {
+		return fmt.Errorf("directory: permissions is not implemented by this module")
 	}
 
 	switch ensure {
