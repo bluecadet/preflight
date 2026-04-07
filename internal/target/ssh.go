@@ -354,7 +354,7 @@ func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, erro
 func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 	stdout, err := r.RunPowerShellScript(ctx, `
 $os = Get-CimInstance Win32_OperatingSystem
-$arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+$arch = $os.OSArchitecture
 [pscustomobject]@{
   hostname = $env:COMPUTERNAME
   version  = [string]$os.Version
