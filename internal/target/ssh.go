@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
 	"sync"
+	"unicode/utf16"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -77,107 +79,76 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 	return &sshClientRunner{client: client}, nil
 }
 
+type sshRuntime interface {
+	Kind() RuntimeKind
+	Registry() remoteModuleRegistry
+	CopyFile(ctx context.Context, src, dst string) error
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	Reachable(ctx context.Context) (bool, error)
+	Info(ctx context.Context) (TargetInfo, error)
+}
+
 // SSHTarget communicates with a remote machine over SSH.
 type SSHTarget struct {
 	config        SSHConfig
+	registry      ModuleRegistry
 	runnerFactory sshRunnerFactory
 	mu            sync.Mutex
 	runner        sshRunner
+	runtime       sshRuntime
 }
 
-func NewSSHTarget(cfg SSHConfig) *SSHTarget {
+func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
 	if cfg.Port == 0 {
 		cfg.Port = 22
 	}
 	return &SSHTarget{
 		config:        cfg,
+		registry:      registry,
 		runnerFactory: defaultSSHRunnerFactory,
 	}
 }
 
 func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
-	needsChange, err := t.checkModule(ctx, module, params)
+	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
-	if !needsChange {
-		return Result{TaskID: taskID, Status: StatusOK, Message: "already in desired state"}, nil
-	}
-	if dryRun {
-		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
-	}
-	outputStr, err := t.applyModuleWithOutput(ctx, module, params)
-	result := Result{TaskID: taskID, Status: StatusChanged, Message: "change applied"}
-	if outputStr != "" {
-		lines := strings.Split(strings.TrimRight(outputStr, "\n"), "\n")
-		result.Output = lines
-		if onOutput != nil {
-			for _, l := range lines {
-				onOutput(l)
-			}
-		}
-	}
-	if err != nil {
-		result.Status = StatusFailed
-		result.Error = err
-		return result, err
-	}
-	return result, nil
+	return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, runtime.Registry(), func(module string) error {
+		return t.unsupportedModuleError(module, runtime.Kind())
+	})
 }
 
 func (t *SSHTarget) CopyFile(ctx context.Context, src, dst string) error {
-	data, err := os.ReadFile(src)
+	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return err
 	}
-	encoded := base64.StdEncoding.EncodeToString(data)
-	cmd := fmt.Sprintf("mkdir -p %q && base64 -d > %q", shellDir(dst), dst)
-	_, _, code, err := t.run(ctx, cmd, []byte(encoded))
-	if err != nil {
-		return err
-	}
-	if code != 0 {
-		return fmt.Errorf("ssh copy exited with code %d", code)
-	}
-	return nil
+	return runtime.CopyFile(ctx, src, dst)
 }
 
 func (t *SSHTarget) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	stdout, _, code, err := t.run(ctx, fmt.Sprintf("base64 < %q", path), nil)
+	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if code != 0 {
-		return nil, fmt.Errorf("ssh read exited with code %d", code)
-	}
-	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	return runtime.ReadFile(ctx, path)
 }
 
 func (t *SSHTarget) Reachable(ctx context.Context) (bool, error) {
-	_, _, code, err := t.run(ctx, "echo preflight", nil)
+	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return false, err
 	}
-	return code == 0, nil
+	return runtime.Reachable(ctx)
 }
 
 func (t *SSHTarget) Info(ctx context.Context) (TargetInfo, error) {
-	stdout, _, code, err := t.run(ctx, "printf '%s|%s|%s\\n' \"$(hostname)\" \"$(uname -s)\" \"$(uname -m)\"", nil)
+	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return TargetInfo{}, err
 	}
-	if code != 0 {
-		return TargetInfo{}, fmt.Errorf("ssh info exited with code %d", code)
-	}
-	parts := strings.Split(strings.TrimSpace(stdout), "|")
-	if len(parts) != 3 {
-		return TargetInfo{}, fmt.Errorf("ssh info: unexpected output %q", stdout)
-	}
-	return TargetInfo{
-		Hostname:  parts[0],
-		OSVersion: parts[1],
-		Arch:      parts[2],
-	}, nil
+	return runtime.Info(ctx)
 }
 
 func (t *SSHTarget) clientRunner() (sshRunner, error) {
@@ -197,6 +168,28 @@ func (t *SSHTarget) clientRunner() (sshRunner, error) {
 	return runner, nil
 }
 
+func (t *SSHTarget) runtimeForUse(ctx context.Context) (sshRuntime, error) {
+	t.mu.Lock()
+	if t.runtime != nil {
+		runtime := t.runtime
+		t.mu.Unlock()
+		return runtime, nil
+	}
+	t.mu.Unlock()
+
+	runtime, err := t.detectRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.runtime == nil {
+		t.runtime = runtime
+	}
+	return t.runtime, nil
+}
+
 func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
 	runner, err := t.clientRunner()
 	if err != nil {
@@ -205,100 +198,297 @@ func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (stri
 	return runner.Run(ctx, command, stdin)
 }
 
-func (t *SSHTarget) checkModule(ctx context.Context, module string, params map[string]any) (bool, error) {
-	switch module {
-	case "directory":
-		path, _ := params["path"].(string)
-		ensure, _ := params["ensure"].(string)
-		if ensure == "absent" {
-			return t.nonZeroExitMeansChange(ctx, fmt.Sprintf("test ! -e %q", path))
-		}
-		return t.nonZeroExitMeansChange(ctx, fmt.Sprintf("test -d %q", path))
-	case "file":
-		dest, _ := params["dest"].(string)
-		ensure, _ := params["ensure"].(string)
-		if ensure == "absent" {
-			return t.nonZeroExitMeansChange(ctx, fmt.Sprintf("test ! -e %q", dest))
-		}
-		return t.nonZeroExitMeansChange(ctx, fmt.Sprintf("test -f %q", dest))
-	case "shell":
-		creates, _ := params["creates"].(string)
-		if creates == "" {
-			return true, nil
-		}
-		return t.nonZeroExitMeansChange(ctx, fmt.Sprintf("test -e %q", creates))
-	default:
-		return false, fmt.Errorf("ssh: module %q is not supported yet", module)
-	}
-}
-
-func (t *SSHTarget) applyModuleWithOutput(ctx context.Context, module string, params map[string]any) (string, error) {
-	switch module {
-	case "directory":
-		path, _ := params["path"].(string)
-		ensure, _ := params["ensure"].(string)
-		if ensure == "absent" {
-			return "", t.mustRun(ctx, fmt.Sprintf("rm -rf %q", path))
-		}
-		return "", t.mustRun(ctx, fmt.Sprintf("mkdir -p %q", path))
-	case "file":
-		dest, _ := params["dest"].(string)
-		ensure, _ := params["ensure"].(string)
-		if ensure == "absent" {
-			return "", t.mustRun(ctx, fmt.Sprintf("rm -f %q", dest))
-		}
-		if src, _ := params["src"].(string); src != "" {
-			return "", t.CopyFile(ctx, src, dest)
-		}
-		return "", t.mustRun(ctx, fmt.Sprintf("mkdir -p %q && : > %q", shellDir(dest), dest))
-	case "shell":
-		cmd, _ := params["cmd"].(string)
-		args, err := sshStringSlice(params["args"])
+func (t *SSHTarget) detectRuntime(ctx context.Context) (sshRuntime, error) {
+	var posixPowerShellBinary string
+	for _, binary := range []string{"powershell.exe", "pwsh", "powershell"} {
+		available, isWindows, err := t.probePowerShellBinary(ctx, binary)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
-		workingDir, _ := params["working_dir"].(string)
-		var shellCmd strings.Builder
-		if workingDir != "" {
-			fmt.Fprintf(&shellCmd, "cd %q && ", workingDir)
+		if !available {
+			continue
 		}
-		shellCmd.WriteString(shellQuoteExec(cmd, args))
-		stdout, stderr, code, err := t.run(ctx, shellCmd.String(), nil)
-		if err != nil {
-			return stdout, err
+		if isWindows {
+			return &sshWindowsPowerShellRuntime{target: t, binary: binary}, nil
 		}
-		if code != 0 {
-			return stdout, fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		if posixPowerShellBinary == "" {
+			posixPowerShellBinary = binary
 		}
-		return stdout, nil
-	default:
-		return "", fmt.Errorf("ssh: module %q is not supported yet", module)
 	}
-}
 
-func (t *SSHTarget) nonZeroExitMeansChange(ctx context.Context, command string) (bool, error) {
-	_, stderr, code, err := t.run(ctx, command, nil)
+	stdout, stderr, code, err := t.run(ctx, "printf preflight", nil)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if code == 0 {
-		return false, nil
+	if code == 0 && strings.TrimSpace(stdout) == "preflight" {
+		return &sshPOSIXShellRuntime{target: t, powerShellBinary: posixPowerShellBinary}, nil
 	}
-	if stderr != "" {
-		return false, fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
+
+	message := strings.TrimSpace(stderr)
+	if message == "" {
+		message = strings.TrimSpace(stdout)
 	}
-	return true, nil
+	if message == "" {
+		message = "no supported remote shell runtime detected"
+	}
+	return nil, fmt.Errorf("ssh: unable to detect a supported remote runtime: %s", message)
 }
 
-func (t *SSHTarget) mustRun(ctx context.Context, command string) error {
-	_, stderr, code, err := t.run(ctx, command, nil)
+func (t *SSHTarget) probePowerShellBinary(ctx context.Context, binary string) (bool, bool, error) {
+	stdout, _, code, err := t.run(ctx, buildEncodedPowerShellCommand(binary, `
+if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+  Write-Output 'preflight-windows'
+} else {
+  Write-Output 'preflight-nonwindows'
+}
+`), nil)
+	if err != nil {
+		return false, false, err
+	}
+	if code != 0 {
+		return false, false, nil
+	}
+	switch strings.TrimSpace(stdout) {
+	case "preflight-windows":
+		return true, true, nil
+	case "preflight-nonwindows":
+		return true, false, nil
+	default:
+		return false, false, nil
+	}
+}
+
+func (t *SSHTarget) unsupportedModuleError(module string, runtimeKind RuntimeKind) error {
+	if t.registry != nil {
+		mod, ok := t.registry[module]
+		if !ok {
+			return fmt.Errorf("ssh: unknown module %q", module)
+		}
+		if _, isPlugin := mod.(*pluginModule); isPlugin {
+			return fmt.Errorf("ssh: plugin module %q is not supported yet; use local execution or a staged bundle", module)
+		}
+	}
+	return unsupportedRuntimeModuleError(runtimeKind, module)
+}
+
+type sshWindowsPowerShellRuntime struct {
+	target *SSHTarget
+	binary string
+}
+
+func (r *sshWindowsPowerShellRuntime) Kind() RuntimeKind {
+	return RuntimeKindWindowsPowerShell
+}
+
+func (r *sshWindowsPowerShellRuntime) Registry() remoteModuleRegistry {
+	return newWindowsPowerShellRegistry(r)
+}
+
+func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func (r *sshWindowsPowerShellRuntime) CopyFile(ctx context.Context, src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	script, err := powershellJSONVar("path", dst)
+	if err != nil {
+		return err
+	}
+	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script+`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+$payload = [Console]::In.ReadToEnd()
+[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($payload))
+`), []byte(encoded))
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		message := strings.TrimSpace(stderr)
+		if message == "" {
+			message = strings.TrimSpace(stdout)
+		}
+		return fmt.Errorf("ssh copy exited with code %d: %s", code, message)
 	}
 	return nil
+}
+
+func (r *sshWindowsPowerShellRuntime) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	script, err := powershellJSONVar("path", path)
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := r.RunPowerShellScript(ctx, script+`
+if (-not (Test-Path -LiteralPath $path)) {
+  throw "file not found: $path"
+}
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+`)
+	if err != nil {
+		return nil, err
+	}
+	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+}
+
+func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, error) {
+	stdout, err := r.RunPowerShellScript(ctx, `Write-Output 'preflight'`)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(stdout) == "preflight", nil
+}
+
+func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
+	stdout, err := r.RunPowerShellScript(ctx, `
+$os = Get-CimInstance Win32_OperatingSystem
+$arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+[pscustomobject]@{
+  hostname = $env:COMPUTERNAME
+  version  = [string]$os.Version
+  build    = [string]$os.BuildNumber
+  arch     = $arch
+} | ConvertTo-Json -Compress
+`)
+	if err != nil {
+		return TargetInfo{}, err
+	}
+	var payload struct {
+		Hostname string `json:"hostname"`
+		Version  string `json:"version"`
+		Build    string `json:"build"`
+		Arch     string `json:"arch"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
+		return TargetInfo{}, fmt.Errorf("ssh: parse target info: %w", err)
+	}
+	return TargetInfo{
+		Hostname:  payload.Hostname,
+		OSVersion: payload.Version,
+		OSBuild:   payload.Build,
+		Arch:      normalizeWindowsArch(payload.Arch),
+	}, nil
+}
+
+func (r *sshWindowsPowerShellRuntime) RemoteTempDir() string {
+	return `C:\Windows\Temp\preflight`
+}
+
+type sshPOSIXShellRuntime struct {
+	target           *SSHTarget
+	powerShellBinary string
+}
+
+func (r *sshPOSIXShellRuntime) Kind() RuntimeKind {
+	return RuntimeKindPOSIXShell
+}
+
+func (r *sshPOSIXShellRuntime) Registry() remoteModuleRegistry {
+	return newPOSIXShellRegistry(r)
+}
+
+func (r *sshPOSIXShellRuntime) RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
+	return r.target.run(ctx, command, stdin)
+}
+
+func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	cmd := fmt.Sprintf("mkdir -p %q && base64 -d > %q", shellDir(dst), dst)
+	_, _, code, err := r.target.run(ctx, cmd, []byte(encoded))
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("ssh copy exited with code %d", code)
+	}
+	return nil
+}
+
+func (r *sshPOSIXShellRuntime) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	stdout, _, code, err := r.target.run(ctx, fmt.Sprintf("base64 < %q", path), nil)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("ssh read exited with code %d", code)
+	}
+	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+}
+
+func (r *sshPOSIXShellRuntime) Reachable(ctx context.Context) (bool, error) {
+	_, _, code, err := r.target.run(ctx, "echo preflight", nil)
+	if err != nil {
+		return false, err
+	}
+	return code == 0, nil
+}
+
+func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
+	stdout, _, code, err := r.target.run(ctx, "printf '%s|%s|%s\\n' \"$(hostname)\" \"$(uname -s)\" \"$(uname -m)\"", nil)
+	if err != nil {
+		return TargetInfo{}, err
+	}
+	if code != 0 {
+		return TargetInfo{}, fmt.Errorf("ssh info exited with code %d", code)
+	}
+	parts := strings.Split(strings.TrimSpace(stdout), "|")
+	if len(parts) != 3 {
+		return TargetInfo{}, fmt.Errorf("ssh info: unexpected output %q", stdout)
+	}
+	return TargetInfo{
+		Hostname:  parts[0],
+		OSVersion: parts[1],
+		Arch:      parts[2],
+	}, nil
+}
+
+func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+	if r.powerShellBinary == "" {
+		return "", fmt.Errorf("posix-shell runtime: powershell is not available on the remote host")
+	}
+	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.powerShellBinary, script), nil)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func (r *sshPOSIXShellRuntime) PowerShellBinary() string {
+	return r.powerShellBinary
+}
+
+func buildEncodedPowerShellCommand(binary, script string) string {
+	encoded := encodePowerShellScript(script)
+	return shellQuoteExec(binary, []string{"-NoProfile", "-NonInteractive", "-EncodedCommand", encoded})
+}
+
+func encodePowerShellScript(script string) string {
+	codeUnits := utf16.Encode([]rune(script))
+	buf := make([]byte, len(codeUnits)*2)
+	for i, unit := range codeUnits {
+		buf[2*i] = byte(unit)
+		buf[2*i+1] = byte(unit >> 8)
+	}
+	return base64.StdEncoding.EncodeToString(buf)
 }
 
 func shellDir(path string) string {
