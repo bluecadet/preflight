@@ -1211,6 +1211,113 @@ func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
 	}
 }
 
+// localActionResolver handles a fixed set of non-remote refs without any fetch step,
+// simulating a local or embedded action resolver.
+type localActionResolver struct {
+	actions map[string]*action.Action
+}
+
+func (r *localActionResolver) Name() string { return "local" }
+func (r *localActionResolver) Resolve(_ context.Context, ref string) (*action.Action, error) {
+	a, ok := r.actions[ref]
+	if !ok {
+		return nil, nil
+	}
+	return a, nil
+}
+
+func TestRunFetchesRemoteDepsNestedUnderLocalAction(t *testing.T) {
+	localRef := "local/wrapper"
+	remoteRef := "github.com/acme/actions/child@v1"
+
+	localAction := &action.Action{
+		Name:  "wrapper",
+		Tasks: []action.Task{{Name: "child", Uses: remoteRef}},
+	}
+	remoteAction := &action.Action{
+		Name: "child",
+		Tasks: []action.Task{{
+			Name:  "echo",
+			Shell: map[string]any{"cmd": "echo hello"},
+		}},
+	}
+
+	fr := &fetchableResolver{
+		actions: map[string]*action.Action{remoteRef: remoteAction},
+		fetched: make(map[string]bool),
+	}
+	chain := action.Chain{
+		&localActionResolver{actions: map[string]*action.Action{localRef: localAction}},
+		fr,
+	}
+
+	playbook := &action.Playbook{
+		Name: "local-to-remote",
+		Tasks: []action.Task{{
+			Name: "wrapper",
+			Uses: localRef,
+		}},
+	}
+
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
+	r := New(mt, chain, Config{})
+	if err := r.Run(context.Background(), playbook); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(fr.calls) != 1 || fr.calls[0] != remoteRef {
+		t.Errorf("expected fetch of %q, got %v", remoteRef, fr.calls)
+	}
+	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
+		t.Errorf("expected one shell execution, got %#v", mt.calls)
+	}
+}
+
+func TestRunFetchesRemoteDepsNestedUnderStdlibAction(t *testing.T) {
+	stdlibRef := "preflight/baseline"
+	remoteRef := "github.com/acme/actions/plugin@v3"
+
+	stdlibAction := &action.Action{
+		Name:  "baseline",
+		Tasks: []action.Task{{Name: "plugin", Uses: remoteRef}},
+	}
+	remoteAction := &action.Action{
+		Name: "plugin",
+		Tasks: []action.Task{{
+			Name:  "run",
+			Shell: map[string]any{"cmd": "plugin.exe"},
+		}},
+	}
+
+	fr := &fetchableResolver{
+		actions: map[string]*action.Action{remoteRef: remoteAction},
+		fetched: make(map[string]bool),
+	}
+	chain := action.Chain{
+		&localActionResolver{actions: map[string]*action.Action{stdlibRef: stdlibAction}},
+		fr,
+	}
+
+	playbook := &action.Playbook{
+		Name: "stdlib-to-remote",
+		Tasks: []action.Task{{
+			Name: "baseline",
+			Uses: stdlibRef,
+		}},
+	}
+
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
+	r := New(mt, chain, Config{})
+	if err := r.Run(context.Background(), playbook); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(fr.calls) != 1 || fr.calls[0] != remoteRef {
+		t.Errorf("expected fetch of %q, got %v", remoteRef, fr.calls)
+	}
+	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
+		t.Errorf("expected one shell execution, got %#v", mt.calls)
+	}
+}
+
 func TestRunPlanPhaseStopsBeforeApply(t *testing.T) {
 	mt := &mockTarget{}
 	stateDir := t.TempDir()
