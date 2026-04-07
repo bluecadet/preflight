@@ -135,7 +135,7 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 			Username:   host.Username,
 			Password:   password,
 			PrivateKey: privateKey,
-		}), nil
+		}, registry), nil
 	default:
 		return nil, fmt.Errorf("resolve host %q: unsupported transport %q", host.Name, host.Transport)
 	}

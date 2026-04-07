@@ -1,0 +1,392 @@
+package target
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"strings"
+	"time"
+)
+
+type posixShellBackend interface {
+	powerShellScriptBackend
+	RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (stdout string, stderr string, exitCode int, err error)
+	CopyFile(ctx context.Context, src, dst string) error
+	ReadFile(ctx context.Context, path string) ([]byte, error)
+	PowerShellBinary() string
+}
+
+func newPOSIXShellRegistry(backend posixShellBackend) remoteModuleRegistry {
+	registry := remoteModuleRegistry{
+		"directory": remoteModuleFuncs{
+			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+				return checkPOSIXDirectory(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any) (string, error) {
+				return "", applyPOSIXDirectory(ctx, backend, params)
+			},
+		},
+		"file": remoteModuleFuncs{
+			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+				return checkPOSIXFile(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any) (string, error) {
+				return "", applyPOSIXFile(ctx, backend, params)
+			},
+		},
+		"shell": remoteModuleFuncs{
+			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+				return checkPOSIXShell(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any) (string, error) {
+				return applyPOSIXShell(ctx, backend, params)
+			},
+		},
+		"wait": remoteModuleFuncs{
+			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+				return checkPOSIXWait(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any) (string, error) {
+				return "", applyPOSIXWait(ctx, backend, params)
+			},
+		},
+		"environment":          unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is not supported yet", "environment")),
+		"reboot":               unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is not supported yet", "reboot")),
+		"registry":             unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "registry")),
+		"service":              unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "service")),
+		"package":              unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "package")),
+		"shortcut":             unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "shortcut")),
+		"scheduled_task":       unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "scheduled_task")),
+		"user":                 unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "user")),
+		"winget_package":       unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "winget_package")),
+		"remove_appx_packages": unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "remove_appx_packages")),
+		"power_plan":           unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "power_plan")),
+		"windows_feature":      unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "windows_feature")),
+		"firewall_rule":        unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "firewall_rule")),
+	}
+	if backend.PowerShellBinary() == "" {
+		registry["powershell"] = unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q requires pwsh or powershell on the remote host", "powershell"))
+	} else {
+		registry["powershell"] = remoteModuleFuncs{
+			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+				return checkPowerShellModule(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any) (string, error) {
+				return applyPowerShellModule(ctx, backend, params)
+			},
+		}
+	}
+	return registry
+}
+
+func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+	path, ok := params["path"].(string)
+	if !ok || path == "" {
+		return false, "", fmt.Errorf("directory: required param %q is missing", "path")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+
+	switch ensure {
+	case "absent":
+		return posixNonZeroExitMeansChange(ctx, backend, fmt.Sprintf("test ! -e %q", path))
+	case "present":
+		stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("if [ ! -e %q ]; then printf missing; elif [ -d %q ]; then printf dir; else printf other; fi", path, path), nil)
+		if err != nil {
+			return false, "", err
+		}
+		if code != 0 {
+			return false, "", fmt.Errorf("directory check exited with code %d: %s", code, strings.TrimSpace(stderr))
+		}
+		switch strings.TrimSpace(stdout) {
+		case "missing":
+			return true, "", nil
+		case "dir":
+			return false, "", nil
+		default:
+			return false, "", fmt.Errorf("directory: %q exists but is not a directory", path)
+		}
+	default:
+		return false, "", fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
+	}
+}
+
+func applyPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) error {
+	path, ok := params["path"].(string)
+	if !ok || path == "" {
+		return fmt.Errorf("directory: required param %q is missing", "path")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	switch ensure {
+	case "absent":
+		return posixMustRun(ctx, backend, fmt.Sprintf("rm -rf %q", path))
+	case "present":
+		return posixMustRun(ctx, backend, fmt.Sprintf("mkdir -p %q", path))
+	default:
+		return fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
+	}
+}
+
+func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+	dest, ok := params["dest"].(string)
+	if !ok || dest == "" {
+		return false, "", fmt.Errorf("file: required param %q is missing", "dest")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	src, _ := params["src"].(string)
+
+	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("if [ ! -e %q ]; then printf missing; elif [ -d %q ]; then printf dir; else printf file; fi", dest, dest), nil)
+	if err != nil {
+		return false, "", err
+	}
+	if code != 0 {
+		return false, "", fmt.Errorf("file check exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	state := strings.TrimSpace(stdout)
+
+	switch ensure {
+	case "absent":
+		return state != "missing", "", nil
+	case "present":
+		switch state {
+		case "missing":
+			return true, "", nil
+		case "dir":
+			return false, "", fmt.Errorf("file: %q is a directory, not a file", dest)
+		case "file":
+			if src == "" {
+				return false, "", nil
+			}
+			localHash, err := hashLocalFile(src)
+			if err != nil {
+				return false, "", err
+			}
+			remoteHash, err := posixRemoteFileHash(ctx, backend, dest)
+			if err != nil {
+				return false, "", err
+			}
+			return localHash != remoteHash, "", nil
+		default:
+			return false, "", fmt.Errorf("file: unexpected remote state %q", state)
+		}
+	default:
+		return false, "", fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
+	}
+}
+
+func applyPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) error {
+	dest, ok := params["dest"].(string)
+	if !ok || dest == "" {
+		return fmt.Errorf("file: required param %q is missing", "dest")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	src, _ := params["src"].(string)
+
+	switch ensure {
+	case "absent":
+		return posixMustRun(ctx, backend, fmt.Sprintf("rm -f %q", dest))
+	case "present":
+		if src != "" {
+			return backend.CopyFile(ctx, src, dest)
+		}
+		return posixMustRun(ctx, backend, fmt.Sprintf("mkdir -p %q && : > %q", shellDir(dest), dest))
+	default:
+		return fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
+	}
+}
+
+func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+	creates, _ := params["creates"].(string)
+	if creates == "" {
+		return true, "", nil
+	}
+	return posixNonZeroExitMeansChange(ctx, backend, fmt.Sprintf("test -e %q", creates))
+}
+
+func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any) (string, error) {
+	cmd, ok := params["cmd"].(string)
+	if !ok || cmd == "" {
+		return "", fmt.Errorf("shell: required param %q is missing", "cmd")
+	}
+	args, err := sshStringSlice(params["args"])
+	if err != nil {
+		return "", err
+	}
+	workingDir, _ := params["working_dir"].(string)
+
+	var shellCmd strings.Builder
+	if workingDir != "" {
+		fmt.Fprintf(&shellCmd, "cd %q && ", workingDir)
+	}
+	shellCmd.WriteString(shellQuoteExec(cmd, args))
+	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, shellCmd.String(), nil)
+	if err != nil {
+		return stdout, err
+	}
+	if code != 0 {
+		return stdout, fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func checkPOSIXWait(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+	condition, _ := params["condition"].(string)
+	targetValue, _ := params["target"].(string)
+	met, err := posixWaitCondition(ctx, backend, condition, targetValue)
+	if err != nil {
+		return false, "", err
+	}
+	return !met, "", nil
+}
+
+func applyPOSIXWait(ctx context.Context, backend posixShellBackend, params map[string]any) error {
+	condition, _ := params["condition"].(string)
+	targetValue, _ := params["target"].(string)
+	timeoutStr, _ := params["timeout"].(string)
+	if timeoutStr == "" {
+		timeoutStr = "5m"
+	}
+	timeout, err := time.ParseDuration(timeoutStr)
+	if err != nil {
+		return fmt.Errorf("wait: invalid timeout %q: %w", timeoutStr, err)
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		met, err := posixWaitCondition(ctx, backend, condition, targetValue)
+		if err != nil {
+			return err
+		}
+		if met {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("wait: timeout after %s waiting for condition %q on %q", timeoutStr, condition, targetValue)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(5 * time.Second):
+		}
+	}
+}
+
+func posixWaitCondition(ctx context.Context, backend posixShellBackend, condition, targetValue string) (bool, error) {
+	switch condition {
+	case "file_exists":
+		_, _, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("test -e %q", targetValue), nil)
+		if err != nil {
+			return false, err
+		}
+		return code == 0, nil
+	case "port_open":
+		return posixPortOpen(ctx, backend, targetValue)
+	case "service_running":
+		return false, fmt.Errorf("wait: condition %q is not supported on the posix-shell runtime", condition)
+	default:
+		return false, fmt.Errorf("wait: unknown condition %q (want port_open|file_exists|service_running)", condition)
+	}
+}
+
+func posixPortOpen(ctx context.Context, backend posixShellBackend, targetValue string) (bool, error) {
+	host, port, ok := strings.Cut(targetValue, ":")
+	if !ok || host == "" || port == "" {
+		return false, fmt.Errorf("wait: port_open target must be host:port")
+	}
+	command := fmt.Sprintf(`
+if command -v nc >/dev/null 2>&1; then
+  nc -z %q %q >/dev/null 2>&1
+elif command -v python3 >/dev/null 2>&1; then
+  python3 -c 'import socket,sys;s=socket.socket();s.settimeout(2);rc=s.connect_ex((sys.argv[1],int(sys.argv[2])));s.close();sys.exit(0 if rc == 0 else 1)' %q %q
+elif command -v python >/dev/null 2>&1; then
+  python -c 'import socket,sys;s=socket.socket();s.settimeout(2);rc=s.connect_ex((sys.argv[1],int(sys.argv[2])));s.close();sys.exit(0 if rc == 0 else 1)' %q %q
+elif command -v perl >/dev/null 2>&1; then
+  perl -MIO::Socket::INET -e 'my ($h,$p)=@ARGV; my $s = IO::Socket::INET->new(PeerAddr=>$h, PeerPort=>$p, Proto=>"tcp", Timeout=>2); exit($s ? 0 : 1);' %q %q
+elif command -v bash >/dev/null 2>&1; then
+  bash -lc 'exec 3<>/dev/tcp/$0/$1' %q %q >/dev/null 2>&1
+else
+  echo "no supported TCP probe tool found" >&2
+  exit 127
+fi
+`, host, port, host, port, host, port, host, port, host, port)
+	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, command, nil)
+	if err != nil {
+		return false, err
+	}
+	if code == 0 {
+		return true, nil
+	}
+	if code == 127 {
+		message := strings.TrimSpace(stderr)
+		if message == "" {
+			message = strings.TrimSpace(stdout)
+		}
+		if message == "" {
+			message = "no supported TCP probe tool found"
+		}
+		return false, fmt.Errorf("wait: port_open probe unavailable: %s", message)
+	}
+	return false, nil
+}
+
+func posixNonZeroExitMeansChange(ctx context.Context, backend posixShellBackend, command string) (bool, string, error) {
+	_, stderr, code, err := backend.RunPOSIXCommand(ctx, command, nil)
+	if err != nil {
+		return false, "", err
+	}
+	if code == 0 {
+		return false, "", nil
+	}
+	if stderr != "" {
+		return false, "", fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
+	}
+	return true, "", nil
+}
+
+func posixMustRun(ctx context.Context, backend posixShellBackend, command string) error {
+	_, stderr, code, err := backend.RunPOSIXCommand(ctx, command, nil)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+func posixRemoteFileHash(ctx context.Context, backend posixShellBackend, path string) (string, error) {
+	for _, command := range []string{
+		fmt.Sprintf("sha256sum %q", path),
+		fmt.Sprintf("shasum -a 256 %q", path),
+	} {
+		stdout, _, code, err := backend.RunPOSIXCommand(ctx, command, nil)
+		if err != nil {
+			return "", err
+		}
+		if code != 0 {
+			continue
+		}
+		fields := strings.Fields(strings.TrimSpace(stdout))
+		if len(fields) == 0 {
+			return "", fmt.Errorf("file: unable to parse hash output for %q", path)
+		}
+		return strings.ToLower(fields[0]), nil
+	}
+
+	data, err := backend.ReadFile(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum), nil
+}
