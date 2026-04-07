@@ -32,10 +32,10 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 		return false, err
 	}
 	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("file: owner is not supported on this platform")
+		return false, fmt.Errorf("file: owner is not implemented by this module")
 	}
 	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("file: permissions is not supported on this platform")
+		return false, fmt.Errorf("file: permissions is not implemented by this module")
 	}
 
 	info, statErr := os.Stat(dest)
@@ -91,6 +91,12 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 	src, err := paramString(params, "src", "")
 	if err != nil {
 		return err
+	}
+	if _, ok := params["owner"]; ok {
+		return fmt.Errorf("file: owner is not implemented by this module")
+	}
+	if _, ok := params["permissions"]; ok {
+		return fmt.Errorf("file: permissions is not implemented by this module")
 	}
 
 	switch ensure {

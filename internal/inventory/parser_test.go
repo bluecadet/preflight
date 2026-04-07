@@ -202,6 +202,28 @@ groups:
 	}
 }
 
+func TestDefaultPort_Local(t *testing.T) {
+	data := `
+groups:
+  local:
+    hosts:
+      - name: local-host
+        address: localhost
+        transport: local
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("local-host")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Port != 0 {
+		t.Errorf("expected port 0 for local transport, got %d", hosts[0].Port)
+	}
+}
+
 func TestParseSecretReferenceFields(t *testing.T) {
 	data := `
 groups:
