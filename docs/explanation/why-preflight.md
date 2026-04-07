@@ -15,7 +15,7 @@ Preflight is a strong fit when you want:
 - one static binary with minimal runtime dependencies
 - idempotent apply behavior with real dry-run checks
 - YAML-defined reusable tasks and playbooks
-- explicit `plan -> fetch -> stage -> apply` phases
+- explicit `fetch -> plan -> stage -> apply` phases
 - an offline-capable staging and bundle workflow
 
 Preflight is a weaker fit when you primarily need:
