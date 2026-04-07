@@ -484,6 +484,36 @@ func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
 	}
 }
 
+func TestSSHTarget_POSIXUnsupportedModuleReturnsError(t *testing.T) {
+	for _, module := range []string{"environment", "service"} {
+		module := module
+		t.Run(module, func(t *testing.T) {
+			tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+			tgt.runner = &fakeSSHRunner{
+				run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+					switch {
+					case isEncodedPowerShellCommand(command):
+						return "", "not found", 127, nil
+					case command == "printf preflight":
+						return "preflight", "", 0, nil
+					default:
+						t.Fatalf("unexpected command %q", command)
+						return "", "", 0, nil
+					}
+				},
+			}
+
+			_, err := tgt.Execute(context.Background(), "task-1", module, map[string]any{}, false, nil)
+			if err == nil {
+				t.Fatalf("expected error for unsupported module %q on POSIX runtime, got nil", module)
+			}
+			if !strings.Contains(err.Error(), module) {
+				t.Fatalf("expected error to name the unsupported module %q, got: %v", module, err)
+			}
+		})
+	}
+}
+
 func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 	var detectionCount atomic.Int64
 
