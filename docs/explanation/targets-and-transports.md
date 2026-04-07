@@ -45,13 +45,18 @@ This is the right transport for:
 
 ## SSH Target
 
-SSH is intentionally narrower today. It currently implements:
+SSH now auto-detects one of two runtimes on the remote host:
 
-- `directory`
-- `file`
-- `shell`
+- `windows-powershell` for Windows hosts that expose a usable PowerShell runtime over SSH
+- `posix-shell` for POSIX-style hosts
 
-That makes it useful for mixed environments and simple remote file or command tasks, but it is not the full Windows configuration surface. If a playbook leans on Windows-native modules, WinRM is the correct target.
+That split matters:
+
+- Windows-over-SSH uses the same built-in Windows module surface as WinRM.
+- POSIX-over-SSH stays conservative and focuses on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
+- Plugin modules are not yet supported over SSH.
+
+WinRM is still the clearest Windows-first remote transport when it is available, but SSH is no longer limited to simple file and shell tasks on Windows hosts.
 
 ## Why Plugin Modules Fit Cleanly
 
