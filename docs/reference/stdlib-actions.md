@@ -102,17 +102,9 @@ Manage named power plans, screensaver defaults, and optional scheduled reboot ta
 | `scheduled_reboot_time` | string | Daily scheduled reboot time |
 | `scheduled_reboot_name` | string | Scheduled reboot task name |
 
-### `preflight/windows-apps`
+### `preflight/debloat`
 
-Install required applications and remove common built-in Windows apps.
-
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `remove_xbox` | bool | Remove Xbox packages |
-| `remove_cortana` | bool | Remove Cortana |
-| `remove_news` | bool | Remove Microsoft News |
-| `remove_weather` | bool | Remove Microsoft Weather |
-| `remove_communications_apps` | bool | Remove consumer communication apps such as Teams |
+Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype). No inputs — use `remove_appx_packages` directly if you need a custom list.
 
 ## `scope_bias`
 
