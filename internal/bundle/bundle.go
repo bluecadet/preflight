@@ -77,10 +77,10 @@ type FileSpec struct {
 
 // ExtractedBundle is a bundle extracted to a temporary directory for execution.
 type ExtractedBundle struct {
-	Manifest    *Manifest
-	RootDir     string
-	PlanPath    string
-	PluginDir   string
+	Manifest  *Manifest
+	RootDir   string
+	PlanPath  string
+	PluginDir string
 }
 
 func Write(path string, manifest *Manifest, files []FileSpec) error {
@@ -221,12 +221,12 @@ func Extract(path string) (*ExtractedBundle, error) {
 		switch file.Name {
 		case PlanPath:
 			loaded.PlanPath = outPath
-			default:
-				if strings.HasPrefix(file.Name, "plugins/") {
-					loaded.PluginDir = filepath.Join(tempDir, "plugins")
-				}
+		default:
+			if strings.HasPrefix(file.Name, "plugins/") {
+				loaded.PluginDir = filepath.Join(tempDir, "plugins")
 			}
 		}
+	}
 
 	if err := verifyExpectedChecksums(manifest.Checksums, seenChecksums); err != nil {
 		cleanup()

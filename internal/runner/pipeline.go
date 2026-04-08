@@ -344,14 +344,14 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 
 	manifest := &bundle.Manifest{
 		FormatVersion: bundle.FormatV2,
-			CreatedAt:     time.Now().UTC(),
-			PlaybookName:  plan.PlaybookName,
-			TargetName:    r.targetName(),
-			TargetOS:      info.OSVersion,
-			TargetArch:    info.Arch,
-			Build: bundle.BuildInfo{
-				Version: r.config.Version,
-				Commit:  r.config.Commit,
+		CreatedAt:     time.Now().UTC(),
+		PlaybookName:  plan.PlaybookName,
+		TargetName:    r.targetName(),
+		TargetOS:      info.OSVersion,
+		TargetArch:    info.Arch,
+		Build: bundle.BuildInfo{
+			Version: r.config.Version,
+			Commit:  r.config.Commit,
 			Date:    r.config.BuildDate,
 		},
 		Modules:       moduleInfos,
