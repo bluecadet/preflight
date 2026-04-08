@@ -215,6 +215,9 @@ func (r *TextRenderer) Emit(event Event) {
 		_, _ = fmt.Fprintln(r.w, r.colorize(ansiBold, line))
 		_, _ = fmt.Fprintln(r.w)
 
+	case TaskStartEvent:
+		_, _ = fmt.Fprintf(r.w, "TASK [%s]\n", e.TaskName)
+
 	case TaskOutputEvent:
 		if !r.bufferTaskOutput(e) {
 			r.writeOutputLines(e.Lines)
