@@ -2,7 +2,11 @@
 // action and playbook YAML values.
 package template
 
-import "maps"
+import (
+	"maps"
+
+	"github.com/bluecadet/preflight/internal/maputil"
+)
 
 // VarLayer represents a precedence tier in the variable stack.
 // Higher values win during merge.
@@ -50,7 +54,7 @@ func (v *VarStore) SetMap(layer VarLayer, m map[string]any) {
 func (v *VarStore) Merge() map[string]any {
 	result := make(map[string]any)
 	for i := range numLayers {
-		deepMerge(result, v.layers[i])
+		maputil.DeepMerge(result, v.layers[i])
 	}
 	return result
 }
@@ -60,35 +64,4 @@ func (v *VarStore) Get(key string) (any, bool) {
 	merged := v.Merge()
 	val, ok := merged[key]
 	return val, ok
-}
-
-// deepMerge merges src into dst in-place.
-// When both dst[k] and src[k] are maps they are merged recursively.
-// Otherwise src[k] overwrites dst[k].
-func deepMerge(dst, src map[string]any) {
-	for k, srcVal := range src {
-		if srcMap, ok := toStringMap(srcVal); ok {
-			if dstVal, exists := dst[k]; exists {
-				if dstMap, ok := toStringMap(dstVal); ok {
-					merged := make(map[string]any, len(dstMap))
-					maps.Copy(merged, dstMap)
-					deepMerge(merged, srcMap)
-					dst[k] = merged
-					continue
-				}
-			}
-			// dst[k] is not a map — copy src map and use it
-			cp := make(map[string]any, len(srcMap))
-			maps.Copy(cp, srcMap)
-			dst[k] = cp
-		} else {
-			dst[k] = srcVal
-		}
-	}
-}
-
-// toStringMap asserts that v is map[string]any.
-func toStringMap(v any) (map[string]any, bool) {
-	m, ok := v.(map[string]any)
-	return m, ok
 }

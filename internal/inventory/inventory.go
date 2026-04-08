@@ -2,8 +2,9 @@ package inventory
 
 import (
 	"fmt"
-	"maps"
 	"slices"
+
+	"github.com/bluecadet/preflight/internal/maputil"
 )
 
 // Transport is the connection protocol to use for a target host.
@@ -60,17 +61,26 @@ func (inv *Inventory) HostsForTarget(target string) ([]Host, error) {
 		return result, nil
 	}
 
-	// Check if it's a host name.
+	// Check if it's a host name — collect vars from every group the host belongs to.
+	var found *Host
+	accumulatedGroupVars := make(map[string]any)
 	for _, groupName := range inv.orderedGroups() {
 		g := inv.Groups[groupName]
-		if g.Name == "all" {
+		if groupName == "all" {
 			continue
 		}
 		for _, h := range g.Hosts {
 			if h.Name == target {
-				return []Host{inv.mergedHost(h, g.Vars)}, nil
+				if found == nil {
+					hCopy := h
+					found = &hCopy
+				}
+				maputil.DeepMerge(accumulatedGroupVars, g.Vars)
 			}
 		}
+	}
+	if found != nil {
+		return []Host{inv.mergedHost(*found, accumulatedGroupVars)}, nil
 	}
 
 	return nil, fmt.Errorf("inventory: target %q not found (no group or host with that name)", target)
@@ -134,46 +144,18 @@ func (inv *Inventory) mergedHost(h Host, groupVars map[string]any) Host {
 
 	// Apply "all" group vars first.
 	if all, ok := inv.Groups["all"]; ok {
-		deepMerge(merged, all.Vars)
+		maputil.DeepMerge(merged, all.Vars)
 	}
 
 	// Apply group vars.
-	deepMerge(merged, groupVars)
+	maputil.DeepMerge(merged, groupVars)
 
 	// Apply host-level vars last (highest precedence).
-	deepMerge(merged, h.Vars)
+	maputil.DeepMerge(merged, h.Vars)
 
 	copy := h
 	copy.Vars = merged
 	return copy
-}
-
-// deepMerge merges src into dst in-place. When both dst[k] and src[k] are
-// maps they are merged recursively; otherwise src[k] overwrites dst[k].
-func deepMerge(dst, src map[string]any) {
-	for k, srcVal := range src {
-		if srcMap, ok := toStringMap(srcVal); ok {
-			if dstVal, exists := dst[k]; exists {
-				if dstMap, ok := toStringMap(dstVal); ok {
-					merged := make(map[string]any, len(dstMap))
-					maps.Copy(merged, dstMap)
-					deepMerge(merged, srcMap)
-					dst[k] = merged
-					continue
-				}
-			}
-			cp := make(map[string]any, len(srcMap))
-			maps.Copy(cp, srcMap)
-			dst[k] = cp
-		} else {
-			dst[k] = srcVal
-		}
-	}
-}
-
-func toStringMap(v any) (map[string]any, bool) {
-	m, ok := v.(map[string]any)
-	return m, ok
 }
 
 func (inv *Inventory) orderedGroups() []string {
