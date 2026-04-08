@@ -1,0 +1,21 @@
+name: preflight/debloat
+version: "1.0.0"
+description: Remove common Windows bloatware
+author: preflight
+
+tasks:
+  - name: Remove Windows bloatware
+    remove_appx_packages:
+      packages:
+        - name: Microsoft.Xbox*
+          scope: both
+        - name: Microsoft.549981C3F5F10
+          scope: both
+        - name: Microsoft.BingNews
+          scope: both
+        - name: Microsoft.BingWeather
+          scope: both
+        - name: MicrosoftTeams*
+          scope: both
+        - name: Microsoft.SkypeApp
+          scope: both

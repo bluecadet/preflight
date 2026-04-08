@@ -46,7 +46,7 @@ The current stdlib in this repository ships:
 - `preflight/windows-quiet-mode`
 - `preflight/windows-update-lockdown`
 - `preflight/windows-power`
-- `preflight/windows-apps`
+- `preflight/debloat`
 
 ## How Remote Refs Work
 
