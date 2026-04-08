@@ -18,12 +18,12 @@ func TestVarStore_CLIOverridesProject(t *testing.T) {
 func TestVarStore_DeepMergeNestedMaps(t *testing.T) {
 	s := NewVarStore()
 
-	// Group vars set a nested map with two keys
-	s.Set(LayerGroupVars, "db", map[string]any{
+	// Inventory vars (pre-merged group+host) set a nested map with two keys
+	s.Set(LayerInventoryVars, "db", map[string]any{
 		"host": "db.internal",
 		"port": 5432,
 	})
-	// Host vars override only the port
+	// A subsequent layer (e.g. host-level override) overrides only the port
 	s.Set(LayerHostVars, "db", map[string]any{
 		"port": 5433,
 	})
@@ -45,7 +45,7 @@ func TestVarStore_MergeOrder(t *testing.T) {
 	s := NewVarStore()
 	s.Set(LayerDefaults, "x", "defaults")
 	s.Set(LayerProject, "x", "project")
-	s.Set(LayerGroupVars, "x", "group")
+	s.Set(LayerInventoryVars, "x", "group")
 	s.Set(LayerHostVars, "x", "host")
 	s.Set(LayerPlaybook, "x", "playbook")
 	s.Set(LayerCLI, "x", "cli")
