@@ -17,8 +17,7 @@ Configure Windows automatic logon.
 | Input | Type | Meaning |
 | --- | --- | --- |
 | `username` | string | User name for automatic logon |
-| `password` | string | Plaintext password |
-| `password_from` | string | Secret reference for the password |
+| `password` | string | Password or secret reference |
 | `domain` | string | Domain or `.` for local accounts |
 
 ## Grouped Windows Baseline Actions

@@ -49,7 +49,7 @@ State files do not persist decrypted secret values.
 - passwords
 - tokens
 - private keys
-- `*_from` secret references
+- any `secret:<name>` reference values
 
 ## Diff Statuses
 

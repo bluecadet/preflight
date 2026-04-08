@@ -69,7 +69,7 @@ The runner is **always** injected with a `Target` at construction time and never
 | `internal/output/` | text, TUI, JSON, and JSONL output renderers and event streaming |
 | `internal/stdlib/` | `//go:embed all:actions` standard library |
 | `internal/plugins/` | Plugin discovery, registry building, and conflict detection |
-| `internal/secrets/` | Age-based secret resolution through named providers (`secret:<name>` refs and `_from` expansion) |
+| `internal/secrets/` | Age-based secret resolution through named providers (`secret:<name>` refs) |
 | `internal/config/` | `preflight.yml` project config parsing (project vars, secrets entries) |
 | `internal/winutil/` | Shared param normalization helpers for Windows modules |
 | `pkg/plugin/sdk/` | Plugin author SDK (JSON-RPC over stdin/stdout) |

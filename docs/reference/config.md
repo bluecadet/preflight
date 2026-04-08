@@ -64,7 +64,7 @@ secrets:
 
 ## Secret Resolution Model
 
-Secret files are not decrypted during planning unless a code path explicitly resolves them. At execution time, fields such as `password_from`, `private_key_from`, or other `*_from` values can be resolved through the built-in `secret:<name>` provider.
+Secret files are not decrypted during planning unless a code path explicitly resolves them. At execution time, string fields such as `password` or `private_key` can use inline `secret:<name>` references that resolve through the built-in provider.
 
 ## Related Docs
 

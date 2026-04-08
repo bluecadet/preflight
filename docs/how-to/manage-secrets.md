@@ -86,7 +86,7 @@ Notes:
 
 ## 5. Reference Secrets In YAML
 
-Use the `_from` pattern anywhere the schema supports it:
+Use inline `secret:<name>` references anywhere a string field accepts a secret value:
 
 ```yaml
 tasks:
@@ -94,7 +94,7 @@ tasks:
     uses: preflight/autologin
     with:
       username: exhibituser
-      password_from: secret:autologin-password
+      password: secret:autologin-password
 ```
 
 Inventory can do the same thing:
@@ -104,7 +104,7 @@ hosts:
   - name: lobby-pc-01
     transport: winrm
     username: exhibit-admin
-    password_from: secret:winrm-password
+    password: secret:winrm-password
 ```
 
 The built-in provider name is `secret`, so repo-backed references use `secret:<name>`.

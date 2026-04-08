@@ -80,7 +80,7 @@ inputs:
   username:
     type: string
     required: true
-  password_from:
+  password:
     type: string
     required: false
 

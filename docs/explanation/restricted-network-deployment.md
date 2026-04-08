@@ -60,7 +60,7 @@ That means your inventory entry points at the forwarded endpoint rather than the
   transport: ssh
   port: 2201
   username: exhibit
-  private_key_from: secret:signage-key
+  private_key: secret:signage-key
 ```
 
 This pattern is useful when outbound SSH is approved and the target fits one of the supported SSH runtimes:
