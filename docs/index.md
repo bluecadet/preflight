@@ -17,6 +17,8 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 | Reuse tasks as a custom action | [Write an action](./how-to/write-an-action.md) |
 | Browse the embedded `preflight/` action library | [Embedded stdlib action reference](./reference/stdlib-actions.md) |
 | Compare desired state to recorded state | [Inspect state and diffs](./how-to/inspect-state-and-diff.md) |
+| Provision a user and run tasks as that user | [Run tasks as another user](./how-to/run-tasks-as-another-user.md) |
+| Clone and update git repositories on targets | [Run git operations on a target](./how-to/git-operations.md) |
 
 ## Tutorials
 
@@ -32,6 +34,8 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Use plugin modules in playbooks](./how-to/use-plugin-modules.md)
 - [Write an action](./how-to/write-an-action.md)
 - [Inspect state and diffs](./how-to/inspect-state-and-diff.md)
+- [Run tasks as another user](./how-to/run-tasks-as-another-user.md)
+- [Run git operations on a target](./how-to/git-operations.md)
 
 ## Reference
 
@@ -55,6 +59,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Deploy across restricted networks](./explanation/restricted-network-deployment.md)
 - [Targets, transports, and plugins](./explanation/targets-and-transports.md)
 - [Secrets and `age`](./explanation/secrets-and-age.md)
+- [How `become` works](./explanation/become.md)
 
 ## Core Ideas
 
