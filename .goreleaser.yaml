@@ -49,22 +49,33 @@ archives:
       - README.md
 
 changelog:
-  sort: asc
   use: github
+  abbrev: -1
+  format: "{{ .Message }}"
+  sort: ""
   filters:
-    exclude:
-      - "^docs"
-      - "^test"
-      - "^chore"
-      - Merge pull request
-      - Merge branch
+    include:
+      - '^feat(\([^)]+\))?!?:'
+      - '^fix(\([^)]+\))?!?:'
+      - '^perf(\([^)]+\))?!?:'
+      - '^refactor(\([^)]+\))?!?:'
+      - '^revert(\([^)]+\))?!?:'
   groups:
-    - title: "New Features"
-      regexp: "^feat"
+    - title: Breaking Changes
+      regexp: '!:'
       order: 0
-    - title: "Bug Fixes"
-      regexp: "^fix"
+    - title: New Features
+      regexp: '^feat'
       order: 1
+    - title: Bug Fixes
+      regexp: '^fix'
+      order: 2
+    - title: Performance Improvements
+      regexp: '^perf'
+      order: 3
+    - title: Maintenance
+      regexp: '^(refactor|revert)'
+      order: 4
     - title: Other
       order: 999
 
