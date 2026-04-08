@@ -99,7 +99,7 @@ func NormalizeParamsForState(source, params, sourceBecome, become map[string]any
 
 func resolveExecutionOptions(ctx context.Context, resolver *secrets.Resolver, source map[string]any) (map[string]any, target.ExecutionOptions, error) {
 	if len(source) == 0 || resolver == nil || !resolver.HasProviders() {
-		opts, err := target.NormalizeExecutionOptions(source)
+		opts, err := target.NormalizeExecutionOptions(map[string]any{"become": source})
 		return source, opts, err
 	}
 
@@ -107,7 +107,7 @@ func resolveExecutionOptions(ctx context.Context, resolver *secrets.Resolver, so
 	if err != nil {
 		return nil, target.ExecutionOptions{}, err
 	}
-	opts, err := target.NormalizeExecutionOptions(resolved)
+	opts, err := target.NormalizeExecutionOptions(map[string]any{"become": resolved})
 	if err != nil {
 		return nil, target.ExecutionOptions{}, err
 	}
