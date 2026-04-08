@@ -606,6 +606,33 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 	}
 }
 
+func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{}
+
+	// Without become: error should be the standard unsupportedRuntimeModuleError format.
+	_, err := tgt.Execute(context.Background(), "task-1", "nonexistent_module", nil, ExecutionOptions{}, false, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown module, got nil")
+	}
+	want := `windows-powershell runtime: module "nonexistent_module" is not supported`
+	if err.Error() != want {
+		t.Errorf("without become: expected %q, got %q", want, err.Error())
+	}
+
+	// With become enabled: error should describe that the module does not support become.
+	_, err = tgt.Execute(context.Background(), "task-2", "nonexistent_module", nil, ExecutionOptions{
+		Become: &BecomeOptions{Enabled: true, User: "kiosk", Password: "secret"},
+	}, false, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown module with become, got nil")
+	}
+	wantBecome := `winrm: module "nonexistent_module" does not support become`
+	if err.Error() != wantBecome {
+		t.Errorf("with become: expected %q, got %q", wantBecome, err.Error())
+	}
+}
+
 func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 	call := 0
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
