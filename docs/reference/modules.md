@@ -248,8 +248,7 @@ Manage Windows local users.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | User name |
-| `password` | string | Plaintext password |
-| `password_from` | string | Secret reference for the password |
+| `password` | string | Plaintext password or a secret reference |
 | `groups` | string[] | Group memberships |
 | `ensure` | `present` or `absent` | Desired state |
 

@@ -7,7 +7,7 @@ Use this guide when you want to select hosts from `inventory.yml` and run Prefli
 - An installed `preflight` binary on the machine initiating the run
 - A playbook
 - An inventory file
-- A `preflight.yml` file if the inventory uses secret references such as `password_from` or `private_key_from`
+- A `preflight.yml` file if the inventory uses secret references such as `password: secret:...` or `private_key: secret:...`
 
 If you want the local flow first, use [Run a playbook](./run-a-playbook.md).
 
@@ -27,13 +27,13 @@ groups:
         address: 192.168.1.10
         transport: winrm
         username: exhibit-admin
-        password_from: secret:winrm-password
+        password: secret:winrm-password
 
       - name: lobby-pc-02
         address: 192.168.1.11
         transport: winrm
         username: exhibit-admin
-        password_from: secret:winrm-password
+        password: secret:winrm-password
 
   signage-lab:
     hosts:
@@ -41,7 +41,7 @@ groups:
         address: 192.168.1.50
         transport: ssh
         username: exhibit
-        private_key_from: secret:signage-key
+        private_key: secret:signage-key
 ```
 
 Transport guidance:
@@ -161,7 +161,7 @@ Check the host entry first:
 - `address`
 - `port`
 - `username`
-- `password` or `password_from`
+- `password`
 - `https`
 
 If the password is a secret reference, make sure the initiating machine can decrypt it through the project’s `age` identity.

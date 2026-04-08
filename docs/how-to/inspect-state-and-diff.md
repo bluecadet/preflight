@@ -72,7 +72,7 @@ Preflight does not compare only raw task positions. It records stable task keys 
 
 ## Security Notes
 
-State files intentionally avoid persisting decrypted secret values. The recorded parameter summary is redacted for sensitive-looking fields such as passwords, tokens, private keys, and `*_from` secret references.
+State files intentionally avoid persisting decrypted secret values. The recorded parameter summary is redacted for sensitive-looking fields such as passwords, tokens, private keys, and inline `secret:<name>` references.
 
 ## Troubleshooting
 
