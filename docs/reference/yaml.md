@@ -59,7 +59,6 @@ Actions package reusable tasks behind a typed input surface.
 | `author` | string | Optional author |
 | `defaults` | object | Task execution defaults inherited by action tasks |
 | `inputs` | object | Named input definitions |
-| `outputs` | object | Named output definitions |
 | `tasks` | task[] | Ordered task list |
 
 ### Input Definition Fields

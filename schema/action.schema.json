@@ -33,13 +33,6 @@
         "$ref": "#/$defs/inputDef"
       }
     },
-    "outputs": {
-      "type": "object",
-      "description": "Map of named output definitions",
-      "additionalProperties": {
-        "$ref": "#/$defs/outputDef"
-      }
-    },
     "tasks": {
       "type": "array",
       "description": "Ordered list of tasks",
@@ -61,18 +54,6 @@
           "type": "boolean"
         },
         "default": {},
-        "description": {
-          "type": "string"
-        }
-      }
-    },
-    "outputDef": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "type": {
-          "type": "string"
-        },
         "description": {
           "type": "string"
         }

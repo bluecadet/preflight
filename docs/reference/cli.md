@@ -137,7 +137,7 @@ List available embedded and project-local actions.
 
 ### `preflight action info <ref>`
 
-Show action metadata, inputs, outputs, and task count.
+Show action metadata, inputs, and task count.
 
 ```bash
 preflight action info preflight/autologin
