@@ -62,6 +62,8 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			DryRun:         false,
 			Tags:           tags,
 			SkipTags:       skipTags,
+			ProjectName:    projectCfg.Project,
+			ProjectEnv:     projectCfg.Environment,
 			ProjectVars:    projectCfg.Vars,
 			InventoryVars:  host.Vars,
 			Vars:           vars,

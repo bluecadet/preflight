@@ -16,8 +16,8 @@ It is optional. If the file is missing, Preflight loads an empty config with emp
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `project` | string | Project identifier |
-| `environment` | string | Environment label such as `production` or `staging` |
+| `project` | string | Project identifier, available as `vars.preflight.project` in templates |
+| `environment` | string | Environment label such as `production` or `staging`, available as `vars.preflight.environment` in templates |
 | `vars` | object | Project-level variables available to playbooks |
 | `secrets` | object | Repo-backed `age` secret configuration |
 

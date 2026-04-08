@@ -32,6 +32,7 @@ Important limit:
 | `facts.*` | Gathered host facts |
 | `target.*` | Safe target metadata |
 | `env.*` | Gathered target environment variables |
+| `vars.preflight.*` | Built-in project metadata (see below) |
 
 ## Variable Precedence
 
@@ -51,6 +52,17 @@ At runtime, the effective merged variable map is exposed through `vars.*`.
 Undefined `vars.*` references are treated as errors so missing inventory,
 playbook, project, or CLI-provided values fail early instead of rendering as
 empty strings.
+
+## Built-In `preflight` Variables
+
+The runner injects a `preflight` map into the project variable layer so playbooks can reference project metadata without repeating it in `vars`:
+
+| Variable | Meaning |
+| --- | --- |
+| `vars.preflight.project` | `project` field from `preflight.yml` |
+| `vars.preflight.environment` | `environment` field from `preflight.yml` |
+
+These sit at the project layer, so inventory vars, playbook vars, and CLI `--var` flags can override them.
 
 ## Planning Versus Execution
 
