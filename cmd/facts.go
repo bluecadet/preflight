@@ -20,6 +20,10 @@ var factsCmd = &cobra.Command{
 }
 
 func init() {
+	addTargetingFlags(factsCmd)
+	addOutputFlags(factsCmd)
+	addConcurrencyFlag(factsCmd)
+	addTimeoutFlag(factsCmd)
 	rootCmd.AddCommand(factsCmd)
 }
 

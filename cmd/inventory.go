@@ -23,6 +23,7 @@ var inventoryListCmd = &cobra.Command{
 }
 
 func init() {
+	addInventoryFlag(inventoryListCmd)
 	inventoryCmd.AddCommand(inventoryListCmd)
 	rootCmd.AddCommand(inventoryCmd)
 }

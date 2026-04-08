@@ -10,10 +10,7 @@ import (
 )
 
 func validateLocalOnlyRunFlags(cmd *cobra.Command) error {
-	if err := validateConcurrency(cmd); err != nil {
-		return err
-	}
-	return validatePhase(cmd)
+	return validateConcurrency(cmd)
 }
 
 func validateConcurrency(cmd *cobra.Command) error {
@@ -22,16 +19,6 @@ func validateConcurrency(cmd *cobra.Command) error {
 		return nil
 	}
 	return fmt.Errorf("--concurrency must be greater than or equal to 0")
-}
-
-func validatePhase(cmd *cobra.Command) error {
-	phase, _ := cmd.Flags().GetString("phase")
-	switch phase {
-	case "", "plan", "fetch", "stage", "apply":
-		return nil
-	default:
-		return fmt.Errorf("invalid --phase %q (want plan, fetch, stage, or apply)", phase)
-	}
 }
 
 func commandContext(cmd *cobra.Command) (context.Context, context.CancelFunc, error) {

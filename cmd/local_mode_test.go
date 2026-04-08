@@ -135,26 +135,10 @@ func TestRunPlanTimeoutReturnsDeadlineExceeded(t *testing.T) {
 	}
 }
 
-func TestRunPlaybookFetchPhaseReturnsNil(t *testing.T) {
+func TestRunStageWritesBundle(t *testing.T) {
 	playbookPath := writeTestPlaybook(t)
 	cmd := newTestCommand()
-	if err := cmd.Flags().Set("phase", "fetch"); err != nil {
-		t.Fatalf("Set phase: %v", err)
-	}
-
-	if err := runApply(cmd, []string{playbookPath}); err != nil {
-		t.Fatalf("expected nil for fetch phase, got %v", err)
-	}
-}
-
-func TestRunPlaybookStagePhaseWritesBundle(t *testing.T) {
-	playbookPath := writeTestPlaybook(t)
-	cmd := newTestCommand()
-	if err := cmd.Flags().Set("phase", "stage"); err != nil {
-		t.Fatalf("Set phase: %v", err)
-	}
-
-	if err := runApply(cmd, []string{playbookPath}); err != nil {
+	if err := runStage(cmd, []string{playbookPath}); err != nil {
 		t.Fatalf("expected stage to succeed, got %v", err)
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(playbookPath), "dist", "bundles", "*.zip"))
@@ -169,10 +153,7 @@ func TestRunPlaybookStagePhaseWritesBundle(t *testing.T) {
 func TestRunApplyBundleRoundTrip(t *testing.T) {
 	playbookPath := writeTestPlaybook(t)
 	stageCmd := newTestCommand()
-	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
-		t.Fatalf("Set phase: %v", err)
-	}
-	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+	if err := runStage(stageCmd, []string{playbookPath}); err != nil {
 		t.Fatalf("stage bundle: %v", err)
 	}
 
@@ -204,10 +185,7 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 func TestRunApplyBundleEncryptedSecretsRequireIdentity(t *testing.T) {
 	playbookPath, _ := writeSecretBundleProject(t, false)
 	stageCmd := newTestCommand()
-	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
-		t.Fatalf("Set phase: %v", err)
-	}
-	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+	if err := runStage(stageCmd, []string{playbookPath}); err != nil {
 		t.Fatalf("stage bundle: %v", err)
 	}
 
@@ -224,13 +202,10 @@ func TestRunApplyBundleEncryptedSecretsRequireIdentity(t *testing.T) {
 func TestRunApplyBundlePlaintextSecretsWithoutIdentity(t *testing.T) {
 	playbookPath, _ := writeSecretBundleProject(t, true)
 	stageCmd := newTestCommand()
-	if err := stageCmd.Flags().Set("phase", "stage"); err != nil {
-		t.Fatalf("Set phase: %v", err)
-	}
 	if err := stageCmd.Flags().Set("allow-plaintext-secrets-in-bundle", "true"); err != nil {
 		t.Fatalf("Set allow-plaintext-secrets-in-bundle: %v", err)
 	}
-	if err := runApply(stageCmd, []string{playbookPath}); err != nil {
+	if err := runStage(stageCmd, []string{playbookPath}); err != nil {
 		t.Fatalf("stage bundle: %v", err)
 	}
 
@@ -480,7 +455,6 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("output", "text", "")
 	cmd.Flags().Int("concurrency", 0, "")
 	cmd.Flags().String("timeout", "", "")
-	cmd.Flags().String("phase", "", "")
 	cmd.Flags().String("bundle-output-dir", "", "")
 	cmd.Flags().String("bundle", "", "")
 	cmd.Flags().String("secret-identity", "", "")
@@ -690,75 +664,6 @@ tasks:
 		t.Fatalf("WriteFile(playbook): %v", err)
 	}
 	return playbookPath, identityPath
-}
-
-func TestRunPlaybookPlanPhaseSkipsExecuteAndStateFile(t *testing.T) {
-	playbookPath := writeTestPlaybook(t)
-	stateDir := t.TempDir()
-	statePath := filepath.Join(stateDir, "state.json")
-
-	tt := &trackingTarget{}
-
-	oldResolveHosts := resolveInventoryHosts
-	resolveInventoryHosts = func(_ context.Context, _ *inventory.Inventory, _ []string, _ target.ModuleRegistry, _ *secrets.Resolver, _ string) ([]targeting.ResolvedHost, error) {
-		return []targeting.ResolvedHost{{
-			Name: "localhost",
-			Vars: map[string]any{},
-			TargetVars: map[string]any{
-				"name":      "localhost",
-				"hostname":  "localhost",
-				"address":   "localhost",
-				"transport": string(inventory.TransportLocal),
-			},
-			StatePath:    statePath,
-			Target:       tt,
-			InventoryRef: inventory.Host{Name: "localhost", Address: "localhost", Transport: inventory.TransportLocal},
-		}}, nil
-	}
-	defer func() { resolveInventoryHosts = oldResolveHosts }()
-
-	tests := []struct {
-		name string
-		run  func(*cobra.Command, []string) error
-	}{
-		{name: "apply", run: runApply},
-		{name: "check", run: runCheck},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			tt.calls = 0
-			cmd := newTestCommand()
-			if err := cmd.Flags().Set("phase", "plan"); err != nil {
-				t.Fatalf("Set phase: %v", err)
-			}
-			if err := cmd.Flags().Set("state-file", statePath); err != nil {
-				t.Fatalf("Set state-file: %v", err)
-			}
-			if err := tc.run(cmd, []string{playbookPath}); err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if tt.calls != 0 {
-				t.Fatalf("expected no target Execute calls during plan phase, got %d", tt.calls)
-			}
-			if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-				t.Fatalf("expected no state file during plan phase, but stat returned: %v", err)
-			}
-		})
-	}
-}
-
-// trackingTarget counts Execute calls and satisfies target.Target with no-op implementations.
-type trackingTarget struct {
-	calls int
-}
-
-func (t *trackingTarget) Execute(_ context.Context, _, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
-	t.calls++
-	return target.Result{Status: target.StatusOK}, nil
-}
-func (t *trackingTarget) Info(_ context.Context) (target.TargetInfo, error) {
-	return target.TargetInfo{}, nil
 }
 
 func mustOneBundleMatch(t *testing.T, projectDir string) string {

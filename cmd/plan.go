@@ -18,6 +18,11 @@ var planCmd = &cobra.Command{
 }
 
 func init() {
+	addTargetingFlags(planCmd)
+	addVarFlags(planCmd)
+	addTagFlags(planCmd)
+	addOutputFlags(planCmd)
+	addTimeoutFlag(planCmd)
 	rootCmd.AddCommand(planCmd)
 }
 

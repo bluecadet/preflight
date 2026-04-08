@@ -36,14 +36,4 @@ func Execute(version, commit, date string) {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringSliceP("target", "t", nil, "target host(s) or group(s) from inventory")
-	rootCmd.PersistentFlags().String("inventory", "", "path to inventory file (default: ./inventory.yml)")
-	rootCmd.PersistentFlags().StringArrayP("var", "e", nil, "set a variable (key=value)")
-	rootCmd.PersistentFlags().StringSlice("tags", nil, "only run tasks with these tags")
-	rootCmd.PersistentFlags().StringSlice("skip-tags", nil, "skip tasks with these tags")
-	rootCmd.PersistentFlags().Bool("check", false, "dry-run mode: check what would change without applying")
-	rootCmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
-	rootCmd.PersistentFlags().String("output", "", "output format: text, tui, json, or jsonl (default: tui when interactive, text otherwise)")
-	rootCmd.PersistentFlags().Int("concurrency", 0, "max number of targets to operate on in parallel (0 = unlimited)")
-	rootCmd.PersistentFlags().String("timeout", "", "overall execution timeout (e.g. 30m, 1h)")
 }

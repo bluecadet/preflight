@@ -24,21 +24,29 @@ var applyCmd = &cobra.Command{
 }
 
 func init() {
+	addTargetingFlags(applyCmd)
+	addVarFlags(applyCmd)
+	addTagFlags(applyCmd)
+	addOutputFlags(applyCmd)
+	addConcurrencyFlag(applyCmd)
+	addTimeoutFlag(applyCmd)
 	applyCmd.Flags().String("bundle", "", "apply from a staged bundle zip")
-	applyCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")
 	applyCmd.Flags().String("secret-identity", "", "path to an age identity file used to decrypt bundled encrypted secrets")
-	applyCmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "allow staging bundles that contain plaintext secrets")
 	applyCmd.Flags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
-	applyCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(applyCmd)
 }
 
 func runApply(cmd *cobra.Command, args []string) error {
-	return runPlaybook(cmd, args, false)
+	return runPlaybook(cmd, args, playbookRunOptions{})
 }
 
-// runPlaybook is the shared implementation for apply and check.
-func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
+type playbookRunOptions struct {
+	dryRun    bool
+	stageOnly bool
+}
+
+// runPlaybook is the shared implementation for apply, check, and stage.
+func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) error {
 	bundlePath, _ := cmd.Flags().GetString("bundle")
 	secretIdentity, _ := cmd.Flags().GetString("secret-identity")
 	allowPlaintextSecrets, _ := cmd.Flags().GetBool("allow-plaintext-secrets-in-bundle")
@@ -52,14 +60,14 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		if len(args) > 0 {
 			return fmt.Errorf("apply: playbook path and --bundle cannot be used together")
 		}
-		return runBundleApply(cmd, bundlePath, dryRun)
+		return runBundleApply(cmd, bundlePath, opts.dryRun)
 	}
 	if len(args) != 1 {
 		return fmt.Errorf("apply: expected exactly one playbook path")
 	}
 
 	playbookPath := getPlaybookPath(args)
-	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+	if err := validateConcurrency(cmd); err != nil {
 		return err
 	}
 
@@ -76,15 +84,8 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 	tags, _ := cmd.Flags().GetStringSlice("tags")
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
-	phase, _ := cmd.Flags().GetString("phase")
-	if allowPlaintextSecrets && phase != "stage" {
-		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage phase")
-	}
-
-	// --check flag overrides the dryRun argument.
-	checkFlag, _ := cmd.Flags().GetBool("check")
-	if checkFlag {
-		dryRun = true
+	if allowPlaintextSecrets && !opts.stageOnly {
+		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage command")
 	}
 
 	outFmt := getOutputFormat(cmd)
@@ -109,21 +110,16 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 		return err
 	}
 
-	if phase != "plan" {
-		// Fetch is target-agnostic: it only resolves action refs via the resolver
-		// chain and never calls any method on the target. A nil target is safe here.
-		fetchRunner := runner.New(nil, chain, runner.Config{})
-		if err := fetchRunner.Fetch(ctx, pb); err != nil {
-			return err
-		}
-	}
-	if phase == "fetch" {
-		return nil
+	// Fetch is target-agnostic: it only resolves action refs via the resolver
+	// chain and never calls any method on the target. A nil target is safe here.
+	fetchRunner := runner.New(nil, chain, runner.Config{})
+	if err := fetchRunner.Fetch(ctx, pb); err != nil {
+		return err
 	}
 
 	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		cfg := runner.Config{
-			DryRun:                        dryRun,
+			DryRun:                        opts.dryRun,
 			Tags:                          tags,
 			SkipTags:                      skipTags,
 			Concurrency:                   concurrency,
@@ -135,7 +131,6 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			Vars:                          vars,
 			TargetVars:                    host.TargetVars,
 			TargetName:                    host.Name,
-			Phase:                         phase,
 			Renderer:                      renderer,
 			Secrets:                       secretsResolver,
 			SecretsConfig:                 projectCfg.Secrets,
@@ -160,11 +155,7 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			return fmt.Errorf("plan for %s: %w", host.Name, err)
 		}
 
-		if phase == "plan" {
-			return nil
-		}
-
-		if phase == "stage" {
+		if opts.stageOnly {
 			if err := r.Stage(runCtx, plan); err != nil {
 				return fmt.Errorf("stage for %s: %w", host.Name, err)
 			}
@@ -212,10 +203,6 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 		return fmt.Errorf("apply bundle: parse plan: %w", err)
 	}
 
-	checkFlag, _ := cmd.Flags().GetBool("check")
-	if checkFlag {
-		dryRun = true
-	}
 	secretIdentity, _ := cmd.Flags().GetString("secret-identity")
 	secretResolver, err := buildBundleSecretsResolver(extracted, secretIdentity)
 	if err != nil {

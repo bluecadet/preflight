@@ -10,15 +10,17 @@ var stageCmd = &cobra.Command{
 }
 
 func init() {
+	addTargetingFlags(stageCmd)
+	addVarFlags(stageCmd)
+	addTagFlags(stageCmd)
+	addOutputFlags(stageCmd)
+	addConcurrencyFlag(stageCmd)
+	addTimeoutFlag(stageCmd)
 	stageCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")
 	stageCmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "allow staging bundles that contain plaintext secrets")
-	stageCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	rootCmd.AddCommand(stageCmd)
 }
 
 func runStage(cmd *cobra.Command, args []string) error {
-	if err := cmd.Flags().Set("phase", "stage"); err != nil {
-		return err
-	}
-	return runPlaybook(cmd, args, false)
+	return runPlaybook(cmd, args, playbookRunOptions{stageOnly: true})
 }

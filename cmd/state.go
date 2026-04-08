@@ -26,6 +26,7 @@ var stateShowCmd = &cobra.Command{
 }
 
 func init() {
+	addOutputFlags(stateShowCmd)
 	stateShowCmd.Flags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
 	stateCmd.AddCommand(stateShowCmd)
 	rootCmd.AddCommand(stateCmd)
