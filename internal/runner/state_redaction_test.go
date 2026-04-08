@@ -69,3 +69,20 @@ func TestStateParamSummaryRedactsPasswordSecretRef(t *testing.T) {
 		t.Fatalf("expected password to be redacted, got %#v", summary["password"])
 	}
 }
+
+func TestStateParamSummaryRedactsBecomePassword(t *testing.T) {
+	source := map[string]any{
+		"user":     "kiosk",
+		"password": "secret:become-password",
+	}
+	resolved := map[string]any{
+		"user":     "kiosk",
+		"password": "hunter2",
+	}
+
+	summary := NormalizeParamsForState(nil, nil, source, resolved)
+	become := summary["become"].(map[string]any)
+	if become["password"] != "[redacted]" {
+		t.Fatalf("expected become password to be redacted, got %#v", become["password"])
+	}
+}

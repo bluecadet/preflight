@@ -198,6 +198,82 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	}
 }
 
+func TestPlanMergesBecomeDefaultsAcrossActionExpansion(t *testing.T) {
+	resolver := action.Chain{&staticResolver{
+		action: &action.Action{
+			Name: "acme/demo",
+			Defaults: action.TaskDefaults{
+				Become: map[string]any{"method": "sudo"},
+			},
+			Tasks: []action.Task{
+				{
+					Name:  "echo",
+					Shell: map[string]any{"cmd": "echo", "args": []any{"hello"}},
+				},
+			},
+		},
+	}}
+	r := New(&mockTarget{}, resolver, Config{})
+	pb := &action.Playbook{
+		Name: "test",
+		Defaults: action.TaskDefaults{
+			Become: map[string]any{"user": "playbook-user"},
+		},
+		Tasks: []action.Task{
+			{
+				Name:   "call action",
+				Uses:   "acme/demo",
+				Become: map[string]any{"user": "task-user"},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
+	}
+	if got := plan.Tasks[0].Become["user"]; got != "task-user" {
+		t.Fatalf("expected task become user override, got %#v", got)
+	}
+	if got := plan.Tasks[0].Become["method"]; got != "sudo" {
+		t.Fatalf("expected action default method, got %#v", got)
+	}
+	if got := plan.Tasks[0].Become["enabled"]; got != true {
+		t.Fatalf("expected become enabled by default, got %#v", got)
+	}
+}
+
+func TestPlanTaskBecomeCanDisableInheritedDefaults(t *testing.T) {
+	r := New(&mockTarget{}, emptyResolver(), Config{})
+	pb := &action.Playbook{
+		Name: "test",
+		Defaults: action.TaskDefaults{
+			Become: map[string]any{"user": "playbook-user"},
+		},
+		Tasks: []action.Task{
+			{
+				Name:   "echo",
+				Become: map[string]any{"enabled": false},
+				Shell:  map[string]any{"cmd": "echo", "args": []any{"hello"}},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
+	}
+	if got := plan.Tasks[0].Become["enabled"]; got != false {
+		t.Fatalf("expected become disabled override, got %#v", got)
+	}
+}
+
 func TestDAGDependsOnOrder(t *testing.T) {
 	taskA := &PlanTask{ID: "task-0", Name: "task-a"}
 	taskB := &PlanTask{ID: "task-1", Name: "task-b", DependsOn: []string{"task-a"}}

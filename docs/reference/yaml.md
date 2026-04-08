@@ -12,6 +12,7 @@ Playbooks are the top-level execution documents.
 | --- | --- | --- |
 | `name` | string | Human-readable playbook name |
 | `description` | string | Optional description |
+| `defaults` | object | Task execution defaults inherited by playbook tasks |
 | `vars` | object | Playbook-level variable overrides |
 | `import` | string[] | Other playbook files to merge before local tasks |
 | `tasks` | task[] | Ordered task list |
@@ -56,6 +57,7 @@ Actions package reusable tasks behind a typed input surface.
 | `version` | string | Semantic version string |
 | `description` | string | Optional description |
 | `author` | string | Optional author |
+| `defaults` | object | Task execution defaults inherited by action tasks |
 | `inputs` | object | Named input definitions |
 | `outputs` | object | Named output definitions |
 | `tasks` | task[] | Ordered task list |
@@ -111,12 +113,58 @@ Mixing these forms in the same task is an error.
 | `name` | string | Task label used in output and `depends_on` |
 | `uses` | string | Action reference |
 | `with` | object | Inputs passed to the referenced action |
+| `become` | object | Execute the task as another user |
 | `module` | string | Explicit module name, including plugin-backed modules |
 | `params` | object | Parameters for `module` |
 | `when` | string | Template condition expression |
 | `depends_on` | string[] | Task-name dependencies |
 | `ignore_errors` | bool | Continue after a task failure |
 | `tags` | string[] | Tags used by `--tags` and `--skip-tags` |
+
+### Task Defaults
+
+Playbooks and actions may define:
+
+```yaml
+defaults:
+  become:
+    enabled: true
+    user: exhibit
+    method: sudo
+```
+
+Task defaults are inherited into child tasks. `become` precedence is:
+
+```text
+playbook defaults -> action defaults -> task become
+```
+
+If a `become` object is present and omits `enabled`, Preflight treats it as enabled. Setting `enabled: false` on a task disables inherited `become` for that task.
+
+### `become`
+
+`become` is task execution metadata, not a module parameter. It changes which user the task runs as while leaving `params` unchanged.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `enabled` | bool | Enable alternate-user execution |
+| `user` | string | Target user to execute as |
+| `password` | string | Optional password or secret reference |
+| `method` | string | Runtime method (`runas` on Windows, `sudo` on POSIX by default) |
+| `load_profile` | bool | Windows-focused profile loading hint |
+
+Example:
+
+```yaml
+tasks:
+  - name: Configure kiosk shell
+    become:
+      user: exhibit
+      password: secret:exhibit-password
+    powershell:
+      script: |
+        Write-Output $env:USERNAME
+```
 
 ### Explicit Module Tasks
 

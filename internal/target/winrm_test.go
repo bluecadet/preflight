@@ -55,6 +55,66 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 	}
 }
 
+func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			if !strings.Contains(command, "Start-Process @start") {
+				t.Fatalf("expected become wrapper, got %q", command)
+			}
+			if !strings.Contains(command, "PSCredential") {
+				t.Fatalf("expected credential creation, got %q", command)
+			}
+			return "applied", "", 0, nil
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, ExecutionOptions{
+		Become: &BecomeOptions{
+			Enabled:  true,
+			User:     "kiosk",
+			Password: "secret",
+		},
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+}
+
+func TestWinRMTarget_ExecuteShellWithBecomeSystem(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			if !strings.Contains(command, "New-ScheduledTaskPrincipal -UserId 'SYSTEM'") {
+				t.Fatalf("expected SYSTEM scheduled task wrapper, got %q", command)
+			}
+			return "applied", "", 0, nil
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, ExecutionOptions{
+		Become: &BecomeOptions{
+			Enabled: true,
+			User:    "SYSTEM",
+		},
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+}
+
 func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 	var scripts []string
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})

@@ -62,7 +62,17 @@ func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	}
 }
 
-func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+	backend := &windowsTaskBackend{
+		run:       t.runPS,
+		copyPlain: t.CopyFile,
+		tempDir:   t.RemoteTempDir(),
+		become:    become,
+	}
 	return executeRemoteModule(
 		ctx,
 		taskID,
@@ -70,7 +80,7 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		params,
 		dryRun,
 		onOutput,
-		newWindowsPowerShellRegistry(t),
+		newWindowsPowerShellRegistry(backend),
 		func(module string) error {
 			return fmt.Errorf("winrm: unknown module %q", module)
 		},

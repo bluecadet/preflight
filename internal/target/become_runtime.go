@@ -1,0 +1,424 @@
+package target
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, error) {
+	if !opts.Enabled() {
+		return nil, nil
+	}
+	become := *opts.Become
+	switch kind {
+	case RuntimeKindWindowsPowerShell:
+		if become.Method == "" {
+			become.Method = "runas"
+		}
+		if become.Method != "runas" {
+			return nil, fmt.Errorf("become: unsupported Windows method %q", become.Method)
+		}
+	case RuntimeKindPOSIXShell:
+		if become.Method == "" {
+			become.Method = "sudo"
+		}
+		if become.Method != "sudo" {
+			return nil, fmt.Errorf("become: unsupported POSIX method %q", become.Method)
+		}
+	default:
+		return nil, fmt.Errorf("become: unsupported runtime %q", kind)
+	}
+	return &become, nil
+}
+
+func isSystemBecome(become *BecomeOptions) bool {
+	return become != nil && strings.EqualFold(strings.TrimSpace(become.User), "SYSTEM")
+}
+
+type windowsTaskBackend struct {
+	run       func(context.Context, string) (string, error)
+	copyPlain func(context.Context, string, string) error
+	tempDir   string
+	become    *BecomeOptions
+}
+
+func (b *windowsTaskBackend) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+	return runWindowsPowerShellScript(ctx, b.run, b.tempDir, script, b.become)
+}
+
+func (b *windowsTaskBackend) CopyFile(ctx context.Context, src, dst string) error {
+	if b.become == nil && b.copyPlain != nil {
+		return b.copyPlain(ctx, src, dst)
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	pathVar, err := powershellJSONVar("path", dst)
+	if err != nil {
+		return err
+	}
+	payloadVar, err := powershellJSONVar("payload", base64.StdEncoding.EncodeToString(data))
+	if err != nil {
+		return err
+	}
+	_, err = runWindowsPowerShellScript(ctx, b.run, b.tempDir, pathVar+`
+`+payloadVar+`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($payload))
+`, b.become)
+	return err
+}
+
+func (b *windowsTaskBackend) RemoteTempDir() string {
+	return b.tempDir
+}
+
+func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, string) (string, error), tempDir, script string, become *BecomeOptions) (string, error) {
+	if become == nil {
+		return run(ctx, script)
+	}
+	if isSystemBecome(become) {
+		wrapped, err := buildWindowsSystemRunner(tempDir, script)
+		if err != nil {
+			return "", err
+		}
+		return run(ctx, wrapped)
+	}
+	if strings.TrimSpace(become.Password) == "" {
+		return "", fmt.Errorf("become: password is required for Windows user %q", become.User)
+	}
+	wrapped, err := buildWindowsCredentialRunner(tempDir, script, become)
+	if err != nil {
+		return "", err
+	}
+	return run(ctx, wrapped)
+}
+
+func buildWindowsCredentialRunner(tempDir, payload string, become *BecomeOptions) (string, error) {
+	tempVar, err := powershellJSONVar("tempRoot", filepath.ToSlash(tempDir))
+	if err != nil {
+		return "", err
+	}
+	payloadVar, err := powershellJSONVar("payload", payload)
+	if err != nil {
+		return "", err
+	}
+	userVar, err := powershellJSONVar("becomeUser", become.User)
+	if err != nil {
+		return "", err
+	}
+	passwordVar, err := powershellJSONVar("becomePassword", become.Password)
+	if err != nil {
+		return "", err
+	}
+	loadProfile := true
+	if become.LoadProfile != nil {
+		loadProfile = *become.LoadProfile
+	}
+	loadProfileVar, err := powershellJSONVar("loadProfile", loadProfile)
+	if err != nil {
+		return "", err
+	}
+
+	return tempVar + `
+` + payloadVar + `
+` + userVar + `
+` + passwordVar + `
+` + loadProfileVar + `
+$ErrorActionPreference = 'Stop'
+$workDir = Join-Path $tempRoot ([guid]::NewGuid().ToString('N'))
+$payloadPath = Join-Path $workDir 'payload.ps1'
+$stdoutPath = Join-Path $workDir 'stdout.txt'
+$stderrPath = Join-Path $workDir 'stderr.txt'
+try {
+  New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+  Set-Content -LiteralPath $payloadPath -Value $payload -Encoding UTF8
+  $secure = ConvertTo-SecureString $becomePassword -AsPlainText -Force
+  $cred = New-Object System.Management.Automation.PSCredential($becomeUser, $secure)
+  $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $payloadPath)
+  $start = @{
+    FilePath = 'powershell.exe'
+    ArgumentList = $args
+    Credential = $cred
+    RedirectStandardOutput = $stdoutPath
+    RedirectStandardError = $stderrPath
+    Wait = $true
+    PassThru = $true
+    WindowStyle = 'Hidden'
+  }
+  if ($loadProfile) {
+    $start.LoadUserProfile = $true
+  }
+  $proc = Start-Process @start
+  $stdout = if (Test-Path -LiteralPath $stdoutPath) { [IO.File]::ReadAllText($stdoutPath) } else { '' }
+  $stderr = if (Test-Path -LiteralPath $stderrPath) { [IO.File]::ReadAllText($stderrPath) } else { '' }
+  if ($proc.ExitCode -ne 0) {
+    $message = if ($stderr) { $stderr } else { $stdout }
+    throw ("runas exited with code " + $proc.ExitCode + ": " + $message)
+  }
+  Write-Output $stdout
+} finally {
+  Remove-Item -LiteralPath $workDir -Force -Recurse -ErrorAction SilentlyContinue
+}
+`, nil
+}
+
+func buildWindowsSystemRunner(tempDir, payload string) (string, error) {
+	tempVar, err := powershellJSONVar("tempRoot", filepath.ToSlash(tempDir))
+	if err != nil {
+		return "", err
+	}
+	payloadVar, err := powershellJSONVar("payload", payload)
+	if err != nil {
+		return "", err
+	}
+	return tempVar + `
+` + payloadVar + `
+$ErrorActionPreference = 'Stop'
+$workDir = Join-Path $tempRoot ([guid]::NewGuid().ToString('N'))
+$payloadPath = Join-Path $workDir 'payload.ps1'
+$runnerPath = Join-Path $workDir 'runner.ps1'
+$stdoutPath = Join-Path $workDir 'stdout.txt'
+$exitPath = Join-Path $workDir 'exit.txt'
+$taskName = 'PreflightBecome-' + ([guid]::NewGuid().ToString('N'))
+try {
+  New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+  Set-Content -LiteralPath $payloadPath -Value $payload -Encoding UTF8
+  $runner = @"
+$ErrorActionPreference = 'Continue'
+try {
+  $output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$payloadPath" 2>&1 | Out-String
+  $code = $LASTEXITCODE
+  if ($null -eq $code) { $code = 0 }
+} catch {
+  $output = $_ | Out-String
+  $code = 1
+}
+Set-Content -LiteralPath "$stdoutPath" -Value $output -Encoding UTF8
+Set-Content -LiteralPath "$exitPath" -Value ([string]$code) -Encoding ASCII
+"@
+  Set-Content -LiteralPath $runnerPath -Value $runner -Encoding UTF8
+  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $runnerPath + '"')
+  $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
+  $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+  Start-ScheduledTask -TaskName $taskName
+  $deadline = (Get-Date).AddMinutes(5)
+  while ((Get-Date) -lt $deadline) {
+    if (Test-Path -LiteralPath $exitPath) {
+      break
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  if (-not (Test-Path -LiteralPath $exitPath)) {
+    throw 'SYSTEM task did not finish before timeout'
+  }
+  $stdout = if (Test-Path -LiteralPath $stdoutPath) { [IO.File]::ReadAllText($stdoutPath) } else { '' }
+  $exitCode = [int](Get-Content -LiteralPath $exitPath -Raw)
+  if ($exitCode -ne 0) {
+    throw ("SYSTEM task exited with code " + $exitCode + ": " + $stdout)
+  }
+  Write-Output $stdout
+} finally {
+  Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $workDir -Force -Recurse -ErrorAction SilentlyContinue
+}
+`, nil
+}
+
+type posixTaskBackend struct {
+	run              func(context.Context, string, []byte) (string, string, int, error)
+	copyPlain        func(context.Context, string, string) error
+	readPlain        func(context.Context, string) ([]byte, error)
+	powerShellBinary string
+	become           *BecomeOptions
+}
+
+func (b *posixTaskBackend) RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
+	command, stdin = wrapPOSIXBecome(command, stdin, b.become)
+	return b.run(ctx, command, stdin)
+}
+
+func (b *posixTaskBackend) CopyFile(ctx context.Context, src, dst string) error {
+	if b.become == nil && b.copyPlain != nil {
+		return b.copyPlain(ctx, src, dst)
+	}
+
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	encoded := base64.StdEncoding.EncodeToString(data)
+	command := fmt.Sprintf(
+		"tmp=$(mktemp /tmp/preflight-copy.XXXXXX) && trap 'rm -f \"$tmp\"' EXIT && base64 -d > \"$tmp\" && chmod 0644 \"$tmp\" && mkdir -p %q && cp \"$tmp\" %q",
+		shellDir(dst), dst,
+	)
+	_, stderr, code, err := b.RunPOSIXCommand(ctx, command, []byte(encoded))
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("ssh copy exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return nil
+}
+
+func (b *posixTaskBackend) ReadFile(ctx context.Context, path string) ([]byte, error) {
+	if b.become == nil && b.readPlain != nil {
+		return b.readPlain(ctx, path)
+	}
+	stdout, stderr, code, err := b.RunPOSIXCommand(ctx, fmt.Sprintf("base64 < %q", path), nil)
+	if err != nil {
+		return nil, err
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("ssh read exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+}
+
+func (b *posixTaskBackend) PowerShellBinary() string {
+	return b.powerShellBinary
+}
+
+func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+	if b.powerShellBinary == "" {
+		return "", fmt.Errorf("posix-shell runtime: powershell is not available on the remote host")
+	}
+	stdout, stderr, code, err := b.RunPOSIXCommand(ctx, buildEncodedPowerShellCommand(b.powerShellBinary, script), nil)
+	if err != nil {
+		return "", err
+	}
+	if code != 0 {
+		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func wrapPOSIXBecome(command string, stdin []byte, become *BecomeOptions) (string, []byte) {
+	if become == nil {
+		return command, stdin
+	}
+	wrapped := fmt.Sprintf("sudo -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
+	if strings.TrimSpace(become.Password) == "" {
+		return wrapped, stdin
+	}
+	wrapped = fmt.Sprintf("sudo -S -p '' -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
+	withPassword := append([]byte(become.Password+"\n"), stdin...)
+	return wrapped, withPassword
+}
+
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
+}
+
+type localPOSIXBackend struct {
+	posixTaskBackend
+}
+
+func newLocalPOSIXBackend(become *BecomeOptions) *localPOSIXBackend {
+	backend := &localPOSIXBackend{}
+	backend.posixTaskBackend = posixTaskBackend{
+		run:              backend.run,
+		copyPlain:        backend.copyPlain,
+		readPlain:        backend.readPlain,
+		powerShellBinary: detectLocalPowerShellBinary(),
+		become:           become,
+	}
+	return backend
+}
+
+func (b *localPOSIXBackend) run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", command)
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	code := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			return "", "", 0, err
+		}
+	}
+	return stdout.String(), stderr.String(), code, nil
+}
+
+func (b *localPOSIXBackend) copyPlain(_ context.Context, src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, info.Mode())
+}
+
+func (b *localPOSIXBackend) readPlain(_ context.Context, path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+func detectLocalPowerShellBinary() string {
+	for _, binary := range []string{"pwsh", "powershell"} {
+		if _, err := exec.LookPath(binary); err == nil {
+			return binary
+		}
+	}
+	return ""
+}
+
+func localWindowsTempDir() string {
+	return `C:\Windows\Temp\preflight`
+}
+
+func runLocalWindowsPowerShell(ctx context.Context, script string) (string, error) {
+	out, err := exec.CommandContext(ctx, "powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", script,
+	).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("target/local: powershell failed: %w\noutput: %s", err, string(out))
+	}
+	return string(out), nil
+}
+
+func runtimeKindForLocal() RuntimeKind {
+	if runtime.GOOS == "windows" {
+		return RuntimeKindWindowsPowerShell
+	}
+	return RuntimeKindPOSIXShell
+}
+
+func waitForFile(path string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("timed out waiting for %q", path)
+}
