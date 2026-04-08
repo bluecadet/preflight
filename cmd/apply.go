@@ -127,6 +127,8 @@ func runPlaybook(cmd *cobra.Command, args []string, dryRun bool) error {
 			SkipTags:                      skipTags,
 			Concurrency:                   concurrency,
 			ProjectDir:                    projectDir,
+			ProjectName:                   projectCfg.Project,
+			ProjectEnv:                    projectCfg.Environment,
 			ProjectVars:                   projectCfg.Vars,
 			InventoryVars:                 host.Vars,
 			Vars:                          vars,
