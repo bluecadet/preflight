@@ -17,7 +17,6 @@ The --state-file flag is inherited from the state parent command.`,
 }
 
 func init() {
-	diffCmd.Flags().String("phase", "", "run only up to this phase: plan, fetch, stage, or apply")
 	stateCmd.AddCommand(diffCmd)
 	rootCmd.AddCommand(diffCmd)
 }
