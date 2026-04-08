@@ -655,7 +655,10 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Dependency check: skip if any dependency failed (unless ignore_errors).
 		depFailed := false
 		for _, dep := range pt.DependsOn {
-			depID := dag.nameToID[dep]
+			depID, ok := dag.nameToID[dep]
+			if !ok {
+				return fmt.Errorf("apply: dependency %q not found in DAG", dep)
+			}
 			if failed[depID] {
 				depFailed = true
 				break
