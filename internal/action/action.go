@@ -127,13 +127,13 @@ func (t *Task) ResolveModule() error {
 
 // Action is the parsed representation of an action.yml file.
 type Action struct {
-	Name        string            `yaml:"name"`
-	Version     string            `yaml:"version"`
-	Description string            `yaml:"description"`
-	Author      string            `yaml:"author"`
-	Defaults    TaskDefaults      `yaml:"defaults" json:"defaults"`
-	Inputs      map[string]Input  `yaml:"inputs"`
-	Tasks       []Task            `yaml:"tasks"`
+	Name        string           `yaml:"name"`
+	Version     string           `yaml:"version"`
+	Description string           `yaml:"description"`
+	Author      string           `yaml:"author"`
+	Defaults    TaskDefaults     `yaml:"defaults" json:"defaults"`
+	Inputs      map[string]Input `yaml:"inputs"`
+	Tasks       []Task           `yaml:"tasks"`
 }
 
 // ParseAction parses action YAML bytes into an Action.

@@ -55,6 +55,10 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 	varStore := template.NewVarStore()
 	varStore.SetMap(template.LayerProject, r.config.ProjectVars)
 	varStore.SetMap(template.LayerInventoryVars, r.config.InventoryVars)
+	varStore.Set(template.LayerProject, "preflight", map[string]any{
+		"project":     r.config.ProjectName,
+		"environment": r.config.ProjectEnv,
+	})
 	varStore.SetMap(template.LayerPlaybook, playbook.Vars)
 	varStore.SetMap(template.LayerCLI, r.config.Vars)
 	vars := varStore.Merge()

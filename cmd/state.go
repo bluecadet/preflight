@@ -147,6 +147,8 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 
 		cfg := runner.Config{
+			ProjectName:    projectCfg.Project,
+			ProjectEnv:     projectCfg.Environment,
 			ProjectVars:    projectCfg.Vars,
 			InventoryVars:  host.Vars,
 			Vars:           vars,

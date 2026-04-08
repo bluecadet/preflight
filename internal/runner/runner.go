@@ -19,6 +19,8 @@ type Config struct {
 	SkipTags                      []string
 	Concurrency                   int
 	ProjectDir                    string
+	ProjectName                   string
+	ProjectEnv                    string
 	ProjectVars                   map[string]any
 	InventoryVars                 map[string]any
 	Vars                          map[string]any // from --var CLI flags
