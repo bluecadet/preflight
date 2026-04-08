@@ -127,24 +127,53 @@ func (inv *Inventory) SelectTargets(selectors []string) ([]Host, error) {
 
 // mergedHost returns a copy of h with allVars, groupVars, and host vars merged
 // (later wins). The "all" group vars are applied first, then groupVars, then
-// the host's own Vars.
+// the host's own Vars. All merges are deep so nested maps are merged
+// key-by-key rather than replaced wholesale.
 func (inv *Inventory) mergedHost(h Host, groupVars map[string]any) Host {
 	merged := make(map[string]any)
 
 	// Apply "all" group vars first.
 	if all, ok := inv.Groups["all"]; ok {
-		maps.Copy(merged, all.Vars)
+		deepMerge(merged, all.Vars)
 	}
 
 	// Apply group vars.
-	maps.Copy(merged, groupVars)
+	deepMerge(merged, groupVars)
 
 	// Apply host-level vars last (highest precedence).
-	maps.Copy(merged, h.Vars)
+	deepMerge(merged, h.Vars)
 
 	copy := h
 	copy.Vars = merged
 	return copy
+}
+
+// deepMerge merges src into dst in-place. When both dst[k] and src[k] are
+// maps they are merged recursively; otherwise src[k] overwrites dst[k].
+func deepMerge(dst, src map[string]any) {
+	for k, srcVal := range src {
+		if srcMap, ok := toStringMap(srcVal); ok {
+			if dstVal, exists := dst[k]; exists {
+				if dstMap, ok := toStringMap(dstVal); ok {
+					merged := make(map[string]any, len(dstMap))
+					maps.Copy(merged, dstMap)
+					deepMerge(merged, srcMap)
+					dst[k] = merged
+					continue
+				}
+			}
+			cp := make(map[string]any, len(srcMap))
+			maps.Copy(cp, srcMap)
+			dst[k] = cp
+		} else {
+			dst[k] = srcVal
+		}
+	}
+}
+
+func toStringMap(v any) (map[string]any, bool) {
+	m, ok := v.(map[string]any)
+	return m, ok
 }
 
 func (inv *Inventory) orderedGroups() []string {
