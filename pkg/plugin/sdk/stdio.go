@@ -74,7 +74,7 @@ func dispatch(m Module, req rpcRequest) rpcResponse {
 		return rpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result: initializeResult{Name: m.Name(), Version: m.Version()},
+			Result:  initializeResult{Name: m.Name(), Version: m.Version()},
 		}
 
 	case "check":

@@ -10,7 +10,7 @@ import (
 // mockModule is a simple in-process module used across tests.
 type mockModule struct{}
 
-func (mockModule) Name() string { return "mock" }
+func (mockModule) Name() string    { return "mock" }
 func (mockModule) Version() string { return "2.3.4" }
 
 func (mockModule) Check(_ map[string]any) (CheckResult, error) {
