@@ -182,6 +182,20 @@ func TestWinRMTarget_ReachableAndInfo(t *testing.T) {
 	}
 }
 
+func TestNormalizeWindowsArch(t *testing.T) {
+	cases := map[string]string{
+		"64-bit": "amd64",
+		"X64":    "amd64",
+		"Arm64":  "arm64",
+		"x86":    "386",
+	}
+	for input, want := range cases {
+		if got := normalizeWindowsArch(input); got != want {
+			t.Fatalf("normalizeWindowsArch(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
 func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	var commands []string
 	call := 0

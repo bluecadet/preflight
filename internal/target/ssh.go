@@ -392,11 +392,11 @@ func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, erro
 
 func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 	stdout, err := r.RunPowerShellScript(ctx, `
-$os = Get-CimInstance Win32_OperatingSystem
-$arch = $os.OSArchitecture
-[pscustomobject]@{
-  hostname = $env:COMPUTERNAME
-  version  = [string]$os.Version
+	$os = Get-CimInstance Win32_OperatingSystem
+	$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+	[pscustomobject]@{
+	  hostname = $env:COMPUTERNAME
+	  version  = [string]$os.Version
   build    = [string]$os.BuildNumber
   arch     = $arch
 } | ConvertTo-Json -Compress

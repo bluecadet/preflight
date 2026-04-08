@@ -133,11 +133,11 @@ func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
 
 func (t *WinRMTarget) Info(ctx context.Context) (TargetInfo, error) {
 	stdout, err := t.runPS(ctx, `
-$os = Get-CimInstance Win32_OperatingSystem
-$arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-[pscustomobject]@{
-  hostname = $env:COMPUTERNAME
-  version  = [string]$os.Version
+	$os = Get-CimInstance Win32_OperatingSystem
+	$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+	[pscustomobject]@{
+	  hostname = $env:COMPUTERNAME
+	  version  = [string]$os.Version
   build    = [string]$os.BuildNumber
   arch     = $arch
 } | ConvertTo-Json -Compress
@@ -281,9 +281,11 @@ func parseWindowsBool(out string) (bool, error) {
 
 func normalizeWindowsArch(raw string) string {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "64-bit":
+	case "x64", "amd64", "64-bit":
 		return "amd64"
-	case "32-bit":
+	case "arm64", "aarch64":
+		return "arm64"
+	case "x86", "386", "32-bit":
 		return "386"
 	default:
 		return strings.ToLower(strings.TrimSpace(raw))
