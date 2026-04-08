@@ -34,7 +34,7 @@ type mockCall struct {
 	Params map[string]any
 }
 
-func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
+func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, _ target.ExecutionOptions, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
 	var copied map[string]any
 	if params != nil {
 		copied = make(map[string]any, len(params))

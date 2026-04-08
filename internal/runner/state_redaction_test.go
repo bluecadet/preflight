@@ -28,9 +28,9 @@ func TestStateParamSummaryRedactsSecretRefUnderNeutralKey(t *testing.T) {
 		"cmd": "hunter2",
 	}
 
-	summary, ok := StateParamSummary(source, resolved).(map[string]any)
+	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
 	if !ok {
-		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
 	}
 	if summary["cmd"] != "[redacted]" {
 		t.Fatalf("expected secret-derived neutral key to be redacted, got %#v", summary["cmd"])
@@ -48,7 +48,7 @@ func TestStateParamHashIgnoresSecretContentChanges(t *testing.T) {
 		"cmd": "correct horse battery staple",
 	}
 
-	if got, want := StateParamHash(source, first), StateParamHash(source, second); got != want {
+	if got, want := StateParamHash(source, first, nil, nil), StateParamHash(source, second, nil, nil); got != want {
 		t.Fatalf("expected secret-derived hashes to match, got %q != %q", got, want)
 	}
 }
@@ -61,9 +61,9 @@ func TestStateParamSummaryRedactsPasswordSecretRef(t *testing.T) {
 		"password": "hunter2",
 	}
 
-	summary, ok := StateParamSummary(source, resolved).(map[string]any)
+	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
 	if !ok {
-		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
 	}
 	if summary["password"] != "[redacted]" {
 		t.Fatalf("expected password to be redacted, got %#v", summary["password"])

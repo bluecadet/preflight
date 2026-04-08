@@ -42,7 +42,7 @@ func TestSSHTarget_ExecuteShellPOSIX(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestSSHTarget_DetectsWindowsPowerShellRuntimeAndExecutesShell(t *testing.T)
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'applied'",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -289,7 +289,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 	envResult, err := tgt.Execute(context.Background(), "task-env", "environment", map[string]any{
 		"name":  "PREFLIGHT_MODE",
 		"value": "kiosk",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("environment Execute returned error: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 	waitResult, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
 		"condition": "file_exists",
 		"target":    `C:\Temp\flag.txt`,
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("wait Execute returned error: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 
 	registryResult, err := tgt.Execute(context.Background(), "task-reg", "registry", map[string]any{
 		"path": `HKLM:\Software\Preflight`,
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("registry Execute returned error: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 
 	rebootResult, err := tgt.Execute(context.Background(), "task-reboot", "reboot", map[string]any{
 		"timeout": 45,
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("reboot Execute returned error: %v", err)
 	}
@@ -362,7 +362,7 @@ func TestSSHTarget_POSIXFileHashNoop(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
 		"dest": "/tmp/dst.txt",
 		"src":  src,
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestSSHTarget_POSIXPowerShellModuleUsesRemoteBinary(t *testing.T) {
 
 	result, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
 		"script": "Write-Output 'applied'",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -430,7 +430,7 @@ func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
 		"condition": "service_running",
 		"target":    "nginx",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Fatalf("expected unsupported error, got %v", err)
 	}
@@ -454,7 +454,7 @@ func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
 		},
 	}
 
-	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, false, nil)
+	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "plugin module") {
 		t.Fatalf("expected plugin deferral error, got %v", err)
 	}
@@ -478,7 +478,7 @@ func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
 
 	_, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
 		"script": "Write-Output 'hi'",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err == nil || !strings.Contains(err.Error(), "requires pwsh or powershell") {
 		t.Fatalf("expected missing powershell error, got %v", err)
 	}
@@ -502,7 +502,7 @@ func TestSSHTarget_POSIXUnsupportedModuleReturnsError(t *testing.T) {
 				},
 			}
 
-			_, err := tgt.Execute(context.Background(), "task-1", module, map[string]any{}, false, nil)
+			_, err := tgt.Execute(context.Background(), "task-1", module, map[string]any{}, ExecutionOptions{}, false, nil)
 			if err == nil {
 				t.Fatalf("expected error for unsupported module %q on POSIX runtime, got nil", module)
 			}
@@ -544,7 +544,7 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 			_, err := tgt.Execute(context.Background(), taskID, "shell", map[string]any{
 				"cmd":  "echo",
 				"args": []any{"hello"},
-			}, false, nil)
+			}, ExecutionOptions{}, false, nil)
 			if err != nil {
 				t.Errorf("goroutine %d: Execute returned error: %v", n, err)
 			}

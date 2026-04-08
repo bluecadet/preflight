@@ -1,10 +1,12 @@
 package runner
 
 import (
+	"context"
 	"slices"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/secrets"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type SecretValueAnalysis struct {
@@ -58,27 +60,58 @@ func analyzeSecretValue(key string, value any, refs map[string]struct{}, forceSe
 	}
 }
 
-func StateParamHash(source, params map[string]any) string {
-	return hashValue(NormalizeParamsForState(source, params))
+func StateParamHash(source, params, sourceBecome, become map[string]any) string {
+	return hashValue(NormalizeParamsForState(source, params, sourceBecome, become))
 }
 
-func StateParamSummary(source, params map[string]any) any {
-	return NormalizeParamsForState(source, params)
+func StateParamSummary(source, params, sourceBecome, become map[string]any) any {
+	return NormalizeParamsForState(source, params, sourceBecome, become)
 }
 
-func NormalizeParamsForState(source, params map[string]any) map[string]any {
+func NormalizeParamsForState(source, params, sourceBecome, become map[string]any) map[string]any {
 	if params == nil {
-		return nil
+		if become == nil {
+			return nil
+		}
 	}
 	sourceMap := source
 	if sourceMap == nil {
 		sourceMap = params
 	}
-	normalized, ok := normalizeStateValue("", sourceMap, params).(map[string]any)
-	if !ok {
-		return nil
+	normalized := normalizeStateValue("", sourceMap, params)
+	if become == nil && sourceBecome == nil {
+		normalizedMap, ok := normalized.(map[string]any)
+		if !ok {
+			return nil
+		}
+		return normalizedMap
 	}
-	return normalized
+
+	becomeSource := sourceBecome
+	if becomeSource == nil {
+		becomeSource = become
+	}
+	return map[string]any{
+		"params": normalized,
+		"become": normalizeStateValue("become", becomeSource, become),
+	}
+}
+
+func resolveExecutionOptions(ctx context.Context, resolver *secrets.Resolver, source map[string]any) (map[string]any, target.ExecutionOptions, error) {
+	if len(source) == 0 || resolver == nil || !resolver.HasProviders() {
+		opts, err := target.NormalizeExecutionOptions(source)
+		return source, opts, err
+	}
+
+	resolved, err := resolver.ResolveMap(ctx, source)
+	if err != nil {
+		return nil, target.ExecutionOptions{}, err
+	}
+	opts, err := target.NormalizeExecutionOptions(resolved)
+	if err != nil {
+		return nil, target.ExecutionOptions{}, err
+	}
+	return resolved, opts, nil
 }
 
 func normalizeStateValue(key string, source, resolved any) any {

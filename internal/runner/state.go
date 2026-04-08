@@ -185,6 +185,7 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 	type renderedTask struct {
 		name   string
 		params map[string]any
+		become map[string]any
 	}
 	renderedTasks := make([]renderedTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
@@ -192,9 +193,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		if err != nil {
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}
+		become, _, err := renderTaskExecutionOptions(task, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
+		}
 		renderedTasks = append(renderedTasks, renderedTask{
 			name:   taskName,
 			params: params,
+			become: become,
 		})
 		nameToKey[task.Name] = task.ID
 	}
@@ -206,12 +212,18 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		rendered := renderedTasks[idx]
 		params := rendered.params
 		stateSource := rendered.params
+		become := rendered.become
+		becomeSource := rendered.become
 		if resolver != nil && resolver.HasProviders() {
 			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
 				return nil, fmt.Errorf("state: task %q: %w", rendered.name, err)
 			}
 			params = resolved
+			become, _, err = resolveExecutionOptions(ctx, resolver, become)
+			if err != nil {
+				return nil, fmt.Errorf("state: task %q: %w", rendered.name, err)
+			}
 		}
 
 		dependsOn := make([]string, 0, len(task.DependsOn))
@@ -222,14 +234,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		}
 		slices.Sort(dependsOn)
 
-		paramHash := StateParamHash(stateSource, params)
+		paramHash := StateParamHash(stateSource, params, becomeSource, become)
 		tasks = append(tasks, PlannedTaskState{
 			TaskKey:      task.ID,
 			TaskName:     rendered.name,
 			Module:       task.Module,
 			DependsOn:    dependsOn,
 			ParamHash:    paramHash,
-			ParamSummary: StateParamSummary(stateSource, params),
+			ParamSummary: StateParamSummary(stateSource, params, becomeSource, become),
 			TaskHash: hashValue(map[string]any{
 				"task_key":   task.ID,
 				"task_name":  rendered.name,
@@ -312,7 +324,7 @@ func ComparePlannedTasks(planned []PlannedTaskState, state *State) []TaskCompari
 // SummarizeParams produces a redacted, JSON-friendly summary of parameters for
 // state diff output.
 func SummarizeParams(params map[string]any) any {
-	return NormalizeParamsForState(params, params)
+	return NormalizeParamsForState(params, params, nil, nil)
 }
 
 func hashValue(v any) string {

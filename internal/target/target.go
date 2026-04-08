@@ -50,7 +50,7 @@ type TargetInfo struct {
 type Target interface {
 	// Execute runs a named module with the given params against the target.
 	// If dryRun is true, only Check() is called — no changes are made.
-	Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error)
+	Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error)
 
 	// CopyFile copies a local file to dst on the target.
 	CopyFile(ctx context.Context, src, dst string) error
