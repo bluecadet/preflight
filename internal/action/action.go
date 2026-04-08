@@ -15,12 +15,6 @@ type Input struct {
 	Description string `yaml:"description"`
 }
 
-// Output describes a named output emitted by an action.
-type Output struct {
-	Type        string `yaml:"type"`
-	Description string `yaml:"description"`
-}
-
 // TaskDefaults describes execution defaults inherited by tasks.
 type TaskDefaults struct {
 	Become map[string]any `yaml:"become" json:"become,omitempty"`
@@ -139,7 +133,6 @@ type Action struct {
 	Author      string            `yaml:"author"`
 	Defaults    TaskDefaults      `yaml:"defaults" json:"defaults"`
 	Inputs      map[string]Input  `yaml:"inputs"`
-	Outputs     map[string]Output `yaml:"outputs"`
 	Tasks       []Task            `yaml:"tasks"`
 }
 

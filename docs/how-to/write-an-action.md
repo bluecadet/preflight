@@ -92,7 +92,7 @@ preflight action list
 preflight action info myorg/display-config
 ```
 
-`action info` is the fastest way to confirm the action name, inputs, outputs, and task count are what you expect.
+`action info` is the fastest way to confirm the action name, inputs, and task count are what you expect.
 
 ## 5. Validate The Calling Playbook
 

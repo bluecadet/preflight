@@ -150,19 +150,6 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	if len(a.Outputs) > 0 {
-		fmt.Println("\nOutputs:")
-		keys := make([]string, 0, len(a.Outputs))
-		for k := range a.Outputs {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			out := a.Outputs[k]
-			fmt.Printf("  %-20s %s\n", k+":", out.Description)
-		}
-	}
-
 	fmt.Printf("\nTasks (%d):\n", len(a.Tasks))
 	for i, t := range a.Tasks {
 		fmt.Printf("  %d. %s\n", i+1, t.Name)
