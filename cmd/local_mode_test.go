@@ -757,9 +757,6 @@ func (t *trackingTarget) Execute(_ context.Context, _, _ string, _ map[string]an
 	t.calls++
 	return target.Result{Status: target.StatusOK}, nil
 }
-func (t *trackingTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }
-func (t *trackingTarget) ReadFile(_ context.Context, _ string) ([]byte, error) { return nil, nil }
-func (t *trackingTarget) Reachable(_ context.Context) (bool, error)            { return true, nil }
 func (t *trackingTarget) Info(_ context.Context) (target.TargetInfo, error) {
 	return target.TargetInfo{}, nil
 }

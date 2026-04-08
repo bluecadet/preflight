@@ -17,9 +17,6 @@ type stubTarget struct {
 func (s *stubTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
 	return target.Result{}, nil
 }
-func (s *stubTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }
-func (s *stubTarget) ReadFile(_ context.Context, _ string) ([]byte, error) { return nil, nil }
-func (s *stubTarget) Reachable(_ context.Context) (bool, error)            { return true, nil }
 func (s *stubTarget) Info(_ context.Context) (target.TargetInfo, error)    { return s.info, nil }
 
 // localStubTarget is a stubTarget that also satisfies the localMarker interface.

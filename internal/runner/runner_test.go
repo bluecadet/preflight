@@ -64,9 +64,6 @@ func (m *mockTarget) Execute(_ context.Context, taskID, module string, params ma
 	return r, nil
 }
 
-func (m *mockTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }
-func (m *mockTarget) ReadFile(_ context.Context, _ string) ([]byte, error) { return nil, nil }
-func (m *mockTarget) Reachable(_ context.Context) (bool, error)            { return true, nil }
 func (m *mockTarget) Info(_ context.Context) (target.TargetInfo, error) {
 	return target.TargetInfo{}, nil
 }

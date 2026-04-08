@@ -52,21 +52,6 @@ type Target interface {
 	// If dryRun is true, only Check() is called — no changes are made.
 	Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error)
 
-	// CopyFile copies a local file to dst on the target.
-	// Available for use by orchestration layers and external callers;
-	// not currently called by the runner.
-	CopyFile(ctx context.Context, src, dst string) error
-
-	// ReadFile reads a file from the target and returns its contents.
-	// Available for use by orchestration layers and external callers;
-	// not currently called by the runner.
-	ReadFile(ctx context.Context, path string) ([]byte, error)
-
-	// Reachable reports whether the target can be contacted.
-	// Available for use by orchestration layers and external callers;
-	// not currently called by the runner.
-	Reachable(ctx context.Context) (bool, error)
-
 	// Info returns basic facts about the target machine.
 	Info(ctx context.Context) (TargetInfo, error)
 }
