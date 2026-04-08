@@ -30,7 +30,7 @@ func (t *LocalTarget) IsLocal() bool { return true }
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
 // If the module implements StreamingModule, ApplyWithOutput is used and lines are forwarded to onOutput.
-func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	mod, ok := t.registry[module]
 	if !ok {
 		return Result{}, fmt.Errorf("target/local: unknown module %q", module)

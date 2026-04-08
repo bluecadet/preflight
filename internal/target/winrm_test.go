@@ -43,7 +43,7 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-2", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'applied'",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestWinRMTarget_ApplyPackageStagesInstallersToWindowsPath(t *testing.T) {
 			map[string]any{"product_id": "{APP-1}", "source": msi},
 			map[string]any{"product_id": "{APP-2}", "source": exe},
 		},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestWinRMTarget_ApplyPackageAbsentSkipsUpload(t *testing.T) {
 		"packages": []any{
 			map[string]any{"product_id": "{APP-1}", "ensure": "absent"},
 		},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -317,7 +317,7 @@ func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T
 		"target":      `C:\Program Files\App\app.exe`,
 		"args":        "--kiosk",
 		"icon":        `C:\Program Files\App\app.ico`,
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -353,7 +353,7 @@ func TestWinRMTarget_ExecuteShortcutAbsentRemovesShortcut(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-shortcut-absent", "shortcut", map[string]any{
 		"destination": `C:\Users\Public\Desktop\App.lnk`,
 		"ensure":      "absent",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 		"name":     "kiosk",
 		"password": "secret",
 		"groups":   []any{"Users", "Remote Desktop Users"},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -432,7 +432,7 @@ func TestWinRMTarget_ExecuteUserAbsentRemovesUser(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-user-absent", "user", map[string]any{
 		"name":   "kiosk",
 		"ensure": "absent",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 		"action":    "allow",
 		"protocol":  "tcp",
 		"ports":     []any{80, 443},
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-firewall-absent", "firewall_rule", map[string]any{
 		"name":   "HTTP",
 		"ensure": "absent",
-	}, false, nil)
+	}, ExecutionOptions{}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}

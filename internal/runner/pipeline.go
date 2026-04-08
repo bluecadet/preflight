@@ -37,6 +37,7 @@ type PlanTask struct {
 	ActionPath   string // human-readable parent path, e.g. "Apply machine baseline/Configure computer name"
 	Module       string
 	Params       map[string]any
+	Become       map[string]any
 	TemplateVars map[string]any
 	DependsOn    []string
 	When         string
@@ -66,7 +67,7 @@ func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*Executio
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, vars, &planTasks, scope, nil, nil, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, vars, &planTasks, scope, canonicalizeBecome(playbook.Defaults.Become), nil, nil, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -100,7 +101,7 @@ func (s *expansionScope) next(base string) string {
 	return base + "-" + strconv.Itoa(count)
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, lineage []string, displayLineage []string, label string) error {
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, inheritedBecome map[string]any, lineage []string, displayLineage []string, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -113,9 +114,10 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 	currentLineage := append(append([]string{}, lineage...), segment)
 	displaySegment := taskDisplaySegment(task)
 	currentDisplayLineage := append(append([]string{}, displayLineage...), displaySegment)
+	taskBecome := mergeBecome(inheritedBecome, task.Become)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, vars)
+		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, taskBecome, vars)
 		if err != nil {
 			return err
 		}
@@ -133,11 +135,13 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 		return fmt.Errorf("prepare action %q inputs: %w", task.Uses, err)
 	}
 
+	childBecome := mergeBecome(inheritedBecome, resolved.Defaults.Become)
+	childBecome = mergeBecome(childBecome, task.Become)
 	childScope := newExpansionScope()
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, currentLineage, currentDisplayLineage, childLabel); err != nil {
+		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, childBecome, currentLineage, currentDisplayLineage, childLabel); err != nil {
 			return err
 		}
 	}
@@ -171,7 +175,7 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, vars map[string]any) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, become map[string]any, vars map[string]any) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
 	// ActionPath is the display lineage minus the leaf (the task's own name).
 	var actionPath string
@@ -187,6 +191,7 @@ func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, va
 		ActionPath:   actionPath,
 		Module:       t.Module,
 		Params:       rawParams,
+		Become:       cloneMap(become),
 		TemplateVars: templateVars,
 		DependsOn:    t.DependsOn,
 		When:         t.When,
@@ -400,7 +405,10 @@ func (r *Runner) analyzeStagePlan(ctx context.Context, plan *ExecutionPlan) (*st
 		if err != nil {
 			return nil, fmt.Errorf("stage: preview task %q: %w", task.Name, err)
 		}
-		analysis := AnalyzeSecretValues(preview.Params)
+		analysis := AnalyzeSecretValues(map[string]any{
+			"params": preview.Params,
+			"become": preview.Become,
+		})
 		if analysis.HasLiteralSecrets && !r.config.AllowPlaintextSecretsInBundle {
 			return nil, fmt.Errorf("stage: task %q depends on secret values that cannot be embedded in a staged bundle", preview.Name)
 		}
@@ -639,7 +647,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered", nil)
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil))
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			continue
 		}
@@ -655,7 +663,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if depFailed && !pt.IgnoreErrors {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed", nil)
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", dag))
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", dag))
 			skippedCount++
 			continue
 		}
@@ -668,7 +676,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 			if !ok {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
-				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", dag))
+				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", dag))
 				skippedCount++
 				continue
 			}
@@ -678,9 +686,18 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		if err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
 		}
+		sourceBecome, execOpts, err := renderTaskExecutionOptions(pt, execCtx)
+		if err != nil {
+			return fmt.Errorf("task %q: %w", pt.Name, err)
+		}
 		stateSource := params
+		resolvedBecome := sourceBecome
 		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
 			params, err = r.config.Secrets.ResolveMap(ctx, params)
+			if err != nil {
+				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
+			}
+			resolvedBecome, execOpts, err = resolveExecutionOptions(ctx, r.config.Secrets, sourceBecome)
 			if err != nil {
 				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 			}
@@ -699,11 +716,11 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 				})
 			}
 		}
-		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, r.config.DryRun, onOutput)
+		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, execOpts, r.config.DryRun, onOutput)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error(), result.Output)
-				state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, target.StatusFailed, execErr.Error(), dag))
+				state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
 				return finishApply()
@@ -717,7 +734,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
-		state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, result.Status, result.Message, dag))
+		state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, sourceBecome, resolvedBecome, result.Status, result.Message, dag))
 
 		r.emitTaskResult(pt, result.Status, result.Message, result.Output)
 
@@ -782,7 +799,7 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 	})
 }
 
-func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
+func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
 	dependsOn := make([]string, 0, len(pt.DependsOn))
 	if dag != nil {
 		for _, depName := range pt.DependsOn {
@@ -793,8 +810,8 @@ func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[str
 	}
 	slices.Sort(dependsOn)
 
-	paramHash := StateParamHash(sourceParams, params)
-	summary := StateParamSummary(sourceParams, params)
+	paramHash := StateParamHash(sourceParams, params, sourceBecome, become)
+	summary := StateParamSummary(sourceParams, params, sourceBecome, become)
 
 	return TaskSnapshot{
 		TaskKey:      pt.ID,
@@ -886,10 +903,32 @@ func renderTaskParams(task *PlanTask, execCtx *executionContext) (map[string]any
 	return params, name, nil
 }
 
+func renderTaskExecutionOptions(task *PlanTask, execCtx *executionContext) (map[string]any, target.ExecutionOptions, error) {
+	if len(task.Become) == 0 {
+		return nil, target.ExecutionOptions{}, nil
+	}
+
+	eng := template.New(task.TemplateVars).
+		WithTarget(execCtx.target).
+		WithFacts(execCtx.facts).
+		WithEnv(execCtx.env)
+
+	become, err := eng.RenderMap(task.Become)
+	if err != nil {
+		return nil, target.ExecutionOptions{}, err
+	}
+	opts, err := target.NormalizeExecutionOptions(map[string]any{"become": become})
+	if err != nil {
+		return nil, target.ExecutionOptions{}, err
+	}
+	return map[string]any{"become": become}, opts, nil
+}
+
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
 	preview.TemplateVars = cloneMap(task.TemplateVars)
 	preview.Params = cloneMap(task.Params)
+	preview.Become = cloneMap(task.Become)
 
 	eng := template.New(task.TemplateVars).WithTarget(targetVars).WithPreserveUnknown()
 
@@ -915,6 +954,14 @@ func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	}
 	preview.Params = params
 
+	if len(task.Become) > 0 {
+		become, err := eng.RenderMap(task.Become)
+		if err != nil {
+			return nil, err
+		}
+		preview.Become = become
+	}
+
 	return &preview, nil
 }
 
@@ -924,6 +971,35 @@ func cloneMap(src map[string]any) map[string]any {
 	}
 	dst := make(map[string]any, len(src))
 	maps.Copy(dst, src)
+	return dst
+}
+
+func canonicalizeBecome(src map[string]any) map[string]any {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := cloneMap(src)
+	if _, ok := dst["enabled"]; !ok {
+		dst["enabled"] = true
+	}
+	return dst
+}
+
+func mergeBecome(base, override map[string]any) map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+
+	dst := cloneMap(base)
+	if dst == nil {
+		dst = make(map[string]any)
+	}
+	if len(override) > 0 {
+		maps.Copy(dst, canonicalizeBecome(override))
+	}
+	if len(dst) == 0 {
+		return nil
+	}
 	return dst
 }
 
