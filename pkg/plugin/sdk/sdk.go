@@ -22,6 +22,8 @@ type ApplyResult struct {
 type Module interface {
 	// Name returns the module's canonical name (e.g. "my-module").
 	Name() string
+	// Version returns the module's semantic version.
+	Version() string
 	// Check reports whether the system is already in the desired state.
 	// NeedsChange must be true if the system is NOT yet in the desired state
 	// (i.e., Apply should be called). Return false when no change is required.

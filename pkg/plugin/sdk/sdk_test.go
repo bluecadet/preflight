@@ -11,6 +11,7 @@ import (
 type mockModule struct{}
 
 func (mockModule) Name() string { return "mock" }
+func (mockModule) Version() string { return "2.3.4" }
 
 func (mockModule) Check(_ map[string]any) (CheckResult, error) {
 	return CheckResult{
@@ -136,7 +137,7 @@ func TestServe_Initialize(t *testing.T) {
 	if init.Name != "mock" {
 		t.Errorf("expected name=mock, got %q", init.Name)
 	}
-	if init.Version != "1.0" {
-		t.Errorf("expected version=1.0, got %q", init.Version)
+	if init.Version != "2.3.4" {
+		t.Errorf("expected version=2.3.4, got %q", init.Version)
 	}
 }
