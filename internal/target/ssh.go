@@ -116,7 +116,7 @@ func (t *SSHTarget) Config() SSHConfig {
 	return t.config
 }
 
-func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err

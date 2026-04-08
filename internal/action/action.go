@@ -21,6 +21,11 @@ type Output struct {
 	Description string `yaml:"description"`
 }
 
+// TaskDefaults describes execution defaults inherited by tasks.
+type TaskDefaults struct {
+	Become map[string]any `yaml:"become" json:"become,omitempty"`
+}
+
 // inlineModuleFields maps the YAML key of each inline module field to a
 // function that extracts the params map from the Task.
 var inlineModuleFields = []struct {
@@ -52,6 +57,7 @@ type Task struct {
 	Name         string         `yaml:"name"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
+	Become       map[string]any `yaml:"become" json:"become,omitempty"`
 	ModuleName   string         `yaml:"module"`
 	ModuleParams map[string]any `yaml:"params"`
 	Module       string         `yaml:"-"` // resolved module name
@@ -131,6 +137,7 @@ type Action struct {
 	Version     string            `yaml:"version"`
 	Description string            `yaml:"description"`
 	Author      string            `yaml:"author"`
+	Defaults    TaskDefaults      `yaml:"defaults" json:"defaults,omitempty"`
 	Inputs      map[string]Input  `yaml:"inputs"`
 	Outputs     map[string]Output `yaml:"outputs"`
 	Tasks       []Task            `yaml:"tasks"`
@@ -149,6 +156,7 @@ func ParseAction(data []byte) (*Action, error) {
 type Playbook struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`
+	Defaults    TaskDefaults   `yaml:"defaults" json:"defaults,omitempty"`
 	Vars        map[string]any `yaml:"vars"`
 	Import      []string       `yaml:"import"`
 	Tasks       []Task         `yaml:"tasks"`

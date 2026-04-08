@@ -14,7 +14,7 @@ type stubTarget struct {
 	info target.TargetInfo
 }
 
-func (s *stubTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ bool, _ target.OutputFunc) (target.Result, error) {
+func (s *stubTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
 	return target.Result{}, nil
 }
 func (s *stubTarget) CopyFile(_ context.Context, _, _ string) error        { return nil }

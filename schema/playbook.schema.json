@@ -14,6 +14,9 @@
       "type": "string",
       "description": "Playbook description"
     },
+    "defaults": {
+      "$ref": "#/$defs/taskDefaults"
+    },
     "vars": {
       "type": "object",
       "description": "Playbook-level variable overrides"
@@ -57,6 +60,9 @@
           "type": "object",
           "description": "Input values passed to the referenced action"
         },
+        "become": {
+          "$ref": "#/$defs/becomeConfig"
+        },
         "when": {
           "type": "string",
           "description": "Template condition expression, e.g. {{ vars.enabled }}"
@@ -93,6 +99,26 @@
         "shell": { "$ref": "#/$defs/moduleShell" },
         "reboot": { "$ref": "#/$defs/moduleReboot" },
         "wait": { "$ref": "#/$defs/moduleWait" }
+      }
+    },
+    "taskDefaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "become": {
+          "$ref": "#/$defs/becomeConfig"
+        }
+      }
+    },
+    "becomeConfig": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "user": { "type": "string" },
+        "password": { "type": "string" },
+        "method": { "type": "string" },
+        "load_profile": { "type": "boolean" }
       }
     },
     "moduleRegistry": {

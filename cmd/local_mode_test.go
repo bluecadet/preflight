@@ -753,7 +753,7 @@ type trackingTarget struct {
 	calls int
 }
 
-func (t *trackingTarget) Execute(_ context.Context, _, _ string, _ map[string]any, _ bool, _ target.OutputFunc) (target.Result, error) {
+func (t *trackingTarget) Execute(_ context.Context, _, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
 	t.calls++
 	return target.Result{Status: target.StatusOK}, nil
 }

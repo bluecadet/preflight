@@ -62,7 +62,7 @@ func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	}
 }
 
-func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	return executeRemoteModule(
 		ctx,
 		taskID,
