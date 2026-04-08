@@ -2,6 +2,7 @@ package module
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -147,6 +148,25 @@ func TestPowershellApply_FileScript(t *testing.T) {
 	}
 	if !containsArg(captured, filepath.Join("scripts", "apply.ps1")) {
 		t.Fatalf("expected script path in args, got %v", captured)
+	}
+}
+
+func TestPowershellApply_ErrorIncludesOutput(t *testing.T) {
+	orig := powershellCombinedOutput
+	t.Cleanup(func() { powershellCombinedOutput = orig })
+
+	powershellCombinedOutput = func(_ context.Context, _ string, _ ...string) ([]byte, error) {
+		return []byte("script execution failed: access denied"), fmt.Errorf("exit status 1")
+	}
+
+	err := powershellApply(context.Background(), map[string]any{
+		"script": "Invoke-Something",
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "script execution failed: access denied") {
+		t.Fatalf("expected error to contain output, got: %v", err)
 	}
 }
 

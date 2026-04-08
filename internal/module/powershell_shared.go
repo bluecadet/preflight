@@ -73,17 +73,12 @@ func powershellApply(ctx context.Context, params map[string]any) error {
 		return fmt.Errorf("powershell: one of 'script' or 'file' is required")
 	}
 
-	var out []byte
 	if script != "" {
-		out, err = runPowerShellInline(ctx, script)
+		_, err = runPowerShellInline(ctx, script)
 	} else {
-		out, err = runPowerShellFile(ctx, file, args)
+		_, err = runPowerShellFile(ctx, file, args)
 	}
-	if err != nil {
-		return err
-	}
-	_ = out
-	return nil
+	return err
 }
 
 func powershellApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
@@ -127,7 +122,7 @@ func runPowerShellFile(ctx context.Context, file string, args []string) ([]byte,
 func runPowerShellCommand(ctx context.Context, args ...string) ([]byte, error) {
 	out, err := powershellCombinedOutput(ctx, platformPowerShellBinary(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("powershell: command failed: %w\noutput: %s", err, string(out))
+		return out, fmt.Errorf("powershell: command failed: %w\noutput: %s", err, string(out))
 	}
 	return out, nil
 }
