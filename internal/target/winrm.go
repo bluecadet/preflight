@@ -82,7 +82,10 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		onOutput,
 		newWindowsPowerShellRegistry(backend),
 		func(module string) error {
-			return fmt.Errorf("winrm: unknown module %q", module)
+			if become != nil {
+				return fmt.Errorf("winrm: module %q does not support become", module)
+			}
+			return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
 		},
 	)
 }
