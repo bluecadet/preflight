@@ -921,7 +921,7 @@ func renderTaskExecutionOptions(task *PlanTask, execCtx *executionContext) (map[
 	if err != nil {
 		return nil, target.ExecutionOptions{}, err
 	}
-	return map[string]any{"become": become}, opts, nil
+	return become, opts, nil
 }
 
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
@@ -988,6 +988,9 @@ func canonicalizeBecome(src map[string]any) map[string]any {
 func mergeBecome(base, override map[string]any) map[string]any {
 	if len(base) == 0 && len(override) == 0 {
 		return nil
+	}
+	if enabled, ok := override["enabled"].(bool); ok && !enabled {
+		return canonicalizeBecome(override)
 	}
 
 	dst := cloneMap(base)

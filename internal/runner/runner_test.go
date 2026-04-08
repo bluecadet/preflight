@@ -272,6 +272,12 @@ func TestPlanTaskBecomeCanDisableInheritedDefaults(t *testing.T) {
 	if got := plan.Tasks[0].Become["enabled"]; got != false {
 		t.Fatalf("expected become disabled override, got %#v", got)
 	}
+	if _, ok := plan.Tasks[0].Become["user"]; ok {
+		t.Fatalf("expected disabled override to clear inherited become fields, got %#v", plan.Tasks[0].Become)
+	}
+	if len(plan.Tasks[0].Become) != 1 {
+		t.Fatalf("expected disabled override to keep only enabled=false, got %#v", plan.Tasks[0].Become)
+	}
 }
 
 func TestDAGDependsOnOrder(t *testing.T) {
