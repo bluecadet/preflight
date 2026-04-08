@@ -1454,3 +1454,45 @@ func TestTargetNameFallsBackToTargetVars(t *testing.T) {
 		t.Errorf("targetName() = %q, want %q", got, "gallery-01")
 	}
 }
+
+func TestNewTaskSnapshotNilDAGProducesEmptyDependsOn(t *testing.T) {
+	pt := &PlanTask{
+		ID:        "task-1",
+		Name:      "dependent task",
+		Module:    "shell",
+		DependsOn: []string{"failing task"},
+		Params:    map[string]any{"cmd": "echo"},
+	}
+
+	snap := newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, nil, nil, target.StatusSkipped, "dependency-failed", nil)
+	if len(snap.DependsOn) != 0 {
+		t.Fatalf("expected empty DependsOn when dag=nil, got %v", snap.DependsOn)
+	}
+	if snap.Status != target.StatusSkipped {
+		t.Fatalf("expected StatusSkipped, got %v", snap.Status)
+	}
+	if snap.Message != "dependency-failed" {
+		t.Fatalf("expected message %q, got %q", "dependency-failed", snap.Message)
+	}
+}
+
+func TestNewTaskSnapshotWithDAGResolvesDependencyIDs(t *testing.T) {
+	taskA := &PlanTask{ID: "task-0", Name: "failing task", Module: "shell"}
+	taskB := &PlanTask{
+		ID:        "task-1",
+		Name:      "dependent task",
+		Module:    "shell",
+		DependsOn: []string{"failing task"},
+		Params:    map[string]any{"cmd": "echo"},
+	}
+
+	dag, err := BuildDAG([]*PlanTask{taskA, taskB})
+	if err != nil {
+		t.Fatalf("BuildDAG error: %v", err)
+	}
+
+	snap := newTaskSnapshot(taskB, taskB.Name, taskB.Params, taskB.Params, nil, nil, target.StatusOK, "", dag)
+	if len(snap.DependsOn) != 1 || snap.DependsOn[0] != "task-0" {
+		t.Fatalf("expected DependsOn=[task-0], got %v", snap.DependsOn)
+	}
+}
