@@ -2,6 +2,8 @@ package inventory
 
 import (
 	"testing"
+
+	"github.com/bluecadet/preflight/internal/maputil"
 )
 
 // baseInventory builds a small inventory used across several tests.
@@ -63,15 +65,15 @@ func TestHostsForTarget_SingleGroup(t *testing.T) {
 
 	// "all" group var
 	if got := h.Vars["env"]; got != "prod" {
-		t.Errorf("env: want %q, got %q", "prod", got)
+		t.Errorf("env: want %q, got %v", "prod", got)
 	}
 	// group var
 	if got := h.Vars["role"]; got != "web" {
-		t.Errorf("role: want %q, got %q", "web", got)
+		t.Errorf("role: want %q, got %v", "web", got)
 	}
 	// host var
 	if got := h.Vars["host_var"]; got != "web01_val" {
-		t.Errorf("host_var: want %q, got %q", "web01_val", got)
+		t.Errorf("host_var: want %q, got %v", "web01_val", got)
 	}
 }
 
@@ -92,18 +94,18 @@ func TestHostsForTarget_MultiGroup(t *testing.T) {
 
 	// "all" group var is always present.
 	if got := h.Vars["env"]; got != "prod" {
-		t.Errorf("env: want %q, got %q", "prod", got)
+		t.Errorf("env: want %q, got %v", "prod", got)
 	}
 
 	// "cache" group comes after "web" in GroupOrder, so its scalar "role"
 	// overwrites "web"'s.
 	if got := h.Vars["role"]; got != "cache" {
-		t.Errorf("role: want %q (last group wins), got %q", "cache", got)
+		t.Errorf("role: want %q (last group wins), got %v", "cache", got)
 	}
 
 	// host var still wins over group vars.
 	if got := h.Vars["host_var"]; got != "shared_val" {
-		t.Errorf("host_var: want %q, got %q", "shared_val", got)
+		t.Errorf("host_var: want %q, got %v", "shared_val", got)
 	}
 }
 
@@ -183,7 +185,7 @@ func TestAllHosts_Deduplication(t *testing.T) {
 func TestDeepMerge_Scalars(t *testing.T) {
 	dst := map[string]any{"a": 1, "b": 2}
 	src := map[string]any{"b": 99, "c": 3}
-	deepMerge(dst, src)
+	maputil.DeepMerge(dst, src)
 
 	if dst["a"] != 1 {
 		t.Errorf("a: want 1, got %v", dst["a"])
@@ -205,7 +207,7 @@ func TestDeepMerge_NestedMaps(t *testing.T) {
 	src := map[string]any{
 		"settings": map[string]any{"retries": 5, "verbose": true},
 	}
-	deepMerge(dst, src)
+	maputil.DeepMerge(dst, src)
 
 	settings, ok := dst["settings"].(map[string]any)
 	if !ok {
@@ -227,7 +229,7 @@ func TestDeepMerge_NestedMaps(t *testing.T) {
 func TestDeepMerge_SrcMapOverwritesScalar(t *testing.T) {
 	dst := map[string]any{"key": "scalar"}
 	src := map[string]any{"key": map[string]any{"nested": true}}
-	deepMerge(dst, src)
+	maputil.DeepMerge(dst, src)
 
 	m, ok := dst["key"].(map[string]any)
 	if !ok {
