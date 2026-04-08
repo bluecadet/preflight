@@ -1,6 +1,11 @@
 package runner
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/bluecadet/preflight/internal/action"
+)
 
 func TestSummarizeParamsDoesNotRedactOrdinaryPathValues(t *testing.T) {
 	params := map[string]any{
@@ -84,5 +89,46 @@ func TestStateParamSummaryRedactsBecomePassword(t *testing.T) {
 	become := summary["become"].(map[string]any)
 	if become["password"] != "[redacted]" {
 		t.Fatalf("expected become password to be redacted, got %#v", become["password"])
+	}
+}
+
+func TestBuildPlannedTaskStateKeepsBecomeSummaryUnwrapped(t *testing.T) {
+	r := New(&mockTarget{}, emptyResolver(), Config{})
+	pb := &action.Playbook{
+		Name: "test",
+		Tasks: []action.Task{
+			{
+				Name:   "echo",
+				Become: map[string]any{"user": "kiosk"},
+				Shell:  map[string]any{"cmd": "echo", "args": []any{"hello"}},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	states, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{}, nil)
+	if err != nil {
+		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
+	}
+	if len(states) != 1 {
+		t.Fatalf("expected 1 planned state, got %d", len(states))
+	}
+
+	summary, ok := states[0].ParamSummary.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map summary, got %T", states[0].ParamSummary)
+	}
+	become, ok := summary["become"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected become map summary, got %#v", summary["become"])
+	}
+	if _, ok := become["become"]; ok {
+		t.Fatalf("expected become summary to remain unwrapped, got %#v", become)
+	}
+	if become["user"] != "kiosk" {
+		t.Fatalf("expected become user to be preserved, got %#v", become["user"])
 	}
 }
