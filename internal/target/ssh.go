@@ -116,12 +116,52 @@ func (t *SSHTarget) Config() SSHConfig {
 	return t.config
 }
 
-func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
-	return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, runtime.Registry(), func(module string) error {
+	become, err := effectiveBecome(runtime.Kind(), opts)
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+
+	registry := runtime.Registry()
+	if become != nil {
+		switch rt := runtime.(type) {
+		case *sshWindowsPowerShellRuntime:
+			backend := &windowsTaskBackend{
+				run: func(ctx context.Context, script string) (string, error) {
+					stdout, stderr, code, err := t.run(ctx, buildEncodedPowerShellCommand(rt.binary, script), nil)
+					if err != nil {
+						return "", err
+					}
+					if code != 0 {
+						return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+					}
+					return stdout, nil
+				},
+				copyPlain: rt.CopyFile,
+				tempDir:   rt.RemoteTempDir(),
+				become:    become,
+			}
+			registry = newWindowsPowerShellRegistry(backend)
+		case *sshPOSIXShellRuntime:
+			backend := &posixTaskBackend{
+				run:              rt.RunPOSIXCommand,
+				copyPlain:        rt.CopyFile,
+				readPlain:        rt.ReadFile,
+				powerShellBinary: rt.PowerShellBinary(),
+				become:           become,
+			}
+			registry = newPOSIXShellRegistry(backend)
+		}
+	}
+
+	return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
+		if become != nil {
+			return fmt.Errorf("ssh: module %q does not support become", module)
+		}
 		return t.unsupportedModuleError(module, runtime.Kind())
 	})
 }

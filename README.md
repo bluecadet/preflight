@@ -49,6 +49,8 @@ tasks:
       timezone: Eastern Standard Time
 
   - name: Create content directory
+    become:
+      user: exhibit
     directory:
       path: "C:\\Exhibits\\Content"
       ensure: present
@@ -120,6 +122,7 @@ Implemented today:
 
 - Local execution and inventory-backed host selection
 - WinRM and SSH targets
+- Task-level `become` with inherited defaults and named-user execution via `runas` on Windows and `sudo -u` on POSIX
 - Embedded, local, cached, and Git-backed action resolution
 - Embedded Windows baseline stdlib actions for machine, shell, input, quiet mode, updates, power, and apps
 - Repo-backed `age` secrets

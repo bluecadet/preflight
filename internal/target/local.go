@@ -30,7 +30,35 @@ func (t *LocalTarget) IsLocal() bool { return true }
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
 // If the module implements StreamingModule, ApplyWithOutput is used and lines are forwarded to onOutput.
-func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, _ ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+	if opts.Enabled() {
+		kind := runtimeKindForLocal()
+		become, err := effectiveBecome(kind, opts)
+		if err != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+		}
+
+		unsupported := func(module string) error {
+			if _, ok := t.registry[module]; ok {
+				return fmt.Errorf("target/local: module %q does not support become", module)
+			}
+			return fmt.Errorf("target/local: unknown module %q", module)
+		}
+
+		if kind == RuntimeKindWindowsPowerShell {
+			backend := &windowsTaskBackend{
+				run:       runLocalWindowsPowerShell,
+				copyPlain: t.CopyFile,
+				tempDir:   localWindowsTempDir(),
+				become:    become,
+			}
+			return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, newWindowsPowerShellRegistry(backend), unsupported)
+		}
+
+		backend := newLocalPOSIXBackend(become)
+		return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, newPOSIXShellRegistry(backend), unsupported)
+	}
+
 	mod, ok := t.registry[module]
 	if !ok {
 		return Result{}, fmt.Errorf("target/local: unknown module %q", module)
