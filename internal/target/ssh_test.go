@@ -51,6 +51,45 @@ func TestSSHTarget_ExecuteShellPOSIX(t *testing.T) {
 	}
 }
 
+func TestSSHTarget_ExecuteShellPOSIXWithBecomeUser(t *testing.T) {
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, stdin []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				return "preflight", "", 0, nil
+			case strings.Contains(command, "sudo -S -p '' -u 'appuser' /bin/sh -lc"):
+				if string(stdin) != "hunter2\n" {
+					t.Fatalf("unexpected stdin %q", string(stdin))
+				}
+				return "", "", 0, nil
+			default:
+				t.Fatalf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, ExecutionOptions{
+		Become: &BecomeOptions{
+			Enabled:  true,
+			User:     "appuser",
+			Password: "hunter2",
+		},
+	}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected changed result, got %q", result.Status)
+	}
+}
+
 func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 	var detectionCount int
 

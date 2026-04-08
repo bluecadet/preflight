@@ -121,6 +121,8 @@ The three-layer model — **Modules → Actions → Playbooks** — is central t
 
 The single most important invariant: **the runner is always target-agnostic**. No `localhost` assumptions in runner code. Every operation must go through the `Target` interface. Violating this blocks the distributed orchestration path.
 
+Task execution metadata such as `become` lives alongside tasks and targets, not inside module params. When changing execution identity behavior, make sure planning, staging, state hashing, and target execution all stay aligned.
+
 ---
 
 ## Adding a Module
