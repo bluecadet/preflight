@@ -241,14 +241,6 @@
           "type": "string",
           "enum": ["present", "absent"],
           "default": "present"
-        },
-        "owner": {
-          "type": "string",
-          "description": "File owner"
-        },
-        "permissions": {
-          "type": "string",
-          "description": "File permissions"
         }
       }
     },
@@ -265,12 +257,6 @@
           "type": "string",
           "enum": ["present", "absent"],
           "default": "present"
-        },
-        "owner": {
-          "type": "string"
-        },
-        "permissions": {
-          "type": "string"
         }
       }
     },

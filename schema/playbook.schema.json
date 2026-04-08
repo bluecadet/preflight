@@ -158,27 +158,23 @@
         "startup_type": { "type": "string", "enum": ["automatic", "manual", "disabled"] }
       }
     },
-    "moduleFile": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "src": { "type": "string" },
-        "dest": { "type": "string" },
-        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" },
-        "owner": { "type": "string" },
-        "permissions": { "type": "string" }
-      }
-    },
-    "moduleDirectory": {
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "path": { "type": "string" },
-        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" },
-        "owner": { "type": "string" },
-        "permissions": { "type": "string" }
-      }
-    },
+      "moduleFile": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "src": { "type": "string" },
+          "dest": { "type": "string" },
+          "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+        }
+      },
+      "moduleDirectory": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+        }
+      },
     "modulePackage": {
       "type": "object",
       "additionalProperties": false,

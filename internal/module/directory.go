@@ -10,8 +10,6 @@ import (
 // Params:
 //   - path (required): directory path
 //   - ensure: "present" (default) or "absent"
-//   - owner: (future) directory owner
-//   - permissions: (future) directory permissions
 type DirectoryModule struct{}
 
 func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool, error) {
@@ -24,10 +22,10 @@ func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool,
 		return false, err
 	}
 	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("directory: owner is not implemented by this module")
+		return false, fmt.Errorf("directory: owner is not supported")
 	}
 	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("directory: permissions is not implemented by this module")
+		return false, fmt.Errorf("directory: permissions is not supported")
 	}
 
 	info, statErr := os.Stat(path)
@@ -69,10 +67,10 @@ func (m *DirectoryModule) Apply(_ context.Context, params map[string]any) error 
 		return err
 	}
 	if _, ok := params["owner"]; ok {
-		return fmt.Errorf("directory: owner is not implemented by this module")
+		return fmt.Errorf("directory: owner is not supported")
 	}
 	if _, ok := params["permissions"]; ok {
-		return fmt.Errorf("directory: permissions is not implemented by this module")
+		return fmt.Errorf("directory: permissions is not supported")
 	}
 
 	switch ensure {

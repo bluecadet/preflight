@@ -14,8 +14,6 @@ import (
 //   - dest (required): destination path
 //   - src: source path to copy from
 //   - ensure: "present" (default) or "absent"
-//   - owner: (future) file owner
-//   - permissions: (future) file permissions
 type FileModule struct{}
 
 func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, error) {
@@ -32,10 +30,10 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 		return false, err
 	}
 	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("file: owner is not implemented by this module")
+		return false, fmt.Errorf("file: owner is not supported")
 	}
 	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("file: permissions is not implemented by this module")
+		return false, fmt.Errorf("file: permissions is not supported")
 	}
 
 	info, statErr := os.Stat(dest)
@@ -93,10 +91,10 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 		return err
 	}
 	if _, ok := params["owner"]; ok {
-		return fmt.Errorf("file: owner is not implemented by this module")
+		return fmt.Errorf("file: owner is not supported")
 	}
 	if _, ok := params["permissions"]; ok {
-		return fmt.Errorf("file: permissions is not implemented by this module")
+		return fmt.Errorf("file: permissions is not supported")
 	}
 
 	switch ensure {

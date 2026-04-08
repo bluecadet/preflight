@@ -108,8 +108,6 @@ Manage files.
 | `src` | string | Local source path to copy from |
 | `dest` | string | Destination path |
 | `ensure` | `present` or `absent` | Desired state |
-| `owner` | string | Schema field; ownership handling is platform-dependent |
-| `permissions` | string | Schema field; permission handling is platform-dependent |
 
 ### `directory`
 
@@ -119,8 +117,6 @@ Manage directories.
 | --- | --- | --- |
 | `path` | string | Directory path |
 | `ensure` | `present` or `absent` | Desired state |
-| `owner` | string | Schema field; ownership handling is platform-dependent |
-| `permissions` | string | Schema field; permission handling is platform-dependent |
 
 ### `package`
 
