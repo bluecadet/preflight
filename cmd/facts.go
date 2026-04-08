@@ -30,6 +30,13 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	unsupported := []string{"tags", "skip-tags", "check"}
+	for _, name := range unsupported {
+		if f := cmd.Flags().Lookup(name); f != nil && f.Changed {
+			return fmt.Errorf("facts: --%s is not applicable to the facts command", name)
+		}
+	}
+
 	ctx, cancel, err := commandContext(cmd)
 	if err != nil {
 		return err
