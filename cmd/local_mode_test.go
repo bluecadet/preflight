@@ -428,7 +428,7 @@ groups:
       - name: kiosk-a
         transport: winrm
         username: exhibit
-        password_from: secret:winrm-password
+        password: secret:winrm-password
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
 	}

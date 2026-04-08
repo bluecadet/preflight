@@ -140,8 +140,8 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 		action: &action.Action{
 			Name: "preflight/autologin",
 			Inputs: map[string]action.Input{
-				"username":      {Required: true},
-				"password_from": {},
+				"username": {Required: true},
+				"password": {},
 			},
 			Tasks: []action.Task{
 				{
@@ -168,8 +168,8 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 				Name: "autologin",
 				Uses: "preflight/autologin",
 				With: map[string]any{
-					"username":      "kiosk",
-					"password_from": "secret:autologin-password",
+					"username": "kiosk",
+					"password": "secret:autologin-password",
 				},
 			},
 		},
@@ -586,7 +586,7 @@ func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
 				"env": map[string]any{
 					"PASSWORD": "secret:autologin-password",
 				},
-				"password_from": "secret:autologin-password",
+				"password": "secret:autologin-password",
 			},
 		}},
 	}

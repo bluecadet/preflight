@@ -232,8 +232,8 @@ groups:
       - name: secure-host
         address: 10.0.0.10
         transport: ssh
-        password_from: secret:winrm-password
-        private_key_from: secret:signage-key
+        password: secret:winrm-password
+        private_key: secret:signage-key
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -243,11 +243,11 @@ groups:
 	if err != nil {
 		t.Fatalf("unexpected target error: %v", err)
 	}
-	if got := hosts[0].PasswordFrom; got != "secret:winrm-password" {
-		t.Fatalf("expected password_from to be preserved, got %q", got)
+	if got := hosts[0].Password; got != "secret:winrm-password" {
+		t.Fatalf("expected password to be preserved, got %q", got)
 	}
-	if got := hosts[0].PrivateKeyFrom; got != "secret:signage-key" {
-		t.Fatalf("expected private_key_from to be preserved, got %q", got)
+	if got := hosts[0].PrivateKey; got != "secret:signage-key" {
+		t.Fatalf("expected private_key to be preserved, got %q", got)
 	}
 }
 

@@ -53,23 +53,19 @@ func TestStateParamHashIgnoresSecretContentChanges(t *testing.T) {
 	}
 }
 
-func TestStateParamSummaryRedactsDerivedBaseFieldFromPasswordFrom(t *testing.T) {
+func TestStateParamSummaryRedactsPasswordSecretRef(t *testing.T) {
 	source := map[string]any{
-		"password_from": "secret:db-password",
+		"password": "secret:db-password",
 	}
 	resolved := map[string]any{
-		"password_from": "hunter2",
-		"password":      "hunter2",
+		"password": "hunter2",
 	}
 
 	summary, ok := StateParamSummary(source, resolved).(map[string]any)
 	if !ok {
 		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
 	}
-	if summary["password_from"] != "[redacted]" {
-		t.Fatalf("expected password_from to be redacted, got %#v", summary["password_from"])
-	}
 	if summary["password"] != "[redacted]" {
-		t.Fatalf("expected derived password to be redacted, got %#v", summary["password"])
+		t.Fatalf("expected password to be redacted, got %#v", summary["password"])
 	}
 }

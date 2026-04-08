@@ -176,7 +176,7 @@ func secretRefName(value string) (string, bool) {
 
 func secretishKey(key string) bool {
 	lower := strings.ToLower(key)
-	for _, token := range []string{"password", "secret", "token", "private_key", "credential", "_from"} {
+	for _, token := range []string{"password", "secret", "token", "private_key", "credential"} {
 		if strings.Contains(lower, token) {
 			return true
 		}

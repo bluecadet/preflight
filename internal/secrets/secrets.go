@@ -101,8 +101,6 @@ func (r *Resolver) ResolveValue(ctx context.Context, v any) (any, error) {
 }
 
 // ResolveMap resolves secret references throughout params.
-// Keys ending in "_from" are additionally copied to their base field names so
-// modules can continue reading their existing plaintext keys.
 func (r *Resolver) ResolveMap(ctx context.Context, params map[string]any) (map[string]any, error) {
 	if params == nil {
 		return nil, nil
@@ -114,17 +112,6 @@ func (r *Resolver) ResolveMap(ctx context.Context, params map[string]any) (map[s
 			return nil, err
 		}
 		resolved[key] = out
-	}
-	for key, value := range params {
-		if !strings.HasSuffix(key, "_from") {
-			continue
-		}
-		base := strings.TrimSuffix(key, "_from")
-		out, err := r.ResolveValue(ctx, value)
-		if err != nil {
-			return nil, err
-		}
-		resolved[base] = out
 	}
 	return resolved, nil
 }

@@ -24,9 +24,7 @@ type rawHost struct {
 	Port              int            `yaml:"port"`
 	Username          string         `yaml:"username"`
 	Password          string         `yaml:"password"`
-	PasswordFrom      string         `yaml:"password_from"`
 	PrivateKey        string         `yaml:"private_key"`
-	PrivateKeyFrom    string         `yaml:"private_key_from"`
 	KnownHostsFile    string         `yaml:"known_hosts_file"`
 	HostKeyAlgorithms []string       `yaml:"host_key_algorithms"`
 	HTTPS             bool           `yaml:"https"`
@@ -63,9 +61,7 @@ func Parse(data []byte) (*Inventory, error) {
 				Port:              defaultPort(rh.Transport, rh.HTTPS, rh.Port),
 				Username:          rh.Username,
 				Password:          rh.Password,
-				PasswordFrom:      rh.PasswordFrom,
 				PrivateKey:        rh.PrivateKey,
-				PrivateKeyFrom:    rh.PrivateKeyFrom,
 				KnownHostsFile:    rh.KnownHostsFile,
 				HostKeyAlgorithms: rh.HostKeyAlgorithms,
 				HTTPS:             rh.HTTPS,
