@@ -9,7 +9,7 @@ Preflight writes state files to:
 - `state/provision.json` for local applies
 - `state/targets/<host>.json` for inventory-backed applies
 
-Inspection commands such as `preflight state show`, `preflight state diff`, `preflight diff`, and `preflight apply --bundle` can read or write a different state file with `--state-file`.
+Inspection commands such as `preflight state show`, `preflight state diff`, and `preflight apply --bundle` can read or write a different state file with `--state-file`.
 
 ## File Shape
 
@@ -54,7 +54,7 @@ State files do not persist decrypted secret values.
 
 ## Diff Statuses
 
-`preflight diff` and `preflight state diff` use these statuses:
+`preflight state diff` uses these statuses:
 
 | Status | Meaning |
 | --- | --- |
@@ -82,7 +82,6 @@ Task keys are based on lineage, not just list position. That improves comparison
 | --- | --- |
 | `preflight state show` | Show a state file through the selected output renderer |
 | `preflight state diff <playbook>` | Compare a plan to a selected state file |
-| `preflight diff <playbook>` | Shortcut to the same comparison logic |
 
 ## Related Docs
 

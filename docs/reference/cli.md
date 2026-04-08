@@ -2,9 +2,9 @@
 
 This page describes the command surface implemented under [`cmd/`](/Users/clay/repos/preflight/cmd).
 
-## Global Flags
+## Common Flags
 
-These flags are defined on the root command and are available to subcommands where they make sense.
+These flags are defined on the individual commands that use them.
 
 | Flag | Short | Meaning |
 | --- | --- | --- |
@@ -13,12 +13,10 @@ These flags are defined on the root command and are available to subcommands whe
 | `--var key=value` | `-e` | Set a variable override. Later values win. |
 | `--tags` |  | Run only tasks that have any of the listed tags. |
 | `--skip-tags` |  | Skip tasks that have any of the listed tags. |
-| `--check` |  | Dry-run mode. |
 | `--verbose` | `-v` | Include successful task output blocks in human-readable renderers. |
-| `--output` |  | Output format: `text`, `tui`, `json`, or `jsonl`. |
+| `--output` |  | Output format: `text`, `tui`, or `json`. |
 | `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
 | `--timeout` |  | Overall run timeout such as `30m` or `1h`. |
-| `--phase` |  | Run only up to `plan`, `fetch`, `stage`, or `apply`. |
 
 ## Target Selection Rules
 
@@ -54,7 +52,6 @@ Command-specific flags:
 | Flag | Meaning |
 | --- | --- |
 | `--bundle` | Apply a staged bundle zip instead of a playbook |
-| `--bundle-output-dir` | Output directory when running the stage phase through `apply` |
 
 ### `preflight check <playbook>`
 
@@ -63,15 +60,6 @@ Run the same execution pipeline as `apply`, but stop after `Check()` paths and r
 ```bash
 preflight check playbooks/lobby.yml
 preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
-```
-
-### `preflight diff <playbook>`
-
-Compare the current plan to the selected recorded state file. `preflight diff` is an alias for `preflight state diff` — both commands are registered and share the same implementation. The `--state-file` flag is available on both.
-
-```bash
-preflight diff playbooks/lobby.yml
-preflight diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
 ```
 
 ### `preflight plan <playbook>`
@@ -229,7 +217,6 @@ Behavior notes:
 - Inventory-backed applies write `state/targets/<host>.json`.
 - Inventory-backed diffs should pass the same `--target` and `--inventory` context used for the host being compared.
 - When multiple hosts resolve and `--state-file` is not set, the command prints one section per host and reads each host's default state file.
-- `preflight diff` is a shortcut into the same comparison machinery.
 
 ## Output Formats
 
@@ -238,8 +225,7 @@ Behavior notes:
 | `text` | Plain human-readable renderer |
 | `tui` | Interactive terminal UI renderer |
 | `json` | Newline-delimited JSON events |
-| `jsonl` | Same renderer and event shape as `json` |
 
-When a task streams output during `apply`, the `json` and `jsonl` renderers emit `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
+When a task streams output during `apply`, the `json` renderer emits `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
 
 For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, and includes successful-task logs after completion when `--verbose` is enabled.

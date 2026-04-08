@@ -128,7 +128,7 @@ Implemented today:
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply
-- Output renderers for `text`, `tui`, `json`, and `jsonl`, including streamed task output during apply
+- Output renderers for `text`, `tui`, and `json`, including streamed task output during apply
 
 Important current limits:
 
@@ -148,7 +148,7 @@ For output and renderer work, you can preview scenarios without running a full p
 go run ./tools/sim list
 go run ./tools/sim streaming --format tui
 go run ./tools/sim streaming-multi-host --format tui --verbose
-go run ./tools/sim failures --format jsonl
+go run ./tools/sim failures --format json
 ```
 
 Build commands:

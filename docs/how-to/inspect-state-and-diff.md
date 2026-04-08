@@ -24,14 +24,13 @@ The output is the persisted JSON state file, not a summarized table.
 
 ## Compare Desired State To Recorded State
 
-Use either command:
+Use the state diff command:
 
 ```bash
-preflight diff playbooks/lobby.yml
 preflight state diff playbooks/lobby.yml
 ```
 
-They compare the current planned task snapshots to the selected recorded state file.
+It compares the current planned task snapshots to the selected recorded state file.
 
 The default state path is:
 
@@ -82,4 +81,4 @@ That usually means you are comparing against the wrong state file, or the playbo
 
 ### I want task-by-task execution output, not a plan comparison
 
-Use `preflight check` or `preflight apply` for execution output. `diff` and `state diff` only compare planned state against recorded state.
+Use `preflight check` or `preflight apply` for execution output. `state diff` only compares planned state against recorded state.

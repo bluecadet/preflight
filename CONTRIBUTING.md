@@ -82,7 +82,7 @@ go run ./tools/sim list
 go run ./tools/sim streaming --format tui
 go run ./tools/sim streaming-multi-host --format tui --verbose
 go run ./tools/sim failures --format text
-go run ./tools/sim basic --format jsonl
+go run ./tools/sim basic --format json
 ```
 
 **Run vet:**

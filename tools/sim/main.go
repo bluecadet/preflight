@@ -1,7 +1,7 @@
 // Simulator for preflight terminal output. Not compiled into the main binary.
 // Usage:
 //
-//	go run ./tools/sim [scenario] [--format tui|text|json|jsonl] [--verbose] [--delay 100ms]
+//	go run ./tools/sim [scenario] [--format tui|text|json] [--verbose] [--delay 100ms]
 package main
 
 import (
@@ -72,7 +72,7 @@ func init() {
 }
 
 func main() {
-	formatFlag := flag.String("format", "auto", "output format: auto, tui, text, json, jsonl")
+	formatFlag := flag.String("format", "auto", "output format: auto, tui, text, json")
 	verboseFlag := flag.Bool("verbose", false, "show logs for all completed tasks")
 	delayFlag := flag.Duration("delay", 80*time.Millisecond, "simulated task duration")
 
@@ -154,8 +154,6 @@ func parseFormat(raw string, w *os.File) (output.Format, error) {
 		return output.FormatText, nil
 	case "json":
 		return output.FormatJSON, nil
-	case "jsonl":
-		return output.FormatJSONL, nil
 	default:
 		return "", fmt.Errorf("unknown format %q", raw)
 	}

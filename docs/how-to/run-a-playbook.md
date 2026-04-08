@@ -43,14 +43,11 @@ Why `plan` matters:
 
 ## Dry-Run The Real Execution Path
 
-Use either form:
-
 ```bash
 preflight check playbooks/lobby.yml
-preflight apply playbooks/lobby.yml --check
 ```
 
-Both paths run in dry-run mode. Tasks still go through the normal runner pipeline, including dependency ordering and execution-time rendering, but changes are not applied.
+This runs the normal runner pipeline in dry-run mode. Tasks still go through dependency ordering and execution-time rendering, but changes are not applied.
 
 ## Apply The Playbook
 
@@ -116,25 +113,13 @@ Selector rules:
 
 For a complete inventory example, see [Run a playbook against remote hosts](./remote-execution.md).
 
-## Stop At A Pipeline Phase
+## Stage Offline Bundles
 
-Use `--phase` when you want only part of the pipeline:
+Use the dedicated `stage` command when you want offline bundles:
 
 ```bash
-preflight apply playbooks/lobby.yml --phase plan
-preflight apply playbooks/lobby.yml --phase fetch
-preflight apply playbooks/lobby.yml --phase stage
 preflight stage playbooks/lobby.yml
 ```
-
-Current behavior:
-
-| Phase | What it does |
-| --- | --- |
-| `plan` | Expands the playbook into a target-specific execution plan without mutation |
-| `fetch` | Acquires remote action refs into the cache and updates `preflight.lock` |
-| `stage` | Writes one offline bundle zip per resolved target |
-| `apply` | Runs the full execution pass |
 
 Use bundle apply later with:
 
@@ -152,21 +137,20 @@ Examples:
 preflight apply playbooks/lobby.yml --output text
 preflight apply playbooks/lobby.yml --output tui
 preflight apply playbooks/lobby.yml --output json
-preflight apply playbooks/lobby.yml --output jsonl
 ```
 
 Notes:
 
 - `text` is the plain renderer.
 - `tui` is the interactive terminal UI renderer.
-- `json` and `jsonl` both emit newline-delimited JSON events.
+- `json` emits newline-delimited JSON events.
 - With no explicit flag, interactive terminals auto-select `tui`; non-TTY output falls back to `text`.
 
 When a module supports streamed output, Preflight forwards each line while the task is still running:
 
 - `text` shows captured failure logs below failed tasks by default. With `--verbose`, it prints logs below every completed task that produced output.
 - `tui` shows a rolling preview of the last three lines for running tasks and prints captured output blocks on failures. With `--verbose`, it also prints captured output blocks for successful tasks after they complete.
-- `json` and `jsonl` emit `task_output` events with `task_id`, `task`, `target`, and `lines`. Failed `task_result` events may also include an `output` array with the captured task output.
+- `json` emits `task_output` events with `task_id`, `task`, `target`, and `lines`. Failed `task_result` events may also include an `output` array with the captured task output.
 
 ## Control Host Parallelism
 
@@ -191,7 +175,6 @@ preflight state show
 Compare the current plan to recorded state:
 
 ```bash
-preflight diff playbooks/lobby.yml
 preflight state diff playbooks/lobby.yml
 ```
 
@@ -224,4 +207,3 @@ preflight action fetch github.com/myorg/actions/signage@v2.1
 ### `plan` still shows `{{ facts... }}`
 
 That is expected. `plan` does not contact targets. Final fact-dependent rendering happens during `check` and `apply`.
-

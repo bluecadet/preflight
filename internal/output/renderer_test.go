@@ -342,9 +342,6 @@ func TestFactory_New(t *testing.T) {
 	if _, ok := New(FormatJSON, &buf).(*JSONRenderer); !ok {
 		t.Error("expected JSONRenderer for FormatJSON")
 	}
-	if _, ok := New(FormatJSONL, &buf).(*JSONRenderer); !ok {
-		t.Error("expected JSONRenderer for FormatJSONL")
-	}
 	// Unknown format falls back to text.
 	if _, ok := New("unknown", &buf).(*TextRenderer); !ok {
 		t.Error("expected TextRenderer for unknown format")

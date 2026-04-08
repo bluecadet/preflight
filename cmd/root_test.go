@@ -17,15 +17,15 @@ func TestApplyCommandSupportsStateFileFlag(t *testing.T) {
 	}
 }
 
-func TestRootDiffCommandSupportsStateFileFlag(t *testing.T) {
-	cmd, _, err := rootCmd.Find([]string{"diff"})
+func TestStateDiffCommandSupportsStateFileFlag(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"state", "diff"})
 	if err != nil {
-		t.Fatalf("Find(diff): %v", err)
+		t.Fatalf("Find(state diff): %v", err)
 	}
 	if cmd == nil {
-		t.Fatal("expected to find diff command")
+		t.Fatal("expected to find state diff command")
 	}
 	if cmd.Flags().Lookup("state-file") == nil {
-		t.Fatal("expected diff command to define --state-file")
+		t.Fatal("expected state diff command to define --state-file")
 	}
 }

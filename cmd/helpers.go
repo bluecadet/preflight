@@ -43,7 +43,7 @@ func parseVars(varFlags []string) map[string]any {
 func getOutputFormat(cmd *cobra.Command) output.Format {
 	f, _ := cmd.Flags().GetString("output")
 	switch output.Format(f) {
-	case output.FormatJSON, output.FormatJSONL:
+	case output.FormatJSON:
 		return output.Format(f)
 	case output.FormatTUI:
 		return output.FormatTUI
