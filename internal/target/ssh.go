@@ -443,18 +443,41 @@ func (r *sshPOSIXShellRuntime) RunPOSIXCommand(ctx context.Context, command stri
 }
 
 func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
 	data, err := os.ReadFile(src)
 	if err != nil {
 		return err
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
 	cmd := fmt.Sprintf("mkdir -p %q && base64 -d > %q", shellDir(dst), dst)
-	_, _, code, err := r.target.run(ctx, cmd, []byte(encoded))
+	stdout, stderr, code, err := r.target.run(ctx, cmd, []byte(encoded))
 	if err != nil {
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("ssh copy exited with code %d", code)
+		return fmt.Errorf("ssh copy exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr))
+	}
+	fileMode := info.Mode().Perm()
+	if info.Mode()&os.ModeSetuid != 0 {
+		fileMode |= 0o4000
+	}
+	if info.Mode()&os.ModeSetgid != 0 {
+		fileMode |= 0o2000
+	}
+	if info.Mode()&os.ModeSticky != 0 {
+		fileMode |= 0o1000
+	}
+	mode := fmt.Sprintf("%04o", fileMode)
+	chmodCmd := fmt.Sprintf("chmod %s %q", mode, dst)
+	stdout, stderr, code, err = r.target.run(ctx, chmodCmd, nil)
+	if err != nil {
+		return err
+	}
+	if code != 0 {
+		return fmt.Errorf("ssh chmod exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr))
 	}
 	return nil
 }

@@ -107,6 +107,11 @@ func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 					t.Fatalf("unexpected stdin %q err=%v", string(stdin), err)
 				}
 				return "", "", 0, nil
+			case strings.HasPrefix(command, "chmod "):
+				if !strings.Contains(command, "0644") {
+					t.Errorf("chmod called with unexpected mode: %q", command)
+				}
+				return "", "", 0, nil
 			case strings.HasPrefix(command, "base64 <"):
 				return base64.StdEncoding.EncodeToString([]byte("hello")), "", 0, nil
 			case command == "echo preflight":
