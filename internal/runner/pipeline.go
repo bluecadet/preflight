@@ -158,11 +158,6 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 		return nil, err
 	}
 	maps.Copy(childVars, renderedWith)
-	for key, value := range renderedWith {
-		if before, ok := strings.CutSuffix(key, "_from"); ok {
-			childVars[before] = value
-		}
-	}
 	for name, input := range resolved.Inputs {
 		if !input.Required {
 			continue

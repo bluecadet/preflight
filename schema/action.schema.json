@@ -399,10 +399,6 @@
           "type": "string",
           "description": "User password"
         },
-        "password_from": {
-          "type": "string",
-          "description": "Secret reference for the user password"
-        },
         "groups": {
           "type": "array",
           "items": { "type": "string" },

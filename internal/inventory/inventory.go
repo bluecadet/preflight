@@ -23,9 +23,7 @@ type Host struct {
 	Port              int
 	Username          string
 	Password          string
-	PasswordFrom      string
 	PrivateKey        string
-	PrivateKeyFrom    string
 	KnownHostsFile    string
 	HostKeyAlgorithms []string
 	HTTPS             bool

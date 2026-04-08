@@ -80,10 +80,8 @@ func prepareHost(
 	statePath string,
 ) (ResolvedHost, error) {
 	auth := map[string]any{
-		"password":         host.Password,
-		"password_from":    host.PasswordFrom,
-		"private_key":      host.PrivateKey,
-		"private_key_from": host.PrivateKeyFrom,
+		"password":    host.Password,
+		"private_key": host.PrivateKey,
 	}
 	if resolver != nil && resolver.HasProviders() {
 		resolved, err := resolver.ResolveMap(ctx, auth)

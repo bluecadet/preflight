@@ -12,10 +12,6 @@ inputs:
     type: string
     required: false
     description: Password for the auto-login user
-  password_from:
-    type: string
-    required: false
-    description: Secret reference for the auto-login password
   domain:
     type: string
     default: "."

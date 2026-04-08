@@ -91,7 +91,7 @@ func TestResolverResolveMap(t *testing.T) {
 		secrets.DefaultProviderName: provider,
 	})
 	params := map[string]any{
-		"password_from": "secret:db-password",
+		"password": "secret:db-password",
 		"nested": map[string]any{
 			"token": "secret:db-password",
 		},

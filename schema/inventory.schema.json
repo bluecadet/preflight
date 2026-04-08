@@ -62,17 +62,9 @@
           "type": "string",
           "description": "Password for authentication"
         },
-        "password_from": {
-          "type": "string",
-          "description": "Secret reference for the authentication password"
-        },
         "private_key": {
           "type": "string",
           "description": "Path to SSH private key file"
-        },
-        "private_key_from": {
-          "type": "string",
-          "description": "Secret reference for the SSH private key"
         },
         "https": {
           "type": "boolean",
