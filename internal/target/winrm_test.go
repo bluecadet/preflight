@@ -620,14 +620,14 @@ func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 		t.Errorf("without become: expected %q, got %q", want, err.Error())
 	}
 
-	// With become enabled: error should describe that the module does not support become.
+	// With become enabled: unknown modules should still be reported as unsupported runtime modules.
 	_, err = tgt.Execute(context.Background(), "task-2", "nonexistent_module", nil, ExecutionOptions{
 		Become: &BecomeOptions{Enabled: true, User: "kiosk", Password: "secret"},
 	}, false, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown module with become, got nil")
 	}
-	wantBecome := `winrm: module "nonexistent_module" does not support become`
+	wantBecome := `windows-powershell runtime: module "nonexistent_module" is not supported`
 	if err.Error() != wantBecome {
 		t.Errorf("with become: expected %q, got %q", wantBecome, err.Error())
 	}

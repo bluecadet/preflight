@@ -73,6 +73,7 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		tempDir:   t.RemoteTempDir(),
 		become:    become,
 	}
+	registry := newWindowsPowerShellRegistry(backend)
 	return executeRemoteModule(
 		ctx,
 		taskID,
@@ -80,9 +81,9 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		params,
 		dryRun,
 		onOutput,
-		newWindowsPowerShellRegistry(backend),
+		registry,
 		func(module string) error {
-			if become != nil {
+			if _, ok := registry[module]; ok && become != nil {
 				return fmt.Errorf("winrm: module %q does not support become", module)
 			}
 			return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
