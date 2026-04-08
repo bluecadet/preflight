@@ -137,7 +137,7 @@ type Action struct {
 	Version     string            `yaml:"version"`
 	Description string            `yaml:"description"`
 	Author      string            `yaml:"author"`
-	Defaults    TaskDefaults      `yaml:"defaults" json:"defaults,omitempty"`
+	Defaults    TaskDefaults      `yaml:"defaults" json:"defaults"`
 	Inputs      map[string]Input  `yaml:"inputs"`
 	Outputs     map[string]Output `yaml:"outputs"`
 	Tasks       []Task            `yaml:"tasks"`
@@ -156,7 +156,7 @@ func ParseAction(data []byte) (*Action, error) {
 type Playbook struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`
-	Defaults    TaskDefaults   `yaml:"defaults" json:"defaults,omitempty"`
+	Defaults    TaskDefaults   `yaml:"defaults" json:"defaults"`
 	Vars        map[string]any `yaml:"vars"`
 	Import      []string       `yaml:"import"`
 	Tasks       []Task         `yaml:"tasks"`

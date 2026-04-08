@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 )
 
 func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, error) {
@@ -410,15 +409,4 @@ func runtimeKindForLocal() RuntimeKind {
 		return RuntimeKindWindowsPowerShell
 	}
 	return RuntimeKindPOSIXShell
-}
-
-func waitForFile(path string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if _, err := os.Stat(path); err == nil {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("timed out waiting for %q", path)
 }
