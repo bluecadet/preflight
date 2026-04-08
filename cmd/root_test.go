@@ -10,3 +10,22 @@ func TestRootCommandSilencesUsageOnErrors(t *testing.T) {
 		t.Fatal("expected root command to silence Cobra's built-in error printing")
 	}
 }
+
+func TestApplyCommandSupportsStateFileFlag(t *testing.T) {
+	if applyCmd.Flags().Lookup("state-file") == nil {
+		t.Fatal("expected apply command to define --state-file")
+	}
+}
+
+func TestRootDiffCommandSupportsStateFileFlag(t *testing.T) {
+	cmd, _, err := rootCmd.Find([]string{"diff"})
+	if err != nil {
+		t.Fatalf("Find(diff): %v", err)
+	}
+	if cmd == nil {
+		t.Fatal("expected to find diff command")
+	}
+	if cmd.Flags().Lookup("state-file") == nil {
+		t.Fatal("expected diff command to define --state-file")
+	}
+}
