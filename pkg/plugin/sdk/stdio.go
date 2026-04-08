@@ -30,6 +30,9 @@ type rpcError struct {
 }
 
 // initializeResult is the response payload for the "initialize" method.
+// Version is the plugin handshake protocol version carried in the initialize
+// payload, not the plugin's own version nor the JSON-RPC 2.0 envelope version.
+// It must remain "1.0" until the handshake protocol itself changes.
 type initializeResult struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
@@ -73,7 +76,8 @@ func dispatch(m Module, req rpcRequest) rpcResponse {
 		return rpcResponse{
 			JSONRPC: "2.0",
 			ID:      req.ID,
-			Result:  initializeResult{Name: m.Name(), Version: "1.0"},
+			// Version is the plugin protocol version, not the plugin's own version.
+			Result: initializeResult{Name: m.Name(), Version: "1.0"},
 		}
 
 	case "check":
