@@ -33,7 +33,7 @@ Fetch -> Plan -> Stage -> Apply
 
 - **Fetch** acquires remote action refs into the local cache and records pinned SHAs in `preflight.lock`.
 - **Plan** loads YAML, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
-- **Stage** writes a per-target bundle containing the staged plan (task DAG), runtime binary, manifest, and referenced plugins.
+- **Stage** writes a per-target bundle containing the staged plan (task DAG), manifest, referenced plugins, and any bundled secrets needed for offline apply.
 - **Apply** gathers facts, renders execution-time templates using `target`, `facts`, and `env`, executes tasks, and records state.
 
 ## Quick Example

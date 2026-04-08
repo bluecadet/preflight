@@ -39,7 +39,6 @@ type Manifest struct {
 	TargetName    string             `json:"target_name"`
 	TargetOS      string             `json:"target_os"`
 	TargetArch    string             `json:"target_arch"`
-	RuntimeBinary string             `json:"runtime_binary"`
 	Build         BuildInfo          `json:"build"`
 	Modules       []ModuleInfo       `json:"modules,omitempty"`
 	Checksums     map[string]string  `json:"checksums,omitempty"`
@@ -82,7 +81,6 @@ type ExtractedBundle struct {
 	RootDir     string
 	PlanPath    string
 	PluginDir   string
-	RuntimePath string
 }
 
 func Write(path string, manifest *Manifest, files []FileSpec) error {
@@ -223,15 +221,12 @@ func Extract(path string) (*ExtractedBundle, error) {
 		switch file.Name {
 		case PlanPath:
 			loaded.PlanPath = outPath
-		default:
-			if strings.HasPrefix(file.Name, "plugins/") {
-				loaded.PluginDir = filepath.Join(tempDir, "plugins")
-			}
-			if loaded.RuntimePath == "" && strings.HasPrefix(file.Name, "runtime/") {
-				loaded.RuntimePath = outPath
+			default:
+				if strings.HasPrefix(file.Name, "plugins/") {
+					loaded.PluginDir = filepath.Join(tempDir, "plugins")
+				}
 			}
 		}
-	}
 
 	if err := verifyExpectedChecksums(manifest.Checksums, seenChecksums); err != nil {
 		cleanup()

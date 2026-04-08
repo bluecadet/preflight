@@ -14,7 +14,7 @@ These flags are defined on the root command and are available to subcommands whe
 | `--tags` |  | Run only tasks that have any of the listed tags. |
 | `--skip-tags` |  | Skip tasks that have any of the listed tags. |
 | `--check` |  | Dry-run mode. |
-| `--verbose` | `-v` | Reserved verbose flag. |
+| `--verbose` | `-v` | Include successful task output blocks in human-readable renderers. |
 | `--output` |  | Output format: `text`, `tui`, `json`, or `jsonl`. |
 | `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
 | `--timeout` |  | Overall run timeout such as `30m` or `1h`. |
@@ -206,7 +206,7 @@ Command-specific flags:
 
 ### `preflight state show`
 
-Print the selected state file as JSON.
+Show the selected state file through the chosen output renderer.
 
 ### `preflight state diff <playbook>`
 

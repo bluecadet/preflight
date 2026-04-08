@@ -136,14 +136,6 @@ func currentBinaryDir() string {
 	return filepath.Dir(exe)
 }
 
-func currentBinaryPath() string {
-	exe, err := os.Executable()
-	if err != nil {
-		return os.Args[0]
-	}
-	return exe
-}
-
 func buildModuleRegistry(projectDir string, preferredPluginDirs ...string) (target.ModuleRegistry, []plugins.LoadedPlugin, error) {
 	return buildModuleRegistryWithOptions(projectDir, false, preferredPluginDirs...)
 }

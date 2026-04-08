@@ -5,6 +5,7 @@ Use this guide when you want to prepare a run on one machine, transfer the resul
 ## Prerequisites
 
 - A working `preflight` binary on the staging machine
+- A working `preflight` binary on each offline target that will run `preflight apply --bundle`
 - A playbook that already plans or applies successfully in a connected environment
 - Any referenced plugin executables discoverable during staging
 - No tasks that would require embedding decrypted secret values into the bundle
@@ -33,8 +34,8 @@ Each bundle is a zip archive that contains:
 
 - `manifest.json`
 - `plan.json`
-- the runtime binary under `runtime/`
 - any referenced plugin executables under `plugins/`
+- any bundled secret payloads under `secrets/` when the staged plan references `secret:<name>` values
 
 The manifest records:
 
@@ -68,7 +69,7 @@ Choose a custom state file if you want:
 preflight apply --bundle ./bundle.zip --state-file ./state/offline.json
 ```
 
-Bundle apply reads `plan.json` directly from the archive, extracts the payload to a temporary directory, builds a module registry from the bundled plugins, and then executes the plan locally.
+Bundle apply reads `plan.json` directly from the archive, extracts the payload to a temporary directory, builds a module registry from the bundled plugins, and then executes the plan locally with the installed `preflight` binary on that machine.
 
 ## 5. Know The Important Limits
 
@@ -84,7 +85,7 @@ Offline apply does not:
 - re-read the source playbook
 - rediscover plugins from your normal global plugin directories
 
-That isolation is a feature. It keeps the staged artifact self-contained and predictable.
+That isolation is a feature. It keeps the staged artifact predictable and independent from the original project checkout.
 
 ## Troubleshooting
 

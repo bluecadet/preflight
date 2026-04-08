@@ -69,11 +69,9 @@ func TestExtractRejectsMissingExpectedFile(t *testing.T) {
 func TestExtractSucceedsForValidBundle(t *testing.T) {
 	bundlePath := filepath.Join(t.TempDir(), "bundle.zip")
 	if err := Write(bundlePath, &Manifest{
-		PlaybookName:  "test",
-		RuntimeBinary: "runtime/preflight",
+		PlaybookName: "test",
 	}, []FileSpec{
 		{Path: PlanPath, Data: []byte(`{"tasks":[]}`)},
-		{Path: "runtime/preflight", Data: []byte("binary"), Mode: 0o755},
 	}); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -93,9 +91,6 @@ func TestExtractSucceedsForValidBundle(t *testing.T) {
 	}
 	if extracted.PlanPath == "" {
 		t.Fatal("expected extracted plan path")
-	}
-	if extracted.RuntimePath == "" {
-		t.Fatal("expected extracted runtime path")
 	}
 }
 

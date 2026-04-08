@@ -924,16 +924,11 @@ func TestRunFetchAndStagePhases(t *testing.T) {
 		t.Fatalf("fetch phase: expected nil, got %v", err)
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
 	dir := t.TempDir()
-	err = New(&mockTarget{}, emptyResolver(), Config{
-		Phase:            "stage",
-		BundleOutputDir:  dir,
-		BundleBinaryPath: exe,
-		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
+	err := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 	}).Run(context.Background(), playbook)
 	if err != nil {
 		t.Fatalf("stage phase: expected nil, got %v", err)
@@ -965,17 +960,12 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:            "stage",
-		BundleOutputDir:  dir,
-		BundleBinaryPath: exe,
-		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
-		ProjectDir:       dir,
-		SecretsConfig:    cfg,
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
+		ProjectDir:      dir,
+		SecretsConfig:   cfg,
 		Secrets: secrets.NewResolver(map[string]secrets.Provider{
 			secrets.DefaultProviderName: provider,
 		}),
@@ -1040,15 +1030,10 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 }
 
 func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:            "stage",
-		BundleOutputDir:  t.TempDir(),
-		BundleBinaryPath: exe,
-		ModuleRegistry:   map[string]target.Module{"shell": noopModule{}},
+		Phase:           "stage",
+		BundleOutputDir: t.TempDir(),
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "literal-secret",
@@ -1066,7 +1051,7 @@ func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 		}},
 	}
 
-	err = r.Stage(context.Background(), plan)
+	err := r.Stage(context.Background(), plan)
 	if err == nil || !strings.Contains(err.Error(), "cannot be embedded in a staged bundle") {
 		t.Fatalf("expected literal secret stage failure, got %v", err)
 	}
@@ -1090,14 +1075,9 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatalf("os.Executable: %v", err)
-	}
 	r := New(&mockTarget{}, emptyResolver(), Config{
 		Phase:                         "stage",
 		BundleOutputDir:               dir,
-		BundleBinaryPath:              exe,
 		ModuleRegistry:                map[string]target.Module{"shell": noopModule{}},
 		ProjectDir:                    dir,
 		SecretsConfig:                 cfg,

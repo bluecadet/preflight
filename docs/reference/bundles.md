@@ -4,7 +4,7 @@ This page describes the staged offline bundle format implemented by [`internal/b
 
 ## Purpose
 
-A bundle is a self-contained zip archive that lets you apply a staged execution plan on another machine without re-reading the original playbook or refetching actions.
+A bundle is a target-specific zip archive that lets you apply a staged execution plan on another machine without re-reading the original playbook or refetching actions.
 
 ## Archive Contents
 
@@ -12,8 +12,8 @@ Every bundle contains:
 
 - `manifest.json`
 - `plan.json` — the staged execution plan, with the task DAG and module names resolved before bundling; template expressions are preserved and rendered at apply time, including conditions (`when:`), task name templates, and parameters that reference `target`, `facts`, or `env` values from the live execution context
-- the runtime binary under `runtime/`
 - zero or more plugin executables under `plugins/`
+- zero or more bundled secret payloads under `secrets/`
 
 ## Bundle Filename
 
@@ -38,11 +38,12 @@ The manifest includes:
 | `target_name` | string | Target name used during staging |
 | `target_os` | string | OS reported by the target |
 | `target_arch` | string | Architecture reported by the target |
-| `runtime_binary` | string | Relative path to the staged runtime binary |
 | `build` | object | Version, commit, and build date of the staging binary |
 | `modules` | array | Referenced built-in and plugin modules |
 | `checksums` | object | File checksum map |
 | `lock_entries` | array | Pinned remote action refs from `preflight.lock` |
+| `secret_mode` | string | Whether bundled secrets are absent, encrypted, or plaintext |
+| `secret_entries` | array | Bundle-local secret payloads referenced by the plan |
 
 Each `modules[]` entry records:
 
@@ -69,7 +70,7 @@ Staging fails when:
 2. loads `manifest.json`
 3. reads `plan.json`
 4. builds a module registry from built-ins plus bundled plugins
-5. executes the bundled plan locally
+5. executes the bundled plan locally using the installed `preflight` binary
 
 Bundle apply is intentionally isolated from the normal project layout.
 

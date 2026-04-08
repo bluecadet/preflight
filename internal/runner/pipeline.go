@@ -309,15 +309,6 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: marshal plan: %w", err)
 	}
 
-	binaryPath := r.config.BundleBinaryPath
-	if binaryPath == "" {
-		return fmt.Errorf("stage: bundle runtime binary path is not configured")
-	}
-	binaryData, err := os.ReadFile(binaryPath)
-	if err != nil {
-		return fmt.Errorf("stage: read runtime binary %q: %w", binaryPath, err)
-	}
-
 	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan)
 	if err != nil {
 		return err
@@ -328,11 +319,6 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 			Path: bundle.PlanPath,
 			Mode: stageSecrets.planMode,
 			Data: planBytes,
-		},
-		{
-			Path: filepath.ToSlash(filepath.Join("runtime", filepath.Base(binaryPath))),
-			Mode: 0o755,
-			Data: binaryData,
 		},
 	}
 	files = append(files, stageSecrets.files...)
@@ -358,15 +344,14 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 
 	manifest := &bundle.Manifest{
 		FormatVersion: bundle.FormatV2,
-		CreatedAt:     time.Now().UTC(),
-		PlaybookName:  plan.PlaybookName,
-		TargetName:    r.targetName(),
-		TargetOS:      info.OSVersion,
-		TargetArch:    info.Arch,
-		RuntimeBinary: filepath.ToSlash(filepath.Join("runtime", filepath.Base(binaryPath))),
-		Build: bundle.BuildInfo{
-			Version: r.config.Version,
-			Commit:  r.config.Commit,
+			CreatedAt:     time.Now().UTC(),
+			PlaybookName:  plan.PlaybookName,
+			TargetName:    r.targetName(),
+			TargetOS:      info.OSVersion,
+			TargetArch:    info.Arch,
+			Build: bundle.BuildInfo{
+				Version: r.config.Version,
+				Commit:  r.config.Commit,
 			Date:    r.config.BuildDate,
 		},
 		Modules:       moduleInfos,

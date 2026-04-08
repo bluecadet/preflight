@@ -33,7 +33,6 @@ type Config struct {
 	StatePath                     string
 	ModuleRegistry                target.ModuleRegistry
 	BundleOutputDir               string
-	BundleBinaryPath              string
 	BundlePlugins                 []plugins.LoadedPlugin
 	AllowPlaintextSecretsInBundle bool
 	Lockfile                      *action.Lockfile
