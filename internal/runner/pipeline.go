@@ -657,7 +657,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		for _, dep := range pt.DependsOn {
 			depID, ok := dag.nameToID[dep]
 			if !ok {
-				return fmt.Errorf("apply: dependency %q not found in DAG", dep)
+				return fmt.Errorf("apply: task %q: dependency %q not found in DAG", pt.Name, dep)
 			}
 			if failed[depID] {
 				depFailed = true
@@ -666,7 +666,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if depFailed && !pt.IgnoreErrors {
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed", nil)
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", dag))
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil))
 			skippedCount++
 			continue
 		}
@@ -679,7 +679,7 @@ func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 			if !ok {
 				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
-				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", dag))
+				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
 				skippedCount++
 				continue
 			}
