@@ -9,12 +9,12 @@ import "maps"
 type VarLayer int
 
 const (
-	LayerDefaults  VarLayer = iota // Built-in defaults
-	LayerProject                   // preflight.yml project vars
-	LayerGroupVars                 // Inventory group vars
-	LayerHostVars                  // Inventory host vars
-	LayerPlaybook                  // Playbook vars
-	LayerCLI                       // --var CLI flags
+	LayerDefaults      VarLayer = iota // reserved for future built-in defaults
+	LayerProject                       // preflight.yml project vars
+	LayerInventoryVars                 // Inventory vars (group+host already merged before reaching the runner)
+	LayerHostVars                      // reserved; inventory pre-merges host+group vars before they reach the runner
+	LayerPlaybook                      // Playbook vars
+	LayerCLI                           // --var CLI flags
 )
 
 const numLayers = 6
