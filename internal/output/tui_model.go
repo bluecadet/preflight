@@ -67,11 +67,10 @@ type tuiModel struct {
 	failedCount  int
 	skippedCount int
 
-	recaps       []hostRecap
-	failedTasks  []failedTask
-	staticBlocks []string
-	hadActivity  bool
-	done         bool
+	recaps      []hostRecap
+	failedTasks []failedTask
+	hadActivity bool
+	done        bool
 }
 
 type tuiEventMsg struct{ event Event }
@@ -123,7 +122,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case tuiEventMsg:
 		next, cmd := m.applyEvent(msg.event)
-		return next, tea.Batch(cmd, next.waitForEvent())
+		if cmd == nil {
+			return next, next.waitForEvent()
+		}
+		return next, tea.Sequence(cmd, next.waitForEvent())
 	case tuiDoneMsg:
 		m.done = true
 		return m, tea.Quit
@@ -155,17 +157,17 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	case FactsEvent:
 		return m.handleFacts(e)
 	case PlanEvent:
-		return m.appendStaticBlock(renderPlanCard(e))
+		return m.printStaticBlock(renderPlanCard(e))
 	case StateEvent:
-		return m.appendStaticBlock(renderStateCard(e))
+		return m.printStaticBlock(renderStateCard(e))
 	case ValidationEvent:
-		return m.appendStaticBlock(renderValidationCard(e))
+		return m.printStaticBlock(renderValidationCard(e))
 	case ActionCatalogEvent:
-		return m.appendStaticBlock(renderActionCatalogCard(e))
+		return m.printStaticBlock(renderActionCatalogCard(e))
 	case ActionInfoEvent:
-		return m.appendStaticBlock(renderActionInfoCard(e))
+		return m.printStaticBlock(renderActionInfoCard(e))
 	case ActionFetchEvent:
-		return m.appendStaticBlock(renderActionFetchCard(e))
+		return m.printStaticBlock(renderActionFetchCard(e))
 	default:
 		return m, nil
 	}
@@ -308,34 +310,22 @@ func (m tuiModel) handlePlayEnd(e PlayEndEvent) (tuiModel, tea.Cmd) {
 }
 
 func (m tuiModel) handleFacts(e FactsEvent) (tuiModel, tea.Cmd) {
-	block := renderFactsCard(e, m.width)
-	if m.hadActivity {
-		return m, tea.Println(block)
-	}
-	m.staticBlocks = append(m.staticBlocks, block)
-	return m, nil
+	return m.printStaticBlock(renderFactsCard(e, m.width))
 }
 
-func (m tuiModel) appendStaticBlock(block string) (tuiModel, tea.Cmd) {
-	m.staticBlocks = append(m.staticBlocks, block)
-	return m, nil
+func (m tuiModel) printStaticBlock(block string) (tuiModel, tea.Cmd) {
+	return m, tea.Println("\n" + block)
 }
 
 // View renders only the live zone (running tasks + footer).
 func (m tuiModel) View() string {
 	if m.done {
-		if len(m.recaps) == 0 && len(m.staticBlocks) > 0 {
-			return strings.Join(m.staticBlocks, "\n\n") + "\n"
-		}
 		return m.renderFinalSummary()
 	}
 
 	activities := m.orderedActivities()
 	running := m.orderedTasks()
 	if len(activities) == 0 && len(running) == 0 && m.total() == 0 {
-		if len(m.staticBlocks) > 0 {
-			return strings.Join(m.staticBlocks, "\n\n") + "\n"
-		}
 		return ""
 	}
 
@@ -434,7 +424,7 @@ func (m tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) stri
 
 func (m tuiModel) renderFinalSummary() string {
 	if len(m.recaps) == 0 {
-		return "\n"
+		return ""
 	}
 
 	totalElapsed := time.Since(m.startedAt)

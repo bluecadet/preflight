@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -216,5 +217,50 @@ func TestTUIModel_VerboseCommitsOutputForSuccessfulTasks(t *testing.T) {
 	})
 	if cmd == nil {
 		t.Fatal("expected verbose TUI to emit a committed output block")
+	}
+}
+
+func TestTUIModel_FactsPrintsImmediatelyForLocalTarget(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModel(events)
+
+	m, cmd := m.applyEvent(FactsEvent{
+		Target: "localhost",
+		Facts: map[string]any{
+			"hostname": "LOCALHOST",
+		},
+	})
+
+	blocks := collectPrintedBlocks(cmd)
+	if len(blocks) != 1 {
+		t.Fatalf("expected one printed facts block, got %d", len(blocks))
+	}
+	if !strings.Contains(blocks[0], "◌ Facts") {
+		t.Fatalf("expected printed facts card, got %q", blocks[0])
+	}
+	if view := m.View(); view != "" {
+		t.Fatalf("expected facts output to be committed to scrollback, got live view %q", view)
+	}
+}
+
+func TestTUIModel_FactsPrintsAfterActivityCompletes(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModel(events)
+
+	m, _ = m.applyEvent(ActivityStartEvent{Target: "remote-host", Message: "connecting"})
+	m, _ = m.applyEvent(ActivityResultEvent{Target: "remote-host", Message: "connecting", Status: "ok"})
+	_, cmd := m.applyEvent(FactsEvent{
+		Target: "remote-host",
+		Facts: map[string]any{
+			"hostname": "REMOTE-HOST",
+		},
+	})
+
+	blocks := collectPrintedBlocks(cmd)
+	if len(blocks) != 1 {
+		t.Fatalf("expected one printed facts block, got %d", len(blocks))
+	}
+	if !strings.Contains(blocks[0], "remote-host") {
+		t.Fatalf("expected printed facts for remote host, got %q", blocks[0])
 	}
 }
