@@ -3,7 +3,7 @@ package output
 import (
 	"fmt"
 	"io"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,17 +21,23 @@ const maxTaskPreviewLines = 3
 // ── styles ────────────────────────────────────────────────────────────────────
 
 var (
-	tsOK      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
-	tsChanged = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
-	tsFailed  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
-	tsSkipped = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	tsMuted   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	tsBold    = lipgloss.NewStyle().Bold(true)
-	tsAction  = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	tsSpin    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
-	tsDivider = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
-	tsOutput  = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
-	tsElapsed = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsOK        = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
+	tsChanged   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
+	tsFailed    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
+	tsSkipped   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsBold      = lipgloss.NewStyle().Bold(true)
+	tsAction    = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	tsSpin      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
+	tsDivider   = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	tsOutput    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	tsElapsed   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsCardTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
+	tsLabel     = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	tsKey       = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	tsValue     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	tsTableHead = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	tsTableRule = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 )
 
 // tsHostPalette is the ordered set of colors cycled through for host labels.
@@ -74,6 +80,13 @@ type activeTask struct {
 	recentLines []string
 }
 
+type activeActivity struct {
+	key     string
+	message string
+	target  string
+	startAt time.Time
+}
+
 // hostRecap stores the final counts emitted by EventPlayEnd for one host.
 type hostRecap struct {
 	target                       string
@@ -100,10 +113,12 @@ type tuiModel struct {
 	playStarted bool
 
 	// running tasks, per host
-	hosts      map[string]map[string]*activeTask // host → taskID → task
-	hostOrder  []string                          // hosts seen, in order
-	taskOrder  map[string][]string               // host → ordered task IDs
-	hostColors map[string]lipgloss.Style         // host → assigned palette color
+	hosts         map[string]map[string]*activeTask // host → taskID → task
+	hostOrder     []string                          // hosts seen, in order
+	taskOrder     map[string][]string               // host → ordered task IDs
+	hostColors    map[string]lipgloss.Style         // host → assigned palette color
+	activities    map[string]*activeActivity
+	activityOrder []string
 
 	// committed task counts
 	okCount      int
@@ -115,6 +130,7 @@ type tuiModel struct {
 	recaps       []hostRecap
 	failedTasks  []failedTask // accumulated for final summary
 	staticBlocks []string
+	hadActivity  bool
 	done         bool
 }
 
@@ -140,6 +156,7 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		hosts:      make(map[string]map[string]*activeTask),
 		taskOrder:  make(map[string][]string),
 		hostColors: make(map[string]lipgloss.Style),
+		activities: make(map[string]*activeActivity),
 	}
 }
 
@@ -211,6 +228,29 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		}
 		m.hosts[e.Target][e.TaskID] = at
 		m.taskOrder[e.Target] = append(m.taskOrder[e.Target], e.TaskID)
+
+	case ActivityStartEvent:
+		m.hadActivity = true
+		key := activityKey(e.Target, e.Message)
+		if _, ok := m.activities[key]; !ok {
+			m.activities[key] = &activeActivity{
+				key:     key,
+				message: e.Message,
+				target:  fallbackTarget(e.Target),
+				startAt: time.Now(),
+			}
+			m.activityOrder = append(m.activityOrder, key)
+		}
+
+	case ActivityResultEvent:
+		key := activityKey(e.Target, e.Message)
+		delete(m.activities, key)
+		for i, existing := range m.activityOrder {
+			if existing == key {
+				m.activityOrder = append(m.activityOrder[:i], m.activityOrder[i+1:]...)
+				break
+			}
+		}
 
 	case TaskOutputEvent:
 		if e.Target == "" || e.TaskID == "" {
@@ -298,63 +338,35 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		return m, tea.Println(line)
 
 	case FactsEvent:
-		target := e.Target
-		if target == "" {
-			target = "localhost"
+		block := renderFactsCard(e, m.width)
+		if m.hadActivity {
+			return m, tea.Println(block)
 		}
-		var b strings.Builder
-		b.WriteString(tsBold.Render("Facts for "+target+":") + "\n")
-		keys := make([]string, 0, len(e.Facts))
-		for k := range e.Facts {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			fmt.Fprintf(&b, "  %s: %v\n", k, e.Facts[k])
-		}
-		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		m.staticBlocks = append(m.staticBlocks, block)
 		return m, nil
 
 	case PlanEvent:
-		target := e.Target
-		if target == "" {
-			target = "localhost"
-		}
-		var b strings.Builder
-		fmt.Fprintf(&b, "Target: %s\n", target)
-		fmt.Fprintf(&b, "Playbook: %s\n", e.PlaybookName)
-		fmt.Fprintf(&b, "Tasks (%d):\n", len(e.Tasks))
-		for _, t := range e.Tasks {
-			fmt.Fprintf(&b, "  %d. [%s] %s", t.Number, t.Module, t.Name)
-			if t.When != "" {
-				fmt.Fprintf(&b, " (when: %s)", t.When)
-			}
-			if len(t.Tags) > 0 {
-				fmt.Fprintf(&b, " [tags: %v]", t.Tags)
-			}
-			b.WriteString("\n")
-		}
-		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		m.staticBlocks = append(m.staticBlocks, renderPlanCard(e))
 		return m, nil
 
 	case StateEvent:
-		var b strings.Builder
-		if e.PlaybookName != "" {
-			fmt.Fprintf(&b, "State diff for playbook: %s\n", e.PlaybookName)
-		}
-		if e.Target != "" {
-			fmt.Fprintf(&b, "Target: %s\n", e.Target)
-		}
-		fmt.Fprintf(&b, "State file: %s\n", e.StatePath)
-		fmt.Fprintf(&b, "Last applied: %s\n\n", e.LastApplied)
-		if len(e.Comparisons) > 0 {
-			fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", "STATUS", "TASK", "MODULE", "RECORDED STATUS")
-			fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", "------------", "----------------------------", "----------------", "---------------")
-			for _, c := range e.Comparisons {
-				fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", c.Status, c.TaskName, c.Module, c.RecordedStatus)
-			}
-		}
-		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		m.staticBlocks = append(m.staticBlocks, renderStateCard(e))
+		return m, nil
+
+	case ValidationEvent:
+		m.staticBlocks = append(m.staticBlocks, renderValidationCard(e))
+		return m, nil
+
+	case ActionCatalogEvent:
+		m.staticBlocks = append(m.staticBlocks, renderActionCatalogCard(e))
+		return m, nil
+
+	case ActionInfoEvent:
+		m.staticBlocks = append(m.staticBlocks, renderActionInfoCard(e))
+		return m, nil
+
+	case ActionFetchEvent:
+		m.staticBlocks = append(m.staticBlocks, renderActionFetchCard(e))
 		return m, nil
 	}
 
@@ -375,6 +387,13 @@ func (m tuiModel) View() string {
 	}
 
 	// Collect running tasks in deterministic (insertion) order.
+	var activities []*activeActivity
+	for _, key := range m.activityOrder {
+		if activity := m.activities[key]; activity != nil {
+			activities = append(activities, activity)
+		}
+	}
+
 	var running []*activeTask
 	for _, host := range m.hostOrder {
 		for _, id := range m.taskOrder[host] {
@@ -385,7 +404,7 @@ func (m tuiModel) View() string {
 	}
 
 	// Nothing to show yet.
-	if len(running) == 0 && m.total() == 0 {
+	if len(activities) == 0 && len(running) == 0 && m.total() == 0 {
 		if len(m.staticBlocks) > 0 {
 			return strings.Join(m.staticBlocks, "\n\n") + "\n"
 		}
@@ -394,7 +413,20 @@ func (m tuiModel) View() string {
 
 	var b strings.Builder
 
-	dense := len(running) > maxLiveLines
+	if len(activities) > 0 && len(running) == 0 && m.total() == 0 {
+		for _, activity := range activities {
+			b.WriteString(m.renderActivity(activity))
+			b.WriteString("\n")
+		}
+		return strings.TrimRight(b.String(), "\n") + "\n"
+	}
+
+	dense := len(running)+len(activities) > maxLiveLines
+
+	for _, activity := range activities {
+		b.WriteString(m.renderActivity(activity))
+		b.WriteString("\n")
+	}
 
 	for _, at := range running {
 		b.WriteString(m.renderRunning(at, dense))
@@ -403,10 +435,19 @@ func (m tuiModel) View() string {
 
 	b.WriteString(m.renderDivider())
 	b.WriteString("\n")
-	b.WriteString(m.renderFooter(len(running)))
+	b.WriteString(m.renderFooter(len(running) + len(activities)))
 	b.WriteString("\n")
 
 	return b.String()
+}
+
+func (m tuiModel) renderActivity(activity *activeActivity) string {
+	elapsed := time.Since(activity.startAt)
+	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
+	host := m.hostStyle(activity.target).Render(activity.target)
+	timer := tsElapsed.Render("[" + tsFmtElapsed(elapsed) + "]")
+	message := tsMuted.Render(strings.TrimSpace(activity.message))
+	return tsRow(spin, host, message, timer)
 }
 
 // renderRunning formats a single running task line for the live zone.
@@ -676,6 +717,526 @@ func tsRow(elems ...string) string {
 // tsOutputLine renders a pipe-gutter content line at the given indent depth.
 func tsOutputLine(depth int, content string) string {
 	return strings.Repeat(" ", depth) + tsOutput.Render(content)
+}
+
+func activityKey(target, message string) string {
+	return fallbackTarget(target) + "\x00" + strings.TrimSpace(message)
+}
+
+func renderFactsCard(e FactsEvent, width int) string {
+	target := e.Target
+	if target == "" {
+		target = "localhost"
+	}
+	lines := tsRenderFactValueLines("Target", target, 0, factsContentWidth(width), true)
+	lines = append(lines, tsRenderFactsMap(e.Facts, 0, factsContentWidth(width), true)...)
+	return tsRenderSection("◌ Facts", strings.Join(lines, "\n"))
+}
+
+func renderPlanCard(e PlanEvent) string {
+	target := e.Target
+	if target == "" {
+		target = "localhost"
+	}
+
+	taskRows := make([][]string, 0, len(e.Tasks))
+	for _, task := range e.Tasks {
+		var details []string
+		if task.When != "" {
+			details = append(details, "when: "+task.When)
+		}
+		if len(task.Tags) > 0 {
+			details = append(details, "tags: "+strings.Join(task.Tags, ", "))
+		}
+		taskRows = append(taskRows, []string{
+			strconv.Itoa(task.Number),
+			task.Module,
+			task.Name,
+			strings.Join(details, "  ·  "),
+		})
+	}
+
+	var bodyParts []string
+	rows := [][2]string{{"Target", target}}
+	if e.PlaybookName != "" {
+		rows = append(rows, [2]string{"Playbook", e.PlaybookName})
+	}
+	bodyParts = append(bodyParts, tsRenderPairs(rows))
+	if len(e.Tasks) > 0 {
+		bodyParts = append(bodyParts, tsRenderSimpleTable(
+			[]string{"#", "MODULE", "TASK", "DETAILS"},
+			taskRows,
+		))
+	} else {
+		bodyParts = append(bodyParts, tsMuted.Render("No tasks resolved."))
+	}
+
+	return tsRenderSection("☰ Execution Plan", strings.Join(bodyParts, "\n\n"))
+}
+
+func renderStateCard(e StateEvent) string {
+	title := "◫ State Snapshot"
+	if e.PlaybookName != "" {
+		title = "◫ State Diff"
+	}
+
+	rows := [][2]string{
+		{"State file", e.StatePath},
+		{"Last applied", e.LastApplied},
+	}
+	if e.Target != "" {
+		rows = append([][2]string{{"Target", e.Target}}, rows...)
+	}
+	if e.PlaybookName != "" {
+		rows = append([][2]string{{"Playbook", e.PlaybookName}}, rows...)
+	}
+
+	tableRows := make([][]string, 0, len(e.Comparisons))
+	for _, comparison := range e.Comparisons {
+		statusLabel := tsDecorateStateStatus(comparison.Status)
+		tableRows = append(tableRows, []string{
+			statusLabel,
+			comparison.TaskName,
+			comparison.Module,
+			comparison.RecordedStatus,
+		})
+	}
+
+	var bodyParts []string
+	bodyParts = append(bodyParts, tsRenderPairs(rows))
+	if len(e.Comparisons) > 0 {
+		bodyParts = append(bodyParts, tsRenderSimpleTable(
+			[]string{"STATUS", "TASK", "MODULE", "RECORDED"},
+			tableRows,
+		))
+	}
+
+	return tsRenderSection(title, strings.Join(bodyParts, "\n\n"))
+}
+
+func renderValidationCard(e ValidationEvent) string {
+	name := e.PlaybookName
+	if name == "" {
+		name = e.PlaybookPath
+	}
+
+	bodyParts := []string{
+		tsRenderPairs(func() [][2]string {
+			rows := [][2]string{
+				{"Playbook", name},
+				{"Tasks", fmt.Sprintf("%d", e.TaskCount)},
+				{"Resolved refs", fmt.Sprintf("%d", len(e.ResolvedRefs))},
+			}
+			if e.PlaybookPath != "" {
+				rows = append(rows, [2]string{"Path", e.PlaybookPath})
+			}
+			return rows
+		}()),
+	}
+	if e.ErrorCount > 0 {
+		bodyParts = append(bodyParts, tsFailed.Render(fmt.Sprintf("%d %s", e.ErrorCount, tsPluralize(e.ErrorCount, "error", "errors"))))
+	}
+	if len(e.ResolvedRefs) > 0 {
+		bodyParts = append(bodyParts, tsLabel.Render("Resolved refs")+"\n"+tsRenderBulletList(e.ResolvedRefs, false))
+	}
+
+	return tsRenderSection("◇ Validate", strings.Join(bodyParts, "\n\n"))
+}
+
+func renderActionCatalogCard(e ActionCatalogEvent) string {
+	namespace := e.EmbeddedNamespace
+	if namespace == "" {
+		namespace = "preflight/"
+	}
+	bodyParts := []string{
+		tsRenderPairs([][2]string{
+			{"Namespace", namespace},
+			{"Local dir", e.LocalDir},
+			{"Embedded", fmt.Sprintf("%d", len(e.EmbeddedRefs))},
+			{"Local", fmt.Sprintf("%d", len(e.LocalRefs))},
+		}),
+	}
+	bodyParts = append(bodyParts,
+		tsLabel.Render("Embedded actions")+"\n"+tsRenderBulletList(e.EmbeddedRefs, false),
+		tsLabel.Render("Local actions")+"\n"+tsRenderOptionalBulletList(e.LocalRefs),
+	)
+
+	return tsRenderSection("▣ Action Catalog", strings.Join(bodyParts, "\n\n"))
+}
+
+func renderActionInfoCard(e ActionInfoEvent) string {
+	bodyParts := []string{
+		tsRenderPairs(func() [][2]string {
+			rows := [][2]string{
+				{"Ref", e.Ref},
+				{"Name", e.Name},
+				{"Description", e.Description},
+			}
+			if e.Version != "" {
+				rows = append(rows, [2]string{"Version", e.Version})
+			}
+			if e.Author != "" {
+				rows = append(rows, [2]string{"Author", e.Author})
+			}
+			return rows
+		}()),
+	}
+
+	if len(e.Inputs) > 0 {
+		rows := make([][]string, 0, len(e.Inputs))
+		for _, input := range e.Inputs {
+			required := "optional"
+			if input.Required {
+				required = "required"
+			}
+			defaultValue := input.Default
+			if defaultValue == "" {
+				defaultValue = "—"
+			}
+			rows = append(rows, []string{
+				input.Name,
+				input.Type,
+				required,
+				defaultValue,
+				input.Description,
+			})
+		}
+		bodyParts = append(bodyParts, tsLabel.Render("Inputs")+"\n"+tsRenderSimpleTable(
+			[]string{"NAME", "TYPE", "REQUIRED", "DEFAULT", "DESCRIPTION"},
+			rows,
+		))
+	}
+
+	bodyParts = append(bodyParts, tsLabel.Render("Tasks")+"\n"+tsRenderBulletList(e.TaskNames, true))
+	return tsRenderSection("◫ Action Info", strings.Join(bodyParts, "\n\n"))
+}
+
+func renderActionFetchCard(e ActionFetchEvent) string {
+	rows := make([][]string, 0, len(e.Entries))
+	for _, entry := range e.Entries {
+		rows = append(rows, []string{entry.Ref, entry.SHA})
+	}
+	return tsRenderSection("↳ Fetched Actions", tsRenderSimpleTable([]string{"REF", "SHA"}, rows))
+}
+
+func tsRenderSection(title, body string) string {
+	var parts []string
+	if title != "" {
+		parts = append(parts, tsCardTitle.Render(title))
+	}
+	if strings.TrimSpace(body) != "" {
+		if title != "" {
+			parts = append(parts, tsTableRule.Render(strings.Repeat("─", 42)))
+		}
+		parts = append(parts, tsIndentBlock(body, 2))
+	}
+	return "  " + strings.Join(parts, "\n")
+}
+
+func tsRenderPairs(rows [][2]string) string {
+	maxKeyWidth := 0
+	for _, row := range rows {
+		maxKeyWidth = max(maxKeyWidth, len(row[0]))
+	}
+	var lines []string
+	for _, row := range rows {
+		key := tsKey.Render(fmt.Sprintf("%-*s", maxKeyWidth, row[0]))
+		lines = append(lines, key+"  "+row[1])
+	}
+	return strings.Join(lines, "\n")
+}
+
+func tsRenderSimpleTable(headers []string, rows [][]string) string {
+	if len(headers) == 0 {
+		return ""
+	}
+
+	widths := make([]int, len(headers))
+	for i, header := range headers {
+		widths[i] = lipgloss.Width(header)
+	}
+	for _, row := range rows {
+		for i := 0; i < min(len(row), len(widths)); i++ {
+			widths[i] = max(widths[i], lipgloss.Width(row[i]))
+		}
+	}
+
+	renderRow := func(cells []string, style lipgloss.Style) string {
+		rendered := make([]string, len(headers))
+		for i := range headers {
+			cell := ""
+			if i < len(cells) {
+				cell = cells[i]
+			}
+			rendered[i] = style.Render(tsPadRight(cell, widths[i]))
+		}
+		return strings.Join(rendered, "  ")
+	}
+
+	lines := []string{
+		renderRow(headers, tsTableHead),
+		tsTableRule.Render(renderRow(tsDashCells(widths), lipgloss.NewStyle())),
+	}
+	for _, row := range rows {
+		lines = append(lines, renderRow(row, lipgloss.NewStyle()))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func factsContentWidth(width int) int {
+	if width <= 0 {
+		return 72
+	}
+	return max(width-8, 36)
+}
+
+func tsRenderFactsMap(values map[string]any, indent, width int, topLevel bool) []string {
+	keys := sortedFactKeys(values)
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, tsRenderFactValueLines(key, values[key], indent, width, topLevel)...)
+	}
+	return lines
+}
+
+func tsRenderFactValueLines(label string, value any, indent, width int, topLevel bool) []string {
+	prefix := strings.Repeat(" ", indent)
+	labelStyle := tsKey
+	if topLevel {
+		labelStyle = tsLabel
+	}
+
+	switch v := normalizeFactValue(value).(type) {
+	case map[string]any:
+		if len(v) == 0 {
+			return []string{prefix + labelStyle.Render(label) + tsMuted.Render(": {}")}
+		}
+		lines := []string{prefix + labelStyle.Render(label) + tsMuted.Render(":")}
+		lines = append(lines, tsRenderFactsMap(v, indent+2, width, false)...)
+		return lines
+	case []any:
+		if len(v) == 0 {
+			return []string{prefix + labelStyle.Render(label) + tsMuted.Render(": []")}
+		}
+		lines := []string{prefix + labelStyle.Render(label) + tsMuted.Render(":")}
+		for _, item := range v {
+			lines = append(lines, tsRenderFactListItemLines(item, indent+2, width)...)
+		}
+		return lines
+	default:
+		return tsRenderFactScalarLines(prefix, labelStyle, label, formatFactScalar(v), width)
+	}
+}
+
+func tsRenderFactListItemLines(value any, indent, width int) []string {
+	prefix := strings.Repeat(" ", indent)
+	switch v := normalizeFactValue(value).(type) {
+	case map[string]any:
+		if len(v) == 0 {
+			return []string{prefix + tsMuted.Render("-") + " " + tsMuted.Render("{}")}
+		}
+		keys := sortedFactKeys(v)
+		first := keys[0]
+		firstLines := tsRenderFactScalarLines(prefix+tsMuted.Render("-")+" ", tsKey, first, formatFactInlineScalar(v[first]), width)
+		lines := append([]string{}, firstLines...)
+		for _, key := range keys[1:] {
+			lines = append(lines, tsRenderFactValueLines(key, v[key], indent+2, width, false)...)
+		}
+		return lines
+	case []any:
+		lines := []string{prefix + tsMuted.Render("-")}
+		for _, item := range v {
+			lines = append(lines, tsRenderFactListItemLines(item, indent+2, width)...)
+		}
+		return lines
+	default:
+		return []string{prefix + tsMuted.Render("-") + " " + tsValue.Render(formatFactScalar(v))}
+	}
+}
+
+func tsRenderFactScalarLines(prefix string, labelStyle lipgloss.Style, label, value string, width int) []string {
+	labelText := labelStyle.Render(label) + tsMuted.Render(":")
+	firstPrefix := prefix + labelText + " "
+	available := max(width-lipgloss.Width(firstPrefix), 16)
+	parts := wrapFactValue(value, available)
+	if len(parts) == 1 {
+		return []string{firstPrefix + tsValue.Render(parts[0])}
+	}
+
+	lines := []string{prefix + labelText}
+	continuationPrefix := prefix + "  "
+	for _, part := range parts {
+		lines = append(lines, continuationPrefix+tsValue.Render(part))
+	}
+	return lines
+}
+
+func formatFactInlineScalar(value any) string {
+	switch v := normalizeFactValue(value).(type) {
+	case map[string]any:
+		return "{...}"
+	case []any:
+		return "[...]"
+	default:
+		return formatFactScalar(v)
+	}
+}
+
+func wrapFactValue(value string, width int) []string {
+	if width <= 0 || lipgloss.Width(value) <= width {
+		return []string{value}
+	}
+	if strings.Contains(value, ";") {
+		if wrapped := wrapDelimited(value, width, ";"); len(wrapped) > 1 {
+			return wrapped
+		}
+	}
+	if strings.Contains(value, `\`) {
+		if wrapped := wrapDelimited(value, width, `\`); len(wrapped) > 1 {
+			return wrapped
+		}
+	}
+	return wrapWords(value, width)
+}
+
+func wrapDelimited(value string, width int, delim string) []string {
+	parts := strings.Split(value, delim)
+	var lines []string
+	current := ""
+	for i, part := range parts {
+		token := part
+		if i < len(parts)-1 {
+			token += delim
+		}
+		if current == "" {
+			current = token
+			continue
+		}
+		if lipgloss.Width(current)+lipgloss.Width(token) <= width {
+			current += token
+			continue
+		}
+		lines = append(lines, current)
+		current = token
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func wrapWords(value string, width int) []string {
+	fields := strings.Fields(value)
+	if len(fields) <= 1 {
+		return wrapRunes(value, width)
+	}
+	var lines []string
+	current := ""
+	for _, field := range fields {
+		candidate := field
+		if current != "" {
+			candidate = current + " " + field
+		}
+		if lipgloss.Width(candidate) <= width {
+			current = candidate
+			continue
+		}
+		if current != "" {
+			lines = append(lines, current)
+		}
+		if lipgloss.Width(field) > width {
+			lines = append(lines, wrapRunes(field, width)...)
+			current = ""
+			continue
+		}
+		current = field
+	}
+	if current != "" {
+		lines = append(lines, current)
+	}
+	return lines
+}
+
+func wrapRunes(value string, width int) []string {
+	if width <= 0 {
+		return []string{value}
+	}
+	runes := []rune(value)
+	var lines []string
+	for len(runes) > 0 {
+		chunk := runes
+		if len(chunk) > width {
+			chunk = runes[:width]
+		}
+		lines = append(lines, string(chunk))
+		runes = runes[len(chunk):]
+	}
+	return lines
+}
+
+func tsRenderBulletList(items []string, numbered bool) string {
+	if len(items) == 0 {
+		return tsMuted.Render("(none)")
+	}
+	lines := make([]string, 0, len(items))
+	for i, item := range items {
+		prefix := "•"
+		if numbered {
+			prefix = strconv.Itoa(i+1) + "."
+		}
+		lines = append(lines, prefix+" "+item)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func tsIndentBlock(block string, depth int) string {
+	prefix := strings.Repeat(" ", depth)
+	lines := strings.Split(block, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			lines[i] = ""
+			continue
+		}
+		lines[i] = prefix + line
+	}
+	return strings.Join(lines, "\n")
+}
+
+func tsDecorateStateStatus(status string) string {
+	switch strings.ToUpper(status) {
+	case "UNCHANGED":
+		return tsOK.Render("✓ unchanged")
+	case "CHANGED":
+		return tsChanged.Render("◆ changed")
+	case "NEW":
+		return tsChanged.Render("+ new")
+	case "MISSING":
+		return tsFailed.Render("– missing")
+	case "RECORDED":
+		return tsMuted.Render("• recorded")
+	default:
+		return status
+	}
+}
+
+func tsPadRight(s string, width int) string {
+	padding := max(width-lipgloss.Width(s), 0)
+	return s + strings.Repeat(" ", padding)
+}
+
+func tsDashCells(widths []int) []string {
+	cells := make([]string, len(widths))
+	for i, width := range widths {
+		cells[i] = strings.Repeat("─", max(width, 1))
+	}
+	return cells
+}
+
+func tsRenderOptionalBulletList(items []string) string {
+	if len(items) == 0 {
+		return tsMuted.Render("(none)")
+	}
+	return tsRenderBulletList(items, false)
 }
 
 // ── TUIRenderer ───────────────────────────────────────────────────────────────

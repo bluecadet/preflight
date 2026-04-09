@@ -172,6 +172,45 @@ func TestTextRenderer_TaskOutput(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_FactsFormatsNestedValues(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(FactsEvent{
+		Target: "exhibit-pc",
+		Facts: map[string]any{
+			"hostname": "EXHIBIT-01",
+			"os": map[string]any{
+				"name":    "Windows 11",
+				"version": "10.0.26200",
+				"build":   26200,
+				"arch":    "arm64",
+			},
+			"disks": []any{
+				map[string]any{
+					"path":     "C:",
+					"total_gb": 63.055660247802734,
+					"free_gb":  23.208858489990234,
+					"used_gb":  39.8468017578125,
+				},
+			},
+		},
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "os:\n") {
+		t.Fatalf("expected nested os section, got %q", out)
+	}
+	if !strings.Contains(out, "  disks:\n") {
+		t.Fatalf("expected disks section, got %q", out)
+	}
+	if !strings.Contains(out, "    - path: C:") {
+		t.Fatalf("expected disk list entry, got %q", out)
+	}
+	if !strings.Contains(out, "      total_gb: 63.06") {
+		t.Fatalf("expected rounded float formatting, got %q", out)
+	}
+}
+
 func TestTextRenderer_DefaultHidesSuccessfulTaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)

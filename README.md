@@ -130,7 +130,7 @@ Implemented today:
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply
-- Output renderers for `text`, `tui`, and `json`, including streamed task output during apply
+- Output renderers for `text`, `tui`, and `json`, including streamed task output during apply plus richer TUI layouts for plan, facts, state, validate, and action inspection commands
 
 Important current limits:
 

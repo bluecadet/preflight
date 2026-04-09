@@ -1,0 +1,12 @@
+Name:        autologin
+Version:     1.2.0
+Description: Configure kiosk autologin
+Author:      Bluecadet
+
+Inputs:
+  username:            Account used for sign-in (required)
+  password:            Password for the account [default: (prompted)]
+
+Tasks (2):
+  1. Enable autologin
+  2. Restart shell

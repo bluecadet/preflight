@@ -3,10 +3,13 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 var validateCmd = &cobra.Command{
@@ -17,11 +20,15 @@ var validateCmd = &cobra.Command{
 }
 
 func init() {
+	addOutputFlags(validateCmd)
 	rootCmd.AddCommand(validateCmd)
 }
 
 func runValidate(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
 
 	pb, err := action.LoadPlaybookFile(playbookPath)
 	if err != nil {
@@ -35,7 +42,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	var errs []error
 	visited := make(map[string]bool)
-	totalRefs := 0
+	resolvedRefs := make(map[string]bool)
 
 	var resolveRefs func(tasks []action.Task)
 	resolveRefs = func(tasks []action.Task) {
@@ -54,7 +61,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 				errs = append(errs, fmt.Errorf("task %q: %w", task.Name, err))
 				continue
 			}
-			totalRefs++
+			resolvedRefs[ref] = true
 			if resolved != nil {
 				resolveRefs(resolved.Tasks)
 			}
@@ -63,14 +70,33 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	resolveRefs(pb.Tasks)
 
+	sortedResolvedRefs := make([]string, 0, len(resolvedRefs))
+	for ref := range resolvedRefs {
+		sortedResolvedRefs = append(sortedResolvedRefs, ref)
+	}
+	sort.Strings(sortedResolvedRefs)
+
 	if len(errs) > 0 {
 		for _, e := range errs {
-			fmt.Printf("ERROR: %v\n", e)
+			renderer.Emit(output.ErrorEvent{Message: e.Error()})
 		}
+		renderer.Emit(output.ValidationEvent{
+			PlaybookPath:    playbookPath,
+			PlaybookName:    pb.Name,
+			TaskCount:       len(pb.Tasks),
+			VisitedRefCount: len(visited),
+			ResolvedRefs:    sortedResolvedRefs,
+			ErrorCount:      len(errs),
+		})
 		return fmt.Errorf("validation failed with %d error(s)", len(errs))
 	}
 
-	taskCount := len(pb.Tasks)
-	fmt.Printf("Validated: %s (%d tasks, %d action refs resolved)\n", playbookPath, taskCount, totalRefs)
+	renderer.Emit(output.ValidationEvent{
+		PlaybookPath:    playbookPath,
+		PlaybookName:    pb.Name,
+		TaskCount:       len(pb.Tasks),
+		VisitedRefCount: len(visited),
+		ResolvedRefs:    sortedResolvedRefs,
+	})
 	return nil
 }

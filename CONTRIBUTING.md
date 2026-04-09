@@ -78,6 +78,7 @@ go test ./pkg/plugin/sdk/...
 For output and renderer changes, also exercise the simulator so text, TUI, and JSON output stay aligned:
 
 ```bash
+go test ./internal/output/... ./cmd/...
 go run ./tools/sim list
 go run ./tools/sim streaming --format tui
 go run ./tools/sim streaming-multi-host --format tui --verbose

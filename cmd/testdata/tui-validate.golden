@@ -1,0 +1,14 @@
+[?25l[?<elapsed>
+  ◇ Validate
+──────────────────────────────────────────
+  Playbook       lobby
+  Tasks          2
+  Resolved refs  2
+  Path           playbook.yml
+
+  Resolved refs
+  • preflight/windows-machine
+  • preflight/windows-quiet-mode
+
+[2K
+[?2004l[?<elapsed>[?1002l[?1003l[?1006l

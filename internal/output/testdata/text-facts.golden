@@ -1,4 +1,15 @@
 Facts for lobby-pc-01:
-  arch: amd64
+  disks:
+    - path: C:
+      total_gb: 63.06
+      free_gb: 23.21
+      used_gb: 39.85
+  env:
+    Path: C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\WindowsPowerShell\v1.0\
   hostname: LOBBY-PC-01
-  platform: windows
+  os:
+    name: Windows 11
+    hostname: LOBBY-PC-01
+    version: 10.0.26200
+    build: 26200
+    arch: arm64

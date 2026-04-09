@@ -8,26 +8,43 @@ import (
 
 // jsonEvent is the serializable form of an Event.
 type jsonEvent struct {
-	Type         EventType         `json:"type"`
-	PlayName     string            `json:"play,omitempty"`
-	TaskID       string            `json:"task_id,omitempty"`
-	Task         string            `json:"task,omitempty"`
-	Target       string            `json:"target,omitempty"`
-	Status       string            `json:"status,omitempty"`
-	Message      string            `json:"message,omitempty"`
-	Error        string            `json:"error,omitempty"`
-	OKCount      *int              `json:"ok_count,omitempty"`
-	ChangedCount *int              `json:"changed_count,omitempty"`
-	FailedCount  *int              `json:"failed_count,omitempty"`
-	SkippedCount *int              `json:"skipped_count,omitempty"`
-	Lines        []string          `json:"lines,omitempty"`
-	Output       []string          `json:"output,omitempty"`
-	Facts        map[string]any    `json:"facts,omitempty"`
-	Tasks        []PlanTaskEntry   `json:"tasks,omitempty"`
-	StatePath    string            `json:"state_path,omitempty"`
-	LastApplied  string            `json:"last_applied,omitempty"`
-	Comparisons  []StateComparison `json:"comparisons,omitempty"`
-	TS           string            `json:"ts"`
+	Type         EventType          `json:"type"`
+	PlayName     string             `json:"play,omitempty"`
+	Name         string             `json:"name,omitempty"`
+	Namespace    string             `json:"namespace,omitempty"`
+	Ref          string             `json:"ref,omitempty"`
+	TaskID       string             `json:"task_id,omitempty"`
+	Task         string             `json:"task,omitempty"`
+	Target       string             `json:"target,omitempty"`
+	Status       string             `json:"status,omitempty"`
+	Message      string             `json:"message,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	TaskCount    int                `json:"task_count,omitempty"`
+	OKCount      *int               `json:"ok_count,omitempty"`
+	ChangedCount *int               `json:"changed_count,omitempty"`
+	FailedCount  *int               `json:"failed_count,omitempty"`
+	SkippedCount *int               `json:"skipped_count,omitempty"`
+	Lines        []string           `json:"lines,omitempty"`
+	Output       []string           `json:"output,omitempty"`
+	Facts        map[string]any     `json:"facts,omitempty"`
+	Tasks        []PlanTaskEntry    `json:"tasks,omitempty"`
+	StatePath    string             `json:"state_path,omitempty"`
+	LastApplied  string             `json:"last_applied,omitempty"`
+	Comparisons  []StateComparison  `json:"comparisons,omitempty"`
+	PlaybookPath string             `json:"playbook_path,omitempty"`
+	VisitedRefs  int                `json:"visited_refs,omitempty"`
+	ResolvedRefs []string           `json:"resolved_refs,omitempty"`
+	ErrorCount   int                `json:"error_count,omitempty"`
+	EmbeddedRefs []string           `json:"embedded_refs,omitempty"`
+	LocalDir     string             `json:"local_dir,omitempty"`
+	LocalRefs    []string           `json:"local_refs,omitempty"`
+	Version      string             `json:"version,omitempty"`
+	Description  string             `json:"description,omitempty"`
+	Author       string             `json:"author,omitempty"`
+	Inputs       []ActionInputEntry `json:"inputs,omitempty"`
+	TaskNames    []string           `json:"task_names,omitempty"`
+	Entries      []ActionFetchEntry `json:"entries,omitempty"`
+	TS           string             `json:"ts"`
 }
 
 // JSONRenderer writes newline-delimited JSON events to an io.Writer.
@@ -100,6 +117,17 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.Type = EventError
 		je.Error = e.Message
 
+	case ActivityStartEvent:
+		je.Type = EventActivityStart
+		je.Target = e.Target
+		je.Message = e.Message
+
+	case ActivityResultEvent:
+		je.Type = EventActivityResult
+		je.Target = e.Target
+		je.Message = e.Message
+		je.Status = e.Status
+
 	case FactsEvent:
 		je.Type = EventFacts
 		je.Target = e.Target
@@ -118,6 +146,36 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.StatePath = e.StatePath
 		je.LastApplied = e.LastApplied
 		je.Comparisons = e.Comparisons
+
+	case ValidationEvent:
+		je.Type = EventValidate
+		je.PlayName = e.PlaybookName
+		je.PlaybookPath = e.PlaybookPath
+		je.TaskCount = e.TaskCount
+		je.VisitedRefs = e.VisitedRefCount
+		je.ResolvedRefs = e.ResolvedRefs
+		je.ErrorCount = e.ErrorCount
+
+	case ActionCatalogEvent:
+		je.Type = EventActionList
+		je.Namespace = e.EmbeddedNamespace
+		je.EmbeddedRefs = e.EmbeddedRefs
+		je.LocalDir = e.LocalDir
+		je.LocalRefs = e.LocalRefs
+
+	case ActionInfoEvent:
+		je.Type = EventActionInfo
+		je.Ref = e.Ref
+		je.Name = e.Name
+		je.Version = e.Version
+		je.Description = e.Description
+		je.Author = e.Author
+		je.Inputs = e.Inputs
+		je.TaskNames = e.TaskNames
+
+	case ActionFetchEvent:
+		je.Type = EventActionFetch
+		je.Entries = e.Entries
 	}
 
 	// Ignore encode errors — nothing useful to do with them at render time.

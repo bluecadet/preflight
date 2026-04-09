@@ -80,7 +80,7 @@ Behavior notes:
 
 ### `preflight validate <playbook>`
 
-Parse a playbook and resolve direct `uses:` references without executing anything.
+Parse a playbook and resolve direct and nested `uses:` references without executing anything. In interactive terminals, `--output tui` renders a validation summary with resolved refs and status cards.
 
 ```bash
 preflight validate playbooks/lobby.yml
@@ -88,7 +88,7 @@ preflight validate playbooks/lobby.yml
 
 ### `preflight facts [target]`
 
-Gather facts and print JSON.
+Gather facts for one or more targets through the selected output renderer.
 
 ```bash
 preflight facts
@@ -121,7 +121,7 @@ Command-specific flags:
 
 ### `preflight action list`
 
-List available embedded and project-local actions.
+List available embedded and project-local actions. In interactive terminals, `--output tui` renders grouped action catalog cards.
 
 ### `preflight action info <ref>`
 
@@ -223,9 +223,9 @@ Behavior notes:
 | Value | Behavior |
 | --- | --- |
 | `text` | Plain human-readable renderer |
-| `tui` | Interactive terminal UI renderer |
+| `tui` | Interactive terminal UI renderer with richer layouts for run, plan, facts, state, validate, and action inspection commands |
 | `json` | Newline-delimited JSON events |
 
 When a task streams output during `apply`, the `json` renderer emits `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
 
-For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, and includes successful-task logs after completion when `--verbose` is enabled.
+For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, includes successful-task logs after completion when `--verbose` is enabled, and uses Lip Gloss cards, tables, and progress bars for plan and inspection commands.

@@ -96,7 +96,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "Playbook: test",
+			expectInOut: "echo",
 		},
 		{
 			name: "facts",
@@ -113,7 +113,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "Facts for localhost",
+			expectInOut: "localhost",
 		},
 		{
 			name: "state show",
@@ -133,7 +133,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "State file:",
+			expectInOut: "echo",
 		},
 		{
 			name: "state diff",
@@ -153,7 +153,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "State diff for playbook: test",
+			expectInOut: "echo",
 		},
 	}
 

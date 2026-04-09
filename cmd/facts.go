@@ -9,6 +9,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
 
@@ -76,8 +77,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(hosts) == 1 {
-		g := facts.New(hosts[0].Target)
-		f, err := g.Gather(ctx)
+		f, err := gatherFactsForHost(ctx, renderer, hosts[0].Name, hosts[0].Target)
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
@@ -89,8 +89,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	}
 
 	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
-		g := facts.New(host.Target)
-		f, err := g.Gather(runCtx)
+		f, err := gatherFactsForHost(runCtx, renderer, host.Name, host.Target)
 		if err != nil {
 			return fmt.Errorf("facts for %s: %w", host.Name, err)
 		}
@@ -100,4 +99,29 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		})
 		return nil
 	})
+}
+
+func gatherFactsForHost(ctx context.Context, renderer output.Renderer, hostName string, tgt target.Target) (*facts.Facts, error) {
+	remote := renderer != nil && isRemoteFactsTarget(tgt)
+	if remote {
+		renderer.Emit(output.ActivityStartEvent{Target: hostName, Message: "connecting"})
+	}
+
+	collected, err := facts.New(tgt).Gather(ctx)
+	if remote {
+		status := "ok"
+		if err != nil {
+			status = "failed"
+		}
+		renderer.Emit(output.ActivityResultEvent{Target: hostName, Message: "connecting", Status: status})
+	}
+	return collected, err
+}
+
+func isRemoteFactsTarget(tgt target.Target) bool {
+	type localMarker interface{ IsLocal() bool }
+	if marker, ok := tgt.(localMarker); ok {
+		return !marker.IsLocal()
+	}
+	return true
 }

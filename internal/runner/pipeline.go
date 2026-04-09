@@ -294,7 +294,13 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: bundle output directory is not configured")
 	}
 
+	r.emitActivityStart("connecting")
 	info, err := r.target.Info(ctx)
+	if err != nil {
+		r.emitActivityResult("connecting", "failed")
+	} else {
+		r.emitActivityResult("connecting", "ok")
+	}
 	if err != nil {
 		return fmt.Errorf("stage: target info: %w", err)
 	}
@@ -833,8 +839,10 @@ type executionContext struct {
 
 func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, error) {
 	targetVars := cloneMap(r.config.TargetVars)
+	r.emitActivityStart("connecting")
 	info, err := r.target.Info(ctx)
 	if err != nil {
+		r.emitActivityResult("connecting", "failed")
 		return nil, fmt.Errorf("apply: target info: %w", err)
 	}
 
@@ -851,8 +859,10 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, 
 	gatherer := facts.New(r.target)
 	collected, err := gatherer.Gather(ctx)
 	if err != nil {
+		r.emitActivityResult("connecting", "failed")
 		return nil, fmt.Errorf("apply: gather facts: %w", err)
 	}
+	r.emitActivityResult("connecting", "ok")
 
 	return &executionContext{
 		target: targetVars,

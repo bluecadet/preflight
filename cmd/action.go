@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/stdlib"
 )
 
@@ -41,23 +42,22 @@ var actionFetchCmd = &cobra.Command{
 }
 
 func init() {
+	addOutputFlags(actionListCmd)
+	addOutputFlags(actionInfoCmd)
+	addOutputFlags(actionFetchCmd)
 	actionCmd.AddCommand(actionListCmd)
 	actionCmd.AddCommand(actionInfoCmd)
 	actionCmd.AddCommand(actionFetchCmd)
 	rootCmd.AddCommand(actionCmd)
 }
 
-func runActionList(_ *cobra.Command, _ []string) error {
+func runActionList(cmd *cobra.Command, _ []string) error {
 	// List embedded stdlib actions.
 	embeddedRefs, err := listEmbeddedActions()
 	if err != nil {
 		return fmt.Errorf("action list: embedded: %w", err)
 	}
 	sort.Strings(embeddedRefs)
-	fmt.Println("Embedded actions (preflight/):")
-	for _, ref := range embeddedRefs {
-		fmt.Printf("  %s\n", ref)
-	}
 
 	// List local ./actions/ actions.
 	cwd, _ := os.Getwd()
@@ -67,13 +67,17 @@ func runActionList(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("action list: local: %w", err)
 	}
 	sort.Strings(localRefs)
-	fmt.Printf("\nLocal actions (%s):\n", localActionsDir)
-	if len(localRefs) == 0 {
-		fmt.Println("  (none)")
-	}
-	for _, ref := range localRefs {
-		fmt.Printf("  %s\n", ref)
-	}
+
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
+	renderer.Emit(output.ActionCatalogEvent{
+		EmbeddedNamespace: "preflight/",
+		EmbeddedRefs:      embeddedRefs,
+		LocalDir:          localActionsDir,
+		LocalRefs:         localRefs,
+	})
 
 	return nil
 }
@@ -122,43 +126,51 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Printf("Name:        %s\n", a.Name)
-	fmt.Printf("Version:     %s\n", a.Version)
-	fmt.Printf("Description: %s\n", a.Description)
-	if a.Author != "" {
-		fmt.Printf("Author:      %s\n", a.Author)
+	inputKeys := make([]string, 0, len(a.Inputs))
+	for k := range a.Inputs {
+		inputKeys = append(inputKeys, k)
+	}
+	sort.Strings(inputKeys)
+
+	inputs := make([]output.ActionInputEntry, 0, len(inputKeys))
+	for _, key := range inputKeys {
+		input := a.Inputs[key]
+		defaultValue := ""
+		if input.Default != nil {
+			defaultValue = fmt.Sprintf("%v", input.Default)
+		}
+		inputs = append(inputs, output.ActionInputEntry{
+			Name:        key,
+			Type:        input.Type,
+			Description: input.Description,
+			Required:    input.Required,
+			Default:     defaultValue,
+		})
 	}
 
-	if len(a.Inputs) > 0 {
-		fmt.Println("\nInputs:")
-		keys := make([]string, 0, len(a.Inputs))
-		for k := range a.Inputs {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		for _, k := range keys {
-			inp := a.Inputs[k]
-			req := ""
-			if inp.Required {
-				req = " (required)"
-			}
-			def := ""
-			if inp.Default != nil {
-				def = fmt.Sprintf(" [default: %v]", inp.Default)
-			}
-			fmt.Printf("  %-20s %s%s%s\n", k+":", inp.Description, req, def)
-		}
+	taskNames := make([]string, 0, len(a.Tasks))
+	for _, task := range a.Tasks {
+		taskNames = append(taskNames, task.Name)
 	}
 
-	fmt.Printf("\nTasks (%d):\n", len(a.Tasks))
-	for i, t := range a.Tasks {
-		fmt.Printf("  %d. %s\n", i+1, t.Name)
-	}
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
+	renderer.Emit(output.ActionInfoEvent{
+		Ref:         ref,
+		Name:        a.Name,
+		Version:     a.Version,
+		Description: a.Description,
+		Author:      a.Author,
+		Inputs:      inputs,
+		TaskNames:   taskNames,
+	})
 
 	return nil
 }
 
-func runActionFetch(_ *cobra.Command, args []string) error {
+func runActionFetch(cmd *cobra.Command, args []string) error {
 	ref := args[0]
 	if _, err := action.ParseRemoteRef(ref); err != nil {
 		return fmt.Errorf("action fetch: %w", err)
@@ -177,8 +189,18 @@ func runActionFetch(_ *cobra.Command, args []string) error {
 	sort.Slice(entries, func(i, j int) bool {
 		return entries[i].Ref < entries[j].Ref
 	})
+	fetchedEntries := make([]output.ActionFetchEntry, 0, len(entries))
 	for _, entry := range entries {
-		fmt.Printf("Fetched %s -> %s\n", entry.Ref, entry.SHA)
+		fetchedEntries = append(fetchedEntries, output.ActionFetchEntry{
+			Ref: entry.Ref,
+			SHA: entry.SHA,
+		})
 	}
+
+	outFmt := getOutputFormat(cmd)
+	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	defer renderer.Close()
+
+	renderer.Emit(output.ActionFetchEvent{Entries: fetchedEntries})
 	return nil
 }

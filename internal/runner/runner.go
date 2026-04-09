@@ -132,6 +132,35 @@ func (r *Runner) emitWarning(message string) {
 	}
 }
 
+func (r *Runner) emitActivityStart(message string) {
+	if r.config.Renderer == nil || !r.isRemoteTarget() {
+		return
+	}
+	r.config.Renderer.Emit(output.ActivityStartEvent{
+		Target:  r.targetName(),
+		Message: message,
+	})
+}
+
+func (r *Runner) emitActivityResult(message, status string) {
+	if r.config.Renderer == nil || !r.isRemoteTarget() {
+		return
+	}
+	r.config.Renderer.Emit(output.ActivityResultEvent{
+		Target:  r.targetName(),
+		Message: message,
+		Status:  status,
+	})
+}
+
+func (r *Runner) isRemoteTarget() bool {
+	type localMarker interface{ IsLocal() bool }
+	if marker, ok := r.target.(localMarker); ok {
+		return !marker.IsLocal()
+	}
+	return r.target != nil
+}
+
 // PlannedTaskState renders the current plan with execution-time target context
 // so state comparisons use the same task names and params that apply records.
 func (r *Runner) PlannedTaskState(ctx context.Context, plan *ExecutionPlan) ([]PlannedTaskState, error) {

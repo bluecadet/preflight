@@ -93,9 +93,25 @@ func snapshotCases() []snapshotCase {
 				FactsEvent{
 					Target: "lobby-pc-01",
 					Facts: map[string]any{
-						"arch":     "amd64",
 						"hostname": "LOBBY-PC-01",
-						"platform": "windows",
+						"os": map[string]any{
+							"name":     "Windows 11",
+							"version":  "10.0.26200",
+							"build":    26200,
+							"arch":     "arm64",
+							"hostname": "LOBBY-PC-01",
+						},
+						"disks": []any{
+							map[string]any{
+								"path":     "C:",
+								"total_gb": 63.055660247802734,
+								"free_gb":  23.208858489990234,
+								"used_gb":  39.8468017578125,
+							},
+						},
+						"env": map[string]any{
+							"Path": "C:\\WINDOWS\\system32;C:\\WINDOWS;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\",
+						},
 					},
 				},
 			},
@@ -124,6 +140,78 @@ func snapshotCases() []snapshotCase {
 					Comparisons: []StateComparison{
 						{Status: "UNCHANGED", TaskName: "Preflight check", Module: "shell", RecordedStatus: "ok"},
 						{Status: "CHANGED", TaskName: "Create content root", Module: "directory", RecordedStatus: "changed"},
+					},
+				},
+			},
+		},
+		{
+			name: "validate",
+			events: []Event{
+				ValidationEvent{
+					PlaybookPath:    "playbooks/lobby.yml",
+					PlaybookName:    "lobby",
+					TaskCount:       3,
+					VisitedRefCount: 2,
+					ResolvedRefs: []string{
+						"preflight/windows-machine",
+						"preflight/windows-quiet-mode",
+					},
+				},
+			},
+		},
+		{
+			name: "action-list",
+			events: []Event{
+				ActionCatalogEvent{
+					EmbeddedNamespace: "preflight/",
+					EmbeddedRefs: []string{
+						"preflight/autologin",
+						"preflight/windows-machine",
+					},
+					LocalDir: "actions",
+					LocalRefs: []string{
+						"museum/bootstrap",
+					},
+				},
+			},
+		},
+		{
+			name: "action-info",
+			events: []Event{
+				ActionInfoEvent{
+					Ref:         "preflight/autologin",
+					Name:        "autologin",
+					Version:     "1.2.0",
+					Description: "Configure kiosk autologin",
+					Author:      "Bluecadet",
+					Inputs: []ActionInputEntry{
+						{
+							Name:        "username",
+							Type:        "string",
+							Description: "Account used for sign-in",
+							Required:    true,
+						},
+						{
+							Name:        "password",
+							Type:        "string",
+							Description: "Password for the account",
+							Default:     "(prompted)",
+						},
+					},
+					TaskNames: []string{
+						"Enable autologin",
+						"Restart shell",
+					},
+				},
+			},
+		},
+		{
+			name: "action-fetch",
+			events: []Event{
+				ActionFetchEvent{
+					Entries: []ActionFetchEntry{
+						{Ref: "github.com/acme/root@v1", SHA: "abc123"},
+						{Ref: "github.com/acme/child@v2", SHA: "def456"},
 					},
 				},
 			},
@@ -172,16 +260,12 @@ func normalizeSnapshot(s string) string {
 }
 
 var (
-	ansiCSIRE  = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
-	ansiOSCRE  = regexp.MustCompile(`\x1b\][^\a]*(?:\a|\x1b\\)`)
 	durationRE = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ms|s|m|h)\b`)
 )
 
 func normalizeTUISnapshot(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "")
-	s = ansiOSCRE.ReplaceAllString(s, "")
-	s = ansiCSIRE.ReplaceAllString(s, "")
 	s = durationRE.ReplaceAllString(s, "<elapsed>")
 	return normalizeSnapshot(s)
 }

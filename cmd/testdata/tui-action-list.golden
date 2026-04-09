@@ -1,0 +1,23 @@
+[?25l[?<elapsed>
+  ▣ Action Catalog
+──────────────────────────────────────────
+  Namespace  preflight/
+  Local dir  /private<cwd>/actions
+  Embedded   8
+  Local      0
+
+  Embedded actions
+  • preflight/autologin
+  • preflight/debloat
+  • preflight/windows-input
+  • preflight/windows-machine
+  • preflight/windows-power
+  • preflight/windows-quiet-mode
+  • preflight/windows-shell
+  • preflight/windows-update-lockdown
+
+  Local actions
+  (none)
+
+[2K
+[?2004l[?<elapsed>[?1002l[?1003l[?1006l

@@ -604,6 +604,50 @@ func TestApplyEmitsTaskOutputEventsWithTargetContext(t *testing.T) {
 	}
 }
 
+func TestApplyEmitsRemoteActivityEvents(t *testing.T) {
+	mt := &mockTarget{
+		results: []target.Result{{Status: target.StatusOK}},
+	}
+	rec := &recordingRenderer{}
+	cfg := Config{
+		Renderer:   rec,
+		TargetName: "gallery-01",
+	}
+	r := New(mt, emptyResolver(), cfg)
+
+	pb := newShellPlaybook("emit-activity-test")
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+
+	var activityStarts, activityResults int
+	for _, e := range rec.events {
+		switch evt := e.(type) {
+		case output.ActivityStartEvent:
+			activityStarts++
+			if evt.Target != "gallery-01" || evt.Message != "connecting" {
+				t.Fatalf("unexpected activity start: %+v", evt)
+			}
+		case output.ActivityResultEvent:
+			activityResults++
+			if evt.Target != "gallery-01" || evt.Message != "connecting" || evt.Status != "ok" {
+				t.Fatalf("unexpected activity result: %+v", evt)
+			}
+		}
+	}
+	if activityStarts != 1 {
+		t.Fatalf("expected 1 activity_start event, got %d", activityStarts)
+	}
+	if activityResults != 1 {
+		t.Fatalf("expected 1 activity_result event, got %d", activityResults)
+	}
+}
+
 func TestApplyDryRun(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusChanged}},
