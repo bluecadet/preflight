@@ -48,6 +48,8 @@ type WinRMTarget struct {
 	client        winRMClient
 }
 
+const winRMMaxInlinePowerShellCommandLen = 7000
+
 func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	if cfg.Port == 0 {
 		if cfg.HTTPS {
@@ -194,6 +196,9 @@ func (t *WinRMTarget) clientForUse() (winRMClient, error) {
 }
 
 func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) {
+	if shouldStageWinRMPowerShellScript(script) {
+		return t.runPSViaTempFile(ctx, script)
+	}
 	client, err := t.clientForUse()
 	if err != nil {
 		return "", err
@@ -203,6 +208,9 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) 
 		return "", fmt.Errorf("winrm powershell failed: %w", err)
 	}
 	if code != 0 {
+		if isWinRMCommandLineTooLong(stderr) {
+			return t.runPSViaTempFile(ctx, script)
+		}
 		return "", fmt.Errorf("winrm powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
 	return stdout, nil
@@ -223,12 +231,82 @@ func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error
 	return stdout, nil
 }
 
+func (t *WinRMTarget) runPSViaTempFile(ctx context.Context, script string) (string, error) {
+	remotePath := fmt.Sprintf(`%s\run-%d.ps1`, strings.TrimRight(t.RemoteTempDir(), `\/`), time.Now().UnixNano())
+	if err := t.copyBytes(ctx, []byte(script), remotePath); err != nil {
+		return "", fmt.Errorf("winrm powershell stage oversized script: %w", err)
+	}
+	defer func() {
+		cleanupScript, cleanupErr := powershellJSONVar("path", remotePath)
+		if cleanupErr != nil {
+			return
+		}
+		_, _ = t.runPSDirect(ctx, cleanupScript+`
+Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+`)
+	}()
+
+	command := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%s"`, remotePath)
+	out, err := t.runCmd(ctx, command)
+	if err != nil {
+		return "", fmt.Errorf("winrm powershell oversized script fallback: %w", err)
+	}
+	return out, nil
+}
+
+func (t *WinRMTarget) runPSDirect(ctx context.Context, script string) (string, error) {
+	client, err := t.clientForUse()
+	if err != nil {
+		return "", err
+	}
+	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
+	if err != nil {
+		return "", fmt.Errorf("winrm powershell failed: %w", err)
+	}
+	if code != 0 {
+		return "", fmt.Errorf("winrm powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	return stdout, nil
+}
+
+func isWinRMCommandLineTooLong(stderr string) bool {
+	return strings.Contains(strings.ToLower(stderr), "command line is too long")
+}
+
+func shouldStageWinRMPowerShellScript(script string) bool {
+	encoded := encodePowerShellScript(script)
+	commandLen := len("powershell.exe -NoProfile -NonInteractive -EncodedCommand ") + len(encoded)
+	return commandLen >= winRMMaxInlinePowerShellCommandLen
+}
+
+// copyBytesChunkSize is the maximum raw bytes per upload round trip. Each
+// chunk is base64-encoded and inlined into a PowerShell script which is then
+// UTF-16LE + base64 encoded for -EncodedCommand. The WinRM shell (cmd.exe)
+// enforces an ~8 KB command-line limit, so payloads above ~1.5 KB trigger
+// "command line is too long". 1536 bytes leaves a comfortable margin.
+const copyBytesChunkSize = 1536
+
 func (t *WinRMTarget) copyBytes(ctx context.Context, data []byte, dst string) error {
-	script, err := powershellJSONVar("path", dst)
+	pathVar, err := powershellJSONVar("path", dst)
 	if err != nil {
 		return err
 	}
-	if _, err := t.runPS(ctx, script+`
+
+	if len(data) <= copyBytesChunkSize {
+		// Single round trip: create parent directory and write all bytes at once.
+		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
+		encoded := base64.StdEncoding.EncodeToString(data)
+		_, err = t.runPSDirect(ctx, pathVar+fmt.Sprintf(`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String('%s'))
+`, encoded))
+		return err
+	}
+
+	if _, err := t.runPSDirect(ctx, pathVar+`
 $dir = Split-Path -Parent $path
 if ($dir) {
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -238,9 +316,8 @@ if ($dir) {
 		return err
 	}
 
-	const chunkSize = 24 * 1024
-	for start := 0; start < len(data); start += chunkSize {
-		end := min(start+chunkSize, len(data))
+	for start := 0; start < len(data); start += copyBytesChunkSize {
+		end := min(start+copyBytesChunkSize, len(data))
 		encoded := base64.StdEncoding.EncodeToString(data[start:end])
 		appendScript, err := powershellJSONVar("path", dst)
 		if err != nil {
@@ -249,7 +326,7 @@ if ($dir) {
 		// encoded is safe to interpolate directly into a single-quoted PS string:
 		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
 		// All other parameters use powershellJSONVar for injection safety.
-		if _, err := t.runPS(ctx, appendScript+fmt.Sprintf(`
+		if _, err := t.runPSDirect(ctx, appendScript+fmt.Sprintf(`
 $bytes = [Convert]::FromBase64String('%s')
 $stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
 try {

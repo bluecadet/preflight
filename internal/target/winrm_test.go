@@ -56,14 +56,23 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 }
 
 func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
+	var sawRunCmd bool
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			if !strings.Contains(command, "Start-Process @start") {
-				t.Fatalf("expected become wrapper, got %q", command)
+			switch {
+			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
+			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
+			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
 			}
-			if !strings.Contains(command, "PSCredential") {
-				t.Fatalf("expected credential creation, got %q", command)
+			return "applied", "", 0, nil
+		},
+		runCmd: func(_ context.Context, command string) (string, string, int, error) {
+			sawRunCmd = true
+			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
+				t.Fatalf("unexpected runCmd command %q", command)
 			}
 			return "applied", "", 0, nil
 		},
@@ -85,14 +94,29 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected StatusChanged, got %q", result.Status)
 	}
+	if !sawRunCmd {
+		t.Fatalf("expected staged command execution for become user")
+	}
 }
 
 func TestWinRMTarget_ExecuteShellWithBecomeSystem(t *testing.T) {
+	var sawRunCmd bool
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			if !strings.Contains(command, "New-ScheduledTaskPrincipal -UserId 'SYSTEM'") {
-				t.Fatalf("expected SYSTEM scheduled task wrapper, got %q", command)
+			switch {
+			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
+			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
+			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+			}
+			return "applied", "", 0, nil
+		},
+		runCmd: func(_ context.Context, command string) (string, string, int, error) {
+			sawRunCmd = true
+			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
+				t.Fatalf("unexpected runCmd command %q", command)
 			}
 			return "applied", "", 0, nil
 		},
@@ -112,6 +136,38 @@ func TestWinRMTarget_ExecuteShellWithBecomeSystem(t *testing.T) {
 	}
 	if result.Status != StatusChanged {
 		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+	if !sawRunCmd {
+		t.Fatalf("expected staged command execution for become system")
+	}
+}
+
+func TestBuildWindowsCredentialRunnerContainsRunAsWrapper(t *testing.T) {
+	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
+		User:     "kiosk",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
+	}
+	if !strings.Contains(script, "Start-Process @start") {
+		t.Fatalf("expected runas wrapper, got %q", script)
+	}
+	if !strings.Contains(script, "PSCredential") {
+		t.Fatalf("expected PSCredential usage, got %q", script)
+	}
+}
+
+func TestBuildWindowsSystemRunnerContainsScheduledTaskWrapper(t *testing.T) {
+	script, err := buildWindowsSystemRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'")
+	if err != nil {
+		t.Fatalf("buildWindowsSystemRunner returned error: %v", err)
+	}
+	if !strings.Contains(script, "New-ScheduledTaskPrincipal -UserId 'SYSTEM'") {
+		t.Fatalf("expected SYSTEM scheduled task wrapper, got %q", script)
+	}
+	if !strings.Contains(script, "Register-ScheduledTask") {
+		t.Fatalf("expected scheduled task registration, got %q", script)
 	}
 }
 
@@ -135,8 +191,8 @@ func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 	if err := tgt.CopyFile(context.Background(), src, "C:\\Temp\\dst.txt"); err != nil {
 		t.Fatalf("CopyFile returned error: %v", err)
 	}
-	if len(scripts) < 2 {
-		t.Fatalf("expected chunked upload scripts, got %d", len(scripts))
+	if len(scripts) < 1 {
+		t.Fatalf("expected upload script, got %d", len(scripts))
 	}
 
 	data, err := tgt.ReadFile(context.Background(), "C:\\Temp\\dst.txt")
@@ -238,6 +294,94 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	}
 	if len(commands) != 2 {
 		t.Fatalf("expected 2 PowerShell invocations, got %d", len(commands))
+	}
+}
+
+func TestWinRMTarget_RunPowerShellScriptFallsBackToTempFileWhenCommandLineTooLong(t *testing.T) {
+	var psCommands []string
+	var cmdCommands []string
+
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			psCommands = append(psCommands, command)
+			switch {
+			case strings.Contains(command, "Write-Output 'oversized'"):
+				return "", "The command line is too long.", 1, nil
+			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
+				return "", "", 0, nil
+			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+				return "", "", 0, nil
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+				return "", "", 0, nil
+			}
+		},
+		runCmd: func(_ context.Context, command string) (string, string, int, error) {
+			cmdCommands = append(cmdCommands, command)
+			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
+				t.Fatalf("unexpected runCmd command %q", command)
+			}
+			return "oversized-ok", "", 0, nil
+		},
+	}
+
+	out, err := tgt.RunPowerShellScript(context.Background(), "Write-Output 'oversized'")
+	if err != nil {
+		t.Fatalf("RunPowerShellScript returned error: %v", err)
+	}
+	if out != "oversized-ok" {
+		t.Fatalf("expected fallback output, got %q", out)
+	}
+	if len(cmdCommands) != 1 {
+		t.Fatalf("expected 1 runCmd invocation, got %d", len(cmdCommands))
+	}
+	if len(psCommands) < 3 {
+		t.Fatalf("expected initial run, upload, and cleanup scripts; got %d", len(psCommands))
+	}
+}
+
+func TestWinRMTarget_RunPowerShellScriptProactivelyStagesLargeScripts(t *testing.T) {
+	var psCommands []string
+	var cmdCommands []string
+
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			psCommands = append(psCommands, command)
+			switch {
+			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
+				return "", "", 0, nil
+			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
+				return "", "", 0, nil
+			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+				return "", "", 0, nil
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+				return "", "", 0, nil
+			}
+		},
+		runCmd: func(_ context.Context, command string) (string, string, int, error) {
+			cmdCommands = append(cmdCommands, command)
+			return "staged-ok", "", 0, nil
+		},
+	}
+
+	largeScript := strings.Repeat("Write-Output 'oversized'\n", 200)
+	out, err := tgt.RunPowerShellScript(context.Background(), largeScript)
+	if err != nil {
+		t.Fatalf("RunPowerShellScript returned error: %v", err)
+	}
+	if out != "staged-ok" {
+		t.Fatalf("expected staged output, got %q", out)
+	}
+	if len(cmdCommands) != 1 {
+		t.Fatalf("expected 1 runCmd invocation, got %d", len(cmdCommands))
+	}
+	for _, command := range psCommands {
+		if strings.Contains(command, largeScript) {
+			t.Fatalf("expected large script to avoid direct RunPSWithContext call")
+		}
 	}
 }
 
