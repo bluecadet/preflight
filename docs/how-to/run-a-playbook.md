@@ -99,6 +99,7 @@ Tag filtering happens in the runner after the plan has been built, so skipped ta
 Pick one host, one group, or several selectors:
 
 ```bash
+preflight check playbooks/lobby.yml --inventory inventory.yml
 preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
 preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
 preflight apply playbooks/lobby.yml --target lobby --target gallery --inventory inventory.yml
@@ -109,7 +110,9 @@ Selector rules:
 - A selector may be a host name, a group name, or `all`.
 - Repeating `--target` builds a union.
 - Hosts are deduplicated by name.
-- With no `--target`, Preflight uses a local target.
+- With inventory available, no `--target` means all inventory hosts.
+- Without inventory, no `--target` means the local target.
+- Use `--target local` to force a local run when inventory is present.
 
 For a complete inventory example, see [Run a playbook against remote hosts](./remote-execution.md).
 

@@ -8,8 +8,8 @@ These flags are defined on the individual commands that use them.
 
 | Flag | Short | Meaning |
 | --- | --- | --- |
-| `--target` | `-t` | Host or group selector from inventory. Repeat to build a union. |
-| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` when inventory is needed. |
+| `--target` | `-t` | Host or group selector from inventory. Repeat to build a union. When inventory is available and this flag is omitted, commands target all inventory hosts. |
+| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` when present. |
 | `--var key=value` | `-e` | Set a variable override. Later values win. |
 | `--tags` |  | Run only tasks that have any of the listed tags. |
 | `--skip-tags` |  | Skip tasks that have any of the listed tags. |
@@ -25,8 +25,9 @@ When a command supports inventory-backed execution:
 - A selector may be a host name, a group name, or `all`.
 - Repeating `--target` builds a union of matches.
 - Hosts are deduplicated by name.
-- Omitting `--target` resolves a local target.
-- Using only `local` or `localhost` also resolves a local target.
+- Omitting `--target` resolves all hosts from the selected inventory when `--inventory` is set or `./inventory.yml` is discovered.
+- Without an inventory file, omitting `--target` resolves a local target.
+- Using only `local` or `localhost` forces a local target even when inventory is available.
 
 ## Top-Level Commands
 
@@ -38,6 +39,7 @@ Examples:
 
 ```bash
 preflight apply playbooks/lobby.yml
+preflight apply playbooks/lobby.yml --inventory inventory.yml
 preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
@@ -59,6 +61,7 @@ Run the same execution pipeline as `apply`, but stop after `Check()` paths and r
 
 ```bash
 preflight check playbooks/lobby.yml
+preflight check playbooks/lobby.yml --inventory inventory.yml
 preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
@@ -68,6 +71,7 @@ Resolve and print the target-specific execution plan without running tasks.
 
 ```bash
 preflight plan playbooks/lobby.yml
+preflight plan playbooks/lobby.yml --inventory inventory.yml
 preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
@@ -92,6 +96,7 @@ Gather facts for one or more targets through the selected output renderer.
 
 ```bash
 preflight facts
+preflight facts --inventory inventory.yml
 preflight facts local
 preflight facts --target lobby --inventory inventory.yml
 preflight facts lobby-pc-01 --inventory inventory.yml

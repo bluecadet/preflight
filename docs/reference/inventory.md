@@ -69,6 +69,8 @@ Selectors passed through `--target` follow these rules:
 - Hosts are deduplicated by name.
 - The first occurrence wins when the same host is selected more than once.
 
+When a command runs with inventory available and no `--target`, it resolves `all`. Use `--target local` to stay on the initiating machine instead.
+
 ## Derived Runtime Data
 
 During command execution, each resolved host is turned into:

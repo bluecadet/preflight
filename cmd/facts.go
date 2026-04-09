@@ -15,7 +15,7 @@ import (
 
 var factsCmd = &cobra.Command{
 	Use:   "facts [target...]",
-	Short: "Gather facts for one or more targets (default: local) using the selected output format",
+	Short: "Gather facts for one or more targets using the selected output format",
 	Args:  cobra.ArbitraryArgs,
 	RunE:  runFacts,
 }
@@ -54,14 +54,14 @@ func runFacts(cmd *cobra.Command, args []string) error {
 
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	var hosts []targeting.ResolvedHost
-	if len(selectors) == 0 || selectorsAreLocal(selectors) {
+	invPath := inventoryFilePath(cmd, "")
+	if selectorsAreLocal(selectors) || !shouldUseInventory(cmd, invPath, selectors) {
 		registry, _, err := buildModuleRegistry("")
 		if err != nil {
 			return err
 		}
 		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}
 	} else {
-		invPath := inventoryFilePath(cmd, "")
 		inv, projectDir, _, secretsResolver, err := loadInventoryRunContext(invPath)
 		if err != nil {
 			return fmt.Errorf("facts: load inventory %q: %w", invPath, err)
@@ -70,7 +70,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		hosts, err = resolveInventoryHosts(ctx, inv, selectors, registry, secretsResolver, stateFilePath(cmd))
+		hosts, err = resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, secretsResolver, stateFilePath(cmd))
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}

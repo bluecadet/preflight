@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -74,6 +75,98 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 	}
 }
 
+func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
+	playbookPath, inventoryPath := writeTestPlaybookWithInventory(t)
+
+	tests := []struct {
+		name          string
+		run           func(*cobra.Command, []string) error
+		configure     func(*testing.T, *cobra.Command)
+		expectInvCall bool
+	}{
+		{
+			name: "apply with explicit inventory",
+			run:  runApply,
+			configure: func(t *testing.T, cmd *cobra.Command) {
+				t.Helper()
+				if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
+					t.Fatalf("Set inventory: %v", err)
+				}
+			},
+			expectInvCall: true,
+		},
+		{
+			name:          "check with discovered inventory",
+			run:           runCheck,
+			configure:     func(*testing.T, *cobra.Command) {},
+			expectInvCall: true,
+		},
+		{
+			name:          "plan with discovered inventory",
+			run:           runPlan,
+			configure:     func(*testing.T, *cobra.Command) {},
+			expectInvCall: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			oldResolveHosts := resolveInventoryHosts
+			var calls int
+			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+				calls++
+				if !reflect.DeepEqual(selectors, []string{"all"}) {
+					t.Fatalf("unexpected selectors: %#v", selectors)
+				}
+				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
+			}
+			defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+			cmd := newTestCommand()
+			tc.configure(t, cmd)
+
+			if _, err := captureStdout(t, func() error {
+				return tc.run(cmd, []string{playbookPath})
+			}); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if tc.expectInvCall && calls != 1 {
+				t.Fatalf("expected inventory resolution once, got %d", calls)
+			}
+		})
+	}
+}
+
+func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
+	playbookPath, inventoryPath := writeTestPlaybookWithInventory(t)
+
+	oldResolveHosts := resolveInventoryHosts
+	resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver, string) ([]targeting.ResolvedHost, error) {
+		t.Fatal("expected explicit local target to bypass inventory resolution")
+		return nil, nil
+	}
+	defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
+		t.Fatalf("Set inventory: %v", err)
+	}
+	if err := cmd.Flags().Set("target", "local"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+
+	out, err := captureStdout(t, func() error {
+		return runPlan(cmd, []string{playbookPath})
+	})
+	if err != nil {
+		t.Fatalf("runPlan: %v", err)
+	}
+	if !strings.Contains(out, "Target: localhost") {
+		t.Fatalf("expected local target output, got %q", out)
+	}
+}
+
 func TestRunFactsWithInventoryMultipleHostsEmitsPerHostEvents(t *testing.T) {
 	_, inventoryPath := writeTestPlaybookWithInventory(t)
 	cmd := newTestCommand()
@@ -108,6 +201,65 @@ func TestRunFactsWithInventoryMultipleHostsEmitsPerHostEvents(t *testing.T) {
 	out := stdout.String()
 	if !strings.Contains(out, "kiosk-a") || !strings.Contains(out, "kiosk-b") {
 		t.Fatalf("expected per-host facts output, got %q", out)
+	}
+}
+
+func TestRunFactsDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
+	_, inventoryPath := writeTestPlaybookWithInventory(t)
+	dir := filepath.Dir(inventoryPath)
+
+	tests := []struct {
+		name      string
+		configure func(*testing.T, *cobra.Command)
+	}{
+		{
+			name: "explicit inventory",
+			configure: func(t *testing.T, cmd *cobra.Command) {
+				t.Helper()
+				if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
+					t.Fatalf("Set inventory: %v", err)
+				}
+			},
+		},
+		{
+			name: "discovered inventory",
+			configure: func(t *testing.T, cmd *cobra.Command) {
+				t.Helper()
+				restore := chdirForTest(t, dir)
+				t.Cleanup(restore)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			oldResolveHosts := resolveInventoryHosts
+			var calls int
+			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+				calls++
+				if !reflect.DeepEqual(selectors, []string{"all"}) {
+					t.Fatalf("unexpected selectors: %#v", selectors)
+				}
+				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
+			}
+			defer func() { resolveInventoryHosts = oldResolveHosts }()
+
+			cmd := newTestCommand()
+			tc.configure(t, cmd)
+
+			out, err := captureStdout(t, func() error {
+				return runFacts(cmd, nil)
+			})
+			if err != nil {
+				t.Fatalf("runFacts: %v", err)
+			}
+			if calls != 1 {
+				t.Fatalf("expected inventory resolution once, got %d", calls)
+			}
+			if !strings.Contains(out, "kiosk-a") || !strings.Contains(out, "kiosk-b") {
+				t.Fatalf("expected per-host facts output, got %q", out)
+			}
+		})
 	}
 }
 

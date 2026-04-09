@@ -3,12 +3,12 @@ package cmd
 import "github.com/spf13/cobra"
 
 func addTargetingFlags(cmd *cobra.Command) {
-	cmd.Flags().StringSliceP("target", "t", nil, "target host(s) or group(s) from inventory")
-	cmd.Flags().String("inventory", "", "path to inventory file (default: ./inventory.yml)")
+	cmd.Flags().StringSliceP("target", "t", nil, "target host(s) or group(s) from inventory (default: all inventory hosts when available)")
+	cmd.Flags().String("inventory", "", "path to inventory file (default: ./inventory.yml when present)")
 }
 
 func addInventoryFlag(cmd *cobra.Command) {
-	cmd.Flags().String("inventory", "", "path to inventory file (default: ./inventory.yml)")
+	cmd.Flags().String("inventory", "", "path to inventory file (default: ./inventory.yml when present)")
 }
 
 func addVarFlags(cmd *cobra.Command) {

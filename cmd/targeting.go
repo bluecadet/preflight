@@ -37,24 +37,28 @@ func resolveRunHosts(
 	resolver *secrets.Resolver,
 ) ([]targeting.ResolvedHost, error) {
 	selectors, _ := cmd.Flags().GetStringSlice("target")
-	if len(selectors) == 0 {
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}, nil
-	}
 	if selectorsAreLocal(selectors) {
 		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}, nil
 	}
 
 	invPath := inventoryFilePath(cmd, projectDir)
+	if !shouldUseInventory(cmd, invPath, selectors) {
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}, nil
+	}
+
 	inv, err := inventory.ParseFile(invPath)
 	if err != nil {
 		return nil, fmt.Errorf("load inventory %q: %w", invPath, err)
 	}
 
-	hosts, err := resolveInventoryHosts(ctx, inv, selectors, registry, resolver, stateFilePath(cmd))
+	hosts, err := resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, resolver, stateFilePath(cmd))
 	if err != nil {
 		return nil, err
 	}
 	if len(hosts) == 0 {
+		if len(selectors) == 0 {
+			return nil, fmt.Errorf("no hosts found in inventory %q", invPath)
+		}
 		return nil, fmt.Errorf("no hosts resolved from --target")
 	}
 	return hosts, nil
@@ -84,6 +88,39 @@ func selectorsAreLocal(selectors []string) bool {
 		}
 	}
 	return true
+}
+
+func shouldUseInventory(cmd *cobra.Command, invPath string, selectors []string) bool {
+	if len(selectors) > 0 {
+		return true
+	}
+	if inventoryFlagChanged(cmd) {
+		return true
+	}
+	return inventoryFileExists(invPath)
+}
+
+func defaultInventorySelectors(selectors []string) []string {
+	if len(selectors) == 0 {
+		return []string{"all"}
+	}
+	return selectors
+}
+
+func inventoryFlagChanged(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	flag := cmd.Flags().Lookup("inventory")
+	return flag != nil && flag.Changed
+}
+
+func inventoryFileExists(path string) bool {
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
 
 func runHosts(

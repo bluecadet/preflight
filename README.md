@@ -87,10 +87,13 @@ preflight action list
 Inventory-backed examples:
 
 ```bash
+preflight apply playbooks/lobby.yml --inventory inventory.yml
 preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
 preflight facts --target lobby --inventory inventory.yml
 ```
+
+When an inventory is available, omitting `--target` fans out to all inventory hosts. Use `--target local` to force a local-only run.
 
 Air-gapped flow:
 

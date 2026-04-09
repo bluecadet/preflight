@@ -68,16 +68,18 @@ This catches misspelled selectors and inventory shape problems early.
 Inspect the plan for a group:
 
 ```bash
+preflight plan playbooks/lobby.yml --inventory inventory.yml
 preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
-For multiple resolved hosts, `plan` prints one section per host. It still stays pure, so target facts are not gathered yet.
+Omitting `--target` resolves the full inventory. For multiple resolved hosts, `plan` prints one section per host. It still stays pure, so target facts are not gathered yet.
 
 ## 4. Dry-Run Real Execution
 
 Use `check` before you apply:
 
 ```bash
+preflight check playbooks/lobby.yml --inventory inventory.yml
 preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
 ```
 
@@ -89,6 +91,12 @@ This is the safest place to verify:
 - host selection and concurrency behavior
 
 ## 5. Apply To Selected Hosts
+
+Run every host in the inventory:
+
+```bash
+preflight apply playbooks/lobby.yml --inventory inventory.yml
+```
 
 Run one group:
 
@@ -134,6 +142,12 @@ Facts for one host:
 
 ```bash
 preflight facts lobby-pc-01 --inventory inventory.yml
+```
+
+Facts for the full inventory:
+
+```bash
+preflight facts --inventory inventory.yml
 ```
 
 Facts for a group:
