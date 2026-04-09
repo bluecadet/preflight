@@ -112,9 +112,10 @@ type tuiModel struct {
 	skippedCount int
 
 	// per-host final recap (from EventPlayEnd)
-	recaps      []hostRecap
-	failedTasks []failedTask // accumulated for final summary
-	done        bool
+	recaps       []hostRecap
+	failedTasks  []failedTask // accumulated for final summary
+	staticBlocks []string
+	done         bool
 }
 
 type tuiEventMsg struct{ event Event }
@@ -311,7 +312,8 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 		for _, k := range keys {
 			fmt.Fprintf(&b, "  %s: %v\n", k, e.Facts[k])
 		}
-		return m, tea.Println(b.String())
+		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		return m, nil
 
 	case PlanEvent:
 		target := e.Target
@@ -332,7 +334,8 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 			}
 			b.WriteString("\n")
 		}
-		return m, tea.Println(b.String())
+		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		return m, nil
 
 	case StateEvent:
 		var b strings.Builder
@@ -351,7 +354,8 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 				fmt.Fprintf(&b, "%-12s %-28s %-16s %s\n", c.Status, c.TaskName, c.Module, c.RecordedStatus)
 			}
 		}
-		return m, tea.Println(b.String())
+		m.staticBlocks = append(m.staticBlocks, strings.TrimRight(b.String(), "\n"))
+		return m, nil
 	}
 
 	return m, nil
@@ -364,6 +368,9 @@ func (m tuiModel) applyEvent(e Event) (tuiModel, tea.Cmd) {
 // When done, renders the final summary in place of the live zone.
 func (m tuiModel) View() string {
 	if m.done {
+		if len(m.recaps) == 0 && len(m.staticBlocks) > 0 {
+			return strings.Join(m.staticBlocks, "\n\n") + "\n"
+		}
 		return m.renderFinalSummary()
 	}
 
@@ -379,6 +386,9 @@ func (m tuiModel) View() string {
 
 	// Nothing to show yet.
 	if len(running) == 0 && m.total() == 0 {
+		if len(m.staticBlocks) > 0 {
+			return strings.Join(m.staticBlocks, "\n\n") + "\n"
+		}
 		return ""
 	}
 

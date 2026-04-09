@@ -452,7 +452,7 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().StringSlice("skip-tags", nil, "")
 	cmd.Flags().Bool("check", false, "")
 	cmd.Flags().BoolP("verbose", "v", false, "")
-	cmd.Flags().String("output", "text", "")
+	cmd.Flags().String("output", "", "")
 	cmd.Flags().Int("concurrency", 0, "")
 	cmd.Flags().String("timeout", "", "")
 	cmd.Flags().String("bundle-output-dir", "", "")

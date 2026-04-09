@@ -21,6 +21,7 @@ import (
 )
 
 var newActionChain = action.DefaultChain
+var detectOutputFormat = output.AutoDetect
 
 // parseVars converts a slice of "key=value" strings into a map.
 // Values without "=" are stored as empty strings.
@@ -41,14 +42,20 @@ func parseVars(varFlags []string) map[string]any {
 // When the flag is not set (or is the default "text"), AutoDetect is called to
 // automatically use FormatTUI when running interactively.
 func getOutputFormat(cmd *cobra.Command) output.Format {
-	f, _ := cmd.Flags().GetString("output")
-	switch output.Format(f) {
+	flag := cmd.Flags().Lookup("output")
+	if flag == nil || !flag.Changed {
+		return detectOutputFormat(os.Stdout)
+	}
+
+	switch output.Format(flag.Value.String()) {
 	case output.FormatJSON:
-		return output.Format(f)
+		return output.FormatJSON
 	case output.FormatTUI:
 		return output.FormatTUI
+	case output.FormatText:
+		return output.FormatText
 	default:
-		return output.AutoDetect(os.Stdout)
+		return output.FormatText
 	}
 }
 
