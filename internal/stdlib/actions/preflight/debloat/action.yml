@@ -1,21 +1,250 @@
 name: preflight/debloat
-version: "1.0.0"
-description: Remove common Windows bloatware
+version: "1.1.0"
+description: Remove common Windows bloatware and disable telemetry, Copilot, and AI features
 author: preflight
 
 tasks:
-  - name: Remove Windows bloatware
+  - name: Remove Microsoft bloatware
     remove_appx_packages:
       packages:
-        - name: Microsoft.Xbox*
+        - name: Clipchamp.Clipchamp
           scope: both
-        - name: Microsoft.549981C3F5F10
+        - name: Microsoft.3DBuilder
+          scope: both
+        - name: Microsoft.549981C3F5F10 # Cortana
+          scope: both
+        - name: Microsoft.BingFinance
+          scope: both
+        - name: Microsoft.BingFoodAndDrink
+          scope: both
+        - name: Microsoft.BingHealthAndFitness
           scope: both
         - name: Microsoft.BingNews
           scope: both
+        - name: Microsoft.BingSports
+          scope: both
+        - name: Microsoft.BingTranslator
+          scope: both
+        - name: Microsoft.BingTravel
+          scope: both
         - name: Microsoft.BingWeather
           scope: both
-        - name: MicrosoftTeams*
+        - name: Microsoft.Copilot
+          scope: both
+        - name: Microsoft.Getstarted
+          scope: both
+        - name: Microsoft.Messaging
+          scope: both
+        - name: Microsoft.Microsoft3DViewer
+          scope: both
+        - name: Microsoft.MicrosoftJournal
+          scope: both
+        - name: Microsoft.MicrosoftOfficeHub
+          scope: both
+        - name: Microsoft.MicrosoftPowerBIForWindows
+          scope: both
+        - name: Microsoft.MicrosoftSolitaireCollection
+          scope: both
+        - name: Microsoft.MicrosoftStickyNotes
+          scope: both
+        - name: Microsoft.MixedReality.Portal
+          scope: both
+        - name: Microsoft.NetworkSpeedTest
+          scope: both
+        - name: Microsoft.News
+          scope: both
+        - name: Microsoft.Office.OneNote
+          scope: both
+        - name: Microsoft.Office.Sway
+          scope: both
+        - name: Microsoft.OneConnect
+          scope: both
+        - name: Microsoft.PCManager
+          scope: both
+        - name: Microsoft.PowerAutomateDesktop
+          scope: both
+        - name: Microsoft.Print3D
           scope: both
         - name: Microsoft.SkypeApp
           scope: both
+        - name: Microsoft.Todos
+          scope: both
+        - name: Microsoft.Windows.AIHub
+          scope: both
+        - name: Microsoft.Windows.DevHome
+          scope: both
+        - name: Microsoft.WindowsAlarms
+          scope: both
+        - name: Microsoft.WindowsFeedbackHub
+          scope: both
+        - name: Microsoft.WindowsMaps
+          scope: both
+        - name: Microsoft.WindowsSoundRecorder
+          scope: both
+        - name: Microsoft.Xbox*
+          scope: both
+        - name: Microsoft.ZuneVideo
+          scope: both
+        - name: MicrosoftCorporationII.MicrosoftFamily
+          scope: both
+        - name: MicrosoftCorporationII.QuickAssist
+          scope: both
+        - name: MicrosoftTeams*
+          scope: both
+        - name: MSTeams
+          scope: both
+
+  - name: Remove third-party bloatware
+    remove_appx_packages:
+      packages:
+        - name: ACGMediaPlayer
+          scope: both
+        - name: AdobeSystemsIncorporated.AdobePhotoshopExpress
+          scope: both
+        - name: Amazon.com.Amazon
+          scope: both
+        - name: AmazonVideo.PrimeVideo
+          scope: both
+        - name: Asphalt8Airborne
+          scope: both
+        - name: CaesarsSlotsFreeCasino
+          scope: both
+        - name: COOKINGFEVER
+          scope: both
+        - name: Disney
+          scope: both
+        - name: DisneyMagicKingdoms
+          scope: both
+        - name: Duolingo-LearnLanguagesforFree
+          scope: both
+        - name: Facebook
+          scope: both
+        - name: FarmVille2CountryEscape
+          scope: both
+        - name: fitbit
+          scope: both
+        - name: Flipboard
+          scope: both
+        - name: HiddenCity
+          scope: both
+        - name: HULULLC.HULUPLUS
+          scope: both
+        - name: iHeartRadio
+          scope: both
+        - name: Instagram
+          scope: both
+        - name: king.com.*
+          scope: both
+        - name: LinkedInforWindows
+          scope: both
+        - name: MarchofEmpires
+          scope: both
+        - name: Netflix
+          scope: both
+        - name: NYTCrossword
+          scope: both
+        - name: PandoraMediaInc
+          scope: both
+        - name: PicsArt-PhotoStudio
+          scope: both
+        - name: Plex
+          scope: both
+        - name: Shazam
+          scope: both
+        - name: Sidia.LiveWallpaper
+          scope: both
+        - name: SlingTV
+          scope: both
+        - name: Spotify
+          scope: both
+        - name: TikTok
+          scope: both
+        - name: TuneInRadio
+          scope: both
+        - name: Twitter
+          scope: both
+        - name: Viber
+          scope: both
+        - name: WinZipUniversal
+          scope: both
+
+  - name: Disable telemetry
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection'
+      values:
+        AllowTelemetry: 0
+
+  - name: Disable activity history
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
+      values:
+        PublishUserActivities: 0
+
+  - name: Disable advertising ID
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo'
+      values:
+        Enabled: 0
+
+  - name: Disable tailored experiences
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+      values:
+        TailoredExperiencesWithDiagnosticDataEnabled: 0
+
+  - name: Disable feedback prompts
+    registry:
+      path: 'HKCU:\SOFTWARE\Microsoft\Siuf\Rules'
+      values:
+        NumberOfSIUFInPeriod: 0
+
+  - name: Disable Copilot (user policy)
+    registry:
+      path: 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'
+      values:
+        TurnOffWindowsCopilot: 1
+
+  - name: Disable Copilot (system policy)
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'
+      values:
+        TurnOffWindowsCopilot: 1
+
+  - name: Disable AI Recall
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'
+      values:
+        DisableAIDataAnalysis: 1
+
+  - name: Disable Bing and Cortana in search
+    registry:
+      path: 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'
+      values:
+        DisableSearchBoxSuggestions: 1
+
+  - name: Disable Cortana (system policy)
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'
+      values:
+        AllowCortana: 0
+        CortanaConsent: 0
+
+  - name: Disable Copilot and Chat taskbar buttons
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+      values:
+        ShowCopilotButton: 0
+        TaskbarMn: 0
+        Start_TrackProgs: 0
+
+  - name: Disable delivery optimization
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'
+      values:
+        DODownloadMode: 0
+
+  - name: Disable Game DVR
+    registry:
+      path: 'HKCU:\System\GameConfigStore'
+      values:
+        GameDVR_Enabled: 0
