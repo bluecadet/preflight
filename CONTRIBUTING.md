@@ -176,6 +176,7 @@ When changing plugin behavior:
 
 - keep built-in module names reserved
 - preserve the `Check` then `Apply` execution contract
+- update the plugin author guide in `docs/how-to/write-a-plugin.md`
 - update the plugin docs in `docs/how-to/use-plugin-modules.md` and `docs/reference/plugins.md`
 - test both normal execution and staged bundle behavior when the change affects discovery or runtime packaging
 

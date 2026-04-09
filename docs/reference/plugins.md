@@ -75,6 +75,7 @@ The bundled Go SDK lives in [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/
 Plugin authors implement:
 
 - `Name() string`
+- `Version() string`
 - `Check(args map[string]any) (CheckResult, error)`
 - `Apply(args map[string]any) (ApplyResult, error)`
 
@@ -98,6 +99,7 @@ Staging fails if the plugin cannot be initialized or copied.
 
 ## Related Docs
 
+- [Write a plugin](../how-to/write-a-plugin.md)
 - [Use plugin modules in playbooks](../how-to/use-plugin-modules.md)
 - [Bundle reference](./bundles.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

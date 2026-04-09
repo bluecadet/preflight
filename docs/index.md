@@ -14,6 +14,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 | Choose a deployment pattern for locked-down networks | [Deploy across restricted networks](./explanation/restricted-network-deployment.md) |
 | Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
 | Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
+| Write and distribute a custom plugin module | [Write a plugin](./how-to/write-a-plugin.md) |
 | Use external plugin modules | [Use plugin modules in playbooks](./how-to/use-plugin-modules.md) |
 | Reuse tasks as a custom action | [Write an action](./how-to/write-an-action.md) |
 | Browse the embedded `preflight/` action library | [Embedded stdlib action reference](./reference/stdlib-actions.md) |
@@ -33,6 +34,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md)
 - [Manage secrets](./how-to/manage-secrets.md)
 - [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md)
+- [Write a plugin](./how-to/write-a-plugin.md)
 - [Use plugin modules in playbooks](./how-to/use-plugin-modules.md)
 - [Write an action](./how-to/write-an-action.md)
 - [Inspect state and diffs](./how-to/inspect-state-and-diff.md)

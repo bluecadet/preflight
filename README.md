@@ -110,6 +110,7 @@ The full docs live under [`docs/`](docs/):
 - [Validate a WinRM connection from macOS](docs/how-to/validate-winrm-from-macos.md)
 - [Deploy across restricted networks](docs/explanation/restricted-network-deployment.md)
 - [Manage secrets](docs/how-to/manage-secrets.md)
+- [Write a plugin](docs/how-to/write-a-plugin.md)
 - [Write an action](docs/how-to/write-an-action.md)
 - [CLI reference](docs/reference/cli.md)
 - [Embedded stdlib action reference](docs/reference/stdlib-actions.md)
