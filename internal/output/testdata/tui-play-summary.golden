@@ -1,0 +1,15 @@
+──────────────────────────────────────────────────
+  ▶  gallery rollout
+
+  ✓  lobby-pc-01  Preflight check
+  ◆  lobby-pc-01  Install runtime
+  ✗  lobby-pc-01  Smoke test
+  –  lobby-pc-01  Cleanup  (dependency-failed)
+──────────────────────────────────────────────────
+  ✗  gallery rollout  ·  1 host  <elapsed>
+
+  ✗  lobby-pc-01  ✓ 1  ◆ 1  ✗ 1  – 1
+      ✗  Smoke test
+         timeout
+         Ping kiosk app
+         Timed out waiting for response

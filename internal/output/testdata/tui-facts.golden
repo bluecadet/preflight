@@ -1,0 +1,4 @@
+Facts for lobby-pc-01:
+  arch: amd64
+  hostname: LOBBY-PC-01
+  platform: windows
