@@ -1,0 +1,61 @@
+package output
+
+import "github.com/charmbracelet/lipgloss"
+
+// maxLiveLines is the threshold above which output previews are hidden (dense mode).
+const maxLiveLines = 8
+
+// maxTaskPreviewLines is the number of recent output lines shown for an active task.
+const maxTaskPreviewLines = 3
+
+var (
+	tsOK        = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})
+	tsChanged   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "3", Dark: "11"})
+	tsFailed    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "1", Dark: "9"})
+	tsSkipped   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsMuted     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsBold      = lipgloss.NewStyle().Bold(true)
+	tsAction    = lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	tsSpin      = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
+	tsDivider   = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	tsOutput    = lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Italic(true)
+	tsElapsed   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	tsCardTitle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.AdaptiveColor{Light: "4", Dark: "12"})
+	tsLabel     = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Bold(true)
+	tsKey       = lipgloss.NewStyle().Foreground(lipgloss.Color("246"))
+	tsValue     = lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
+	tsTableHead = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("252"))
+	tsTableRule = lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+
+	tsRowInset       = lipgloss.NewStyle().PaddingLeft(2)
+	tsCardTitleInset = lipgloss.NewStyle().PaddingLeft(2)
+	tsCardBodyInset  = lipgloss.NewStyle().PaddingLeft(2)
+)
+
+// tsHostPalette is the ordered set of colors cycled through for host labels.
+var tsHostPalette = []lipgloss.Style{
+	lipgloss.NewStyle().Foreground(lipgloss.Color("109")).Bold(true), // steel blue
+	lipgloss.NewStyle().Foreground(lipgloss.Color("150")).Bold(true), // sage green
+	lipgloss.NewStyle().Foreground(lipgloss.Color("179")).Bold(true), // gold
+	lipgloss.NewStyle().Foreground(lipgloss.Color("183")).Bold(true), // lavender
+	lipgloss.NewStyle().Foreground(lipgloss.Color("73")).Bold(true),  // teal
+	lipgloss.NewStyle().Foreground(lipgloss.Color("174")).Bold(true), // salmon
+	lipgloss.NewStyle().Foreground(lipgloss.Color("110")).Bold(true), // cornflower
+	lipgloss.NewStyle().Foreground(lipgloss.Color("222")).Bold(true), // wheat
+}
+
+// tsIcon returns a colored glyph representing a completed task status.
+func tsIcon(status string) string {
+	switch status {
+	case "ok":
+		return tsOK.Render("✓")
+	case "changed":
+		return tsChanged.Render("◆")
+	case "failed":
+		return tsFailed.Render("✗")
+	case "skipped":
+		return tsSkipped.Render("–")
+	default:
+		return " "
+	}
+}
