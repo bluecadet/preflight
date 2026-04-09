@@ -1,6 +1,6 @@
-.PHONY: all build-windows-amd64 build-windows-arm64 build-local test vet
+.PHONY: all build-windows-amd64 build-windows-arm64 build-local test vet install
 
-all: build-windows-amd64 build-windows-arm64
+windows: build-windows-amd64 build-windows-arm64
 
 build-windows-amd64:
 	GOOS=windows GOARCH=amd64 go build -o dist/preflight-windows-amd64.exe .
@@ -10,6 +10,9 @@ build-windows-arm64:
 
 build-local:
 	go build -o dist/preflight .
+
+install: build-local
+	go install
 
 test:
 	go test ./...
