@@ -10,6 +10,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 | Install the CLI safely | [Install Preflight](./how-to/install-preflight.md) |
 | Run, dry-run, or inspect a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
+| Validate a Windows host from a Mac before adding it to inventory | [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md) |
 | Choose a deployment pattern for locked-down networks | [Deploy across restricted networks](./explanation/restricted-network-deployment.md) |
 | Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
 | Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
@@ -29,6 +30,7 @@ Preflight is a Windows-first configuration management CLI for exhibit PCs. The d
 - [Install Preflight](./how-to/install-preflight.md)
 - [Run a playbook](./how-to/run-a-playbook.md)
 - [Run a playbook against remote hosts](./how-to/remote-execution.md)
+- [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md)
 - [Manage secrets](./how-to/manage-secrets.md)
 - [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md)
 - [Use plugin modules in playbooks](./how-to/use-plugin-modules.md)

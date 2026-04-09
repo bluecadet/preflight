@@ -13,6 +13,8 @@ If you want the local flow first, use [Run a playbook](./run-a-playbook.md).
 
 If the machine running Preflight cannot open controller-initiated connections to the targets, read [Deploy across restricted networks](../explanation/restricted-network-deployment.md) before choosing a transport.
 
+If you are on macOS and want to validate WinRM before you commit a host to your real inventory, use [Validate a WinRM connection from macOS](./validate-winrm-from-macos.md).
+
 ## 1. Define Inventory Entries
 
 Example `inventory.yml`:
@@ -49,6 +51,7 @@ Transport guidance:
 - Use `winrm` for Windows-native configuration work.
 - Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules.
 - Use `local` if you want inventory-driven selection but execution should still happen on the initiating machine.
+- For a brand-new WinRM target, validate the endpoint and credentials with a scratch inventory plus `preflight facts` before you wire the host into your project inventory.
 
 ## 2. Verify Host Resolution
 
@@ -165,6 +168,13 @@ Check the host entry first:
 - `https`
 
 If the password is a secret reference, make sure the initiating machine can decrypt it through the project’s `age` identity.
+
+If you are validating from a Mac, work through [Validate a WinRM connection from macOS](./validate-winrm-from-macos.md). The short version is:
+
+- `nc` only proves that something is listening on the port
+- `curl http://<host>:5985/wsman` returning `405` with `Allow: POST` is a good sign that the endpoint is really WinRM
+- `preflight facts <host> --inventory ... --output json` is the first command that proves authentication plus remote PowerShell execution
+- the current Preflight WinRM path is easiest to validate with a dedicated local Windows account
 
 ### SSH connects but a task still fails
 
