@@ -80,7 +80,7 @@ That separation is about more than code organization.
 - **Stage** is packaging for disconnected or delayed execution.
 - **Apply** is the only phase that should mutate machines.
 
-This is especially valuable in museum and gallery environments, where deployment often crosses network boundaries and operational windows are tight.
+This is especially valuable in environments where deployment often crosses network boundaries and operational windows are tight, such as museums, galleries, digital signage, and other managed-endpoint fleets.
 
 ## Why The Embedded Stdlib Ships With The Binary
 

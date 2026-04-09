@@ -1,6 +1,6 @@
 # Preflight Docs
 
-Preflight is a Windows-first configuration management CLI for exhibit PCs. The docs set is organized with Diataxis so readers can move quickly between learning, task execution, exact lookup, and architectural reasoning.
+Preflight is a Windows-first configuration management CLI for managed endpoints such as kiosks, signage, exhibit PCs, and other dedicated systems. The docs set is organized with Diataxis so readers can move quickly between learning, task execution, exact lookup, and architectural reasoning.
 
 ## Start Here
 

@@ -1,6 +1,6 @@
 # Preflight
 
-Preflight is a Windows-first configuration management CLI for exhibit PCs in museum and gallery environments. It compiles to a single static binary and is designed around idempotent modules, reusable YAML actions, and explicit execution phases.
+Preflight is a Windows-first configuration management CLI for managed endpoints such as kiosks, signage, exhibit PCs, and other dedicated systems. It compiles to a single static binary and is designed around idempotent modules, reusable YAML actions, and explicit execution phases.
 
 ```bash
 preflight apply playbooks/lobby.yml

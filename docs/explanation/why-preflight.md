@@ -1,6 +1,6 @@
 # Why Use Preflight (And When Not To)
 
-Preflight exists for a specific deployment problem: repeatable Windows configuration in environments where reliability, low ceremony, and offline-friendly workflows matter.
+Preflight exists for a practical deployment problem: repeatable Windows configuration in environments where reliability, low ceremony, and offline-friendly workflows matter.
 
 This page answers a practical question:
 
@@ -63,7 +63,7 @@ Why choose Ansible instead:
 
 These tools solve adjacent but not identical problems.
 
-Preflight advantages in its target niche:
+Preflight advantages in the environments it targets:
 
 - **Project-local declarative config:** playbooks, actions, and encrypted secrets live with the project repo.
 - **Portable execution:** same configuration can run locally, against remote targets, or from staged bundles.
@@ -88,13 +88,13 @@ Preflight gives a clearer operational model:
 - `stage` makes offline handoff explicit
 - `apply` runs the idempotent execution contract on target contexts
 
-That separation is useful when deployment windows are tight and operators need confidence before touching exhibit machines.
+That separation is useful when deployment windows are tight and operators need confidence before touching managed endpoints.
 
 ## Decision Heuristics
 
 Choose Preflight when most of these are true:
 
-- your critical targets are Windows exhibit or kiosk-like endpoints
+- your critical targets are Windows kiosks, signage systems, exhibit PCs, or other managed endpoints
 - you need repeatable, idempotent machine configuration from versioned YAML
 - you want dry-run behavior that reflects real execution logic
 - your environment benefits from offline-ready staging
