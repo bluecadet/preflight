@@ -193,6 +193,15 @@ func TestScheduledTaskCheckScriptUsesExactFolderLookup(t *testing.T) {
 	if !strings.Contains(scheduledTaskCheckScript, "[string]$_.TaskPath -eq $path") {
 		t.Fatalf("expected scheduled task check script to filter exact task path, got %q", scheduledTaskCheckScript)
 	}
+	if !strings.Contains(scheduledTaskCheckScript, "$currentEnabled -ne $enabled") {
+		t.Fatalf("expected scheduled task check script to compare enabled state, got %q", scheduledTaskCheckScript)
+	}
+}
+
+func TestScheduledTaskApplyScriptEnablesPresentTasks(t *testing.T) {
+	if !strings.Contains(scheduledTaskApplyScript, "Enable-ScheduledTask -TaskPath $path -TaskName $name | Out-Null") {
+		t.Fatalf("expected scheduled task apply script to enable present tasks, got %q", scheduledTaskApplyScript)
+	}
 }
 
 func TestRemoveAppxApplyScriptGuardsAgainstEmptyPackageNames(t *testing.T) {

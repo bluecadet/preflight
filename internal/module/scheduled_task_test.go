@@ -174,4 +174,41 @@ func TestScheduledTaskModule_CheckUsesExactFolderLookup(t *testing.T) {
 	if !strings.Contains(capturedScript, "[string]$_.TaskPath -eq $path") {
 		t.Fatalf("expected exact task-path filtering, got:\n%s", capturedScript)
 	}
+	if !strings.Contains(capturedScript, "$currentEnabled -ne $enabled") {
+		t.Fatalf("expected enabled-state drift check, got:\n%s", capturedScript)
+	}
+}
+
+func TestScheduledTaskModule_PresentTasksAreExplicitlyEnabled(t *testing.T) {
+	var capturedScript string
+	orig := windowsCombinedOutput
+	t.Cleanup(func() { windowsCombinedOutput = orig })
+
+	windowsCombinedOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		for _, arg := range args {
+			if strings.Contains(arg, "$params") {
+				capturedScript = arg
+				break
+			}
+		}
+		return []byte(""), nil
+	}
+
+	m := &ScheduledTaskModule{}
+	_ = m.Apply(context.Background(), map[string]any{
+		"name":     "test-task",
+		"path":     `Preflight`,
+		"command":  `C:\Windows\System32\shutdown.exe`,
+		"trigger":  "daily",
+		"start_at": "04:30",
+		"ensure":   "present",
+		"enabled":  true,
+	})
+
+	if capturedScript == "" {
+		t.Skip("no script captured")
+	}
+	if !strings.Contains(capturedScript, "Enable-ScheduledTask -TaskPath $path -TaskName $name | Out-Null") {
+		t.Fatalf("expected present tasks to be explicitly enabled, got:\n%s", capturedScript)
+	}
 }
