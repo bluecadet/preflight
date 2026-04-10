@@ -1,5 +1,5 @@
 name: preflight/windows-input
-version: "1.1.0"
+version: "1.2.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
@@ -115,6 +115,7 @@ tasks:
   - name: Configure touch feedback visualization
     powershell:
       check_script: |
+        $scopeBias = '{{ vars.scope_bias }}'
         $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
         $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
         $desiredContact = [uint32]1
@@ -126,21 +127,37 @@ tasks:
           $desiredGesture = [uint32]0
         }
 
-        Add-Type @"
-        using System;
-        using System.Runtime.InteropServices;
-        public static class NativeMethods {
-          [DllImport("user32.dll", SetLastError=true)]
-          public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
+        function Test-Target([string]$root) {
+          $path = Join-Path $root 'Control Panel\Cursors'
+          $prop = Get-ItemProperty -LiteralPath $path -Name ContactVisualization,GestureVisualization -ErrorAction SilentlyContinue
+          if ($null -eq $prop) {
+            return $true
+          }
+          return ([uint32]$prop.ContactVisualization -ne $desiredContact -or [uint32]$prop.GestureVisualization -ne $desiredGesture)
         }
-        "@
 
-        $contact = [uint32]0
-        $gesture = [uint32]0
-        [void][NativeMethods]::SystemParametersInfo(0x2018, 0, [ref]$contact, 0)
-        [void][NativeMethods]::SystemParametersInfo(0x201A, 0, [ref]$gesture, 0)
-        return ($contact -ne $desiredContact -or $gesture -ne $desiredGesture)
+        $needs = Test-Target 'HKCU:'
+        if (-not $needs -and $scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              $needs = Test-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }
+        return $needs
       script: |
+        $scopeBias = '{{ vars.scope_bias }}'
         $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
         $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
         $desiredContact = [uint32]1
@@ -152,6 +169,13 @@ tasks:
           $desiredGesture = [uint32]0
         }
 
+        function Set-Target([string]$root) {
+          $path = Join-Path $root 'Control Panel\Cursors'
+          New-Item -Path $path -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name ContactVisualization -Value $desiredContact -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name GestureVisualization -Value $desiredGesture -PropertyType DWord -Force | Out-Null
+        }
+
         Add-Type @"
         using System;
         using System.Runtime.InteropServices;
@@ -161,6 +185,26 @@ tasks:
         }
         "@
 
-        Write-Output 'Applying touch feedback and gesture visibility settings'
+        Write-Output 'Applying touch feedback and gesture visibility settings for the current user'
+        Set-Target 'HKCU:'
         [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
         [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)
+        if ($scopeBias -eq 'machine') {
+          $defaultHiveLoaded = $false
+          if (-not (Test-Path 'HKU:\PreflightDefault')) {
+            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
+            if ($LASTEXITCODE -eq 0) {
+              $defaultHiveLoaded = $true
+            }
+          }
+          if (Test-Path 'HKU:\PreflightDefault') {
+            try {
+              Write-Output 'Applying touch feedback and gesture visibility settings for the default user profile'
+              Set-Target 'HKU:\PreflightDefault'
+            } finally {
+              if ($defaultHiveLoaded) {
+                reg.exe unload HKU\PreflightDefault > $null 2>&1
+              }
+            }
+          }
+        }

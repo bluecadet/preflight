@@ -93,3 +93,46 @@ func TestScheduledTaskModule_CommandMetacharsDoNotInject(t *testing.T) {
 		t.Errorf("metacharacter sequence appeared verbatim in script (injection risk):\n%s", capturedScript)
 	}
 }
+
+func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
+	var capturedScript string
+	orig := windowsCombinedOutput
+	t.Cleanup(func() { windowsCombinedOutput = orig })
+
+	windowsCombinedOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		for _, arg := range args {
+			if strings.Contains(arg, "$params") {
+				capturedScript = arg
+				break
+			}
+		}
+		return []byte(""), nil
+	}
+
+	m := &ScheduledTaskModule{}
+	_ = m.Apply(context.Background(), map[string]any{
+		"name":      "test-task",
+		"path":      `Preflight\Maintenance`,
+		"command":   `C:\Windows\System32\shutdown.exe`,
+		"trigger":   "daily",
+		"start_at":  "04:30",
+		"run_as":    "SYSTEM",
+		"run_level": "highest",
+	})
+
+	if capturedScript == "" {
+		t.Skip("no script captured")
+	}
+	if !strings.Contains(capturedScript, "Ensure-TaskFolder $path") {
+		t.Fatalf("expected task folder creation helper, got:\n%s", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "New-ScheduledTaskPrincipal") {
+		t.Fatalf("expected explicit scheduled task principal, got:\n%s", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "ServiceAccount") {
+		t.Fatalf("expected service account logon type for SYSTEM tasks, got:\n%s", capturedScript)
+	}
+	if strings.Contains(capturedScript, "-User ([string]$params.run_as)") {
+		t.Fatalf("expected task registration to avoid direct -User registration for run_as tasks, got:\n%s", capturedScript)
+	}
+}

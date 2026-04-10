@@ -171,6 +171,27 @@ func TestBuildWindowsSystemRunnerContainsScheduledTaskWrapper(t *testing.T) {
 	}
 }
 
+func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
+	if !strings.Contains(scheduledTaskApplyScript, "Ensure-TaskFolder $path") {
+		t.Fatalf("expected scheduled task apply script to create folders, got %q", scheduledTaskApplyScript)
+	}
+	if !strings.Contains(scheduledTaskApplyScript, "New-ScheduledTaskPrincipal") {
+		t.Fatalf("expected scheduled task apply script to build a principal, got %q", scheduledTaskApplyScript)
+	}
+	if !strings.Contains(scheduledTaskApplyScript, "ServiceAccount") {
+		t.Fatalf("expected scheduled task apply script to support service-account logons, got %q", scheduledTaskApplyScript)
+	}
+}
+
+func TestRemoveAppxApplyScriptGuardsAgainstEmptyPackageNames(t *testing.T) {
+	if !strings.Contains(removeAppxPackagesApplyScript, "IsNullOrWhiteSpace($packageFullName)") {
+		t.Fatalf("expected remove-appx apply script to guard PackageFullName, got %q", removeAppxPackagesApplyScript)
+	}
+	if !strings.Contains(removeAppxPackagesApplyScript, "skipping appx package ") {
+		t.Fatalf("expected remove-appx apply script to log skipped malformed packages, got %q", removeAppxPackagesApplyScript)
+	}
+}
+
 func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 	var scripts []string
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})

@@ -90,16 +90,31 @@ foreach ($spec in $pkgs) {
   $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
   Write-Output ("processing appx package " + $name + " (" + $scope + ")")
 
-  if ($scope -eq 'current_user') {
-    Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-      Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+  $installed = @()
+  switch ($scope) {
+    'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
+    'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    'provisioned'  { $installed = @() }
+    'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    default { throw "remove_appx_packages: unsupported scope $scope" }
+  }
+
+  foreach ($pkg in $installed) {
+    if ($null -eq $pkg) {
+      continue
     }
-  } elseif ($scope -eq 'all_users' -or $scope -eq 'both') {
-    Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+    $packageFullName = [string]$pkg.PackageFullName
+    if ([string]::IsNullOrWhiteSpace($packageFullName)) {
+      Write-Output ("skipping appx package " + $name + " because PackageFullName is empty")
+      continue
+    }
+    if ($scope -eq 'current_user') {
+      Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
+    } else {
       try {
-        Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop
+        Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
       } catch {
-        Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+        Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
       }
     }
   }

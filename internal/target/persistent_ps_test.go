@@ -85,7 +85,7 @@ func pipeBackedPS(t *testing.T, scriptResponses map[string][2]string) *sshPersis
 	stdoutR, stdoutW := io.Pipe()
 
 	go func() {
-		defer stdoutW.Close()
+		defer func() { _ = stdoutW.Close() }()
 		sc := bufio.NewScanner(stdinR)
 		for sc.Scan() {
 			line := sc.Text()
@@ -101,12 +101,12 @@ func pipeBackedPS(t *testing.T, scriptResponses map[string][2]string) *sshPersis
 			}
 
 			if resp[0] != "" {
-				fmt.Fprintln(stdoutW, resp[0])
+				_, _ = fmt.Fprintln(stdoutW, resp[0])
 			}
 			if resp[1] != "" {
-				fmt.Fprintln(stdoutW, psMarkerBase+id+"__ERR:"+encodeBase64String(resp[1]))
+				_, _ = fmt.Fprintln(stdoutW, psMarkerBase+id+"__ERR:"+encodeBase64String(resp[1]))
 			} else {
-				fmt.Fprintln(stdoutW, psMarkerBase+id+"__DONE")
+				_, _ = fmt.Fprintln(stdoutW, psMarkerBase+id+"__DONE")
 			}
 		}
 	}()

@@ -869,6 +869,27 @@ const scheduledTaskCheckScript = `
 $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+
+function Normalize-TaskText($value) {
+  if ($null -eq $value) { return '' }
+  return [string]$value
+}
+
+function Normalize-PrincipalUserId([string]$userId) {
+  if (-not $userId) { return '' }
+  switch ($userId.ToUpperInvariant()) {
+    'SYSTEM' { return 'SYSTEM' }
+    'NT AUTHORITY\SYSTEM' { return 'SYSTEM' }
+    'LOCALSERVICE' { return 'LOCALSERVICE' }
+    'NT AUTHORITY\LOCALSERVICE' { return 'LOCALSERVICE' }
+    'LOCAL SERVICE' { return 'LOCALSERVICE' }
+    'NETWORKSERVICE' { return 'NETWORKSERVICE' }
+    'NT AUTHORITY\NETWORKSERVICE' { return 'NETWORKSERVICE' }
+    'NETWORK SERVICE' { return 'NETWORKSERVICE' }
+    default { return $userId }
+  }
+}
+
 $task = Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue
 if ($ensure -eq 'absent') {
   Write-Output ([bool]($task))
@@ -912,9 +933,9 @@ $desiredStartAt = Normalize-StartBoundary $trigger $desiredStartAt
 $currentEnabled = [bool]$task.Settings.Enabled
 $currentRunLevel = if ([string]$task.Principal.RunLevel -eq 'Highest') { 'highest' } else { 'least' }
 
-$needs = $action.Execute -ne $execute -or
-  $action.Arguments -ne $arguments -or
-  $action.WorkingDirectory -ne $workingDir -or
+$needs = (Normalize-TaskText $action.Execute) -ne $execute -or
+  (Normalize-TaskText $action.Arguments) -ne $arguments -or
+  (Normalize-TaskText $action.WorkingDirectory) -ne $workingDir -or
   $currentTrigger -ne $trigger -or
   $currentDelay -ne $delay -or
   $currentEnabled -ne $enabled -or
@@ -924,7 +945,7 @@ if ($trigger -eq 'daily' -or $trigger -eq 'once') {
     $needs = $true
   }
 }
-if ($runAs -and $task.Principal.UserId -ne $runAs) {
+if ($runAs -and (Normalize-PrincipalUserId ([string]$task.Principal.UserId)) -ne (Normalize-PrincipalUserId $runAs)) {
   $needs = $true
 }
 Write-Output $needs
@@ -934,10 +955,49 @@ const scheduledTaskApplyScript = `
 $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+
+function Ensure-TaskFolder([string]$taskPath) {
+  if (-not $taskPath -or $taskPath -eq '\') {
+    return
+  }
+  $service = New-Object -ComObject 'Schedule.Service'
+  $service.Connect()
+  $currentPath = '\'
+  foreach ($segment in $taskPath.Trim('\').Split('\')) {
+    if ([string]::IsNullOrWhiteSpace($segment)) {
+      continue
+    }
+    $nextPath = if ($currentPath -eq '\') { '\' + $segment + '\' } else { $currentPath + $segment + '\' }
+    try {
+      $null = $service.GetFolder($nextPath)
+    } catch {
+      $parent = $service.GetFolder($currentPath)
+      $null = $parent.CreateFolder($segment)
+    }
+    $currentPath = $nextPath
+  }
+}
+
+function Normalize-PrincipalUserId([string]$userId) {
+  if (-not $userId) { return '' }
+  switch ($userId.ToUpperInvariant()) {
+    'SYSTEM' { return 'SYSTEM' }
+    'NT AUTHORITY\SYSTEM' { return 'SYSTEM' }
+    'LOCALSERVICE' { return 'LOCALSERVICE' }
+    'NT AUTHORITY\LOCALSERVICE' { return 'LOCALSERVICE' }
+    'LOCAL SERVICE' { return 'LOCALSERVICE' }
+    'NETWORKSERVICE' { return 'NETWORKSERVICE' }
+    'NT AUTHORITY\NETWORKSERVICE' { return 'NETWORKSERVICE' }
+    'NETWORK SERVICE' { return 'NETWORKSERVICE' }
+    default { return $userId }
+  }
+}
+
 if ($ensure -eq 'absent') {
   Unregister-ScheduledTask -TaskPath $path -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
   exit 0
 }
+Ensure-TaskFolder $path
 $triggerName = [string]$params.trigger
 $startAt = if ($params.start_at) { [string]$params.start_at } else { '' }
 switch ($triggerName) {
@@ -956,7 +1016,18 @@ $workingDir = if ($params.working_dir) { [string]$params.working_dir } else { ''
 $action = New-ScheduledTaskAction -Execute ([string]$params.execute) -Argument $arguments -WorkingDirectory $workingDir
 $runLevelMap = @{ least = 'Limited'; highest = 'Highest' }
 if ($params.run_as) {
-  Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -User ([string]$params.run_as) -RunLevel $runLevelMap[[string]$params.run_level] -Force | Out-Null
+  $principalArgs = @{
+    UserId = [string]$params.run_as
+    RunLevel = $runLevelMap[[string]$params.run_level]
+  }
+  switch (Normalize-PrincipalUserId $principalArgs.UserId) {
+    'SYSTEM' { $principalArgs.LogonType = 'ServiceAccount' }
+    'LOCALSERVICE' { $principalArgs.LogonType = 'ServiceAccount' }
+    'NETWORKSERVICE' { $principalArgs.LogonType = 'ServiceAccount' }
+    default { $principalArgs.LogonType = 'S4U' }
+  }
+  $principal = New-ScheduledTaskPrincipal @principalArgs
+  Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
 } else {
   Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -RunLevel $runLevelMap[[string]$params.run_level] -Force | Out-Null
 }
@@ -1079,16 +1150,32 @@ foreach ($spec in $pkgs) {
   $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
   $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
   Write-Output ("processing appx package " + $name + " (" + $scope + ")")
-  if ($scope -eq 'current_user') {
-    Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
-      Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+
+  $installed = @()
+  switch ($scope) {
+    'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
+    'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    'provisioned'  { $installed = @() }
+    'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+    default { throw "remove_appx_packages: unsupported scope $scope" }
+  }
+
+  foreach ($pkg in $installed) {
+    if ($null -eq $pkg) {
+      continue
     }
-  } elseif ($scope -eq 'all_users' -or $scope -eq 'both') {
-    Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
+    $packageFullName = [string]$pkg.PackageFullName
+    if ([string]::IsNullOrWhiteSpace($packageFullName)) {
+      Write-Output ("skipping appx package " + $name + " because PackageFullName is empty")
+      continue
+    }
+    if ($scope -eq 'current_user') {
+      Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
+    } else {
       try {
-        Remove-AppxPackage -Package $_.PackageFullName -AllUsers -ErrorAction Stop
+        Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
       } catch {
-        Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue
+        Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
       }
     }
   }
