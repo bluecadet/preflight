@@ -420,6 +420,71 @@ func TestRenderBool_ComparisonOperators(t *testing.T) {
 	}
 }
 
+func TestRender_TernaryOperator(t *testing.T) {
+	cases := []struct {
+		name string
+		vars map[string]any
+		expr string
+		want string
+	}{
+		{
+			name: "true branch selected",
+			vars: map[string]any{"flag": true},
+			expr: "{{ vars.flag ? 1 : 2 }}",
+			want: "1",
+		},
+		{
+			name: "false branch selected",
+			vars: map[string]any{"flag": false},
+			expr: "{{ vars.flag ? 1 : 2 }}",
+			want: "2",
+		},
+		{
+			name: "comparison condition true",
+			vars: map[string]any{"mode": "light"},
+			expr: "{{ vars.mode == 'light' ? 1 : 0 }}",
+			want: "1",
+		},
+		{
+			name: "comparison condition false",
+			vars: map[string]any{"mode": "dark"},
+			expr: "{{ vars.mode == 'light' ? 1 : 0 }}",
+			want: "0",
+		},
+		{
+			name: "string branch values",
+			vars: map[string]any{"ok": "yes"},
+			expr: "{{ vars.ok ? 'enabled' : 'disabled' }}",
+			want: "enabled",
+		},
+		{
+			name: "zero is falsy",
+			vars: map[string]any{"n": "0"},
+			expr: "{{ vars.n ? 'yes' : 'no' }}",
+			want: "no",
+		},
+		{
+			name: "var reference in branch",
+			vars: map[string]any{"flag": true, "a": "alpha", "b": "beta"},
+			expr: "{{ vars.flag ? vars.a : vars.b }}",
+			want: "alpha",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := New(tc.vars)
+			got, err := e.Render(tc.expr)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("Render(%q) = %q, want %q", tc.expr, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRenderBool_ComparisonUndefinedVar(t *testing.T) {
 	e := New(map[string]any{})
 	// Undefined vars.* should still error even in a comparison.

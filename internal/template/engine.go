@@ -228,13 +228,44 @@ func (e *Engine) evalExpr(expr string) (string, bool, error) {
 // evalExprValue is like evalExpr but returns the raw typed value without
 // stringifying it, enabling whole-value substitution for non-string types.
 //
-// Comparison operators are evaluated before dot-path lookup. Supported
-// operators: ==, !=, >=, <=, >, <.
+// Ternary expressions are evaluated first: condition ? trueExpr : falseExpr.
+// Comparison operators are evaluated next. Supported operators: ==, !=, >=, <=, >, <.
 //
 // Coercion rules:
 //   - == and !=: both operands rendered to strings, then compared.
 //   - >, >=, <, <=: both operands coerced to float64; error if not numeric.
 func (e *Engine) evalExprValue(expr string) (any, bool, error) {
+	// Check for ternary: condition ? trueExpr : falseExpr
+	if before, after, ok := strings.Cut(expr, "?"); ok {
+		condPart := strings.TrimSpace(before)
+		branches := strings.TrimSpace(after)
+		if before, after, ok := strings.Cut(branches, ":"); ok {
+			truePart := strings.TrimSpace(before)
+			falsePart := strings.TrimSpace(after)
+
+			condStr, condResolved, err := e.evalOperand(condPart)
+			if err != nil {
+				return nil, false, err
+			}
+			if !condResolved {
+				return false, true, nil
+			}
+
+			var branch string
+			if !isFalsy(condStr) {
+				branch = truePart
+			} else {
+				branch = falsePart
+			}
+
+			val, resolved, err := e.evalOperand(branch)
+			if err != nil {
+				return nil, false, err
+			}
+			return val, resolved, nil
+		}
+	}
+
 	// Check for comparison operators (longest first to avoid mis-splitting on >=/>).
 	for _, op := range []string{">=", "<=", "!=", "==", ">", "<"} {
 		lhsRaw, rhsRaw, found := strings.Cut(expr, op)
@@ -321,6 +352,15 @@ func (e *Engine) evalOperand(operand string) (string, bool, error) {
 		return operand, true, nil
 	}
 	return operand, false, nil
+}
+
+func isFalsy(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "false", "0", "no":
+		return true
+	default:
+		return false
+	}
 }
 
 // evalComparison applies op to two already-rendered string operands.

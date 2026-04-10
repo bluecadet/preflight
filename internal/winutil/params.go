@@ -461,7 +461,14 @@ func normalizeIntegralValue(value any, bits int) (int64, error) {
 		}
 		return int64(typed), nil
 	case string:
-		parsed, err := strconv.ParseInt(strings.TrimSpace(typed), 10, bits)
+		s := strings.TrimSpace(typed)
+		switch strings.ToLower(s) {
+		case "true":
+			return 1, nil
+		case "false":
+			return 0, nil
+		}
+		parsed, err := strconv.ParseInt(s, 10, bits)
 		if err != nil {
 			return 0, err
 		}

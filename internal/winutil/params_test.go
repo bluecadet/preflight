@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+func TestNormalizeRegistryParams_BoolStringValues(t *testing.T) {
+	for _, tc := range []struct {
+		input string
+		want  int64
+	}{
+		{"true", 1},
+		{"True", 1},
+		{"TRUE", 1},
+		{"false", 0},
+		{"False", 0},
+		{"FALSE", 0},
+	} {
+		params, err := NormalizeRegistryParams(map[string]any{
+			"values": []any{
+				map[string]any{
+					"name": "Enabled",
+					"type": "dword",
+					"data": tc.input,
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("input %q: unexpected error: %v", tc.input, err)
+		}
+		values := params["values"].([]map[string]any)
+		if got := values[0]["data"]; got != tc.want {
+			t.Fatalf("input %q: got data=%v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
 	legacy, err := NormalizeRegistryParams(map[string]any{
 		"values": map[string]any{
