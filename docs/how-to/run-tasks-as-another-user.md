@@ -93,7 +93,7 @@ This is also the recommended way to apply current-user stdlib actions such as `p
     uses: preflight/windows-shell
     with:
       theme_mode: dark
-      taskbar_auto_hide: enabled
+      taskbar_auto_hide: true
 ```
 
 Some shell-facing changes persist immediately in the user's profile but only become visible after sign-out, Explorer restart, or reboot.

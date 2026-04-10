@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "2.0.0"
+version: "3.0.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -13,17 +13,17 @@ inputs:
     default: true
     description: Remove .lnk and .url shortcuts from the current user's desktop
   taskbar_auto_hide:
-    type: string
-    default: unchanged
-    description: Keep the current user's taskbar behavior or set auto-hide enabled or disabled
+    type: bool
+    default: false
+    description: Enable or disable taskbar auto-hide for the current user
   theme_mode:
     type: string
     default: unchanged
     description: Keep the current theme or set both app and system surfaces to light or dark
   transparency_effects:
-    type: string
-    default: unchanged
-    description: Keep the current transparency preference or set it to enabled or disabled
+    type: bool
+    default: true
+    description: Enable or disable transparency effects for the current user
   hide_recycle_bin:
     type: bool
     default: true
@@ -101,36 +101,17 @@ tasks:
   - name: Configure transparency effects
     powershell:
       check_script: |
-        $transparency = ([string]'{{ vars.transparency_effects }}').Trim().ToLowerInvariant()
-        if ([string]::IsNullOrWhiteSpace($transparency) -or $transparency -eq 'unchanged') {
-          return $false
-        }
-
-        switch ($transparency) {
-          'enabled' { $desiredTransparency = 1 }
-          'disabled' { $desiredTransparency = 0 }
-          default { throw "transparency_effects must be one of: unchanged, enabled, disabled" }
-        }
-
+        $desiredTransparency = if ([System.Convert]::ToBoolean('{{ vars.transparency_effects }}')) { 1 } else { 0 }
         $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
         $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
         return ($null -eq $props -or $null -eq $props.EnableTransparency -or [int]$props.EnableTransparency -ne $desiredTransparency)
       script: |
-        $transparency = ([string]'{{ vars.transparency_effects }}').Trim().ToLowerInvariant()
-        if ([string]::IsNullOrWhiteSpace($transparency) -or $transparency -eq 'unchanged') {
-          exit 0
-        }
-
-        switch ($transparency) {
-          'enabled' { $desiredTransparency = 1 }
-          'disabled' { $desiredTransparency = 0 }
-          default { throw "transparency_effects must be one of: unchanged, enabled, disabled" }
-        }
-
+        $enabled = [System.Convert]::ToBoolean('{{ vars.transparency_effects }}')
+        $desiredTransparency = if ($enabled) { 1 } else { 0 }
         $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name EnableTransparency -Value $desiredTransparency -PropertyType DWord -Force | Out-Null
-        Write-Output ("Persisting transparency effects for the current user profile: " + $transparency)
+        Write-Output ("Persisting transparency effects for the current user profile: " + $enabled)
         Write-Output 'Sign out or restart Explorer to see updated shell visuals'
 
   - name: Configure hidden files visibility
@@ -191,23 +172,7 @@ tasks:
   - name: Configure taskbar auto-hide
     powershell:
       check_script: |
-        $taskbarAutoHide = ([string]'{{ vars.taskbar_auto_hide }}').Trim().ToLowerInvariant()
-        if ([string]::IsNullOrWhiteSpace($taskbarAutoHide) -or $taskbarAutoHide -eq 'unchanged') {
-          return $false
-        }
-
-        switch ($taskbarAutoHide) {
-          'enabled' {
-            $desiredStateByte = 3
-            $desiredAutoHide = $true
-          }
-          'disabled' {
-            $desiredStateByte = 2
-            $desiredAutoHide = $false
-          }
-          default { throw "taskbar_auto_hide must be one of: unchanged, enabled, disabled" }
-        }
-
+        $desiredStateByte = if ([System.Convert]::ToBoolean('{{ vars.taskbar_auto_hide }}')) { 3 } else { 2 }
         function Get-TaskbarSettingsPath() {
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
@@ -228,17 +193,8 @@ tasks:
 
         return ([int]$settings[8] -ne $desiredStateByte)
       script: |
-        $taskbarAutoHide = ([string]'{{ vars.taskbar_auto_hide }}').Trim().ToLowerInvariant()
-        if ([string]::IsNullOrWhiteSpace($taskbarAutoHide) -or $taskbarAutoHide -eq 'unchanged') {
-          exit 0
-        }
-
-        switch ($taskbarAutoHide) {
-          'enabled' { $desiredStateByte = 3 }
-          'disabled' { $desiredStateByte = 2 }
-          default { throw "taskbar_auto_hide must be one of: unchanged, enabled, disabled" }
-        }
-
+        $enabled = [System.Convert]::ToBoolean('{{ vars.taskbar_auto_hide }}')
+        $desiredStateByte = if ($enabled) { 3 } else { 2 }
         function Get-TaskbarSettingsPath() {
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
@@ -260,7 +216,7 @@ tasks:
         $updated[8] = [byte]$desiredStateByte
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
-        Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $taskbarAutoHide)
+        Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $enabled)
         Write-Output 'Restart Explorer or sign out to see the updated taskbar behavior'
 
   - name: Clear desktop shortcuts

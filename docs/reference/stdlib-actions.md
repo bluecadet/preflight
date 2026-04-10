@@ -43,9 +43,9 @@ Some shell visual changes do not update an already-running Explorer session imme
 | --- | --- | --- |
 | `clear_desktop_background` | bool | Clear the wallpaper |
 | `clear_desktop_shortcuts` | bool | Remove `.lnk` and `.url` files from desktop locations |
-| `taskbar_auto_hide` | string | Keep the current taskbar behavior or set auto-hide to `enabled` or `disabled` |
+| `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide for the current user (default: `false`) |
 | `theme_mode` | string | Keep the current theme or set both app and system surfaces to `light` or `dark` |
-| `transparency_effects` | string | Keep the current transparency preference or set it to `enabled` or `disabled` |
+| `transparency_effects` | bool | Enable or disable transparency effects for the current user (default: `true`) |
 | `hide_recycle_bin` | bool | Hide the Recycle Bin icon |
 | `show_hidden_files` | bool | Show hidden files in Explorer |
 | `show_file_extensions` | bool | Show file extensions in Explorer |
