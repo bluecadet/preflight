@@ -464,13 +464,22 @@ func powershellJSONVar(name string, value any) (string, error) {
 }
 
 func parseWindowsBool(out string) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(out)) {
+	value, _, err := parseWindowsBoolOutput(out)
+	return value, err
+}
+
+func parseWindowsBoolOutput(out string) (bool, []string, error) {
+	lines := splitOutputLines(out)
+	if len(lines) == 0 {
+		return false, nil, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
+	}
+	switch strings.ToLower(strings.TrimSpace(lines[len(lines)-1])) {
 	case "true":
-		return true, nil
+		return true, lines[:len(lines)-1], nil
 	case "false":
-		return false, nil
+		return false, lines[:len(lines)-1], nil
 	default:
-		return false, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
+		return false, nil, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
 	}
 }
 
@@ -1043,6 +1052,7 @@ foreach ($spec in $pkgs) {
   $name = [string]$spec.name
   $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
   $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  Write-Output ("checking appx package " + $name + " (" + $scope + ")")
   $installed = @()
   switch ($scope) {
     'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
@@ -1068,6 +1078,7 @@ foreach ($spec in $pkgs) {
   $name = [string]$spec.name
   $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
   $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  Write-Output ("processing appx package " + $name + " (" + $scope + ")")
   if ($scope -eq 'current_user') {
     Get-AppxPackage -Name $name -ErrorAction SilentlyContinue | ForEach-Object {
       Remove-AppxPackage -Package $_.PackageFullName -ErrorAction SilentlyContinue

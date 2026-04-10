@@ -1,10 +1,10 @@
 name: preflight/debloat
-version: "1.1.0"
+version: "1.2.0"
 description: Remove common Windows bloatware and disable telemetry, Copilot, and AI features
 author: preflight
 
 tasks:
-  - name: Remove Microsoft bloatware
+  - name: Remove Microsoft news and media apps
     remove_appx_packages:
       packages:
         - name: Clipchamp.Clipchamp
@@ -29,13 +29,27 @@ tasks:
           scope: both
         - name: Microsoft.BingWeather
           scope: both
-        - name: Microsoft.Copilot
+        - name: Microsoft.Microsoft3DViewer
           scope: both
+        - name: Microsoft.NetworkSpeedTest
+          scope: both
+        - name: Microsoft.News
+          scope: both
+        - name: Microsoft.Print3D
+          scope: both
+        - name: Microsoft.WindowsMaps
+          scope: both
+        - name: Microsoft.WindowsSoundRecorder
+          scope: both
+        - name: Microsoft.ZuneVideo
+          scope: both
+
+  - name: Remove Microsoft productivity and communication apps
+    remove_appx_packages:
+      packages:
         - name: Microsoft.Getstarted
           scope: both
         - name: Microsoft.Messaging
-          scope: both
-        - name: Microsoft.Microsoft3DViewer
           scope: both
         - name: Microsoft.MicrosoftJournal
           scope: both
@@ -43,15 +57,7 @@ tasks:
           scope: both
         - name: Microsoft.MicrosoftPowerBIForWindows
           scope: both
-        - name: Microsoft.MicrosoftSolitaireCollection
-          scope: both
         - name: Microsoft.MicrosoftStickyNotes
-          scope: both
-        - name: Microsoft.MixedReality.Portal
-          scope: both
-        - name: Microsoft.NetworkSpeedTest
-          scope: both
-        - name: Microsoft.News
           scope: both
         - name: Microsoft.Office.OneNote
           scope: both
@@ -63,11 +69,25 @@ tasks:
           scope: both
         - name: Microsoft.PowerAutomateDesktop
           scope: both
-        - name: Microsoft.Print3D
-          scope: both
         - name: Microsoft.SkypeApp
           scope: both
         - name: Microsoft.Todos
+          scope: both
+        - name: MicrosoftCorporationII.QuickAssist
+          scope: both
+        - name: MicrosoftTeams*
+          scope: both
+        - name: MSTeams
+          scope: both
+
+  - name: Remove Microsoft gaming and AI apps
+    remove_appx_packages:
+      packages:
+        - name: Microsoft.Copilot
+          scope: both
+        - name: Microsoft.MicrosoftSolitaireCollection
+          scope: both
+        - name: Microsoft.MixedReality.Portal
           scope: both
         - name: Microsoft.Windows.AIHub
           scope: both
@@ -77,24 +97,12 @@ tasks:
           scope: both
         - name: Microsoft.WindowsFeedbackHub
           scope: both
-        - name: Microsoft.WindowsMaps
-          scope: both
-        - name: Microsoft.WindowsSoundRecorder
-          scope: both
         - name: Microsoft.Xbox*
-          scope: both
-        - name: Microsoft.ZuneVideo
           scope: both
         - name: MicrosoftCorporationII.MicrosoftFamily
           scope: both
-        - name: MicrosoftCorporationII.QuickAssist
-          scope: both
-        - name: MicrosoftTeams*
-          scope: both
-        - name: MSTeams
-          scope: both
 
-  - name: Remove third-party bloatware
+  - name: Remove third-party media and shopping apps
     remove_appx_packages:
       packages:
         - name: ACGMediaPlayer
@@ -105,43 +113,13 @@ tasks:
           scope: both
         - name: AmazonVideo.PrimeVideo
           scope: both
-        - name: Asphalt8Airborne
-          scope: both
-        - name: CaesarsSlotsFreeCasino
-          scope: both
-        - name: COOKINGFEVER
-          scope: both
-        - name: Disney
-          scope: both
-        - name: DisneyMagicKingdoms
-          scope: both
-        - name: Duolingo-LearnLanguagesforFree
-          scope: both
-        - name: Facebook
-          scope: both
-        - name: FarmVille2CountryEscape
-          scope: both
-        - name: fitbit
-          scope: both
         - name: Flipboard
-          scope: both
-        - name: HiddenCity
           scope: both
         - name: HULULLC.HULUPLUS
           scope: both
         - name: iHeartRadio
           scope: both
-        - name: Instagram
-          scope: both
-        - name: king.com.*
-          scope: both
-        - name: LinkedInforWindows
-          scope: both
-        - name: MarchofEmpires
-          scope: both
         - name: Netflix
-          scope: both
-        - name: NYTCrossword
           scope: both
         - name: PandoraMediaInc
           scope: both
@@ -151,21 +129,59 @@ tasks:
           scope: both
         - name: Shazam
           scope: both
-        - name: Sidia.LiveWallpaper
-          scope: both
         - name: SlingTV
           scope: both
         - name: Spotify
           scope: both
-        - name: TikTok
-          scope: both
         - name: TuneInRadio
+          scope: both
+        - name: WinZipUniversal
+          scope: both
+
+  - name: Remove third-party social and lifestyle apps
+    remove_appx_packages:
+      packages:
+        - name: Disney
+          scope: both
+        - name: Duolingo-LearnLanguagesforFree
+          scope: both
+        - name: Facebook
+          scope: both
+        - name: fitbit
+          scope: both
+        - name: Instagram
+          scope: both
+        - name: LinkedInforWindows
+          scope: both
+        - name: NYTCrossword
+          scope: both
+        - name: Sidia.LiveWallpaper
+          scope: both
+        - name: TikTok
           scope: both
         - name: Twitter
           scope: both
         - name: Viber
           scope: both
-        - name: WinZipUniversal
+
+  - name: Remove third-party games and utility apps
+    remove_appx_packages:
+      packages:
+        - name: Asphalt8Airborne
+          scope: both
+        - name: CaesarsSlotsFreeCasino
+          scope: both
+        - name: COOKINGFEVER
+          scope: both
+        - name: DisneyMagicKingdoms
+          scope: both
+        - name: FarmVille2CountryEscape
+          scope: both
+        - name: HiddenCity
+          scope: both
+        - name: king.com.*
+          scope: both
+        - name: MarchofEmpires
           scope: both
 
   - name: Disable telemetry

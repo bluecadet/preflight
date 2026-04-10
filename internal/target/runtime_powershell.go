@@ -14,6 +14,10 @@ type powerShellScriptBackend interface {
 }
 
 func checkPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (bool, string, error) {
+	return checkPowerShellModuleWithOutput(ctx, backend, params, nil)
+}
+
+func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScriptBackend, params map[string]any, onOutput OutputFunc) (bool, string, error) {
 	if checkScript, _ := params["check_script"].(string); strings.TrimSpace(checkScript) != "" {
 		script, err := winutil.BuildPowerShellCheckScript(checkScript)
 		if err != nil {
@@ -23,9 +27,14 @@ func checkPowerShellModule(ctx context.Context, backend powerShellScriptBackend,
 		if err != nil {
 			return false, "", err
 		}
-		result, err := winutil.ParsePowerShellCheckResult([]byte(out))
+		result, outputLines, err := winutil.ParsePowerShellCheckOutput([]byte(out))
 		if err != nil {
 			return false, "", err
+		}
+		if onOutput != nil {
+			for _, line := range outputLines {
+				onOutput(line)
+			}
 		}
 		return result.NeedsChange, result.Message, nil
 	}

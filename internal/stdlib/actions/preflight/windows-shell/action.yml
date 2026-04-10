@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "1.0.0"
+version: "1.1.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -142,8 +142,10 @@ tasks:
           }
         }
 
+        Write-Output 'Applying shell defaults to the current user profile'
         Set-Target 'HKCU:'
         if ($clearBackground) {
+          Write-Output 'Refreshing desktop background settings for the current user'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
         }
         if ($scopeBias -eq 'machine') {
@@ -156,6 +158,7 @@ tasks:
           }
           if (Test-Path 'HKU:\PreflightDefault') {
             try {
+              Write-Output 'Applying shell defaults to the default user profile'
               Set-Target 'HKU:\PreflightDefault'
             } finally {
               if ($defaultHiveLoaded) {
@@ -216,6 +219,7 @@ tasks:
           if (-not (Test-Path -LiteralPath $path)) {
             continue
           }
+          Write-Output ("Removing desktop shortcuts from " + $path)
           Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
             Where-Object { $_.Extension -in '.lnk', '.url' } |
             Remove-Item -Force -ErrorAction SilentlyContinue
@@ -247,5 +251,6 @@ tasks:
           exit 0
         }
         $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' }
+        Write-Output ("Applying Start pins policy at " + $path)
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name ConfigureStartPins -Value $desiredJson -PropertyType String -Force | Out-Null

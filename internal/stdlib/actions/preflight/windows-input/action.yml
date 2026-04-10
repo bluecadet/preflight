@@ -1,5 +1,5 @@
 name: preflight/windows-input
-version: "1.0.0"
+version: "1.1.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
@@ -90,6 +90,7 @@ tasks:
           New-ItemProperty -LiteralPath $path -Name TextScaleFactor -Value $desired -PropertyType DWord -Force | Out-Null
         }
 
+        Write-Output ("Setting text scale to " + $desired + "% for the current user")
         Set-Target 'HKCU:'
         if ($scopeBias -eq 'machine') {
           $defaultHiveLoaded = $false
@@ -101,6 +102,7 @@ tasks:
           }
           if (Test-Path 'HKU:\PreflightDefault') {
             try {
+              Write-Output ("Setting text scale to " + $desired + "% for the default user profile")
               Set-Target 'HKU:\PreflightDefault'
             } finally {
               if ($defaultHiveLoaded) {
@@ -159,5 +161,6 @@ tasks:
         }
         "@
 
+        Write-Output 'Applying touch feedback and gesture visibility settings'
         [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
         [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)

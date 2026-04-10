@@ -64,26 +64,34 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 		return Result{}, fmt.Errorf("target/local: unknown module %q", module)
 	}
 
-	needsChange, err := mod.Check(ctx, params)
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-	}
-
-	if !needsChange {
-		return Result{TaskID: taskID, Status: StatusOK, Message: "already in desired state"}, nil
-	}
-
-	// Change is needed but we're in dry-run mode — report what would happen.
-	if dryRun {
-		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)"}, nil
-	}
-
 	var captured []string
 	captureOnOutput := func(line string) {
 		captured = append(captured, line)
 		if onOutput != nil {
 			onOutput(line)
 		}
+	}
+
+	var (
+		needsChange bool
+		err         error
+	)
+	if sm, ok := mod.(CheckStreamingModule); ok {
+		needsChange, err = sm.CheckWithOutput(ctx, params, captureOnOutput)
+	} else {
+		needsChange, err = mod.Check(ctx, params)
+	}
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
+	}
+
+	if !needsChange {
+		return Result{TaskID: taskID, Status: StatusOK, Message: "already in desired state", Output: captured}, nil
+	}
+
+	// Change is needed but we're in dry-run mode — report what would happen.
+	if dryRun {
+		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)", Output: captured}, nil
 	}
 
 	var applyErr error

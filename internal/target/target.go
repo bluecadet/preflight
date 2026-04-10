@@ -2,7 +2,7 @@ package target
 
 import "context"
 
-// OutputFunc is a callback invoked with each line of output emitted by a module during Apply.
+// OutputFunc is a callback invoked with each line of output emitted by a module during execution.
 type OutputFunc func(line string)
 
 // Status represents the outcome of a task execution.
@@ -19,6 +19,13 @@ const (
 type Module interface {
 	Check(ctx context.Context, params map[string]any) (needed bool, err error)
 	Apply(ctx context.Context, params map[string]any) error
+}
+
+// CheckStreamingModule is an optional extension of Module for implementations
+// that can emit output line-by-line during Check.
+type CheckStreamingModule interface {
+	Module
+	CheckWithOutput(ctx context.Context, params map[string]any, onOutput OutputFunc) (needed bool, err error)
 }
 
 // StreamingModule is an optional extension of Module for implementations

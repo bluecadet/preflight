@@ -20,10 +20,11 @@ const lineWidth = 80
 
 // TextRenderer writes Ansible-style human-readable output.
 type TextRenderer struct {
-	w          io.Writer
-	color      bool
-	verbose    bool
-	taskOutput map[string][]string
+	w                  io.Writer
+	color              bool
+	verbose            bool
+	taskOutput         map[string][]string
+	streamedTaskOutput map[string]bool
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
@@ -34,10 +35,11 @@ func NewTextRenderer(w io.Writer) *TextRenderer {
 // NewTextRendererWithOptions creates a TextRenderer with the provided options.
 func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	return &TextRenderer{
-		w:          w,
-		color:      isTTY(w),
-		verbose:    opts.Verbose,
-		taskOutput: make(map[string][]string),
+		w:                  w,
+		color:              isTTY(w),
+		verbose:            opts.Verbose,
+		taskOutput:         make(map[string][]string),
+		streamedTaskOutput: make(map[string]bool),
 	}
 }
 
@@ -98,6 +100,11 @@ func (r *TextRenderer) emitTaskStart(e TaskStartEvent) {
 }
 
 func (r *TextRenderer) emitTaskOutput(e TaskOutputEvent) {
+	if r.verbose {
+		r.markTaskOutputStreamed(e)
+		r.writeOutputLines(e.Lines)
+		return
+	}
 	if !r.bufferTaskOutput(e) {
 		r.writeOutputLines(e.Lines)
 	}
@@ -108,6 +115,11 @@ func (r *TextRenderer) emitTaskResult(e TaskResultEvent) {
 	statusText := r.statusColored(e.Status, e.Message)
 	dotsNeeded := max(lineWidth-len(label)-len(e.Status)-3, 1)
 	r.writeLine(fmt.Sprintf("%s %s %s", label, strings.Repeat(".", dotsNeeded), statusText))
+
+	if r.wasTaskOutputStreamed(e) {
+		r.clearTaskOutputState(e)
+		return
+	}
 
 	lines := r.takeBufferedOutput(e)
 	if len(e.Output) > 0 {
@@ -208,6 +220,38 @@ func (r *TextRenderer) takeBufferedOutput(e TaskResultEvent) []string {
 	lines := r.taskOutput[key]
 	delete(r.taskOutput, key)
 	return lines
+}
+
+func (r *TextRenderer) markTaskOutputStreamed(e TaskOutputEvent) {
+	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
+	if key == "" {
+		return
+	}
+	if r.streamedTaskOutput == nil {
+		r.streamedTaskOutput = make(map[string]bool)
+	}
+	r.streamedTaskOutput[key] = true
+}
+
+func (r *TextRenderer) wasTaskOutputStreamed(e TaskResultEvent) bool {
+	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
+	if key == "" || r.streamedTaskOutput == nil {
+		return false
+	}
+	return r.streamedTaskOutput[key]
+}
+
+func (r *TextRenderer) clearTaskOutputState(e TaskResultEvent) {
+	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
+	if key == "" {
+		return
+	}
+	if r.taskOutput != nil {
+		delete(r.taskOutput, key)
+	}
+	if r.streamedTaskOutput != nil {
+		delete(r.streamedTaskOutput, key)
+	}
 }
 
 // Close is a no-op for TextRenderer.

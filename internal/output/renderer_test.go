@@ -237,6 +237,10 @@ func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing
 	var buf bytes.Buffer
 	r := newVerboseTextRenderer(&buf)
 
+	r.Emit(TaskStartEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+	})
 	r.Emit(TaskOutputEvent{
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
@@ -257,6 +261,41 @@ func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing
 	}
 	if linePos < taskPos {
 		t.Fatalf("expected verbose task output below the task result, got %q", out)
+	}
+}
+
+func TestTextRenderer_VerboseStreamsTaskOutputBeforeTaskResult(t *testing.T) {
+	var buf bytes.Buffer
+	r := newVerboseTextRenderer(&buf)
+
+	r.Emit(TaskStartEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+	})
+	r.Emit(TaskOutputEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Lines:    []string{"line1"},
+	})
+	r.Emit(TaskResultEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Status:   "changed",
+		Message:  "task completed",
+		Output:   []string{"line1"},
+	})
+
+	out := buf.String()
+	linePos := strings.Index(out, "line1")
+	resultPos := strings.LastIndex(out, "task completed")
+	if linePos < 0 || resultPos < 0 {
+		t.Fatalf("expected output line and task result, got %q", out)
+	}
+	if linePos > resultPos {
+		t.Fatalf("expected verbose output to stream before the task result, got %q", out)
+	}
+	if strings.Count(out, "line1") != 1 {
+		t.Fatalf("expected verbose streamed output not to be duplicated, got %q", out)
 	}
 }
 
@@ -295,11 +334,21 @@ func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 	var buf bytes.Buffer
 	r := newVerboseTextRenderer(&buf)
 
+	r.Emit(TaskStartEvent{
+		Target:   "gallery-01",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-01",
+	})
 	r.Emit(TaskOutputEvent{
 		Target:   "gallery-01",
 		TaskID:   "sync-assets",
 		TaskName: "Sync assets on gallery-01",
 		Lines:    []string{"gallery-01 line"},
+	})
+	r.Emit(TaskStartEvent{
+		Target:   "gallery-02",
+		TaskID:   "sync-assets",
+		TaskName: "Sync assets on gallery-02",
 	})
 	r.Emit(TaskOutputEvent{
 		Target:   "gallery-02",
@@ -329,13 +378,13 @@ func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 		t.Fatalf("expected per-host task output, got %q", out)
 	}
 	if host2LinePos < host2TaskPos {
-		t.Fatalf("expected gallery-02 output below its task result, got %q", out)
+		t.Fatalf("expected gallery-02 output after its task started, got %q", out)
 	}
 	if host1LinePos < host1TaskPos {
-		t.Fatalf("expected gallery-01 output below its task result, got %q", out)
+		t.Fatalf("expected gallery-01 output after its task started, got %q", out)
 	}
-	if strings.Contains(out[host2TaskPos:host1TaskPos], "gallery-01 line") {
-		t.Fatalf("expected gallery-01 output not to leak under gallery-02 task, got %q", out)
+	if strings.Count(out, "gallery-01 line") != 1 || strings.Count(out, "gallery-02 line") != 1 {
+		t.Fatalf("expected streamed host output not to be duplicated, got %q", out)
 	}
 }
 

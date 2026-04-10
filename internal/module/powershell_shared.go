@@ -19,6 +19,10 @@ var powershellCombinedOutput = func(ctx context.Context, name string, args ...st
 }
 
 func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {
+	return powershellCheckWithOutput(ctx, params, nil)
+}
+
+func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) (bool, error) {
 	checkScript, err := paramString(params, "check_script", "")
 	if err != nil {
 		return false, err
@@ -28,11 +32,24 @@ func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		out, err := runPowerShellInline(ctx, script)
+		var out []byte
+		if onOutput == nil {
+			out, err = runPowerShellInline(ctx, script)
+		} else {
+			var lines []string
+			lines, err = runPowerShellInlineWithOutput(ctx, script, func(line string) {
+				if !winutil.IsPowerShellCheckResultLine(line) {
+					onOutput(line)
+				}
+			})
+			if err == nil {
+				out = []byte(strings.Join(lines, "\n"))
+			}
+		}
 		if err != nil {
 			return false, err
 		}
-		result, err := winutil.ParsePowerShellCheckResult(out)
+		result, _, err := winutil.ParsePowerShellCheckOutput(out)
 		if err != nil {
 			return false, err
 		}
@@ -104,7 +121,8 @@ func powershellApplyWithOutput(ctx context.Context, params map[string]any, onOut
 	}
 
 	if script != "" {
-		return runPowerShellInlineWithOutput(ctx, script, onOutput)
+		_, err := runPowerShellInlineWithOutput(ctx, script, onOutput)
+		return err
 	}
 	return runPowerShellFileWithOutput(ctx, file, args, onOutput)
 }
@@ -127,17 +145,18 @@ func runPowerShellCommand(ctx context.Context, args ...string) ([]byte, error) {
 	return out, nil
 }
 
-func runPowerShellInlineWithOutput(ctx context.Context, script string, onOutput target.OutputFunc) error {
+func runPowerShellInlineWithOutput(ctx context.Context, script string, onOutput target.OutputFunc) ([]string, error) {
 	return runPowerShellCommandWithOutput(ctx, onOutput, append(platformPowerShellArgs(), "-Command", script)...)
 }
 
 func runPowerShellFileWithOutput(ctx context.Context, file string, args []string, onOutput target.OutputFunc) error {
 	commandArgs := append(platformPowerShellArgs(), "-File", file)
 	commandArgs = append(commandArgs, args...)
-	return runPowerShellCommandWithOutput(ctx, onOutput, commandArgs...)
+	_, err := runPowerShellCommandWithOutput(ctx, onOutput, commandArgs...)
+	return err
 }
 
-func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, args ...string) error {
+func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, args ...string) ([]string, error) {
 	pr, pw := io.Pipe()
 	cmd := exec.CommandContext(ctx, platformPowerShellBinary(), args...)
 	cmd.Stdout = pw
@@ -169,19 +188,19 @@ func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputF
 		if runErr != nil {
 			runErr = errors.Join(runErr, scanErr)
 		} else {
-			return fmt.Errorf("powershell: read command output: %w", scanErr)
+			return nil, fmt.Errorf("powershell: read command output: %w", scanErr)
 		}
 	}
 
 	if runErr != nil {
 		out := strings.Join(lines, "\n")
 		if out != "" {
-			return fmt.Errorf("powershell: command failed: %w\noutput: %s", runErr, out)
+			return lines, fmt.Errorf("powershell: command failed: %w\noutput: %s", runErr, out)
 		}
-		return fmt.Errorf("powershell: command failed: %w", runErr)
+		return lines, fmt.Errorf("powershell: command failed: %w", runErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("powershell: close command output pipe: %w", closeErr)
+		return lines, fmt.Errorf("powershell: close command output pipe: %w", closeErr)
 	}
-	return nil
+	return lines, nil
 }

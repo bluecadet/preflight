@@ -46,6 +46,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPowerShellModule(ctx, backend, params)
 			},
+			checkWithOutput: func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error) {
+				return checkPowerShellModuleWithOutput(ctx, backend, params, onOutput)
+			},
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return applyPowerShellModule(ctx, backend, params)
 			},
@@ -137,6 +140,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 		"remove_appx_packages": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsRemoveAppxPackages(ctx, backend, params)
+			},
+			checkWithOutput: func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error) {
+				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, onOutput)
 			},
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsRemoveAppxPackages(ctx, backend, params)
@@ -551,11 +557,28 @@ func applyWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBac
 }
 
 func checkWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+	return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, nil)
+}
+
+func checkWindowsRemoveAppxPackagesWithOutput(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, onOutput OutputFunc) (bool, string, error) {
 	normalized, err := winutil.NormalizeRemoveAppxParams(params)
 	if err != nil {
 		return false, "", err
 	}
-	return checkWindowsBooleanScript(ctx, backend, normalized, removeAppxPackagesCheckScript)
+	out, err := windowsRunScript(ctx, backend, normalized, removeAppxPackagesCheckScript)
+	if err != nil {
+		return false, "", err
+	}
+	needs, outputLines, err := parseWindowsBoolOutput(out)
+	if err != nil {
+		return false, "", err
+	}
+	if onOutput != nil {
+		for _, line := range outputLines {
+			onOutput(line)
+		}
+	}
+	return needs, "", nil
 }
 
 func applyWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {

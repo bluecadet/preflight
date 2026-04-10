@@ -21,6 +21,10 @@ func (m *PowershellModule) Check(ctx context.Context, params map[string]any) (bo
 	return powershellCheck(ctx, params)
 }
 
+func (m *PowershellModule) CheckWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) (bool, error) {
+	return powershellCheckWithOutput(ctx, params, onOutput)
+}
+
 func (m *PowershellModule) Apply(ctx context.Context, params map[string]any) error {
 	return m.ApplyWithOutput(ctx, params, nil)
 }

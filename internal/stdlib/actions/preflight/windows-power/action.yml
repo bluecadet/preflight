@@ -1,5 +1,5 @@
 name: preflight/windows-power
-version: "1.0.0"
+version: "1.1.0"
 description: Configure Windows power plans and optional reboot scheduling
 author: preflight
 
@@ -116,8 +116,10 @@ tasks:
             New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '1' -PropertyType String -Force | Out-Null
           }
         }
+        Write-Output 'Applying screen saver settings to the current user profile'
         Set-Target 'HKCU:'
         if ($disable) {
+          Write-Output 'Refreshing current user shell parameters after disabling the screen saver'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
         }
         if ($scopeBias -eq 'machine') {
@@ -130,6 +132,7 @@ tasks:
           }
           if (Test-Path 'HKU:\PreflightDefault') {
             try {
+              Write-Output 'Applying screen saver settings to the default user profile'
               Set-Target 'HKU:\PreflightDefault'
             } finally {
               if ($defaultHiveLoaded) {

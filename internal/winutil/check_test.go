@@ -44,3 +44,19 @@ func TestParsePowerShellCheckResult_InvalidPayload(t *testing.T) {
 		t.Fatalf("expected needs_change error, got %v", err)
 	}
 }
+
+func TestParsePowerShellCheckOutput_StripsLogsAndMarker(t *testing.T) {
+	result, lines, err := ParsePowerShellCheckOutput([]byte("checking registry\n__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOnRydWUsIm1lc3NhZ2UiOiJyZW5hbWUgcGVuZGluZyJ9\n"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.NeedsChange {
+		t.Fatal("expected needs_change=true")
+	}
+	if result.Message != "rename pending" {
+		t.Fatalf("unexpected message %q", result.Message)
+	}
+	if len(lines) != 1 || lines[0] != "checking registry" {
+		t.Fatalf("unexpected output lines %v", lines)
+	}
+}

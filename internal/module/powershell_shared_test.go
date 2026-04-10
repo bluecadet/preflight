@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 func TestPowershellCheck_UsesBooleanCheckScriptResult(t *testing.T) {
@@ -102,6 +104,19 @@ func TestPowershellCheck_CheckScriptTakesPrecedenceOverCreates(t *testing.T) {
 	}
 	if needed {
 		t.Fatal("expected check_script result to win")
+	}
+}
+
+func TestPowershellCheckResultParsing_IgnoresMarkerLine(t *testing.T) {
+	result, lines, err := winutil.ParsePowerShellCheckOutput([]byte("checking text scale\n__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOnRydWV9"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !result.NeedsChange {
+		t.Fatal("expected check to report change needed")
+	}
+	if len(lines) != 1 || lines[0] != "checking text scale" {
+		t.Fatalf("unexpected output lines %v", lines)
 	}
 }
 
