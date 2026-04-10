@@ -1,6 +1,7 @@
 package target
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -33,6 +34,13 @@ type winRMClient interface {
 	RunCmdWithContext(ctx context.Context, command string) (string, string, int, error)
 }
 
+// winRMShellCreator is an optional extension of winRMClient for implementations
+// that can create a raw WinRM shell. The real *winrm.Client satisfies this;
+// test fakes typically do not, and the persistent-session path is skipped for them.
+type winRMShellCreator interface {
+	CreateShell() (*winrm.Shell, error)
+}
+
 type winRMClientFactory func(WinRMConfig) (winRMClient, error)
 
 var defaultWinRMClientFactory winRMClientFactory = func(cfg WinRMConfig) (winRMClient, error) {
@@ -46,6 +54,39 @@ type WinRMTarget struct {
 	clientFactory winRMClientFactory
 	mu            sync.Mutex
 	client        winRMClient
+	psSessionMu   sync.Mutex
+	psSession     *winRMPersistentPS
+}
+
+// winRMPersistentPS holds a single long-running PowerShell process started
+// inside a reused WinRM shell. All Check/Apply scripts are serialised through
+// it, eliminating per-task shell-create and powershell.exe startup overhead.
+type winRMPersistentPS struct {
+	shell   *winrm.Shell
+	cmd     *winrm.Command
+	scanner *bufio.Scanner
+	mu      sync.Mutex
+}
+
+func (p *winRMPersistentPS) run(_ context.Context, script string) (string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	id := generateSessionID()
+	line := buildPSStdinLine(script, id) + "\n"
+	if _, err := p.cmd.Stdin.Write([]byte(line)); err != nil {
+		return "", &psSessionError{fmt.Errorf("write stdin: %w", err)}
+	}
+	return readPSOutput(p.scanner, id)
+}
+
+func (p *winRMPersistentPS) close() {
+	if p.cmd != nil {
+		_ = p.cmd.Close()
+	}
+	if p.shell != nil {
+		_ = p.shell.Close()
+	}
 }
 
 const winRMMaxInlinePowerShellCommandLen = 7000
@@ -195,7 +236,84 @@ func (t *WinRMTarget) clientForUse() (winRMClient, error) {
 	return client, nil
 }
 
+// getOrCreatePSSession returns the cached persistent PS session, creating it on
+// first call. Returns nil (without error) when the underlying client does not
+// implement winRMShellCreator (e.g. test fakes), in which case the caller falls
+// back to per-command execution.
+func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersistentPS, error) {
+	t.psSessionMu.Lock()
+	defer t.psSessionMu.Unlock()
+	if t.psSession != nil {
+		return t.psSession, nil
+	}
+
+	client, err := t.clientForUse()
+	if err != nil {
+		return nil, err
+	}
+	creator, ok := client.(winRMShellCreator)
+	if !ok {
+		return nil, nil // client doesn't support raw shells; use legacy path
+	}
+
+	shell, err := creator.CreateShell()
+	if err != nil {
+		return nil, fmt.Errorf("winrm: create persistent shell: %w", err)
+	}
+
+	cmd, err := shell.ExecuteWithContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "-")
+	if err != nil {
+		_ = shell.Close()
+		return nil, fmt.Errorf("winrm: start persistent powershell: %w", err)
+	}
+
+	scanner := bufio.NewScanner(cmd.Stdout)
+	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB per line; handles large module output
+	t.psSession = &winRMPersistentPS{shell: shell, cmd: cmd, scanner: scanner}
+	return t.psSession, nil
+}
+
+func (t *WinRMTarget) resetPSSession() {
+	t.psSessionMu.Lock()
+	defer t.psSessionMu.Unlock()
+	if t.psSession != nil {
+		t.psSession.close()
+		t.psSession = nil
+	}
+}
+
+// Close releases the persistent PS session if one was created. The underlying
+// WinRM connection is managed by the client and is not explicitly closed.
+func (t *WinRMTarget) Close() {
+	t.resetPSSession()
+}
+
+// runPS executes a PowerShell script on the remote host. It first tries the
+// persistent session (one long-lived powershell.exe process per target), which
+// avoids the per-task shell-create and process-startup overhead. If the session
+// does not exist, cannot be created, or signals a transport failure, it falls
+// back to runPSLegacy which opens a fresh shell per invocation.
 func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) {
+	ps, err := t.getOrCreatePSSession(ctx)
+	if err == nil && ps != nil {
+		out, psErr := ps.run(ctx, script)
+		if psErr == nil {
+			return out, nil
+		}
+		if isSessionError(psErr) {
+			// Transport broke; discard the session and retry via legacy path.
+			t.resetPSSession()
+		} else {
+			return out, psErr
+		}
+	}
+	return t.runPSLegacy(ctx, script)
+}
+
+// runPSLegacy executes a PowerShell script by creating a new WinRM shell per
+// invocation. Used when no persistent session is available and as a fallback
+// when the persistent session fails.
+func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string) (string, error) {
 	if shouldStageWinRMPowerShellScript(script) {
 		return t.runPSViaTempFile(ctx, script)
 	}
@@ -994,14 +1112,13 @@ function Get-Schemes() {
   }
   return $schemes
 }
-function Get-CurrentValue([string]$SchemeGuid, [string]$Subgroup, [string]$Setting, [string]$Kind) {
-  $pattern = if ($Kind -eq 'ac') { 'Current AC Power Setting Index:\s*0x([0-9A-Fa-f]+)' } else { 'Current DC Power Setting Index:\s*0x([0-9A-Fa-f]+)' }
+function Get-SettingValues([string]$SchemeGuid, [string]$Subgroup, [string]$Setting) {
+  $ac = $null; $dc = $null
   foreach ($line in Invoke-PowerCfg @('/query', $SchemeGuid, $Subgroup, $Setting)) {
-    if ($line -match $pattern) {
-      return [Convert]::ToInt64($matches[1], 16)
-    }
+    if ($line -match 'Current AC Power Setting Index:\s*0x([0-9A-Fa-f]+)') { $ac = [Convert]::ToInt64($matches[1], 16) }
+    elseif ($line -match 'Current DC Power Setting Index:\s*0x([0-9A-Fa-f]+)') { $dc = [Convert]::ToInt64($matches[1], 16) }
   }
-  throw "power_plan: unable to read $Kind value for $Subgroup/$Setting"
+  return @{ AC = $ac; DC = $dc }
 }
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
@@ -1021,18 +1138,9 @@ if ($activate -and -not $scheme.Active) {
 }
 if ($params.settings) {
   foreach ($setting in $params.settings) {
-    if ($null -ne $setting.ac_value) {
-      if ((Get-CurrentValue $scheme.Guid ([string]$setting.subgroup) ([string]$setting.setting) 'ac') -ne [int64]$setting.ac_value) {
-        $needs = $true
-        break
-      }
-    }
-    if ($null -ne $setting.dc_value) {
-      if ((Get-CurrentValue $scheme.Guid ([string]$setting.subgroup) ([string]$setting.setting) 'dc') -ne [int64]$setting.dc_value) {
-        $needs = $true
-        break
-      }
-    }
+    $vals = Get-SettingValues $scheme.Guid ([string]$setting.subgroup) ([string]$setting.setting)
+    if ($null -ne $setting.ac_value -and $vals.AC -ne [int64]$setting.ac_value) { $needs = $true; break }
+    if ($null -ne $setting.dc_value -and $vals.DC -ne [int64]$setting.dc_value) { $needs = $true; break }
   }
 }
 Write-Output $needs
