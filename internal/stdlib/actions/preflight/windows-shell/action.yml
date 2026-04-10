@@ -1,256 +1,310 @@
 name: preflight/windows-shell
-version: "1.1.0"
+version: "2.0.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
 inputs:
-  scope_bias:
-    type: string
-    default: machine
-    description: Apply user-scoped settings for the current user or bias toward machine baselines
   clear_desktop_background:
     type: bool
     default: true
-    description: Clear the desktop wallpaper for the targeted profile(s)
+    description: Clear the desktop wallpaper for the current user
   clear_desktop_shortcuts:
     type: bool
     default: true
-    description: Remove .lnk and .url shortcuts from the desktop
+    description: Remove .lnk and .url shortcuts from the current user's desktop
+  taskbar_auto_hide:
+    type: string
+    default: unchanged
+    description: Keep the current user's taskbar behavior or set auto-hide enabled or disabled
+  theme_mode:
+    type: string
+    default: unchanged
+    description: Keep the current theme or set both app and system surfaces to light or dark
+  transparency_effects:
+    type: string
+    default: unchanged
+    description: Keep the current transparency preference or set it to enabled or disabled
   hide_recycle_bin:
     type: bool
     default: true
-    description: Hide the Recycle Bin icon from the desktop
+    description: Hide the Recycle Bin icon for the current user
   show_hidden_files:
     type: bool
     default: true
-    description: Show hidden files in File Explorer
+    description: Show hidden files in File Explorer for the current user
   show_file_extensions:
     type: bool
     default: true
-    description: Show file extensions in File Explorer
+    description: Show file extensions in File Explorer for the current user
   clear_start_pins:
     type: bool
     default: false
-    description: Replace Start pins with an empty pinned list
+    description: Replace the current user's Start pins with an empty pinned list
   start_pins_json:
     type: string
     default: ""
-    description: JSON content for the ConfigureStartPins policy value
+    description: JSON content for the current user's ConfigureStartPins policy value
 
 tasks:
-  - name: Configure shell profile defaults
+  - name: Clear desktop background
+    when: "{{ vars.clear_desktop_background }}"
+    registry:
+      path: 'HKCU:\Control Panel\Desktop'
+      values:
+        Wallpaper: ""
+        WallpaperStyle: "0"
+        TileWallpaper: "0"
+      ensure: present
+
+  - name: Configure theme mode
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
-        $clearBackground = [System.Convert]::ToBoolean('{{ vars.clear_desktop_background }}')
-        $showHiddenFiles = [System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')
-        $showFileExtensions = [System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')
-        $hideRecycleBin = [System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')
-        $desiredHidden = if ($showHiddenFiles) { 1 } else { 2 }
-        $desiredHideFileExt = if ($showFileExtensions) { 0 } else { 1 }
-        $desiredRecycleBin = if ($hideRecycleBin) { 1 } else { 0 }
-        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
-
-        function Test-Target([string]$root) {
-          $desktop = Join-Path $root 'Control Panel\Desktop'
-          $advanced = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-          $hideDesktop = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons'
-          $newStart = Join-Path $hideDesktop 'NewStartPanel'
-          $classic = Join-Path $hideDesktop 'ClassicStartMenu'
-
-          if ($clearBackground) {
-            $wallpaper = (Get-ItemProperty -LiteralPath $desktop -Name Wallpaper -ErrorAction SilentlyContinue).Wallpaper
-            if (-not [string]::IsNullOrEmpty([string]$wallpaper)) {
-              return $true
-            }
-          }
-
-          $advancedProps = Get-ItemProperty -LiteralPath $advanced -ErrorAction SilentlyContinue
-          if ($null -eq $advancedProps) {
-            return $true
-          }
-          if ([int]$advancedProps.Hidden -ne $desiredHidden) {
-            return $true
-          }
-          if ([int]$advancedProps.HideFileExt -ne $desiredHideFileExt) {
-            return $true
-          }
-
-          foreach ($path in @($newStart, $classic)) {
-            $value = (Get-ItemProperty -LiteralPath $path -Name $recycleBinGuid -ErrorAction SilentlyContinue).$recycleBinGuid
-            if ($null -eq $value -or [int]$value -ne $desiredRecycleBin) {
-              return $true
-            }
-          }
+        $themeMode = ([string]'{{ vars.theme_mode }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($themeMode) -or $themeMode -eq 'unchanged') {
           return $false
         }
 
-        $needs = Test-Target 'HKCU:'
-        if (-not $needs -and $scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              $needs = Test-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
+        switch ($themeMode) {
+          'light' { $desiredLightTheme = 1 }
+          'dark' { $desiredLightTheme = 0 }
+          default { throw "theme_mode must be one of: unchanged, light, dark" }
         }
-        return $needs
+
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        if ($null -eq $props) {
+          return $true
+        }
+        if ($null -eq $props.AppsUseLightTheme -or [int]$props.AppsUseLightTheme -ne $desiredLightTheme) {
+          return $true
+        }
+        return ($null -eq $props.SystemUsesLightTheme -or [int]$props.SystemUsesLightTheme -ne $desiredLightTheme)
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
-        $clearBackground = [System.Convert]::ToBoolean('{{ vars.clear_desktop_background }}')
-        $showHiddenFiles = [System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')
-        $showFileExtensions = [System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')
-        $hideRecycleBin = [System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')
-        $desiredHidden = if ($showHiddenFiles) { 1 } else { 2 }
-        $desiredHideFileExt = if ($showFileExtensions) { 0 } else { 1 }
-        $desiredRecycleBin = if ($hideRecycleBin) { 1 } else { 0 }
-        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
-
-        function Set-Target([string]$root) {
-          $desktop = Join-Path $root 'Control Panel\Desktop'
-          $advanced = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
-          $hideDesktop = Join-Path $root 'Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons'
-          $newStart = Join-Path $hideDesktop 'NewStartPanel'
-          $classic = Join-Path $hideDesktop 'ClassicStartMenu'
-
-          New-Item -Path $desktop -Force | Out-Null
-          New-Item -Path $advanced -Force | Out-Null
-          New-Item -Path $newStart -Force | Out-Null
-          New-Item -Path $classic -Force | Out-Null
-
-          if ($clearBackground) {
-            New-ItemProperty -LiteralPath $desktop -Name Wallpaper -Value '' -PropertyType String -Force | Out-Null
-            New-ItemProperty -LiteralPath $desktop -Name WallpaperStyle -Value '0' -PropertyType String -Force | Out-Null
-            New-ItemProperty -LiteralPath $desktop -Name TileWallpaper -Value '0' -PropertyType String -Force | Out-Null
-          }
-
-          New-ItemProperty -LiteralPath $advanced -Name Hidden -Value $desiredHidden -PropertyType DWord -Force | Out-Null
-          New-ItemProperty -LiteralPath $advanced -Name HideFileExt -Value $desiredHideFileExt -PropertyType DWord -Force | Out-Null
-
-          foreach ($path in @($newStart, $classic)) {
-            New-ItemProperty -LiteralPath $path -Name $recycleBinGuid -Value $desiredRecycleBin -PropertyType DWord -Force | Out-Null
-          }
+        $themeMode = ([string]'{{ vars.theme_mode }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($themeMode) -or $themeMode -eq 'unchanged') {
+          exit 0
         }
 
-        Write-Output 'Applying shell defaults to the current user profile'
-        Set-Target 'HKCU:'
-        if ($clearBackground) {
-          Write-Output 'Refreshing desktop background settings for the current user'
-          Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
-        }
-        if ($scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              Write-Output 'Applying shell defaults to the default user profile'
-              Set-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
+        switch ($themeMode) {
+          'light' { $desiredLightTheme = 1 }
+          'dark' { $desiredLightTheme = 0 }
+          default { throw "theme_mode must be one of: unchanged, light, dark" }
         }
 
-  - name: Clear desktop shortcuts
-    when: "{{ vars.clear_desktop_shortcuts }}"
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name AppsUseLightTheme -Value $desiredLightTheme -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name SystemUsesLightTheme -Value $desiredLightTheme -PropertyType DWord -Force | Out-Null
+        Write-Output ("Persisting " + $themeMode + " theme mode for the current user profile")
+        Write-Output 'Sign out or restart Explorer to see updated shell visuals'
+
+  - name: Configure transparency effects
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
-
-        function Get-DesktopPaths() {
-          $paths = @()
-          if ($env:USERPROFILE) {
-            $paths += (Join-Path $env:USERPROFILE 'Desktop')
-          }
-          if ($scopeBias -eq 'machine') {
-            if ($env:PUBLIC) {
-              $paths += (Join-Path $env:PUBLIC 'Desktop')
-            }
-            $paths += 'C:\Users\Default\Desktop'
-          }
-          return $paths | Select-Object -Unique
+        $transparency = ([string]'{{ vars.transparency_effects }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($transparency) -or $transparency -eq 'unchanged') {
+          return $false
         }
 
-        foreach ($path in Get-DesktopPaths) {
-          if (-not (Test-Path -LiteralPath $path)) {
-            continue
-          }
-          $items = Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' }
-          if ($items) {
+        switch ($transparency) {
+          'enabled' { $desiredTransparency = 1 }
+          'disabled' { $desiredTransparency = 0 }
+          default { throw "transparency_effects must be one of: unchanged, enabled, disabled" }
+        }
+
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        return ($null -eq $props -or $null -eq $props.EnableTransparency -or [int]$props.EnableTransparency -ne $desiredTransparency)
+      script: |
+        $transparency = ([string]'{{ vars.transparency_effects }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($transparency) -or $transparency -eq 'unchanged') {
+          exit 0
+        }
+
+        switch ($transparency) {
+          'enabled' { $desiredTransparency = 1 }
+          'disabled' { $desiredTransparency = 0 }
+          default { throw "transparency_effects must be one of: unchanged, enabled, disabled" }
+        }
+
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name EnableTransparency -Value $desiredTransparency -PropertyType DWord -Force | Out-Null
+        Write-Output ("Persisting transparency effects for the current user profile: " + $transparency)
+        Write-Output 'Sign out or restart Explorer to see updated shell visuals'
+
+  - name: Configure hidden files visibility
+    powershell:
+      check_script: |
+        $desiredHidden = if ([System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')) { 1 } else { 2 }
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        return ($null -eq $props -or [int]$props.Hidden -ne $desiredHidden)
+      script: |
+        $desiredHidden = if ([System.Convert]::ToBoolean('{{ vars.show_hidden_files }}')) { 1 } else { 2 }
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name Hidden -Value $desiredHidden -PropertyType DWord -Force | Out-Null
+        Write-Output 'Persisting hidden files visibility for the current user profile'
+
+  - name: Configure file extensions visibility
+    powershell:
+      check_script: |
+        $desiredHideFileExt = if ([System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')) { 0 } else { 1 }
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+        $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
+        return ($null -eq $props -or [int]$props.HideFileExt -ne $desiredHideFileExt)
+      script: |
+        $desiredHideFileExt = if ([System.Convert]::ToBoolean('{{ vars.show_file_extensions }}')) { 0 } else { 1 }
+        $path = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name HideFileExt -Value $desiredHideFileExt -PropertyType DWord -Force | Out-Null
+        Write-Output 'Persisting file extensions visibility for the current user profile'
+
+  - name: Configure Recycle Bin desktop icon visibility
+    powershell:
+      check_script: |
+        $desiredRecycleBin = if ([System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')) { 1 } else { 0 }
+        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
+        foreach ($path in @(
+          'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel',
+          'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
+        )) {
+          $value = (Get-ItemProperty -LiteralPath $path -Name $recycleBinGuid -ErrorAction SilentlyContinue).$recycleBinGuid
+          if ($null -eq $value -or [int]$value -ne $desiredRecycleBin) {
             return $true
           }
         }
         return $false
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
+        $desiredRecycleBin = if ([System.Convert]::ToBoolean('{{ vars.hide_recycle_bin }}')) { 1 } else { 0 }
+        $recycleBinGuid = '{645FF040-5081-101B-9F08-00AA002F954E}'
+        foreach ($path in @(
+          'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel',
+          'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
+        )) {
+          New-Item -Path $path -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name $recycleBinGuid -Value $desiredRecycleBin -PropertyType DWord -Force | Out-Null
+        }
+        Write-Output 'Persisting Recycle Bin desktop icon visibility for the current user profile'
 
-        function Get-DesktopPaths() {
-          $paths = @()
-          if ($env:USERPROFILE) {
-            $paths += (Join-Path $env:USERPROFILE 'Desktop')
+  - name: Configure taskbar auto-hide
+    powershell:
+      check_script: |
+        $taskbarAutoHide = ([string]'{{ vars.taskbar_auto_hide }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($taskbarAutoHide) -or $taskbarAutoHide -eq 'unchanged') {
+          return $false
+        }
+
+        switch ($taskbarAutoHide) {
+          'enabled' {
+            $desiredStateByte = 3
+            $desiredAutoHide = $true
           }
-          if ($scopeBias -eq 'machine') {
-            if ($env:PUBLIC) {
-              $paths += (Join-Path $env:PUBLIC 'Desktop')
+          'disabled' {
+            $desiredStateByte = 2
+            $desiredAutoHide = $false
+          }
+          default { throw "taskbar_auto_hide must be one of: unchanged, enabled, disabled" }
+        }
+
+        function Get-TaskbarSettingsPath() {
+          foreach ($candidate in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
+          )) {
+            if (Test-Path -LiteralPath $candidate) {
+              return $candidate
             }
-            $paths += 'C:\Users\Default\Desktop'
           }
-          return $paths | Select-Object -Unique
+          return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
         }
 
-        foreach ($path in Get-DesktopPaths) {
-          if (-not (Test-Path -LiteralPath $path)) {
-            continue
-          }
-          Write-Output ("Removing desktop shortcuts from " + $path)
-          Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in '.lnk', '.url' } |
-            Remove-Item -Force -ErrorAction SilentlyContinue
+        $path = Get-TaskbarSettingsPath
+        $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
+        if ($null -eq $settings -or $settings.Length -lt 9) {
+          return $true
         }
+
+        return ([int]$settings[8] -ne $desiredStateByte)
+      script: |
+        $taskbarAutoHide = ([string]'{{ vars.taskbar_auto_hide }}').Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($taskbarAutoHide) -or $taskbarAutoHide -eq 'unchanged') {
+          exit 0
+        }
+
+        switch ($taskbarAutoHide) {
+          'enabled' { $desiredStateByte = 3 }
+          'disabled' { $desiredStateByte = 2 }
+          default { throw "taskbar_auto_hide must be one of: unchanged, enabled, disabled" }
+        }
+
+        function Get-TaskbarSettingsPath() {
+          foreach ($candidate in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
+          )) {
+            if (Test-Path -LiteralPath $candidate) {
+              return $candidate
+            }
+          }
+          return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+        }
+
+        $path = Get-TaskbarSettingsPath
+        $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
+        if ($null -eq $settings -or $settings.Length -lt 9) {
+          throw ("taskbar_auto_hide requires an existing Explorer Settings value at " + $path)
+        }
+        $updated = [byte[]]$settings.Clone()
+        $updated[8] = [byte]$desiredStateByte
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
+        Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $taskbarAutoHide)
+        Write-Output 'Restart Explorer or sign out to see the updated taskbar behavior'
+
+  - name: Clear desktop shortcuts
+    when: "{{ vars.clear_desktop_shortcuts }}"
+    powershell:
+      check_script: |
+        $path = Join-Path $env:USERPROFILE 'Desktop'
+        if (-not (Test-Path -LiteralPath $path)) {
+          return $false
+        }
+        $items = Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' }
+        return [bool]$items
+      script: |
+        $path = Join-Path $env:USERPROFILE 'Desktop'
+        if (-not (Test-Path -LiteralPath $path)) {
+          exit 0
+        }
+        Write-Output ("Removing desktop shortcuts from " + $path)
+        Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
+          Where-Object { $_.Extension -in '.lnk', '.url' } |
+          Remove-Item -Force -ErrorAction SilentlyContinue
 
   - name: Configure Start pins policy
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $desiredJson = '{{ vars.start_pins_json }}'
-        $clearStartPins = [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')
-        if ([string]::IsNullOrWhiteSpace($desiredJson) -and $clearStartPins) {
+        if ([string]::IsNullOrWhiteSpace($desiredJson) -and [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')) {
           $desiredJson = '{"pinnedList":[]}'
         }
         if ([string]::IsNullOrWhiteSpace($desiredJson)) {
           return $false
         }
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' }
+        $path = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
         $current = (Get-ItemProperty -LiteralPath $path -Name ConfigureStartPins -ErrorAction SilentlyContinue).ConfigureStartPins
         return ([string]$current -ne $desiredJson)
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $desiredJson = '{{ vars.start_pins_json }}'
-        $clearStartPins = [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')
-        if ([string]::IsNullOrWhiteSpace($desiredJson) -and $clearStartPins) {
+        if ([string]::IsNullOrWhiteSpace($desiredJson) -and [System.Convert]::ToBoolean('{{ vars.clear_start_pins }}')) {
           $desiredJson = '{"pinnedList":[]}'
         }
         if ([string]::IsNullOrWhiteSpace($desiredJson)) {
           exit 0
         }
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Explorer' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer' }
-        Write-Output ("Applying Start pins policy at " + $path)
+        $path = 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name ConfigureStartPins -Value $desiredJson -PropertyType String -Force | Out-Null
+        Write-Output 'Persisting Start pins policy for the current user profile'

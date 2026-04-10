@@ -130,6 +130,7 @@ Implemented today:
 - Task-level `become` with inherited defaults and named-user execution via `runas` on Windows and `sudo -u` on POSIX
 - Embedded, local, cached, and Git-backed action resolution
 - Embedded Windows baseline stdlib actions for machine, shell, input, quiet mode, updates, power, and apps
+- User-scoped shell and input stdlib actions apply to the current execution identity; use `become` when you need to target a different Windows user
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply

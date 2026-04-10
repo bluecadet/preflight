@@ -82,6 +82,22 @@ Add a `become` block to any task that must execute under the exhibit account's i
 
 `become` is task execution metadata — it does not change the module's `params`, only the identity the task runs under.
 
+This is also the recommended way to apply current-user stdlib actions such as `preflight/windows-shell`, `preflight/windows-input`, and the screensaver portion of `preflight/windows-power` to a kiosk or exhibit account. Those actions now persist settings for the current execution identity rather than seeding future profiles.
+
+```yaml
+  - name: Configure shell defaults for exhibit user
+    become:
+      user: exhibit
+      password: secret:exhibit-password
+      load_profile: true
+    uses: preflight/windows-shell
+    with:
+      theme_mode: dark
+      taskbar_auto_hide: enabled
+```
+
+Some shell-facing changes persist immediately in the user's profile but only become visible after sign-out, Explorer restart, or reboot.
+
 ## 5. Use Playbook Defaults To Avoid Repetition
 
 When most tasks in a playbook should run as the exhibit user, set `defaults.become` at the playbook level:

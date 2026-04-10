@@ -1,13 +1,9 @@
 name: preflight/windows-input
-version: "1.2.0"
+version: "2.0.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
 inputs:
-  scope_bias:
-    type: string
-    default: machine
-    description: Apply user-scoped settings for the current user or bias toward machine baselines
   disable_edge_gestures:
     type: bool
     default: true
@@ -15,32 +11,30 @@ inputs:
   disable_touch_feedback:
     type: bool
     default: true
-    description: Disable touch contact visualization feedback
+    description: Disable touch contact visualization feedback for the current user
   disable_touch_gestures:
     type: bool
     default: true
-    description: Disable gesture visualization feedback
+    description: Disable gesture visualization feedback for the current user
   text_scale_percent:
     type: int
     default: 100
-    description: Windows text size percentage
+    description: Windows text size percentage for the current user
 
 tasks:
   - name: Configure edge swipe policy
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' }
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
         $prop = Get-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -ErrorAction SilentlyContinue
         if ($disable) {
           return ($null -eq $prop -or [int]$prop.AllowEdgeSwipe -ne 0)
         }
         return ($null -ne $prop)
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI' }
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
         New-Item -Path $path -Force | Out-Null
         if ($disable) {
           New-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -Value 0 -PropertyType DWord -Force | Out-Null
@@ -51,130 +45,49 @@ tasks:
   - name: Configure text scale
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $desired = [int]'{{ vars.text_scale_percent }}'
-
-        function Test-Target([string]$root) {
-          $path = Join-Path $root 'Software\Microsoft\Accessibility'
-          $prop = Get-ItemProperty -LiteralPath $path -Name TextScaleFactor -ErrorAction SilentlyContinue
-          return ($null -eq $prop -or [int]$prop.TextScaleFactor -ne $desired)
-        }
-
-        $needs = Test-Target 'HKCU:'
-        if (-not $needs -and $scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              $needs = Test-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
-        }
-        return $needs
+        $path = 'HKCU:\Software\Microsoft\Accessibility'
+        $prop = Get-ItemProperty -LiteralPath $path -Name TextScaleFactor -ErrorAction SilentlyContinue
+        return ($null -eq $prop -or [int]$prop.TextScaleFactor -ne $desired)
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $desired = [int]'{{ vars.text_scale_percent }}'
-
-        function Set-Target([string]$root) {
-          $path = Join-Path $root 'Software\Microsoft\Accessibility'
-          New-Item -Path $path -Force | Out-Null
-          New-ItemProperty -LiteralPath $path -Name TextScaleFactor -Value $desired -PropertyType DWord -Force | Out-Null
-        }
-
+        $path = 'HKCU:\Software\Microsoft\Accessibility'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name TextScaleFactor -Value $desired -PropertyType DWord -Force | Out-Null
         Write-Output ("Setting text scale to " + $desired + "% for the current user")
-        Set-Target 'HKCU:'
-        if ($scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              Write-Output ("Setting text scale to " + $desired + "% for the default user profile")
-              Set-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
-        }
 
   - name: Configure touch feedback visualization
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
-        $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
-        $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
         $desiredContact = [uint32]1
-        if ($disableTouchFeedback) {
+        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
           $desiredContact = [uint32]0
         }
         $desiredGesture = [uint32]31
-        if ($disableTouchGestures) {
+        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')) {
           $desiredGesture = [uint32]0
         }
 
-        function Test-Target([string]$root) {
-          $path = Join-Path $root 'Control Panel\Cursors'
-          $prop = Get-ItemProperty -LiteralPath $path -Name ContactVisualization,GestureVisualization -ErrorAction SilentlyContinue
-          if ($null -eq $prop) {
-            return $true
-          }
-          return ([uint32]$prop.ContactVisualization -ne $desiredContact -or [uint32]$prop.GestureVisualization -ne $desiredGesture)
+        $path = 'HKCU:\Control Panel\Cursors'
+        $prop = Get-ItemProperty -LiteralPath $path -Name ContactVisualization,GestureVisualization -ErrorAction SilentlyContinue
+        if ($null -eq $prop) {
+          return $true
         }
-
-        $needs = Test-Target 'HKCU:'
-        if (-not $needs -and $scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              $needs = Test-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
-        }
-        return $needs
+        return ([uint32]$prop.ContactVisualization -ne $desiredContact -or [uint32]$prop.GestureVisualization -ne $desiredGesture)
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
-        $disableTouchFeedback = [System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')
-        $disableTouchGestures = [System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')
         $desiredContact = [uint32]1
-        if ($disableTouchFeedback) {
+        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
           $desiredContact = [uint32]0
         }
         $desiredGesture = [uint32]31
-        if ($disableTouchGestures) {
+        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')) {
           $desiredGesture = [uint32]0
         }
 
-        function Set-Target([string]$root) {
-          $path = Join-Path $root 'Control Panel\Cursors'
-          New-Item -Path $path -Force | Out-Null
-          New-ItemProperty -LiteralPath $path -Name ContactVisualization -Value $desiredContact -PropertyType DWord -Force | Out-Null
-          New-ItemProperty -LiteralPath $path -Name GestureVisualization -Value $desiredGesture -PropertyType DWord -Force | Out-Null
-        }
+        $path = 'HKCU:\Control Panel\Cursors'
+        New-Item -Path $path -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name ContactVisualization -Value $desiredContact -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name GestureVisualization -Value $desiredGesture -PropertyType DWord -Force | Out-Null
 
         Add-Type @"
         using System;
@@ -186,25 +99,5 @@ tasks:
         "@
 
         Write-Output 'Applying touch feedback and gesture visibility settings for the current user'
-        Set-Target 'HKCU:'
         [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
         [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)
-        if ($scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              Write-Output 'Applying touch feedback and gesture visibility settings for the default user profile'
-              Set-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
-        }

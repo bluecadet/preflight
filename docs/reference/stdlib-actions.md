@@ -35,13 +35,17 @@ Configure machine-level baseline settings.
 
 ### `preflight/windows-shell`
 
-Configure desktop and Explorer defaults.
+Configure desktop and Explorer defaults for the current execution identity.
+
+Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `scope_bias` | string | `machine` or `user` for supported per-user settings |
 | `clear_desktop_background` | bool | Clear the wallpaper |
 | `clear_desktop_shortcuts` | bool | Remove `.lnk` and `.url` files from desktop locations |
+| `taskbar_auto_hide` | string | Keep the current taskbar behavior or set auto-hide to `enabled` or `disabled` |
+| `theme_mode` | string | Keep the current theme or set both app and system surfaces to `light` or `dark` |
+| `transparency_effects` | string | Keep the current transparency preference or set it to `enabled` or `disabled` |
 | `hide_recycle_bin` | bool | Hide the Recycle Bin icon |
 | `show_hidden_files` | bool | Show hidden files in Explorer |
 | `show_file_extensions` | bool | Show file extensions in Explorer |
@@ -50,11 +54,12 @@ Configure desktop and Explorer defaults.
 
 ### `preflight/windows-input`
 
-Configure input, gesture, and text-scale preferences.
+Configure input, gesture, and text-scale preferences. User-facing preferences apply to the current execution identity; policy-backed edge-swipe settings apply at machine scope.
+
+Current-user visual input changes may require sign-out or a new Explorer session before the desktop reflects them.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `scope_bias` | string | `machine` or `user` for supported per-user settings |
 | `disable_edge_gestures` | bool | Disable edge swipe gestures |
 | `disable_touch_feedback` | bool | Disable touch contact visualization |
 | `disable_touch_gestures` | bool | Disable gesture visualization |
@@ -62,11 +67,10 @@ Configure input, gesture, and text-scale preferences.
 
 ### `preflight/windows-quiet-mode`
 
-Reduce notifications, prompts, and recovery UI noise.
+Reduce notifications, prompts, and recovery UI noise with machine-scoped Windows policy settings.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `scope_bias` | string | `machine` or `user` for supported per-user settings |
 | `disable_notifications` | bool | Disable toast and cloud notifications |
 | `disable_error_reporting` | bool | Disable Windows Error Reporting |
 | `disable_windows_setup_prompt` | bool | Disable consumer and cloud-optimized Windows prompts |
@@ -84,11 +88,12 @@ Reduce background system changes driven by Windows Update and Microsoft Store po
 
 ### `preflight/windows-power`
 
-Manage named power plans, screensaver defaults, and optional scheduled reboot tasks.
+Manage named power plans, current-user screensaver defaults, and optional scheduled reboot tasks.
+
+Current-user screensaver changes are persisted immediately but may require sign-out or a new Explorer session before the shell reflects them.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `scope_bias` | string | `machine` or `user` for supported per-user settings |
 | `plan_name` | string | Friendly name for the managed power plan |
 | `plan_base` | string | Base plan alias or GUID to clone |
 | `activate_plan` | bool | Activate the managed plan after applying it |
@@ -104,15 +109,6 @@ Manage named power plans, screensaver defaults, and optional scheduled reboot ta
 ### `preflight/debloat`
 
 Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype). No inputs — use `remove_appx_packages` directly if you need a custom list.
-
-## `scope_bias`
-
-Several grouped Windows actions expose `scope_bias`.
-
-| Value | Meaning |
-| --- | --- |
-| `machine` | Apply the current-user setting and, where supported by the action, also seed the default user profile for future accounts |
-| `user` | Apply only the current-user setting |
 
 ## Related Docs
 

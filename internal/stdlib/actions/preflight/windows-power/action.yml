@@ -1,13 +1,9 @@
 name: preflight/windows-power
-version: "1.1.0"
+version: "2.0.0"
 description: Configure Windows power plans and optional reboot scheduling
 author: preflight
 
 inputs:
-  scope_bias:
-    type: string
-    default: machine
-    description: Apply user-scoped settings for the current user or bias toward machine baselines
   plan_name:
     type: string
     default: Preflight Exhibit
@@ -39,7 +35,7 @@ inputs:
   disable_screensaver:
     type: bool
     default: true
-    description: Disable the Windows screen saver
+    description: Disable the Windows screen saver for the current user
   scheduled_reboot_state:
     type: string
     default: absent
@@ -74,72 +70,26 @@ tasks:
     powershell:
       check_script: |
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
-        $scopeBias = '{{ vars.scope_bias }}'
-        function Test-Target([string]$root) {
-          $desktopPath = Join-Path $root 'Control Panel\Desktop'
-          $prop = Get-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -ErrorAction SilentlyContinue
-          if ($disable) {
-            return ($null -eq $prop -or [string]$prop.ScreenSaveActive -ne '0')
-          }
-          return ($null -ne $prop -and [string]$prop.ScreenSaveActive -eq '0')
+        $desktopPath = 'HKCU:\Control Panel\Desktop'
+        $prop = Get-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -ErrorAction SilentlyContinue
+        if ($disable) {
+          return ($null -eq $prop -or [string]$prop.ScreenSaveActive -ne '0')
         }
-        $needs = Test-Target 'HKCU:'
-        if (-not $needs -and $scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              $needs = Test-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
-        }
-        return $needs
+        return ($null -ne $prop -and [string]$prop.ScreenSaveActive -eq '0')
       script: |
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
-        $scopeBias = '{{ vars.scope_bias }}'
-        function Set-Target([string]$root) {
-          $desktopPath = Join-Path $root 'Control Panel\Desktop'
-          New-Item -Path $desktopPath -Force | Out-Null
-          if ($disable) {
-            New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '0' -PropertyType String -Force | Out-Null
-            Remove-ItemProperty -LiteralPath $desktopPath -Name SCRNSAVE.EXE -Force -ErrorAction SilentlyContinue
-          } else {
-            New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '1' -PropertyType String -Force | Out-Null
-          }
+        $desktopPath = 'HKCU:\Control Panel\Desktop'
+        New-Item -Path $desktopPath -Force | Out-Null
+        if ($disable) {
+          New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '0' -PropertyType String -Force | Out-Null
+          Remove-ItemProperty -LiteralPath $desktopPath -Name SCRNSAVE.EXE -Force -ErrorAction SilentlyContinue
+        } else {
+          New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '1' -PropertyType String -Force | Out-Null
         }
         Write-Output 'Applying screen saver settings to the current user profile'
-        Set-Target 'HKCU:'
         if ($disable) {
           Write-Output 'Refreshing current user shell parameters after disabling the screen saver'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
-        }
-        if ($scopeBias -eq 'machine') {
-          $defaultHiveLoaded = $false
-          if (-not (Test-Path 'HKU:\PreflightDefault')) {
-            reg.exe load HKU\PreflightDefault 'C:\Users\Default\NTUSER.DAT' > $null 2>&1
-            if ($LASTEXITCODE -eq 0) {
-              $defaultHiveLoaded = $true
-            }
-          }
-          if (Test-Path 'HKU:\PreflightDefault') {
-            try {
-              Write-Output 'Applying screen saver settings to the default user profile'
-              Set-Target 'HKU:\PreflightDefault'
-            } finally {
-              if ($defaultHiveLoaded) {
-                reg.exe unload HKU\PreflightDefault > $null 2>&1
-              }
-            }
-          }
         }
 
   - name: Configure scheduled reboot task

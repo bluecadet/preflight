@@ -1,17 +1,13 @@
 name: preflight/windows-quiet-mode
-version: "1.0.0"
+version: "2.0.0"
 description: Reduce notifications, prompts, and Windows recovery UI noise
 author: preflight
 
 inputs:
-  scope_bias:
-    type: string
-    default: machine
-    description: Apply user-scoped settings for the current user or bias toward machine baselines
   disable_notifications:
     type: bool
     default: true
-    description: Turn off toast and cloud notifications
+    description: Turn off toast and cloud notifications with machine policy
   disable_error_reporting:
     type: bool
     default: true
@@ -29,9 +25,8 @@ tasks:
   - name: Configure notification policy
     powershell:
       check_script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_notifications }}')
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' }
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'
         $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
         if ($disable) {
           return (
@@ -42,9 +37,8 @@ tasks:
         }
         return ($null -ne $props -and ($null -ne $props.NoToastApplicationNotification -or $null -ne $props.NoCloudApplicationNotification))
       script: |
-        $scopeBias = '{{ vars.scope_bias }}'
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_notifications }}')
-        $path = if ($scopeBias -eq 'machine') { 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' } else { 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications' }
+        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CurrentVersion\PushNotifications'
         New-Item -Path $path -Force | Out-Null
         if ($disable) {
           New-ItemProperty -LiteralPath $path -Name NoToastApplicationNotification -Value 1 -PropertyType DWord -Force | Out-Null

@@ -163,6 +163,8 @@ When adding or materially changing a stdlib action, update the public docs that 
 - `docs/reference/stdlib-actions.md` for the embedded action surface
 - `docs/reference/modules.md` if the action depends on new built-in module fields or behavior
 
+For Windows stdlib actions, prefer a clear scope model over flexible-but-ambiguous toggles. Current-user preferences should apply to the current execution identity; use playbook/task `become` when callers need to target a different user. Reserve machine-scoped behavior for settings that are truly machine or policy backed.
+
 ---
 
 ## Adding a CLI Command
