@@ -175,6 +175,12 @@ func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
 	if !strings.Contains(scheduledTaskApplyScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected scheduled task apply script to create folders, got %q", scheduledTaskApplyScript)
 	}
+	if !strings.Contains(scheduledTaskApplyScript, "Normalize-TaskFolderPathForCom") {
+		t.Fatalf("expected scheduled task apply script to normalize COM paths, got %q", scheduledTaskApplyScript)
+	}
+	if strings.Contains(scheduledTaskApplyScript, "\\' + $segment + '\\'") {
+		t.Fatalf("expected scheduled task apply script to avoid trailing backslashes in COM folder lookups, got %q", scheduledTaskApplyScript)
+	}
 	if !strings.Contains(scheduledTaskApplyScript, "task '\" + $name + \"' was not registered in '\" + $path + \"'") {
 		t.Fatalf("expected scheduled task apply script to verify exact registration, got %q", scheduledTaskApplyScript)
 	}
@@ -189,6 +195,9 @@ func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
 func TestScheduledTaskCheckScriptUsesExactFolderLookup(t *testing.T) {
 	if !strings.Contains(scheduledTaskCheckScript, "Get-TaskFromExactFolder $path $name") {
 		t.Fatalf("expected scheduled task check script to use exact-folder lookup, got %q", scheduledTaskCheckScript)
+	}
+	if !strings.Contains(scheduledTaskCheckScript, "Normalize-TaskFolderPathForCom") {
+		t.Fatalf("expected scheduled task check script to normalize COM paths, got %q", scheduledTaskCheckScript)
 	}
 	if !strings.Contains(scheduledTaskCheckScript, "[string]$_.TaskPath -eq $path") {
 		t.Fatalf("expected scheduled task check script to filter exact task path, got %q", scheduledTaskCheckScript)
@@ -208,8 +217,20 @@ func TestRemoveAppxApplyScriptGuardsAgainstEmptyPackageNames(t *testing.T) {
 	if !strings.Contains(removeAppxPackagesApplyScript, "IsNullOrWhiteSpace($packageFullName)") {
 		t.Fatalf("expected remove-appx apply script to guard PackageFullName, got %q", removeAppxPackagesApplyScript)
 	}
+	if !strings.Contains(removeAppxPackagesApplyScript, "IsNullOrWhiteSpace($packageName)") {
+		t.Fatalf("expected remove-appx apply script to guard provisioned PackageName, got %q", removeAppxPackagesApplyScript)
+	}
 	if !strings.Contains(removeAppxPackagesApplyScript, "skipping appx package ") {
 		t.Fatalf("expected remove-appx apply script to log skipped malformed packages, got %q", removeAppxPackagesApplyScript)
+	}
+}
+
+func TestRemoveAppxCheckScriptFiltersMalformedPackageNames(t *testing.T) {
+	if !strings.Contains(removeAppxPackagesCheckScript, "IsNullOrWhiteSpace([string]$_.PackageFullName)") {
+		t.Fatalf("expected remove-appx check script to guard PackageFullName, got %q", removeAppxPackagesCheckScript)
+	}
+	if !strings.Contains(removeAppxPackagesCheckScript, "IsNullOrWhiteSpace($packageName)") {
+		t.Fatalf("expected remove-appx check script to guard provisioned PackageName, got %q", removeAppxPackagesCheckScript)
 	}
 }
 

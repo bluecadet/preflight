@@ -870,11 +870,18 @@ $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 
+function Normalize-TaskFolderPathForCom([string]$taskPath) {
+  if (-not $taskPath -or $taskPath -eq '\') {
+    return '\'
+  }
+  return '\' + $taskPath.Trim('\')
+}
+
 function Get-TaskFromExactFolder([string]$taskPath, [string]$taskName) {
   $service = New-Object -ComObject 'Schedule.Service'
   $service.Connect()
   try {
-    $folder = $service.GetFolder($taskPath)
+    $folder = $service.GetFolder((Normalize-TaskFolderPathForCom $taskPath))
   } catch {
     return $null
   }
@@ -978,6 +985,13 @@ $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 
+function Normalize-TaskFolderPathForCom([string]$taskPath) {
+  if (-not $taskPath -or $taskPath -eq '\') {
+    return '\'
+  }
+  return '\' + $taskPath.Trim('\')
+}
+
 function Ensure-TaskFolder([string]$taskPath) {
   if (-not $taskPath -or $taskPath -eq '\') {
     return
@@ -989,7 +1003,7 @@ function Ensure-TaskFolder([string]$taskPath) {
     if ([string]::IsNullOrWhiteSpace($segment)) {
       continue
     }
-    $nextPath = if ($currentPath -eq '\') { '\' + $segment + '\' } else { $currentPath + $segment + '\' }
+    $nextPath = if ($currentPath -eq '\') { '\' + $segment } else { $currentPath + '\' + $segment }
     try {
       $null = $service.GetFolder($nextPath)
     } catch {
@@ -1147,11 +1161,8 @@ foreach ($spec in $pkgs) {
 
 const removeAppxPackagesCheckScript = `
 $pkgs = @($params.packages)
-foreach ($spec in $pkgs) {
-  $name = [string]$spec.name
-  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-  Write-Output ("checking appx package " + $name + " (" + $scope + ")")
+
+function Get-InstalledAppxMatches([string]$scope, [string]$name) {
   $installed = @()
   switch ($scope) {
     'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
@@ -1160,12 +1171,32 @@ foreach ($spec in $pkgs) {
     'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
     default { throw "remove_appx_packages: unsupported scope $scope" }
   }
-  $provisioned = @()
-  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-    $provisioned = @(Get-AppxProvisionedPackage -Online | Where-Object {
-      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
-    })
+  return @($installed | Where-Object {
+    $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName)
+  })
+}
+
+function Get-ProvisionedAppxMatches([string]$scope, [string]$name, [bool]$hasWildcard) {
+  if ($scope -ne 'provisioned' -and $scope -ne 'both') {
+    return @()
   }
+  return @(Get-AppxProvisionedPackage -Online | Where-Object {
+    $displayName = [string]$_.DisplayName
+    $packageName = [string]$_.PackageName
+    -not [string]::IsNullOrWhiteSpace($packageName) -and (
+      ($hasWildcard -and $displayName -like $name) -or
+      (-not $hasWildcard -and $displayName -eq $name)
+    )
+  })
+}
+
+foreach ($spec in $pkgs) {
+  $name = [string]$spec.name
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
+  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  Write-Output ("checking appx package " + $name + " (" + $scope + ")")
+  $installed = Get-InstalledAppxMatches $scope $name
+  $provisioned = Get-ProvisionedAppxMatches $scope $name $hasWildcard
   if (($installed.Count + $provisioned.Count) -gt 0) { Write-Output 'true'; exit 0 }
 }
 Write-Output 'false'
@@ -1209,7 +1240,12 @@ foreach ($spec in $pkgs) {
   }
   if ($scope -eq 'provisioned' -or $scope -eq 'both') {
     Get-AppxProvisionedPackage -Online | Where-Object {
-      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
+      $displayName = [string]$_.DisplayName
+      $packageName = [string]$_.PackageName
+      -not [string]::IsNullOrWhiteSpace($packageName) -and (
+        ($hasWildcard -and $displayName -like $name) -or
+        (-not $hasWildcard -and $displayName -eq $name)
+      )
     } | ForEach-Object {
       Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
     }

@@ -23,10 +23,8 @@ func (m *RemoveAppxPackagesModule) CheckWithOutput(ctx context.Context, params m
 	if onOutput == nil {
 		return runWindowsPowerShellBool(ctx, normalized, `
 $pkgs = @($params.packages)
-foreach ($spec in $pkgs) {
-  $name = [string]$spec.name
-  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+
+function Get-InstalledAppxMatches([string]$scope, [string]$name) {
   $installed = @()
   switch ($scope) {
     'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
@@ -35,12 +33,31 @@ foreach ($spec in $pkgs) {
     'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
     default { throw "remove_appx_packages: unsupported scope $scope" }
   }
-  $provisioned = @()
-  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-    $provisioned = @(Get-AppxProvisionedPackage -Online | Where-Object {
-      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
-    })
+  return @($installed | Where-Object {
+    $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName)
+  })
+}
+
+function Get-ProvisionedAppxMatches([string]$scope, [string]$name, [bool]$hasWildcard) {
+  if ($scope -ne 'provisioned' -and $scope -ne 'both') {
+    return @()
   }
+  return @(Get-AppxProvisionedPackage -Online | Where-Object {
+    $displayName = [string]$_.DisplayName
+    $packageName = [string]$_.PackageName
+    -not [string]::IsNullOrWhiteSpace($packageName) -and (
+      ($hasWildcard -and $displayName -like $name) -or
+      (-not $hasWildcard -and $displayName -eq $name)
+    )
+  })
+}
+
+foreach ($spec in $pkgs) {
+  $name = [string]$spec.name
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
+  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  $installed = Get-InstalledAppxMatches $scope $name
+  $provisioned = Get-ProvisionedAppxMatches $scope $name $hasWildcard
   if (($installed.Count + $provisioned.Count) -gt 0) { Write-Output 'true'; exit 0 }
 }
 Write-Output 'false'
@@ -48,11 +65,8 @@ Write-Output 'false'
 	}
 	return runWindowsPowerShellBoolWithOutput(ctx, normalized, `
 $pkgs = @($params.packages)
-foreach ($spec in $pkgs) {
-  $name = [string]$spec.name
-  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-  Write-Output ("checking appx package " + $name + " (" + $scope + ")")
+
+function Get-InstalledAppxMatches([string]$scope, [string]$name) {
   $installed = @()
   switch ($scope) {
     'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
@@ -61,12 +75,32 @@ foreach ($spec in $pkgs) {
     'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
     default { throw "remove_appx_packages: unsupported scope $scope" }
   }
-  $provisioned = @()
-  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-    $provisioned = @(Get-AppxProvisionedPackage -Online | Where-Object {
-      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
-    })
+  return @($installed | Where-Object {
+    $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName)
+  })
+}
+
+function Get-ProvisionedAppxMatches([string]$scope, [string]$name, [bool]$hasWildcard) {
+  if ($scope -ne 'provisioned' -and $scope -ne 'both') {
+    return @()
   }
+  return @(Get-AppxProvisionedPackage -Online | Where-Object {
+    $displayName = [string]$_.DisplayName
+    $packageName = [string]$_.PackageName
+    -not [string]::IsNullOrWhiteSpace($packageName) -and (
+      ($hasWildcard -and $displayName -like $name) -or
+      (-not $hasWildcard -and $displayName -eq $name)
+    )
+  })
+}
+
+foreach ($spec in $pkgs) {
+  $name = [string]$spec.name
+  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
+  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
+  Write-Output ("checking appx package " + $name + " (" + $scope + ")")
+  $installed = Get-InstalledAppxMatches $scope $name
+  $provisioned = Get-ProvisionedAppxMatches $scope $name $hasWildcard
   if (($installed.Count + $provisioned.Count) -gt 0) { Write-Output 'true'; exit 0 }
 }
 Write-Output 'false'
@@ -121,7 +155,12 @@ foreach ($spec in $pkgs) {
 
   if ($scope -eq 'provisioned' -or $scope -eq 'both') {
     Get-AppxProvisionedPackage -Online | Where-Object {
-      if ($hasWildcard) { $_.DisplayName -like $name } else { $_.DisplayName -eq $name }
+      $displayName = [string]$_.DisplayName
+      $packageName = [string]$_.PackageName
+      -not [string]::IsNullOrWhiteSpace($packageName) -and (
+        ($hasWildcard -and $displayName -like $name) -or
+        (-not $hasWildcard -and $displayName -eq $name)
+      )
     } | ForEach-Object {
       Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
     }

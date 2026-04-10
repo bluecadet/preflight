@@ -27,11 +27,18 @@ $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 
+function Normalize-TaskFolderPathForCom([string]$taskPath) {
+  if (-not $taskPath -or $taskPath -eq '\') {
+    return '\'
+  }
+  return '\' + $taskPath.Trim('\')
+}
+
 function Get-TaskFromExactFolder([string]$taskPath, [string]$taskName) {
   $service = New-Object -ComObject 'Schedule.Service'
   $service.Connect()
   try {
-    $folder = $service.GetFolder($taskPath)
+    $folder = $service.GetFolder((Normalize-TaskFolderPathForCom $taskPath))
   } catch {
     return $null
   }
@@ -148,6 +155,13 @@ $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 
+function Normalize-TaskFolderPathForCom([string]$taskPath) {
+  if (-not $taskPath -or $taskPath -eq '\') {
+    return '\'
+  }
+  return '\' + $taskPath.Trim('\')
+}
+
 function Ensure-TaskFolder([string]$taskPath) {
   if (-not $taskPath -or $taskPath -eq '\') {
     return
@@ -159,7 +173,7 @@ function Ensure-TaskFolder([string]$taskPath) {
     if ([string]::IsNullOrWhiteSpace($segment)) {
       continue
     }
-    $nextPath = if ($currentPath -eq '\') { '\' + $segment + '\' } else { $currentPath + $segment + '\' }
+    $nextPath = if ($currentPath -eq '\') { '\' + $segment } else { $currentPath + '\' + $segment }
     try {
       $null = $service.GetFolder($nextPath)
     } catch {

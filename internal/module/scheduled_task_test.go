@@ -126,6 +126,12 @@ func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
 	if !strings.Contains(capturedScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected task folder creation helper, got:\n%s", capturedScript)
 	}
+	if !strings.Contains(capturedScript, "Normalize-TaskFolderPathForCom") {
+		t.Fatalf("expected COM task-path normalization helper, got:\n%s", capturedScript)
+	}
+	if strings.Contains(capturedScript, "\\' + $segment + '\\'") {
+		t.Fatalf("expected folder lookup paths without trailing backslashes, got:\n%s", capturedScript)
+	}
 	if !strings.Contains(capturedScript, "task '\" + $name + \"' was not registered in '\" + $path + \"'") {
 		t.Fatalf("expected post-registration exact-folder verification, got:\n%s", capturedScript)
 	}
@@ -170,6 +176,9 @@ func TestScheduledTaskModule_CheckUsesExactFolderLookup(t *testing.T) {
 	}
 	if !strings.Contains(capturedScript, "Get-TaskFromExactFolder $path $name") {
 		t.Fatalf("expected exact-folder lookup helper usage, got:\n%s", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "Normalize-TaskFolderPathForCom") {
+		t.Fatalf("expected exact-folder lookup to normalize COM paths, got:\n%s", capturedScript)
 	}
 	if !strings.Contains(capturedScript, "[string]$_.TaskPath -eq $path") {
 		t.Fatalf("expected exact task-path filtering, got:\n%s", capturedScript)
