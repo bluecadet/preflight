@@ -870,6 +870,21 @@ $path = [string]$params.path
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 
+function Get-TaskFromExactFolder([string]$taskPath, [string]$taskName) {
+  $service = New-Object -ComObject 'Schedule.Service'
+  $service.Connect()
+  try {
+    $folder = $service.GetFolder($taskPath)
+  } catch {
+    return $null
+  }
+  try {
+    return $folder.GetTask($taskName)
+  } catch {
+    return $null
+  }
+}
+
 function Normalize-TaskText($value) {
   if ($null -eq $value) { return '' }
   return [string]$value
@@ -890,11 +905,18 @@ function Normalize-PrincipalUserId([string]$userId) {
   }
 }
 
-$task = Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue
+$registeredTask = Get-TaskFromExactFolder $path $name
 if ($ensure -eq 'absent') {
-  Write-Output ([bool]($task))
+  Write-Output ([bool]($registeredTask))
   exit 0
 }
+if ($null -eq $registeredTask) {
+  Write-Output 'true'
+  exit 0
+}
+$task = @(Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue | Where-Object {
+  [string]$_.TaskPath -eq $path -and [string]$_.TaskName -eq $name
+}) | Select-Object -First 1
 if ($null -eq $task) {
   Write-Output 'true'
   exit 0
@@ -1035,6 +1057,12 @@ if ($null -ne $params.enabled -and -not [bool]$params.enabled) {
   Disable-ScheduledTask -TaskPath $path -TaskName $name | Out-Null
 } else {
   Enable-ScheduledTask -TaskPath $path -TaskName $name | Out-Null
+}
+$registeredTask = Get-ScheduledTask -TaskPath $path -TaskName $name -ErrorAction SilentlyContinue | Where-Object {
+  [string]$_.TaskPath -eq $path -and [string]$_.TaskName -eq $name
+} | Select-Object -First 1
+if ($null -eq $registeredTask) {
+  throw ("scheduled_task: task '" + $name + "' was not registered in '" + $path + "'")
 }
 `
 

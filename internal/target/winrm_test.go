@@ -175,11 +175,23 @@ func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
 	if !strings.Contains(scheduledTaskApplyScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected scheduled task apply script to create folders, got %q", scheduledTaskApplyScript)
 	}
+	if !strings.Contains(scheduledTaskApplyScript, "task '\" + $name + \"' was not registered in '\" + $path + \"'") {
+		t.Fatalf("expected scheduled task apply script to verify exact registration, got %q", scheduledTaskApplyScript)
+	}
 	if !strings.Contains(scheduledTaskApplyScript, "New-ScheduledTaskPrincipal") {
 		t.Fatalf("expected scheduled task apply script to build a principal, got %q", scheduledTaskApplyScript)
 	}
 	if !strings.Contains(scheduledTaskApplyScript, "ServiceAccount") {
 		t.Fatalf("expected scheduled task apply script to support service-account logons, got %q", scheduledTaskApplyScript)
+	}
+}
+
+func TestScheduledTaskCheckScriptUsesExactFolderLookup(t *testing.T) {
+	if !strings.Contains(scheduledTaskCheckScript, "Get-TaskFromExactFolder $path $name") {
+		t.Fatalf("expected scheduled task check script to use exact-folder lookup, got %q", scheduledTaskCheckScript)
+	}
+	if !strings.Contains(scheduledTaskCheckScript, "[string]$_.TaskPath -eq $path") {
+		t.Fatalf("expected scheduled task check script to filter exact task path, got %q", scheduledTaskCheckScript)
 	}
 }
 
