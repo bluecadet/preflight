@@ -1,5 +1,5 @@
 name: preflight/windows-input
-version: "2.0.0"
+version: "2.1.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
@@ -23,38 +23,20 @@ inputs:
 
 tasks:
   - name: Configure edge swipe policy
-    powershell:
-      check_script: |
-        $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
-        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
-        $prop = Get-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -ErrorAction SilentlyContinue
-        if ($disable) {
-          return ($null -eq $prop -or [int]$prop.AllowEdgeSwipe -ne 0)
-        }
-        return ($null -ne $prop)
-      script: |
-        $disable = [System.Convert]::ToBoolean('{{ vars.disable_edge_gestures }}')
-        $path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
-        New-Item -Path $path -Force | Out-Null
-        if ($disable) {
-          New-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -Value 0 -PropertyType DWord -Force | Out-Null
-        } else {
-          Remove-ItemProperty -LiteralPath $path -Name AllowEdgeSwipe -Force -ErrorAction SilentlyContinue
-        }
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\EdgeUI'
+      values:
+        - name: AllowEdgeSwipe
+          type: dword
+          data: "{{ vars.disable_edge_gestures == 'false' }}"
 
   - name: Configure text scale
-    powershell:
-      check_script: |
-        $desired = [int]'{{ vars.text_scale_percent }}'
-        $path = 'HKCU:\Software\Microsoft\Accessibility'
-        $prop = Get-ItemProperty -LiteralPath $path -Name TextScaleFactor -ErrorAction SilentlyContinue
-        return ($null -eq $prop -or [int]$prop.TextScaleFactor -ne $desired)
-      script: |
-        $desired = [int]'{{ vars.text_scale_percent }}'
-        $path = 'HKCU:\Software\Microsoft\Accessibility'
-        New-Item -Path $path -Force | Out-Null
-        New-ItemProperty -LiteralPath $path -Name TextScaleFactor -Value $desired -PropertyType DWord -Force | Out-Null
-        Write-Output ("Setting text scale to " + $desired + "% for the current user")
+    registry:
+      path: 'HKCU:\Software\Microsoft\Accessibility'
+      values:
+        - name: TextScaleFactor
+          type: dword
+          data: "{{ vars.text_scale_percent }}"
 
   - name: Configure touch feedback visualization
     powershell:

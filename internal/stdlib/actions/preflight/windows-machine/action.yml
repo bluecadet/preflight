@@ -1,5 +1,5 @@
 name: preflight/windows-machine
-version: "1.0.0"
+version: "1.1.0"
 description: Configure machine-wide Windows baseline settings
 author: preflight
 
@@ -38,24 +38,13 @@ tasks:
       script: |
         Set-TimeZone -Id '{{ vars.timezone }}'
 
-
   - name: Configure Windows long paths
-    powershell:
-      check_script: |
-        $enabled = [System.Convert]::ToBoolean('{{ vars.enable_long_paths }}')
-        $desired = if ($enabled) { 1 } else { 0 }
-        $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
-        $current = (Get-ItemProperty -LiteralPath $path -Name LongPathsEnabled -ErrorAction SilentlyContinue).LongPathsEnabled
-        if ($null -eq $current) {
-          return $true
-        }
-        return ([int]$current -ne $desired)
-      script: |
-        $enabled = [System.Convert]::ToBoolean('{{ vars.enable_long_paths }}')
-        $desired = if ($enabled) { 1 } else { 0 }
-        $path = 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
-        New-Item -Path $path -Force | Out-Null
-        New-ItemProperty -LiteralPath $path -Name LongPathsEnabled -Value $desired -PropertyType DWord -Force | Out-Null
+    registry:
+      path: 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem'
+      values:
+        - name: LongPathsEnabled
+          type: dword
+          data: "{{ vars.enable_long_paths }}"
 
   - name: Configure PowerShell execution policy
     powershell:
