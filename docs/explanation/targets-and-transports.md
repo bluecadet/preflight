@@ -95,6 +95,41 @@ hosts:
 
 `host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.
 
+## Persistent PowerShell Sessions
+
+Remote Windows tasks are slow if every Check and Apply call starts a fresh `powershell.exe` process. PowerShell startup takes 200–500 ms, and on WinRM each invocation also creates and tears down a WinRM shell — a further five HTTP round-trips. A 20-task playbook against a remote Windows host could spend 20 seconds doing nothing but process startup.
+
+Both the WinRM and SSH Windows runtimes address this by keeping a single PowerShell process alive for the duration of a run.
+
+### How it works
+
+When the first Check or Apply call arrives, the target creates a persistent PowerShell session:
+
+- **WinRM:** calls `CreateShell()` once on the underlying WinRM client, then launches `powershell.exe -NoProfile -NonInteractive -Command -` inside that shell.
+- **SSH Windows:** opens a single SSH channel and starts the same PowerShell invocation inside it.
+
+`-Command -` tells PowerShell to read commands from stdin rather than terminate. The session stays open until the run completes.
+
+Each subsequent script is delivered via a marker-based protocol:
+
+1. The script is base64-encoded and sent to PowerShell's stdin as a single line that decodes and executes it as a `ScriptBlock`.
+2. The wrapper appends a unique random marker to stdout when the script finishes — `DONE` on success, `ERR:<base64-error>` on a thrown exception.
+3. The Go side reads stdout line by line until it sees that marker, then returns the collected output or error.
+
+This reduces per-task overhead to roughly one write and one read on the existing pipe, with no new process or shell creation.
+
+### Tradeoffs
+
+**State does not persist between tasks.** Each script runs in a fresh child scope. Variables set in one task are not visible to the next. This preserves the idempotency contract — a task that can be re-run safely in isolation should not depend on ambient state left by a prior task.
+
+**The session is not shared across concurrent target calls.** A mutex serialises access. Task execution is already serial within a single target, so this is not a practical constraint.
+
+**Graceful degradation.** If the WinRM client or SSH runner in use does not expose raw shell or session creation (which is the case for test fakes), the persistent session is skipped and each script runs via the legacy per-command path. If the persistent session breaks mid-run due to a transport failure, it is discarded and the failing call is retried via the legacy path. Script-level errors (thrown exceptions) do not reset the session — only transport failures do.
+
+### When to expect the speedup
+
+The benefit is proportional to the number of tasks that reach a remote Windows target. A 20-task playbook against a Windows host over WinRM or SSH will run noticeably faster. A playbook that runs mostly against local targets, or one where most tasks are skipped because the host is already in the desired state, will see less of a difference in wall-clock time — though Check calls are still faster because they also go through the persistent session.
+
 ## Why Plugin Modules Fit Cleanly
 
 Plugin modules are adapted into the same module contract the targets already use. That is a strong architectural signal: plugins are not a sidecar feature. They are part of the execution model.
