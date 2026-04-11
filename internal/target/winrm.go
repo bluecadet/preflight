@@ -688,7 +688,9 @@ if ($ensure -eq 'absent') {
   Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
   exit 0
 }
-New-Item -Path $path -Force | Out-Null
+if (-not (Test-Path -LiteralPath $path)) {
+  New-Item -Path $path -Force | Out-Null
+}
 if ($params.values) {
   foreach ($spec in $params.values) {
     $name = [string]$spec.name
