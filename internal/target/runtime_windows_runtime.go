@@ -60,6 +60,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return "", applyWindowsEnvironment(ctx, backend, params)
 			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+				return ensureWindowsEnvironment(ctx, backend, params, dryRun)
+			},
 		},
 		"wait": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
@@ -443,6 +446,59 @@ if ($params.ensure -eq 'absent') {
 [System.Environment]::SetEnvironmentVariable($params.name, [string]$params.value, $params.scope)
 `)
 	return err
+}
+
+func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (bool, string, error) {
+	name, ok := params["name"].(string)
+	if !ok || name == "" {
+		return false, "", fmt.Errorf("environment: required param %q is missing", "name")
+	}
+	ensure, _ := params["ensure"].(string)
+	if ensure == "" {
+		ensure = "present"
+	}
+	scope, _ := params["scope"].(string)
+	if scope == "" {
+		scope = "Machine"
+	}
+	value, _ := params["value"].(string)
+
+	dryRunVal := "$false"
+	if dryRun {
+		dryRunVal = "$true"
+	}
+	preamble := "$__pf_dry_run = " + dryRunVal + "\n"
+	out, err := windowsRunScript(ctx, backend, map[string]any{
+		"name":   name,
+		"value":  value,
+		"scope":  normalizeEnvScope(scope),
+		"ensure": ensure,
+	}, preamble+`
+$current = [System.Environment]::GetEnvironmentVariable($params.name, $params.scope)
+if ($params.ensure -eq 'absent') {
+  if ($null -eq $current -or $current -eq '') { Write-Output 'ok'; exit 0 }
+  if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
+  [System.Environment]::SetEnvironmentVariable($params.name, $null, $params.scope)
+} else {
+  if ($current -eq $params.value) { Write-Output 'ok'; exit 0 }
+  if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
+  [System.Environment]::SetEnvironmentVariable($params.name, [string]$params.value, $params.scope)
+}
+Write-Output 'changed'
+`)
+	if err != nil {
+		return false, "", err
+	}
+	switch strings.TrimSpace(out) {
+	case "ok":
+		return false, "already in desired state", nil
+	case "would-change":
+		return true, "would apply change (dry-run)", nil
+	case "changed":
+		return true, "change applied", nil
+	default:
+		return false, "", fmt.Errorf("environment ensure: unexpected output %q", strings.TrimSpace(out))
+	}
 }
 
 func checkWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {

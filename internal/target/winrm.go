@@ -362,19 +362,40 @@ func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error
 
 func (t *WinRMTarget) runPSViaTempFile(ctx context.Context, script string) (string, error) {
 	remotePath := fmt.Sprintf(`%s\run-%d.ps1`, strings.TrimRight(t.RemoteTempDir(), `\/`), time.Now().UnixNano())
-	if err := t.copyBytes(ctx, []byte(script), remotePath); err != nil {
-		return "", fmt.Errorf("winrm powershell stage oversized script: %w", err)
+
+	// Upload: prefer session-based chunking (32 KiB chunks, no new shell per
+	// chunk); fall back to the legacy path (1.5 KiB chunks via new shells).
+	ps, _ := t.getOrCreatePSSession(ctx)
+	var uploaded bool
+	if ps != nil {
+		if err := t.copyBytesViaSession(ctx, ps, []byte(script), remotePath); err != nil {
+			if !isSessionError(err) {
+				return "", fmt.Errorf("winrm powershell stage oversized script: %w", err)
+			}
+			t.resetPSSession()
+		} else {
+			uploaded = true
+		}
 	}
+	if !uploaded {
+		if err := t.copyBytes(ctx, []byte(script), remotePath); err != nil {
+			return "", fmt.Errorf("winrm powershell stage oversized script: %w", err)
+		}
+	}
+
 	defer func() {
+		// Cleanup through the persistent session when available; the Remove-Item
+		// script is tiny so it always fits inline as a fallback.
 		cleanupScript, cleanupErr := powershellJSONVar("path", remotePath)
 		if cleanupErr != nil {
 			return
 		}
-		_, _ = t.runPSDirect(ctx, cleanupScript+`
-Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
-`)
+		_, _ = t.runPS(ctx, cleanupScript+`Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue`)
 	}()
 
+	// Execute via cmd.exe with -ExecutionPolicy Bypass so that unsigned staged
+	// PS1 files run correctly regardless of the machine's execution policy.
+	// This also preserves the become execution path which relies on runCmd.
 	command := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%s"`, remotePath)
 	out, err := t.runCmd(ctx, command)
 	if err != nil {
