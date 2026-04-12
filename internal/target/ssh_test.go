@@ -321,7 +321,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 			case strings.Contains(decoded, "switch ($params.condition)"):
 				return "true", "", 0, nil
 			case strings.Contains(decoded, "Normalize-RegistryKind"):
-				return "true", "", 0, nil
+				return "changed", "", 0, nil
 			case strings.Contains(decoded, "shutdown /r /t 45"):
 				return "", "", 0, nil
 			default:

@@ -139,6 +139,17 @@ func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("winrm: read src %q: %w", src, err)
 	}
+	ps, _ := t.getOrCreatePSSession(ctx)
+	if ps != nil {
+		err := t.copyBytesViaSession(ctx, ps, data, dst)
+		if err == nil {
+			return nil
+		}
+		if !isSessionError(err) {
+			return fmt.Errorf("winrm: copy %q -> %q: %w", src, dst, err)
+		}
+		t.resetPSSession()
+	}
 	if err := t.copyBytes(ctx, data, dst); err != nil {
 		return fmt.Errorf("winrm: copy %q -> %q: %w", src, dst, err)
 	}
@@ -397,12 +408,21 @@ func shouldStageWinRMPowerShellScript(script string) bool {
 	return commandLen >= winRMMaxInlinePowerShellCommandLen
 }
 
-// copyBytesChunkSize is the maximum raw bytes per upload round trip. Each
-// chunk is base64-encoded and inlined into a PowerShell script which is then
-// UTF-16LE + base64 encoded for -EncodedCommand. The WinRM shell (cmd.exe)
-// enforces an ~8 KB command-line limit, so payloads above ~1.5 KB trigger
-// "command line is too long". 1536 bytes leaves a comfortable margin.
+// copyBytesChunkSize is the maximum raw bytes per upload round trip when using
+// runPSDirect (legacy path). Each chunk is base64-encoded and inlined into a
+// PowerShell script that is UTF-16LE + base64 encoded for -EncodedCommand. The
+// WinRM shell (cmd.exe) enforces an ~8 KB command-line limit, so payloads
+// above ~1.5 KB trigger "command line is too long". 1536 bytes leaves a
+// comfortable margin.
 const copyBytesChunkSize = 1536
+
+// copyBytesSessionChunkSize is the maximum raw bytes per upload round trip
+// when using the persistent PS session. Scripts are sent via stdin (not
+// command-line), so the cmd.exe limit does not apply. The practical ceiling is
+// the WinRM max envelope size (150 KB default). A 32 KiB chunk base64-encodes
+// to ~43 KiB; after buildPSStdinLine wraps and re-encodes it reaches ~60 KiB,
+// well within the 150 KB envelope limit.
+const copyBytesSessionChunkSize = 32 * 1024
 
 func (t *WinRMTarget) copyBytes(ctx context.Context, data []byte, dst string) error {
 	pathVar, err := powershellJSONVar("path", dst)
@@ -445,6 +465,60 @@ if ($dir) {
 		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
 		// All other parameters use powershellJSONVar for injection safety.
 		if _, err := t.runPSDirect(ctx, appendScript+fmt.Sprintf(`
+$bytes = [Convert]::FromBase64String('%s')
+$stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+try {
+  $stream.Write($bytes, 0, $bytes.Length)
+} finally {
+  $stream.Dispose()
+}
+`, encoded)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// copyBytesViaSession uploads data to dst using the persistent PS session.
+// Scripts go through stdin, so chunks can be much larger than the cmd.exe
+// command-line limit allows in copyBytes. Falls back gracefully: the caller
+// (CopyFile) retries via copyBytes when a *psSessionError is returned.
+func (t *WinRMTarget) copyBytesViaSession(ctx context.Context, ps *winRMPersistentPS, data []byte, dst string) error {
+	pathVar, err := powershellJSONVar("path", dst)
+	if err != nil {
+		return err
+	}
+
+	if len(data) <= copyBytesSessionChunkSize {
+		encoded := base64.StdEncoding.EncodeToString(data)
+		_, err = ps.run(ctx, pathVar+fmt.Sprintf(`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String('%s'))
+`, encoded))
+		return err
+	}
+
+	if _, err := ps.run(ctx, pathVar+`
+$dir = Split-Path -Parent $path
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($path, @())
+`); err != nil {
+		return err
+	}
+
+	appendPathVar, err := powershellJSONVar("path", dst)
+	if err != nil {
+		return err
+	}
+	for start := 0; start < len(data); start += copyBytesSessionChunkSize {
+		end := min(start+copyBytesSessionChunkSize, len(data))
+		encoded := base64.StdEncoding.EncodeToString(data[start:end])
+		if _, err := ps.run(ctx, appendPathVar+fmt.Sprintf(`
 $bytes = [Convert]::FromBase64String('%s')
 $stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
 try {
@@ -718,6 +792,99 @@ if ($params.values) {
     New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force | Out-Null
   }
 }
+`
+
+// registryEnsureScript combines check and apply in one PowerShell invocation.
+// It outputs "ok", "changed", or "would-change" (dry-run). $__pf_dry_run must
+// be injected by the caller before $params.
+const registryEnsureScript = `
+$path = [string]$params.path
+$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+function Normalize-RegistryKind([string]$kind) {
+  switch ($kind.ToLowerInvariant()) {
+    'expandstring' { return 'expand_string' }
+    'multistring'  { return 'multi_string' }
+    default        { return $kind.ToLowerInvariant() }
+  }
+}
+$needs = $false
+if ($ensure -eq 'absent') {
+  $needs = Test-Path -LiteralPath $path
+} elseif (-not (Test-Path -LiteralPath $path)) {
+  if ($params.values) {
+    $presentSpecs = @($params.values | Where-Object { -not $_.ensure -or $_.ensure -eq 'present' })
+    $needs = $presentSpecs.Count -gt 0
+  }
+} elseif ($params.values) {
+  $item = Get-Item -LiteralPath $path
+  $props = Get-ItemProperty -LiteralPath $path
+  foreach ($spec in $params.values) {
+    $name = [string]$spec.name
+    $ensureValue = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+    $prop = $props.PSObject.Properties[$name]
+    if ($ensureValue -eq 'absent') {
+      if ($null -ne $prop) { $needs = $true; break }
+      continue
+    }
+    if ($null -eq $prop) { $needs = $true; break }
+    $currentKind = Normalize-RegistryKind($item.GetValueKind($name).ToString())
+    $desiredKind = [string]$spec.type
+    if ($currentKind -ne $desiredKind) { $needs = $true; break }
+    switch ($desiredKind) {
+      'string'        { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
+      'expand_string' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
+      'dword'         { if ([int64]$prop.Value -ne [int64]$spec.data) { $needs = $true } }
+      'qword'         { if ([int64]$prop.Value -ne [int64]$spec.data) { $needs = $true } }
+      'multi_string' {
+        $current = @($prop.Value | ForEach-Object { [string]$_ })
+        $desired = @($spec.data | ForEach-Object { [string]$_ })
+        if ($current.Count -ne $desired.Count) { $needs = $true }
+        else { for ($i = 0; $i -lt $current.Count; $i++) { if ($current[$i] -ne $desired[$i]) { $needs = $true; break } } }
+      }
+      'binary' {
+        $current = @($prop.Value | ForEach-Object { [int]$_ })
+        $desired = @($spec.data | ForEach-Object { [int]$_ })
+        if ($current.Count -ne $desired.Count) { $needs = $true }
+        else { for ($i = 0; $i -lt $current.Count; $i++) { if ($current[$i] -ne $desired[$i]) { $needs = $true; break } } }
+      }
+      default { throw "registry: unsupported type $desiredKind" }
+    }
+    if ($needs) { break }
+  }
+}
+if (-not $needs) { Write-Output 'ok'; exit 0 }
+if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
+if ($ensure -eq 'absent') {
+  Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
+} else {
+  if (-not (Test-Path -LiteralPath $path)) {
+    New-Item -Path $path -Force | Out-Null
+  }
+  if ($params.values) {
+    foreach ($spec in $params.values) {
+      $name = [string]$spec.name
+      $ensureValue = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
+      if ($ensureValue -eq 'absent') {
+        Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
+        continue
+      }
+      $kindMap = @{
+        string = 'String'; expand_string = 'ExpandString'; dword = 'DWord'
+        qword = 'QWord'; multi_string = 'MultiString'; binary = 'Binary'
+      }
+      $value = switch ([string]$spec.type) {
+        'multi_string' { @($spec.data | ForEach-Object { [string]$_ }) }
+        'binary'       { [byte[]]@($spec.data | ForEach-Object { [byte][int]$_ }) }
+        'dword'        { [int]$spec.data }
+        'qword'        { [int64]$spec.data }
+        default        { $spec.data }
+      }
+      Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
+      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force | Out-Null
+    }
+  }
+}
+Write-Output 'changed'
 `
 
 const serviceCheckScript = `

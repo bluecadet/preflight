@@ -84,6 +84,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsRegistry(ctx, backend, params)
 			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+				return ensureWindowsRegistry(ctx, backend, params, dryRun)
+			},
 		},
 		"service": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
@@ -697,6 +700,38 @@ func applyWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend,
 		return "", err
 	}
 	return windowsRunScript(ctx, backend, normalized, registryApplyScript)
+}
+
+// ensureWindowsRegistry combines check and apply into a single PowerShell
+// invocation, halving WinRM round trips for tasks that need applying.
+func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (bool, string, error) {
+	normalized, err := winutil.NormalizeRegistryParams(params)
+	if err != nil {
+		return false, "", err
+	}
+	paramsScript, err := powershellJSONVar("params", normalized)
+	if err != nil {
+		return false, "", err
+	}
+	dryRunVal := "$false"
+	if dryRun {
+		dryRunVal = "$true"
+	}
+	preamble := "$__pf_dry_run = " + dryRunVal + "\n" + paramsScript + "\n"
+	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript)
+	if err != nil {
+		return false, "", err
+	}
+	switch strings.TrimSpace(out) {
+	case "ok":
+		return false, "already in desired state", nil
+	case "would-change":
+		return true, "would apply change (dry-run)", nil
+	case "changed":
+		return true, "change applied", nil
+	default:
+		return false, "", fmt.Errorf("registry ensure: unexpected output %q", strings.TrimSpace(out))
+	}
 }
 
 func checkWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {

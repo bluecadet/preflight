@@ -24,6 +24,10 @@ type remoteModuleFuncs struct {
 	check           func(ctx context.Context, params map[string]any) (bool, string, error)
 	checkWithOutput func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error)
 	apply           func(ctx context.Context, params map[string]any) (string, error)
+	// ensure, when set, runs check and apply in a single round trip.
+	// It returns (changed bool, message string, err error). When dryRun is true
+	// it must not apply but may still check and return changed=true.
+	ensure func(ctx context.Context, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error)
 }
 
 func (m remoteModuleFuncs) Check(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error) {
@@ -70,6 +74,32 @@ func executeRemoteModule(
 		if onOutput != nil {
 			onOutput(line)
 		}
+	}
+
+	// If the module provides an ensure function, use it to combine check+apply
+	// into a single round trip. This is valuable for high-latency transports
+	// (e.g. WinRM) where two separate invocations double the overhead.
+	if mf, ok := mod.(remoteModuleFuncs); ok && mf.ensure != nil {
+		changed, msg, err := mf.ensure(ctx, params, dryRun, captureOnOutput)
+		if err != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
+		}
+		if !changed {
+			message := "already in desired state"
+			if strings.TrimSpace(msg) != "" {
+				message = strings.TrimSpace(msg)
+			}
+			return Result{TaskID: taskID, Status: StatusOK, Message: message, Output: captured}, nil
+		}
+		message := "change applied"
+		if dryRun {
+			message = "would apply change (dry-run)"
+		}
+		if strings.TrimSpace(msg) != "" {
+			message = strings.TrimSpace(msg)
+		}
+		status := StatusChanged
+		return Result{TaskID: taskID, Status: status, Message: message, Output: captured}, nil
 	}
 
 	needsChange, checkMessage, err := mod.Check(ctx, params, captureOnOutput)
