@@ -44,7 +44,7 @@ tasks:
           type: dword
           data: "{{ vars.disable_error_reporting }}"
 
-  - name: Configure Windows Error Reporting
+  - name: Configure Windows Health Error Reporting
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\PCHealth\ErrorReporting'
       values:
