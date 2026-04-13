@@ -1,11 +1,9 @@
 package module
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -18,17 +16,28 @@ var powershellCombinedOutput = func(ctx context.Context, name string, args ...st
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
+type PowershellCheckParams struct {
+	CheckScript string `param:"check_script"`
+	Creates     string `param:"creates"`
+}
+
+type PowershellApplyParams struct {
+	Script string   `param:"script"`
+	File   string   `param:"file"`
+	Args   []string `param:"args"`
+}
+
 func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {
 	return powershellCheckWithOutput(ctx, params, nil)
 }
 
 func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) (bool, error) {
-	checkScript, err := paramString(params, "check_script", "")
-	if err != nil {
+	var p PowershellCheckParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if checkScript != "" {
-		script, err := winutil.BuildPowerShellCheckScript(checkScript)
+	if p.CheckScript != "" {
+		script, err := winutil.BuildPowerShellCheckScript(p.CheckScript)
 		if err != nil {
 			return false, err
 		}
@@ -56,44 +65,33 @@ func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOut
 		return result.NeedsChange, nil
 	}
 
-	creates, err := paramString(params, "creates", "")
-	if err != nil {
-		return false, err
-	}
-	if creates != "" {
-		_, statErr := os.Stat(creates)
+	if p.Creates != "" {
+		_, statErr := os.Stat(p.Creates)
 		if statErr == nil {
 			return false, nil
 		}
 		if !os.IsNotExist(statErr) {
-			return false, fmt.Errorf("powershell: stat creates path %q: %w", creates, statErr)
+			return false, fmt.Errorf("powershell: stat creates path %q: %w", p.Creates, statErr)
 		}
 	}
 	return true, nil
 }
 
 func powershellApply(ctx context.Context, params map[string]any) error {
-	script, err := paramString(params, "script", "")
-	if err != nil {
-		return err
-	}
-	file, err := paramString(params, "file", "")
-	if err != nil {
-		return err
-	}
-	args, err := paramStringSlice(params, "args")
-	if err != nil {
+	var p PowershellApplyParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 
-	if script == "" && file == "" {
+	if p.Script == "" && p.File == "" {
 		return fmt.Errorf("powershell: one of 'script' or 'file' is required")
 	}
 
-	if script != "" {
-		_, err = runPowerShellInline(ctx, script)
+	var err error
+	if p.Script != "" {
+		_, err = runPowerShellInline(ctx, p.Script)
 	} else {
-		_, err = runPowerShellFile(ctx, file, args)
+		_, err = runPowerShellFile(ctx, p.File, p.Args)
 	}
 	return err
 }
@@ -103,28 +101,20 @@ func powershellApplyWithOutput(ctx context.Context, params map[string]any, onOut
 		return powershellApply(ctx, params)
 	}
 
-	script, err := paramString(params, "script", "")
-	if err != nil {
-		return err
-	}
-	file, err := paramString(params, "file", "")
-	if err != nil {
-		return err
-	}
-	args, err := paramStringSlice(params, "args")
-	if err != nil {
+	var p PowershellApplyParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 
-	if script == "" && file == "" {
+	if p.Script == "" && p.File == "" {
 		return fmt.Errorf("powershell: one of 'script' or 'file' is required")
 	}
 
-	if script != "" {
-		_, err := runPowerShellInlineWithOutput(ctx, script, onOutput)
+	if p.Script != "" {
+		_, err := runPowerShellInlineWithOutput(ctx, p.Script, onOutput)
 		return err
 	}
-	return runPowerShellFileWithOutput(ctx, file, args, onOutput)
+	return runPowerShellFileWithOutput(ctx, p.File, p.Args, onOutput)
 }
 
 func runPowerShellInline(ctx context.Context, script string) ([]byte, error) {
@@ -157,50 +147,32 @@ func runPowerShellFileWithOutput(ctx context.Context, file string, args []string
 }
 
 func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, args ...string) ([]string, error) {
-	pr, pw := io.Pipe()
+	pw, done := NewOutputPipe(onOutput)
 	cmd := exec.CommandContext(ctx, platformPowerShellBinary(), args...)
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 
-	var (
-		lines   []string
-		scanErr error
-	)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		scanner := bufio.NewScanner(pr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			lines = append(lines, line)
-			if onOutput != nil {
-				onOutput(line)
-			}
-		}
-		scanErr = scanner.Err()
-	}()
-
 	runErr := cmd.Run()
 	closeErr := pw.Close()
-	<-done
+	result := <-done
 
-	if scanErr != nil {
+	if result.ScanErr != nil {
 		if runErr != nil {
-			runErr = errors.Join(runErr, scanErr)
+			runErr = errors.Join(runErr, result.ScanErr)
 		} else {
-			return nil, fmt.Errorf("powershell: read command output: %w", scanErr)
+			return nil, fmt.Errorf("powershell: read command output: %w", result.ScanErr)
 		}
 	}
 
 	if runErr != nil {
-		out := strings.Join(lines, "\n")
+		out := strings.Join(result.Lines, "\n")
 		if out != "" {
-			return lines, fmt.Errorf("powershell: command failed: %w\noutput: %s", runErr, out)
+			return result.Lines, fmt.Errorf("powershell: command failed: %w\noutput: %s", runErr, out)
 		}
-		return lines, fmt.Errorf("powershell: command failed: %w", runErr)
+		return result.Lines, fmt.Errorf("powershell: command failed: %w", runErr)
 	}
 	if closeErr != nil {
-		return lines, fmt.Errorf("powershell: close command output pipe: %w", closeErr)
+		return result.Lines, fmt.Errorf("powershell: close command output pipe: %w", closeErr)
 	}
-	return lines, nil
+	return result.Lines, nil
 }

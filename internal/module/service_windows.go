@@ -7,16 +7,10 @@ import "context"
 type ServiceModule struct{}
 
 func (m *ServiceModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p ServiceParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if _, err := paramString(params, "state", ""); err != nil {
-		return false, err
-	}
-	if _, err := paramString(params, "startup_type", ""); err != nil {
-		return false, err
-	}
-
 	return runWindowsPowerShellBool(ctx, params, `
 $name = [string]$params.name
 $desiredState = if ($params.state) { [string]$params.state } else { '' }
@@ -50,16 +44,10 @@ Write-Output $needs
 }
 
 func (m *ServiceModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p ServiceParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	if _, err := paramString(params, "state", ""); err != nil {
-		return err
-	}
-	if _, err := paramString(params, "startup_type", ""); err != nil {
-		return err
-	}
-
 	_, err := runWindowsPowerShellWithParams(ctx, params, `
 $name = [string]$params.name
 $desiredState = if ($params.state) { [string]$params.state } else { '' }

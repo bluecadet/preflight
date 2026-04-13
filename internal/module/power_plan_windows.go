@@ -7,13 +7,10 @@ import "context"
 type PowerPlanModule struct{}
 
 func (m *PowerPlanModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p PowerPlanParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, err
-	}
-
 	return runWindowsPowerShellBool(ctx, params, `
 function Invoke-PowerCfg([string[]]$Arguments) {
   $output = & powercfg.exe @Arguments 2>&1
@@ -105,13 +102,10 @@ Write-Output $needs
 }
 
 func (m *PowerPlanModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p PowerPlanParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return err
-	}
-
 	_, err := runWindowsPowerShellWithParams(ctx, params, `
 function Invoke-PowerCfg([string[]]$Arguments) {
   $output = & powercfg.exe @Arguments 2>&1

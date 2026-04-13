@@ -4,27 +4,28 @@ import (
 	"context"
 )
 
-// RebootModule triggers or checks for a pending system reboot.
-// Params:
-//   - condition: "if_needed" (default) or "always"
-//   - timeout: seconds before reboot (default 60, Windows only)
+type RebootParams struct {
+	Condition string `param:"condition" default:"if_needed"`
+	Timeout   int    `param:"timeout" default:"60"`
+}
+
 type RebootModule struct{}
 
 func (m *RebootModule) Check(_ context.Context, params map[string]any) (bool, error) {
-	condition, err := paramString(params, "condition", "if_needed")
-	if err != nil {
+	var p RebootParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if condition == "always" {
+	if p.Condition == "always" {
 		return true, nil
 	}
 	return rebootPending()
 }
 
 func (m *RebootModule) Apply(_ context.Context, params map[string]any) error {
-	timeout, err := paramInt(params, "timeout", 60)
-	if err != nil {
+	var p RebootParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	return applyReboot(timeout)
+	return applyReboot(p.Timeout)
 }

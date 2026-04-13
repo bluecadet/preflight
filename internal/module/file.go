@@ -9,118 +9,91 @@ import (
 	"path/filepath"
 )
 
-// FileModule manages a file at a destination path.
-// Params:
-//   - dest (required): destination path
-//   - src: source path to copy from
-//   - ensure: "present" (default) or "absent"
+type FileParams struct {
+	Dest   string `param:"dest,required"`
+	Ensure string `param:"ensure" default:"present"`
+	Src    string `param:"src"`
+}
+
 type FileModule struct{}
 
 func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, error) {
-	dest, err := paramStringRequired(params, "dest")
-	if err != nil {
+	if err := RejectParams("file", params, "owner", "permissions"); err != nil {
 		return false, err
 	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p FileParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	src, err := paramString(params, "src", "")
-	if err != nil {
-		return false, err
-	}
-	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("file: owner is not supported")
-	}
-	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("file: permissions is not supported")
-	}
 
-	info, statErr := os.Stat(dest)
+	info, statErr := os.Stat(p.Dest)
 
-	switch ensure {
-	case "absent":
-		if os.IsNotExist(statErr) {
-			return false, nil // already gone
-		}
-		if statErr != nil {
-			return false, fmt.Errorf("file: stat %q: %w", dest, statErr)
-		}
-		return true, nil // exists, needs removal
-
-	case "present":
-		if os.IsNotExist(statErr) {
-			return true, nil // needs creation
-		}
-		if statErr != nil {
-			return false, fmt.Errorf("file: stat %q: %w", dest, statErr)
-		}
-		if info.IsDir() {
-			return false, fmt.Errorf("file: %q is a directory, not a file", dest)
-		}
-		// If src provided, compare hashes.
-		if src != "" {
-			srcHash, err := hashFile(src)
-			if err != nil {
-				return false, fmt.Errorf("file: hash src %q: %w", src, err)
+	return EnsureCheck("file", p.Ensure,
+		func() (bool, error) {
+			if os.IsNotExist(statErr) {
+				return true, nil
 			}
-			dstHash, err := hashFile(dest)
-			if err != nil {
-				return false, fmt.Errorf("file: hash dest %q: %w", dest, err)
+			if statErr != nil {
+				return false, fmt.Errorf("file: stat %q: %w", p.Dest, statErr)
 			}
-			return srcHash != dstHash, nil
-		}
-		return false, nil
-
-	default:
-		return false, fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
-	}
+			if info.IsDir() {
+				return false, fmt.Errorf("file: %q is a directory, not a file", p.Dest)
+			}
+			if p.Src != "" {
+				srcHash, err := hashFile(p.Src)
+				if err != nil {
+					return false, fmt.Errorf("file: hash src %q: %w", p.Src, err)
+				}
+				dstHash, err := hashFile(p.Dest)
+				if err != nil {
+					return false, fmt.Errorf("file: hash dest %q: %w", p.Dest, err)
+				}
+				return srcHash != dstHash, nil
+			}
+			return false, nil
+		},
+		func() (bool, error) {
+			if os.IsNotExist(statErr) {
+				return false, nil
+			}
+			if statErr != nil {
+				return false, fmt.Errorf("file: stat %q: %w", p.Dest, statErr)
+			}
+			return true, nil
+		},
+	)
 }
 
 func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
-	dest, err := paramStringRequired(params, "dest")
-	if err != nil {
+	if err := RejectParams("file", params, "owner", "permissions"); err != nil {
 		return err
 	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p FileParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	src, err := paramString(params, "src", "")
-	if err != nil {
-		return err
-	}
-	if _, ok := params["owner"]; ok {
-		return fmt.Errorf("file: owner is not supported")
-	}
-	if _, ok := params["permissions"]; ok {
-		return fmt.Errorf("file: permissions is not supported")
-	}
 
-	switch ensure {
-	case "absent":
-		if err := os.Remove(dest); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("file: remove %q: %w", dest, err)
-		}
-		return nil
-
-	case "present":
-		if src != "" {
-			return copyFile(src, dest)
-		}
-		if err := ensureParentDir(dest); err != nil {
-			return err
-		}
-		// Create empty file.
-		f, err := os.OpenFile(dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-		if err != nil {
-			return fmt.Errorf("file: create %q: %w", dest, err)
-		}
-		return f.Close()
-
-	default:
-		return fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
-	}
+	return EnsureApply("file", p.Ensure,
+		func() error {
+			if p.Src != "" {
+				return copyFile(p.Src, p.Dest)
+			}
+			if err := ensureParentDir(p.Dest); err != nil {
+				return err
+			}
+			f, err := os.OpenFile(p.Dest, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+			if err != nil {
+				return fmt.Errorf("file: create %q: %w", p.Dest, err)
+			}
+			return f.Close()
+		},
+		func() error {
+			if err := os.Remove(p.Dest); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("file: remove %q: %w", p.Dest, err)
+			}
+			return nil
+		},
+	)
 }
 
 func hashFile(path string) (string, error) {

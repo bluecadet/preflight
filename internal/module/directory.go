@@ -6,87 +6,70 @@ import (
 	"os"
 )
 
-// DirectoryModule manages a directory at a given path.
-// Params:
-//   - path (required): directory path
-//   - ensure: "present" (default) or "absent"
+type DirectoryParams struct {
+	Path   string `param:"path,required"`
+	Ensure string `param:"ensure" default:"present"`
+}
+
 type DirectoryModule struct{}
 
 func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool, error) {
-	path, err := paramStringRequired(params, "path")
-	if err != nil {
+	if err := RejectParams("directory", params, "owner", "permissions"); err != nil {
 		return false, err
 	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p DirectoryParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if _, ok := params["owner"]; ok {
-		return false, fmt.Errorf("directory: owner is not supported")
-	}
-	if _, ok := params["permissions"]; ok {
-		return false, fmt.Errorf("directory: permissions is not supported")
-	}
 
-	info, statErr := os.Stat(path)
+	info, statErr := os.Stat(p.Path)
 
-	switch ensure {
-	case "absent":
-		if os.IsNotExist(statErr) {
-			return false, nil // already gone
-		}
-		if statErr != nil {
-			return false, fmt.Errorf("directory: stat %q: %w", path, statErr)
-		}
-		return true, nil // exists, needs removal
-
-	case "present":
-		if os.IsNotExist(statErr) {
-			return true, nil // needs creation
-		}
-		if statErr != nil {
-			return false, fmt.Errorf("directory: stat %q: %w", path, statErr)
-		}
-		if !info.IsDir() {
-			return false, fmt.Errorf("directory: %q exists but is not a directory", path)
-		}
-		return false, nil // already a directory
-
-	default:
-		return false, fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
-	}
+	return EnsureCheck("directory", p.Ensure,
+		func() (bool, error) {
+			if os.IsNotExist(statErr) {
+				return true, nil
+			}
+			if statErr != nil {
+				return false, fmt.Errorf("directory: stat %q: %w", p.Path, statErr)
+			}
+			if !info.IsDir() {
+				return false, fmt.Errorf("directory: %q exists but is not a directory", p.Path)
+			}
+			return false, nil
+		},
+		func() (bool, error) {
+			if os.IsNotExist(statErr) {
+				return false, nil
+			}
+			if statErr != nil {
+				return false, fmt.Errorf("directory: stat %q: %w", p.Path, statErr)
+			}
+			return true, nil
+		},
+	)
 }
 
 func (m *DirectoryModule) Apply(_ context.Context, params map[string]any) error {
-	path, err := paramStringRequired(params, "path")
-	if err != nil {
+	if err := RejectParams("directory", params, "owner", "permissions"); err != nil {
 		return err
 	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p DirectoryParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	if _, ok := params["owner"]; ok {
-		return fmt.Errorf("directory: owner is not supported")
-	}
-	if _, ok := params["permissions"]; ok {
-		return fmt.Errorf("directory: permissions is not supported")
-	}
 
-	switch ensure {
-	case "absent":
-		if err := os.RemoveAll(path); err != nil {
-			return fmt.Errorf("directory: remove %q: %w", path, err)
-		}
-		return nil
-
-	case "present":
-		if err := os.MkdirAll(path, 0755); err != nil {
-			return fmt.Errorf("directory: mkdir %q: %w", path, err)
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
-	}
+	return EnsureApply("directory", p.Ensure,
+		func() error {
+			if err := os.MkdirAll(p.Path, 0755); err != nil {
+				return fmt.Errorf("directory: mkdir %q: %w", p.Path, err)
+			}
+			return nil
+		},
+		func() error {
+			if err := os.RemoveAll(p.Path); err != nil {
+				return fmt.Errorf("directory: remove %q: %w", p.Path, err)
+			}
+			return nil
+		},
+	)
 }

@@ -7,13 +7,10 @@ import "context"
 type WindowsFeatureModule struct{}
 
 func (m *WindowsFeatureModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p WindowsFeatureParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, err
-	}
-
 	return runWindowsPowerShellBool(ctx, params, `
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
@@ -30,13 +27,10 @@ Write-Output ($feature.State -ne 'Enabled')
 }
 
 func (m *WindowsFeatureModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p WindowsFeatureParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return err
-	}
-
 	_, err := runWindowsPowerShellWithParams(ctx, params, `
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }

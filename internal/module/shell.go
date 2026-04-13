@@ -1,11 +1,9 @@
 package module
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,93 +11,70 @@ import (
 	"github.com/bluecadet/preflight/internal/target"
 )
 
-// ShellModule runs an arbitrary shell command.
-// Params:
-//   - cmd (required): command to execute
-//   - args: list of arguments
-//   - creates: path; if it exists, skip execution
-//   - working_dir: working directory for the command
+type ShellCheckParams struct {
+	Creates string `param:"creates"`
+}
+
+type ShellApplyParams struct {
+	Cmd        string   `param:"cmd,required"`
+	Args       []string `param:"args"`
+	WorkingDir string   `param:"working_dir"`
+}
+
 type ShellModule struct{}
 
 func (m *ShellModule) Check(_ context.Context, params map[string]any) (bool, error) {
-	creates, err := paramString(params, "creates", "")
-	if err != nil {
+	var p ShellCheckParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if creates != "" {
-		_, statErr := os.Stat(creates)
+	if p.Creates != "" {
+		_, statErr := os.Stat(p.Creates)
 		if statErr == nil {
-			return false, nil // path exists, no change needed
+			return false, nil
 		}
 		if !os.IsNotExist(statErr) {
-			return false, fmt.Errorf("shell: stat creates path %q: %w", creates, statErr)
+			return false, fmt.Errorf("shell: stat creates path %q: %w", p.Creates, statErr)
 		}
 	}
-	// Shell commands are not idempotent by default — always run.
 	return true, nil
 }
 
 func (m *ShellModule) ApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
-	cmdName, err := paramStringRequired(params, "cmd")
-	if err != nil {
-		return err
-	}
-	args, err := paramStringSlice(params, "args")
-	if err != nil {
-		return err
-	}
-	workingDir, err := paramString(params, "working_dir", "")
-	if err != nil {
+	var p ShellApplyParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 
-	pr, pw := io.Pipe()
-	cmd := exec.CommandContext(ctx, cmdName, args...)
-	if workingDir != "" {
-		cmd.Dir = workingDir
+	pw, done := NewOutputPipe(onOutput)
+	cmd := exec.CommandContext(ctx, p.Cmd, p.Args...)
+	if p.WorkingDir != "" {
+		cmd.Dir = p.WorkingDir
 	}
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 
-	var (
-		lines   []string
-		scanErr error
-	)
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		scanner := bufio.NewScanner(pr)
-		for scanner.Scan() {
-			line := scanner.Text()
-			lines = append(lines, line)
-			if onOutput != nil {
-				onOutput(line)
-			}
-		}
-		scanErr = scanner.Err()
-	}()
-
 	runErr := cmd.Run()
 	closeErr := pw.Close()
-	<-done
+	result := <-done
 
-	if scanErr != nil {
+	if result.ScanErr != nil {
 		if runErr != nil {
-			runErr = errors.Join(runErr, scanErr)
+			runErr = errors.Join(runErr, result.ScanErr)
 		} else {
-			return fmt.Errorf("shell: read output from %q: %w", cmdName, scanErr)
+			return fmt.Errorf("shell: read output from %q: %w", p.Cmd, result.ScanErr)
 		}
 	}
 
 	if runErr != nil {
-		out := strings.Join(lines, "\n")
+		out := strings.Join(result.Lines, "\n")
 		if out != "" {
-			return fmt.Errorf("shell: command %q failed: %w\noutput: %s", cmdName, runErr, out)
+			return fmt.Errorf("shell: command %q failed: %w\noutput: %s", p.Cmd, runErr, out)
 		}
-		return fmt.Errorf("shell: command %q failed: %w", cmdName, runErr)
+		return fmt.Errorf("shell: command %q failed: %w", p.Cmd, runErr)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("shell: close output pipe for %q: %w", cmdName, closeErr)
+		return fmt.Errorf("shell: close output pipe for %q: %w", p.Cmd, closeErr)
 	}
 	return nil
 }

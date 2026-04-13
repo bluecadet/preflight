@@ -7,13 +7,10 @@ import "context"
 type ShortcutModule struct{}
 
 func (m *ShortcutModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "destination"); err != nil {
+	var p ShortcutParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, err
-	}
-
 	return runWindowsPowerShellBool(ctx, params, `
 $destination = [string]$params.destination
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
@@ -35,13 +32,10 @@ Write-Output $needs
 }
 
 func (m *ShortcutModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "destination"); err != nil {
+	var p ShortcutParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return err
-	}
-
 	_, err := runWindowsPowerShellWithParams(ctx, params, `
 $destination = [string]$params.destination
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }

@@ -8,76 +8,53 @@ import (
 	"os"
 )
 
-// EnvironmentModule manages environment variables.
-// Params:
-//   - name (required): variable name
-//   - value (required for ensure=present): variable value
-//   - scope: "user" (default) or "machine"
-//   - ensure: "present" (default) or "absent"
-//
-// Note: os.Setenv affects the current process. Machine-scope persistence
-// on Windows requires registry writes (handled in environment_windows.go).
 type EnvironmentModule struct{}
 
 func (m *EnvironmentModule) Check(_ context.Context, params map[string]any) (bool, error) {
-	name, err := paramStringRequired(params, "name")
-	if err != nil {
-		return false, err
-	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p EnvironmentParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
 
-	current := os.Getenv(name)
+	current := os.Getenv(p.Name)
 
-	switch ensure {
-	case "absent":
-		if current == "" {
-			return false, nil // already absent
-		}
-		return true, nil // needs removal
-
-	case "present":
-		value, err := paramStringRequired(params, "value")
-		if err != nil {
-			return false, err
-		}
-		return current != value, nil
-
-	default:
-		return false, fmt.Errorf("environment: unknown ensure value %q (want present|absent)", ensure)
-	}
+	return EnsureCheck("environment", p.Ensure,
+		func() (bool, error) {
+			if p.Value == "" {
+				return false, fmt.Errorf("module: required param %q is missing", "value")
+			}
+			return current != p.Value, nil
+		},
+		func() (bool, error) {
+			if current == "" {
+				return false, nil
+			}
+			return true, nil
+		},
+	)
 }
 
 func (m *EnvironmentModule) Apply(_ context.Context, params map[string]any) error {
-	name, err := paramStringRequired(params, "name")
-	if err != nil {
-		return err
-	}
-	ensure, err := paramString(params, "ensure", "present")
-	if err != nil {
+	var p EnvironmentParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 
-	switch ensure {
-	case "absent":
-		if err := os.Unsetenv(name); err != nil {
-			return fmt.Errorf("environment: unset %q: %w", name, err)
-		}
-		return nil
-
-	case "present":
-		value, err := paramStringRequired(params, "value")
-		if err != nil {
-			return err
-		}
-		if err := os.Setenv(name, value); err != nil {
-			return fmt.Errorf("environment: set %q: %w", name, err)
-		}
-		return nil
-
-	default:
-		return fmt.Errorf("environment: unknown ensure value %q (want present|absent)", ensure)
-	}
+	return EnsureApply("environment", p.Ensure,
+		func() error {
+			if p.Value == "" {
+				return fmt.Errorf("module: required param %q is missing", "value")
+			}
+			if err := os.Setenv(p.Name, p.Value); err != nil {
+				return fmt.Errorf("environment: set %q: %w", p.Name, err)
+			}
+			return nil
+		},
+		func() error {
+			if err := os.Unsetenv(p.Name); err != nil {
+				return fmt.Errorf("environment: unset %q: %w", p.Name, err)
+			}
+			return nil
+		},
+	)
 }

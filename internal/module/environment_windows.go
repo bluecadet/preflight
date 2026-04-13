@@ -8,22 +8,11 @@ import (
 )
 
 // EnvironmentModule manages environment variables on Windows.
-// Uses [System.Environment]::GetEnvironmentVariable/SetEnvironmentVariable so
-// that changes are persisted at the requested scope (machine or user) rather
-// than only affecting the current process.
-//
-// Params:
-//   - name (required): variable name
-//   - value (required for ensure=present): variable value
-//   - scope: "machine" (default) or "user"
-//   - ensure: "present" (default) or "absent"
 type EnvironmentModule struct{}
 
 func (m *EnvironmentModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
-		return false, err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p EnvironmentParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
 	return runWindowsPowerShellBool(ctx, params, `
@@ -42,10 +31,8 @@ Write-Output ($current -ne $value)
 }
 
 func (m *EnvironmentModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
-		return err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p EnvironmentParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 	_, err := runWindowsPowerShellWithParams(ctx, params, `

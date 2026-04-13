@@ -7,10 +7,8 @@ import "context"
 type FirewallRuleModule struct{}
 
 func (m *FirewallRuleModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
-		return false, err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p FirewallRuleParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
 	ports, err := firewallPortsArg(params)
@@ -48,10 +46,8 @@ Write-Output $needs
 }
 
 func (m *FirewallRuleModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
-		return err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p FirewallRuleParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 	ports, err := firewallPortsArg(params)

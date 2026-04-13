@@ -11,7 +11,8 @@ import (
 type ScheduledTaskModule struct{}
 
 func (m *ScheduledTaskModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p ScheduledTaskParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
 	normalized, err := winutil.NormalizeScheduledTaskParams(params)
@@ -139,7 +140,8 @@ Write-Output $needs
 }
 
 func (m *ScheduledTaskModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "name"); err != nil {
+	var p ScheduledTaskParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 	normalized, err := winutil.NormalizeScheduledTaskParams(params)

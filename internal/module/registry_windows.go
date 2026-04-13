@@ -11,10 +11,8 @@ import (
 type RegistryModule struct{}
 
 func (m *RegistryModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	if _, err := paramStringRequired(params, "path"); err != nil {
-		return false, err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p RegistryParams
+	if err := Decode(params, &p); err != nil {
 		return false, err
 	}
 	normalized, err := winutil.NormalizeRegistryParams(params)
@@ -118,10 +116,8 @@ Write-Output $needs
 }
 
 func (m *RegistryModule) Apply(ctx context.Context, params map[string]any) error {
-	if _, err := paramStringRequired(params, "path"); err != nil {
-		return err
-	}
-	if _, err := paramString(params, "ensure", "present"); err != nil {
+	var p RegistryParams
+	if err := Decode(params, &p); err != nil {
 		return err
 	}
 	normalized, err := winutil.NormalizeRegistryParams(params)
