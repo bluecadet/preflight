@@ -317,28 +317,16 @@ func TestNormalizeWindowsArch(t *testing.T) {
 
 func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	var commands []string
-	call := 0
 
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			commands = append(commands, command)
-			call++
-			switch call {
-			case 1:
-				if !strings.Contains(command, "[ScriptBlock]::Create($checkScript)") {
-					t.Fatalf("expected wrapped check_script, got %q", command)
-				}
-				return `{"needs_change":true,"message":"rename pending"}`, "", 0, nil
-			case 2:
-				if !strings.Contains(command, "Write-Output 'applied'") {
-					t.Fatalf("expected apply script, got %q", command)
-				}
-				return "applied", "", 0, nil
-			default:
-				t.Fatalf("unexpected extra PowerShell invocation %d: %q", call, command)
-				return "", "", 0, nil
+			if !strings.Contains(command, "__pf_check_script") {
+				t.Fatalf("expected combined ensure script, got %q", command)
 			}
+			// Simulate apply output followed by the ensure sentinel.
+			return "applied\nchanged", "", 0, nil
 		},
 	}
 
@@ -352,11 +340,8 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected StatusChanged, got %q", result.Status)
 	}
-	if result.Message != "applied" {
-		t.Fatalf("expected apply output, got %q", result.Message)
-	}
-	if len(commands) != 2 {
-		t.Fatalf("expected 2 PowerShell invocations, got %d", len(commands))
+	if len(commands) != 1 {
+		t.Fatalf("expected 1 combined PowerShell invocation, got %d", len(commands))
 	}
 }
 

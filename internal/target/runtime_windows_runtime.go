@@ -52,6 +52,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return applyPowerShellModule(ctx, backend, params)
 			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
+				return ensurePowerShellModule(ctx, backend, params, dryRun, onOutput)
+			},
 		},
 		"environment": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {

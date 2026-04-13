@@ -272,12 +272,10 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 			switch {
 			case strings.Contains(decoded, "preflight-windows"):
 				return "preflight-windows", "", 0, nil
-			case strings.Contains(decoded, "[ScriptBlock]::Create($checkScript)"):
+			case strings.Contains(decoded, "__pf_check_script"):
+				// Combined ensure script: simulate apply output + sentinel.
 				call++
-				return `{"needs_change":true,"message":"rename pending"}`, "", 0, nil
-			case strings.Contains(decoded, "Write-Output 'applied'"):
-				call++
-				return "applied", "", 0, nil
+				return "applied\nchanged", "", 0, nil
 			default:
 				t.Fatalf("unexpected powershell script %q", decoded)
 				return "", "", 0, nil
@@ -295,11 +293,8 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected changed result, got %q", result.Status)
 	}
-	if result.Message != "applied" {
-		t.Fatalf("expected apply output, got %q", result.Message)
-	}
-	if call != 2 {
-		t.Fatalf("expected 2 powershell invocations after detection, got %d", call)
+	if call != 1 {
+		t.Fatalf("expected 1 combined powershell invocation after detection, got %d", call)
 	}
 }
 

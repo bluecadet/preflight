@@ -2,9 +2,15 @@ package target
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// errEnsureNotHandled is returned by an ensure function to signal that it
+// cannot handle the given params and the caller should fall back to the
+// standard check+apply path.
+var errEnsureNotHandled = errors.New("ensure not handled")
 
 type RuntimeKind string
 
@@ -79,8 +85,13 @@ func executeRemoteModule(
 	// If the module provides an ensure function, use it to combine check+apply
 	// into a single round trip. This is valuable for high-latency transports
 	// (e.g. WinRM) where two separate invocations double the overhead.
+	// An ensure function may return errEnsureNotHandled to fall back to the
+	// standard check+apply path (e.g. when params don't support the fast path).
 	if mf, ok := mod.(remoteModuleFuncs); ok && mf.ensure != nil {
 		changed, msg, err := mf.ensure(ctx, params, dryRun, captureOnOutput)
+		if errors.Is(err, errEnsureNotHandled) {
+			goto checkApply
+		}
 		if err != nil {
 			return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
 		}
@@ -102,6 +113,7 @@ func executeRemoteModule(
 		return Result{TaskID: taskID, Status: status, Message: message, Output: captured}, nil
 	}
 
+checkApply:
 	needsChange, checkMessage, err := mod.Check(ctx, params, captureOnOutput)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
