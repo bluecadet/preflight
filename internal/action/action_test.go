@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/bluecadet/preflight/internal/action"
 	"gopkg.in/yaml.v3"
+
+	"github.com/bluecadet/preflight/internal/action"
 )
 
 const sampleAction = `

@@ -7,9 +7,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/ast"
+
+	"github.com/bluecadet/preflight/internal/preflighterr"
 )
 
 const maxRenderPasses = 16

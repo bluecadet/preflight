@@ -6,6 +6,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 )
+
 // fetch downloads remote action refs not yet in cache.
 func (r *Runner) fetch(ctx context.Context, playbook *action.Playbook) error {
 	if err := ctx.Err(); err != nil {

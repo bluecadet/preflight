@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bluecadet/preflight/internal/logging"
 	"github.com/spf13/cobra"
+
+	"github.com/bluecadet/preflight/internal/logging"
 )
 
 var rootCmd = &cobra.Command{

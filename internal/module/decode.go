@@ -5,8 +5,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/mitchellh/mapstructure"
+
+	"github.com/bluecadet/preflight/internal/preflighterr"
 )
 
 // Decode maps a raw params map into a typed struct using `param` tags.
