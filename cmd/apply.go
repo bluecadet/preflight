@@ -109,11 +109,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	if err != nil {
 		return err
 	}
-
-	// Fetch is target-agnostic: it only resolves action refs via the resolver
-	// chain and never calls any method on the target. A nil target is safe here.
-	fetchRunner := runner.New(nil, chain, runner.Config{})
-	if err := fetchRunner.Fetch(ctx, pb); err != nil {
+	if err := runner.New(nil, chain, runner.Config{}).NewFetcher().Fetch(ctx, pb); err != nil {
 		return err
 	}
 
@@ -132,6 +128,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			TargetVars:                    host.TargetVars,
 			TargetName:                    host.Name,
 			Renderer:                      renderer,
+			SkipFetch:                     true,
 			Secrets:                       secretsResolver,
 			SecretsConfig:                 projectCfg.Secrets,
 			StatePath:                     host.StatePath,
@@ -144,26 +141,17 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			Commit:                        buildCommit,
 			BuildDate:                     buildDate,
 		}
-
-		if renderer != nil {
-			renderer.Emit(output.PlayStartEvent{PlayName: pb.Name})
+		if opts.stageOnly {
+			cfg.Phase = "stage"
 		}
 
 		r := runner.New(host.Target, chain, cfg)
-		plan, err := r.Plan(runCtx, pb)
-		if err != nil {
-			return fmt.Errorf("plan for %s: %w", host.Name, err)
-		}
-
-		if opts.stageOnly {
-			if err := r.Stage(runCtx, plan); err != nil {
-				return fmt.Errorf("stage for %s: %w", host.Name, err)
+		if err := r.Run(runCtx, pb); err != nil {
+			action := "apply"
+			if opts.stageOnly {
+				action = "stage"
 			}
-			return nil
-		}
-
-		if err := r.Apply(runCtx, plan); err != nil {
-			return fmt.Errorf("apply for %s: %w", host.Name, err)
+			return fmt.Errorf("%s for %s: %w", action, host.Name, err)
 		}
 		return nil
 	})

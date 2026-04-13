@@ -45,9 +45,9 @@ type PlanTask struct {
 	IgnoreErrors bool
 }
 
-// Plan resolves all action refs, expands tasks into a flat list, resolves
+// plan resolves all action refs, expands tasks into a flat list, resolves
 // variables. Returns an ExecutionPlan. Pure computation — no I/O against targets.
-func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
+func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -265,8 +265,8 @@ func sanitizeLineageSegment(s string) string {
 	return out
 }
 
-// Fetch downloads remote action refs not yet in cache.
-func (r *Runner) Fetch(ctx context.Context, playbook *action.Playbook) error {
+// fetch downloads remote action refs not yet in cache.
+func (r *Runner) fetch(ctx context.Context, playbook *action.Playbook) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -281,8 +281,8 @@ func (r *Runner) Fetch(ctx context.Context, playbook *action.Playbook) error {
 	return nil
 }
 
-// Stage assembles a self-contained artifact bundle (zip).
-func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
+// stage assembles a self-contained artifact bundle (zip).
+func (r *Runner) stage(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -584,8 +584,8 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 	return modules, files, nil
 }
 
-// Apply executes the task graph against the target.
-func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
+// apply executes the task graph against the target.
+func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

@@ -27,6 +27,7 @@ type Config struct {
 	TargetVars                    map[string]any
 	TargetName                    string
 	Phase                         string // "plan", "fetch", "stage", "apply" (empty = all)
+	SkipFetch                     bool
 	Renderer                      output.Renderer
 	Secrets                       *secrets.Resolver
 	SecretsConfig                 config.SecretsConfig
@@ -70,19 +71,21 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
 	}
 
 	if r.config.Phase == "plan" {
-		_, err := r.Plan(ctx, playbook)
+		_, err := r.NewPlanner().Plan(ctx, playbook)
 		if err != nil {
 			r.emitError(fmt.Errorf("plan phase failed: %w", err))
 		}
 		return err
 	}
 
-	if err := r.Fetch(ctx, playbook); err != nil {
-		r.emitError(fmt.Errorf("fetch phase failed: %w", err))
-		return err
+	if !r.config.SkipFetch {
+		if err := r.NewFetcher().Fetch(ctx, playbook); err != nil {
+			r.emitError(fmt.Errorf("fetch phase failed: %w", err))
+			return err
+		}
 	}
 
-	plan, err := r.Plan(ctx, playbook)
+	plan, err := r.NewPlanner().Plan(ctx, playbook)
 	if err != nil {
 		r.emitError(fmt.Errorf("plan phase failed: %w", err))
 		return err
@@ -93,14 +96,14 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
 	}
 
 	if r.config.Phase == "stage" {
-		err := r.Stage(ctx, plan)
+		err := r.NewStager().Stage(ctx, plan)
 		if err != nil {
 			r.emitError(fmt.Errorf("stage phase failed: %w", err))
 		}
 		return err
 	}
 
-	if err := r.Apply(ctx, plan); err != nil {
+	if err := r.NewExecutor().Apply(ctx, plan); err != nil {
 		r.emitError(fmt.Errorf("apply phase failed: %w", err))
 		return err
 	}
