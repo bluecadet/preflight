@@ -2,6 +2,7 @@ package plugins
 
 import (
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 
@@ -63,7 +64,9 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 			Source:  plugin.Source,
 			Version: plugin.Version,
 		})
+		slog.Debug("plugin registered", "name", plugin.Name, "path", plugin.Path, "version", plugin.Version)
 	}
+	slog.Debug("plugin discovery complete", "discovered", len(discovered), "loaded", len(loaded))
 
 	slices.SortFunc(loaded, func(a, b LoadedPlugin) int {
 		switch {

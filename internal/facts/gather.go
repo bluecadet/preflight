@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 
@@ -35,7 +35,7 @@ func (g *Gatherer) Gather(ctx context.Context) (*Facts, error) {
 
 	osFacts, err := g.GatherOS(ctx)
 	if err != nil {
-		log.Printf("facts: warning: OS fact gathering failed: %v", err)
+		slog.Warn("fact gathering failed", "category", "os", "error", err)
 	} else {
 		facts.OS = osFacts
 		facts.Hostname = osFacts.Hostname
@@ -43,14 +43,14 @@ func (g *Gatherer) Gather(ctx context.Context) (*Facts, error) {
 
 	disks, err := g.GatherDisks(ctx)
 	if err != nil {
-		log.Printf("facts: warning: disk fact gathering failed: %v", err)
+		slog.Warn("fact gathering failed", "category", "disk", "error", err)
 	} else {
 		facts.Disks = disks
 	}
 
 	env, err := g.gatherEnv(ctx)
 	if err != nil {
-		log.Printf("facts: warning: environment fact gathering failed: %v", err)
+		slog.Warn("fact gathering failed", "category", "env", "error", err)
 	} else {
 		facts.Env = env
 	}

@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
 )
+
 // apply executes the task graph against the target.
 func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
@@ -130,6 +132,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 
 		// Execute the task against the target.
+		slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
 		r.emitTaskStart(pt)
 		var onOutput target.OutputFunc
 		if r.config.Renderer != nil {
@@ -153,7 +156,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 			// IgnoreErrors: treat as ok.
 			result = target.Result{
-				TaskID:  pt.ID,
 				Status:  target.StatusOK,
 				Message: execErr.Error(),
 				Output:  result.Output,

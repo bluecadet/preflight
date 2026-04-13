@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/bluecadet/preflight/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -15,6 +16,14 @@ var rootCmd = &cobra.Command{
 	Long: `Preflight is a configuration management CLI for deploying and maintaining
 Windows endpoints such as kiosks, signage, and other dedicated systems. It
 compiles to a single static binary with no runtime dependencies.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		verbose := false
+		if flag := cmd.Flags().Lookup("verbose"); flag != nil {
+			verbose, _ = cmd.Flags().GetBool("verbose")
+		}
+		logging.Init(verbose)
+		return nil
+	},
 }
 
 var (
