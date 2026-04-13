@@ -6,152 +6,156 @@ import (
 	"strings"
 )
 
-// NormalizeWingetParams accepts either a "packages" list or the legacy
-// single-package form ("id" at the top level) and returns a params map with a
-// canonical "packages" key.
-func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
-	_, hasPkgs := params["packages"]
-	_, hasID := params["id"]
-	if hasPkgs && hasID {
-		return nil, fmt.Errorf("winget_package: specify either 'packages' or 'id', not both")
+type packageNormConfig struct {
+	moduleName   string
+	singleKey    string
+	validateItem func(i int, item map[string]any) error
+	buildSingle  func(params map[string]any) (map[string]any, error)
+}
+
+func normalizePackageList(params map[string]any, cfg packageNormConfig) (map[string]any, error) {
+	_, hasPackages := params["packages"]
+	_, hasSingle := params[cfg.singleKey]
+
+	if hasPackages && hasSingle {
+		return nil, fmt.Errorf("%s: specify either 'packages' or '%s', not both", cfg.moduleName, cfg.singleKey)
 	}
-	if hasPkgs {
+
+	if hasPackages {
 		list, ok := params["packages"].([]any)
 		if !ok {
-			return nil, fmt.Errorf("winget_package: 'packages' must be a list")
+			return nil, fmt.Errorf("%s: 'packages' must be a list", cfg.moduleName)
 		}
 		for i, item := range list {
 			m, ok := item.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("winget_package: packages[%d] must be an object", i)
+				return nil, fmt.Errorf("%s: packages[%d] must be an object", cfg.moduleName, i)
 			}
-			if id, _ := m["id"].(string); id == "" {
-				return nil, fmt.Errorf("winget_package: packages[%d].id is required", i)
+			if err := cfg.validateItem(i, m); err != nil {
+				return nil, err
 			}
 		}
 		return map[string]any{"packages": list}, nil
 	}
-	if hasID {
-		id, ok := params["id"].(string)
-		if !ok || id == "" {
-			return nil, fmt.Errorf("winget_package: 'id' must be a non-empty string")
-		}
-		spec := map[string]any{"id": id}
-		if v, _ := params["version"].(string); v != "" {
-			spec["version"] = v
-		}
-		if v, _ := params["source"].(string); v != "" {
-			spec["source"] = v
-		}
-		if v, _ := params["scope"].(string); v != "" {
-			spec["scope"] = v
-		}
-		if v, _ := params["ensure"].(string); v != "" {
-			spec["ensure"] = v
+
+	if hasSingle {
+		spec, err := cfg.buildSingle(params)
+		if err != nil {
+			return nil, err
 		}
 		return map[string]any{"packages": []any{spec}}, nil
 	}
-	return nil, fmt.Errorf("winget_package: 'packages' or 'id' is required")
+
+	return nil, fmt.Errorf("%s: 'packages' or '%s' is required", cfg.moduleName, cfg.singleKey)
+}
+
+func copyOptionalString(dst, src map[string]any, key string) {
+	if value, _ := src[key].(string); value != "" {
+		dst[key] = value
+	}
+}
+
+// NormalizeWingetParams accepts either a "packages" list or the legacy
+// single-package form ("id" at the top level) and returns a params map with a
+// canonical "packages" key.
+func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
+	return normalizePackageList(params, packageNormConfig{
+		moduleName: "winget_package",
+		singleKey:  "id",
+		validateItem: func(i int, item map[string]any) error {
+			if id, _ := item["id"].(string); id == "" {
+				return fmt.Errorf("winget_package: packages[%d].id is required", i)
+			}
+			return nil
+		},
+		buildSingle: func(params map[string]any) (map[string]any, error) {
+			id, ok := params["id"].(string)
+			if !ok || id == "" {
+				return nil, fmt.Errorf("winget_package: 'id' must be a non-empty string")
+			}
+
+			spec := map[string]any{"id": id}
+			for _, key := range []string{"version", "source", "scope", "ensure"} {
+				copyOptionalString(spec, params, key)
+			}
+			return spec, nil
+		},
+	})
 }
 
 // NormalizeRemoveAppxParams accepts either a "packages" list or the legacy
 // single-package form ("name" at the top level) and returns a params map with a
 // canonical "packages" key.
 func NormalizeRemoveAppxParams(params map[string]any) (map[string]any, error) {
-	_, hasPkgs := params["packages"]
-	_, hasName := params["name"]
-	if hasPkgs && hasName {
-		return nil, fmt.Errorf("remove_appx_packages: specify either 'packages' or 'name', not both")
-	}
-	if hasPkgs {
-		list, ok := params["packages"].([]any)
-		if !ok {
-			return nil, fmt.Errorf("remove_appx_packages: 'packages' must be a list")
-		}
-		for i, item := range list {
-			m, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("remove_appx_packages: packages[%d] must be an object", i)
+	return normalizePackageList(params, packageNormConfig{
+		moduleName: "remove_appx_packages",
+		singleKey:  "name",
+		validateItem: func(i int, item map[string]any) error {
+			if name, _ := item["name"].(string); name == "" {
+				return fmt.Errorf("remove_appx_packages: packages[%d].name is required", i)
 			}
-			if name, _ := m["name"].(string); name == "" {
-				return nil, fmt.Errorf("remove_appx_packages: packages[%d].name is required", i)
+			return nil
+		},
+		buildSingle: func(params map[string]any) (map[string]any, error) {
+			name, ok := params["name"].(string)
+			if !ok || name == "" {
+				return nil, fmt.Errorf("remove_appx_packages: 'name' must be a non-empty string")
 			}
-		}
-		return map[string]any{"packages": list}, nil
-	}
-	if hasName {
-		name, ok := params["name"].(string)
-		if !ok || name == "" {
-			return nil, fmt.Errorf("remove_appx_packages: 'name' must be a non-empty string")
-		}
-		spec := map[string]any{"name": name}
-		if v, _ := params["scope"].(string); v != "" {
-			spec["scope"] = v
-		}
-		return map[string]any{"packages": []any{spec}}, nil
-	}
-	return nil, fmt.Errorf("remove_appx_packages: 'packages' or 'name' is required")
+
+			spec := map[string]any{"name": name}
+			copyOptionalString(spec, params, "scope")
+			return spec, nil
+		},
+	})
 }
 
 // NormalizePackageParams accepts either a "packages" list or the legacy
 // single-package form ("product_id" at the top level) and returns a params map
 // with a canonical "packages" key.
 func NormalizePackageParams(params map[string]any) (map[string]any, error) {
-	_, hasPkgs := params["packages"]
-	_, hasPID := params["product_id"]
-	if hasPkgs && hasPID {
-		return nil, fmt.Errorf("package: specify either 'packages' or 'product_id', not both")
-	}
-	if hasPkgs {
-		list, ok := params["packages"].([]any)
-		if !ok {
-			return nil, fmt.Errorf("package: 'packages' must be a list")
-		}
-		for i, item := range list {
-			m, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("package: packages[%d] must be an object", i)
-			}
-			pid, _ := m["product_id"].(string)
+	return normalizePackageList(params, packageNormConfig{
+		moduleName: "package",
+		singleKey:  "product_id",
+		validateItem: func(i int, item map[string]any) error {
+			pid, _ := item["product_id"].(string)
 			if pid == "" {
-				return nil, fmt.Errorf("package: packages[%d].product_id is required", i)
+				return fmt.Errorf("package: packages[%d].product_id is required", i)
 			}
-			ensure, _ := m["ensure"].(string)
+			ensure, _ := item["ensure"].(string)
 			if ensure == "" {
 				ensure = "present"
 			}
 			if ensure == "present" {
-				if src, _ := m["source"].(string); src == "" {
-					return nil, fmt.Errorf("package: packages[%d].source is required when ensure=present", i)
+				if src, _ := item["source"].(string); src == "" {
+					return fmt.Errorf("package: packages[%d].source is required when ensure=present", i)
 				}
 			}
-		}
-		return map[string]any{"packages": list}, nil
-	}
-	if hasPID {
-		pid, ok := params["product_id"].(string)
-		if !ok || pid == "" {
-			return nil, fmt.Errorf("package: 'product_id' must be a non-empty string")
-		}
-		ensure, _ := params["ensure"].(string)
-		if ensure == "" {
-			ensure = "present"
-		}
-		if ensure == "present" {
-			if src, _ := params["source"].(string); src == "" {
-				return nil, fmt.Errorf("package: 'source' is required when ensure=present")
+			return nil
+		},
+		buildSingle: func(params map[string]any) (map[string]any, error) {
+			pid, ok := params["product_id"].(string)
+			if !ok || pid == "" {
+				return nil, fmt.Errorf("package: 'product_id' must be a non-empty string")
 			}
-		}
-		spec := map[string]any{"product_id": pid, "ensure": ensure}
-		if v, _ := params["source"].(string); v != "" {
-			spec["source"] = v
-		}
-		if v, ok := params["args"]; ok && v != nil {
-			spec["args"] = v
-		}
-		return map[string]any{"packages": []any{spec}}, nil
-	}
-	return nil, fmt.Errorf("package: 'packages' or 'product_id' is required")
+
+			ensure, _ := params["ensure"].(string)
+			if ensure == "" {
+				ensure = "present"
+			}
+			if ensure == "present" {
+				if src, _ := params["source"].(string); src == "" {
+					return nil, fmt.Errorf("package: 'source' is required when ensure=present")
+				}
+			}
+
+			spec := map[string]any{"product_id": pid, "ensure": ensure}
+			copyOptionalString(spec, params, "source")
+			if args, ok := params["args"]; ok && args != nil {
+				spec["args"] = args
+			}
+			return spec, nil
+		},
+	})
 }
 
 // NormalizeFirewallPorts canonicalizes firewall port values into the string
