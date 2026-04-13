@@ -732,9 +732,11 @@ func testRemoteAction() *action.Action {
 		Tasks: []action.Task{
 			{
 				Name: "remote echo",
-				Shell: map[string]any{
-					"cmd":  "echo",
-					"args": []any{"hello"},
+				InlineModules: map[string]map[string]any{
+					"shell": {
+						"cmd":  "echo",
+						"args": []any{"hello"},
+					},
 				},
 			},
 		},

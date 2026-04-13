@@ -98,9 +98,9 @@ func TestBuildPlannedTaskStateKeepsBecomeSummaryUnwrapped(t *testing.T) {
 		Name: "test",
 		Tasks: []action.Task{
 			{
-				Name:   "echo",
-				Become: map[string]any{"user": "kiosk"},
-				Shell:  map[string]any{"cmd": "echo", "args": []any{"hello"}},
+				Name:          "echo",
+				Become:        map[string]any{"user": "kiosk"},
+				InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
 			},
 		},
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"gopkg.in/yaml.v3"
 )
 
 const sampleAction = `
@@ -63,6 +64,9 @@ func TestParseAction_Valid(t *testing.T) {
 	}
 	if a.Tasks[0].Params == nil {
 		t.Fatal("expected canonical params to be populated")
+	}
+	if got := a.Tasks[0].InlineModules["shell"]["cmd"]; got != "echo" {
+		t.Fatalf("expected inline shell cmd=echo, got %#v", got)
 	}
 }
 
@@ -140,6 +144,21 @@ tasks:
 	}
 	if got := task.Params["cmd"]; got != "echo" {
 		t.Fatalf("expected params.cmd=echo, got %#v", got)
+	}
+}
+
+func TestTask_UnmarshalYAML_CollectsInlineModules(t *testing.T) {
+	var task action.Task
+	err := yaml.Unmarshal([]byte(`
+name: create file
+file:
+  dest: /foo
+`), &task)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := task.InlineModules["file"]["dest"]; got != "/foo" {
+		t.Fatalf("expected inline file dest=/foo, got %#v", got)
 	}
 }
 

@@ -101,8 +101,8 @@ func newShellPlaybook(name string) *action.Playbook {
 		Name: name,
 		Tasks: []action.Task{
 			{
-				Name:  "run echo",
-				Shell: map[string]any{"cmd": "echo hello"},
+				Name:          "run echo",
+				InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
 			},
 		},
 	}
@@ -155,14 +155,14 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 			Tasks: []action.Task{
 				{
 					Name: "configure autologin",
-					Registry: map[string]any{
+					InlineModules: map[string]map[string]any{"registry": {
 						"path": "HKLM:\\Software\\Winlogon",
 						"values": map[string]any{
 							"DefaultUserName": "{{ vars.username }}",
 							"DefaultPassword": "{{ vars.password }}",
 							"Site":            "{{ vars.site }}",
 						},
-					},
+					}},
 				},
 			},
 		},
@@ -216,8 +216,8 @@ func TestPlanMergesBecomeDefaultsAcrossActionExpansion(t *testing.T) {
 			},
 			Tasks: []action.Task{
 				{
-					Name:  "echo",
-					Shell: map[string]any{"cmd": "echo", "args": []any{"hello"}},
+					Name:          "echo",
+					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
 				},
 			},
 		},
@@ -264,9 +264,9 @@ func TestPlanTaskBecomeCanDisableInheritedDefaults(t *testing.T) {
 		},
 		Tasks: []action.Task{
 			{
-				Name:   "echo",
-				Become: map[string]any{"enabled": false},
-				Shell:  map[string]any{"cmd": "echo", "args": []any{"hello"}},
+				Name:          "echo",
+				Become:        map[string]any{"enabled": false},
+				InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
 			},
 		},
 	}
@@ -1262,8 +1262,8 @@ func TestRunFetchesRemoteDependenciesBeforePlanningAndApply(t *testing.T) {
 			childRef: {
 				Name: "child",
 				Tasks: []action.Task{{
-					Name:  "echo",
-					Shell: map[string]any{"cmd": "echo hello"},
+					Name:          "echo",
+					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
 				}},
 			},
 		},
@@ -1301,8 +1301,8 @@ func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
 			rootRef: {
 				Name: "root",
 				Tasks: []action.Task{{
-					Name:  "echo",
-					Shell: map[string]any{"cmd": "echo hello"},
+					Name:          "echo",
+					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
 				}},
 			},
 		},
@@ -1352,8 +1352,8 @@ func TestRunFetchesRemoteDepsNestedUnderLocalAction(t *testing.T) {
 	remoteAction := &action.Action{
 		Name: "child",
 		Tasks: []action.Task{{
-			Name:  "echo",
-			Shell: map[string]any{"cmd": "echo hello"},
+			Name:          "echo",
+			InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
 		}},
 	}
 
@@ -1398,8 +1398,8 @@ func TestRunFetchesRemoteDepsNestedUnderStdlibAction(t *testing.T) {
 	remoteAction := &action.Action{
 		Name: "plugin",
 		Tasks: []action.Task{{
-			Name:  "run",
-			Shell: map[string]any{"cmd": "plugin.exe"},
+			Name:          "run",
+			InlineModules: map[string]map[string]any{"shell": {"cmd": "plugin.exe"}},
 		}},
 	}
 

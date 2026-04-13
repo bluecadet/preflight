@@ -55,7 +55,7 @@ func TestFetchRefs_LocalRootWithRemoteChild(t *testing.T) {
 	}
 	remoteAction := &action.Action{
 		Name:  "child",
-		Tasks: []action.Task{{Name: "echo", Shell: map[string]any{"cmd": "echo hello"}}},
+		Tasks: []action.Task{{Name: "echo", InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}}}},
 	}
 
 	tracker := &fetchTracker{
@@ -88,7 +88,7 @@ func TestFetchRefs_EmbeddedRootWithRemoteChild(t *testing.T) {
 	}
 	remoteAction := &action.Action{
 		Name:  "tool",
-		Tasks: []action.Task{{Name: "run", Shell: map[string]any{"cmd": "tool.exe"}}},
+		Tasks: []action.Task{{Name: "run", InlineModules: map[string]map[string]any{"shell": {"cmd": "tool.exe"}}}},
 	}
 
 	tracker := &fetchTracker{
@@ -126,7 +126,7 @@ func TestFetchRefs_DeepChain_LocalThenRemoteThenRemote(t *testing.T) {
 	}
 	remote2Action := &action.Action{
 		Name:  "leaf",
-		Tasks: []action.Task{{Name: "run", Shell: map[string]any{"cmd": "leaf.exe"}}},
+		Tasks: []action.Task{{Name: "run", InlineModules: map[string]map[string]any{"shell": {"cmd": "leaf.exe"}}}},
 	}
 
 	tracker := &fetchTracker{
@@ -159,7 +159,7 @@ func TestFetchRefs_NoDuplicateFetches(t *testing.T) {
 
 	sharedAction := &action.Action{
 		Name:  "shared",
-		Tasks: []action.Task{{Name: "run", Shell: map[string]any{"cmd": "shared.exe"}}},
+		Tasks: []action.Task{{Name: "run", InlineModules: map[string]map[string]any{"shell": {"cmd": "shared.exe"}}}},
 	}
 
 	tracker := &fetchTracker{

@@ -20,38 +20,40 @@ type TaskDefaults struct {
 	Become map[string]any `yaml:"become" json:"become,omitempty"`
 }
 
-type inlineModuleField struct {
-	name   string
-	getter func(*Task) map[string]any
+var knownInlineModules = []string{
+	"registry",
+	"service",
+	"file",
+	"directory",
+	"package",
+	"shortcut",
+	"scheduled_task",
+	"user",
+	"winget_package",
+	"remove_appx_packages",
+	"power_plan",
+	"windows_feature",
+	"environment",
+	"firewall_rule",
+	"powershell",
+	"shell",
+	"reboot",
+	"wait",
 }
 
-// inlineModuleFields maps the YAML key of each inline module field to a
-// function that extracts the params map from the Task.
-var inlineModuleFields = []inlineModuleField{
-	{"registry", func(t *Task) map[string]any { return t.Registry }},
-	{"service", func(t *Task) map[string]any { return t.Service }},
-	{"file", func(t *Task) map[string]any { return t.File }},
-	{"directory", func(t *Task) map[string]any { return t.Directory }},
-	{"package", func(t *Task) map[string]any { return t.Package }},
-	{"shortcut", func(t *Task) map[string]any { return t.Shortcut }},
-	{"scheduled_task", func(t *Task) map[string]any { return t.ScheduledTask }},
-	{"user", func(t *Task) map[string]any { return t.User }},
-	{"winget_package", func(t *Task) map[string]any { return t.WingetPackage }},
-	{"remove_appx_packages", func(t *Task) map[string]any { return t.RemoveAppxPackages }},
-	{"power_plan", func(t *Task) map[string]any { return t.PowerPlan }},
-	{"windows_feature", func(t *Task) map[string]any { return t.WindowsFeature }},
-	{"environment", func(t *Task) map[string]any { return t.Environment }},
-	{"firewall_rule", func(t *Task) map[string]any { return t.FirewallRule }},
-	{"powershell", func(t *Task) map[string]any { return t.Powershell }},
-	{"shell", func(t *Task) map[string]any { return t.Shell }},
-	{"reboot", func(t *Task) map[string]any { return t.Reboot }},
-	{"wait", func(t *Task) map[string]any { return t.Wait }},
-}
+var knownInlineModuleSet = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(knownInlineModules))
+	for _, name := range knownInlineModules {
+		set[name] = struct{}{}
+	}
+	return set
+}()
 
 // Task is a single step inside an action or playbook.
 //
 // Module and Params are the canonical internal representation used after
-// parsing/normalization. The inline module fields remain as decode-time sugar.
+// parsing/normalization. InlineModules preserves decode-time sugar for known
+// inline module YAML keys.
 type Task struct {
 	Name         string         `yaml:"name"`
 	Uses         string         `yaml:"uses"`
@@ -66,25 +68,66 @@ type Task struct {
 	IgnoreErrors bool           `yaml:"ignore_errors"`
 	Tags         []string       `yaml:"tags"`
 
-	// Inline module fields — at most one may be non-nil per task.
-	Registry           map[string]any `yaml:"registry"`
-	Service            map[string]any `yaml:"service"`
-	File               map[string]any `yaml:"file"`
-	Directory          map[string]any `yaml:"directory"`
-	Package            map[string]any `yaml:"package"`
-	Shortcut           map[string]any `yaml:"shortcut"`
-	ScheduledTask      map[string]any `yaml:"scheduled_task"`
-	User               map[string]any `yaml:"user"`
-	WingetPackage      map[string]any `yaml:"winget_package"`
-	RemoveAppxPackages map[string]any `yaml:"remove_appx_packages"`
-	PowerPlan          map[string]any `yaml:"power_plan"`
-	WindowsFeature     map[string]any `yaml:"windows_feature"`
-	Environment        map[string]any `yaml:"environment"`
-	FirewallRule       map[string]any `yaml:"firewall_rule"`
-	Powershell         map[string]any `yaml:"powershell"`
-	Shell              map[string]any `yaml:"shell"`
-	Reboot             map[string]any `yaml:"reboot"`
-	Wait               map[string]any `yaml:"wait"`
+	// InlineModules stores known inline module definitions by YAML module name.
+	InlineModules map[string]map[string]any `yaml:"-"`
+}
+
+type taskKnownFields struct {
+	Name         string         `yaml:"name"`
+	Uses         string         `yaml:"uses"`
+	With         map[string]any `yaml:"with"`
+	Become       map[string]any `yaml:"become" json:"become,omitempty"`
+	ModuleName   string         `yaml:"module"`
+	ModuleParams map[string]any `yaml:"params"`
+	When         string         `yaml:"when"`
+	DependsOn    []string       `yaml:"depends_on"`
+	IgnoreErrors bool           `yaml:"ignore_errors"`
+	Tags         []string       `yaml:"tags"`
+}
+
+func (t *Task) UnmarshalYAML(value *yaml.Node) error {
+	var decoded taskKnownFields
+	if err := value.Decode(&decoded); err != nil {
+		return err
+	}
+
+	*t = Task{
+		Name:         decoded.Name,
+		Uses:         decoded.Uses,
+		With:         decoded.With,
+		Become:       decoded.Become,
+		ModuleName:   decoded.ModuleName,
+		ModuleParams: decoded.ModuleParams,
+		When:         decoded.When,
+		DependsOn:    decoded.DependsOn,
+		IgnoreErrors: decoded.IgnoreErrors,
+		Tags:         decoded.Tags,
+	}
+
+	if value.Kind != yaml.MappingNode {
+		return nil
+	}
+
+	for i := 0; i+1 < len(value.Content); i += 2 {
+		key := value.Content[i].Value
+		if _, ok := knownInlineModuleSet[key]; !ok {
+			continue
+		}
+
+		var params map[string]any
+		if err := value.Content[i+1].Decode(&params); err != nil {
+			return fmt.Errorf("task %q: decode inline module %q: %w", decoded.Name, key, err)
+		}
+		if params == nil {
+			continue
+		}
+		if t.InlineModules == nil {
+			t.InlineModules = make(map[string]map[string]any, 1)
+		}
+		t.InlineModules[key] = params
+	}
+
+	return nil
 }
 
 // ResolveModule canonicalizes a task into its internal module+params form.
@@ -192,19 +235,15 @@ func ParsePlaybookFile(path string) (*Playbook, error) {
 }
 
 func resolveTaskModule(t *Task) (string, map[string]any, bool, error) {
-	var found []inlineModuleField
-	for _, field := range inlineModuleFields {
-		if field.getter(t) != nil {
-			found = append(found, field)
+	var found []string
+	for _, name := range knownInlineModules {
+		if t.InlineModules[name] != nil {
+			found = append(found, name)
 		}
 	}
 
 	if len(found) > 1 {
-		names := make([]string, 0, len(found))
-		for _, field := range found {
-			names = append(names, field.name)
-		}
-		return "", nil, false, fmt.Errorf("task %q: multiple inline module fields set: %v (only one is allowed)", t.Name, names)
+		return "", nil, false, fmt.Errorf("task %q: multiple inline module fields set: %v (only one is allowed)", t.Name, found)
 	}
 
 	if t.ModuleName != "" {
@@ -212,16 +251,16 @@ func resolveTaskModule(t *Task) (string, map[string]any, bool, error) {
 			return "", nil, false, fmt.Errorf("task %q: cannot set both 'uses' and 'module'", t.Name)
 		}
 		if len(found) > 0 {
-			return "", nil, false, fmt.Errorf("task %q: cannot set both 'module' and inline module field %q", t.Name, found[0].name)
+			return "", nil, false, fmt.Errorf("task %q: cannot set both 'module' and inline module field %q", t.Name, found[0])
 		}
 		return t.ModuleName, t.ModuleParams, true, nil
 	}
 
 	if len(found) == 1 {
 		if t.Uses != "" {
-			return "", nil, false, fmt.Errorf("task %q: cannot set both 'uses' and inline module field %q", t.Name, found[0].name)
+			return "", nil, false, fmt.Errorf("task %q: cannot set both 'uses' and inline module field %q", t.Name, found[0])
 		}
-		return found[0].name, found[0].getter(t), true, nil
+		return found[0], t.InlineModules[found[0]], true, nil
 	}
 
 	if t.ModuleParams != nil {
