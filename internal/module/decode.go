@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/mitchellh/mapstructure"
 )
 
@@ -17,15 +18,15 @@ func Decode[T any](params map[string]any, dest *T) error {
 		WeaklyTypedInput: true,
 	})
 	if err != nil {
-		return fmt.Errorf("module: init param decoder: %w", err)
+		return &preflighterr.ModuleError{Module: "params", Op: "init param decoder", Err: err}
 	}
 	if err := decoder.Decode(params); err != nil {
-		return fmt.Errorf("module: decode params: %w", err)
+		return &preflighterr.ModuleError{Module: "params", Op: "decode params", Err: err}
 	}
-	return validateStruct(dest, params)
+	return validateStruct(dest)
 }
 
-func validateStruct[T any](dest *T, params map[string]any) error {
+func validateStruct[T any](dest *T) error {
 	v := reflect.ValueOf(dest).Elem()
 	t := v.Type()
 
@@ -43,13 +44,13 @@ func validateStruct[T any](dest *T, params map[string]any) error {
 		required := len(parts) > 1 && parts[1] == "required"
 
 		if required && fv.IsZero() {
-			return fmt.Errorf("module: required param %q is missing", key)
+			return &preflighterr.ValidationError{Field: key, Message: "required param is missing"}
 		}
 
 		if fv.IsZero() {
 			if def, ok := field.Tag.Lookup("default"); ok {
 				if err := setDefault(fv, def); err != nil {
-					return fmt.Errorf("module: default for %q: %w", key, err)
+					return &preflighterr.ValidationError{Field: key, Message: fmt.Sprintf("default value is invalid: %v", err), Err: err}
 				}
 			}
 		}
@@ -78,7 +79,7 @@ func setDefault(fv reflect.Value, def string) error {
 func RejectParams(module string, params map[string]any, keys ...string) error {
 	for _, k := range keys {
 		if _, ok := params[k]; ok {
-			return fmt.Errorf("%s: %s is not supported", module, k)
+			return &preflighterr.ModuleError{Module: module, Err: fmt.Errorf("%s is not supported", k)}
 		}
 	}
 	return nil

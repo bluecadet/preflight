@@ -4,8 +4,9 @@ package module
 
 import (
 	"context"
-	"fmt"
+	"errors"
 
+	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -23,9 +24,9 @@ func addWindowsModules(reg target.ModuleRegistry) {
 type windowsStubModule struct{ name string }
 
 func (m *windowsStubModule) Check(_ context.Context, _ map[string]any) (bool, error) {
-	return false, fmt.Errorf("module %q is only supported on Windows", m.name)
+	return false, &preflighterr.ModuleError{Module: m.name, Op: "check", Err: errors.New("only supported on Windows")}
 }
 
 func (m *windowsStubModule) Apply(_ context.Context, _ map[string]any) error {
-	return fmt.Errorf("module %q is only supported on Windows", m.name)
+	return &preflighterr.ModuleError{Module: m.name, Op: "apply", Err: errors.New("only supported on Windows")}
 }

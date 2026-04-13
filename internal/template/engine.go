@@ -1,11 +1,13 @@
 package template
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 
+	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/expr-lang/expr"
 	"github.com/expr-lang/expr/ast"
 )
@@ -267,25 +269,25 @@ func (e *Engine) compileOptions() []expr.Option {
 
 func (e *Engine) lookupExprFunc(args ...any) (any, error) {
 	if len(args) != 1 {
-		return nil, fmt.Errorf("template: lookup expects exactly one argument")
+		return nil, &preflighterr.TemplateError{Err: errors.New("lookup expects exactly one argument")}
 	}
 	path, ok := args[0].(string)
 	if !ok {
-		return nil, fmt.Errorf("template: lookup path must be a string")
+		return nil, &preflighterr.TemplateError{Err: errors.New("lookup path must be a string")}
 	}
 	return e.lookupPath(path)
 }
 
 func truthyExprFunc(args ...any) (any, error) {
 	if len(args) != 1 {
-		return nil, fmt.Errorf("template: truthy expects exactly one argument")
+		return nil, &preflighterr.TemplateError{Err: errors.New("truthy expects exactly one argument")}
 	}
 	return !isFalsyValue(args[0]), nil
 }
 
 func eqExprFunc(args ...any) (any, error) {
 	if len(args) != 2 {
-		return nil, fmt.Errorf("template: == expects exactly two operands")
+		return nil, &preflighterr.TemplateError{Err: errors.New("== expects exactly two operands")}
 	}
 	if isUnresolved(args[0]) || isUnresolved(args[1]) {
 		return false, nil
@@ -319,7 +321,7 @@ func lteExprFunc(args ...any) (any, error) {
 
 func numericCompare(op string, args ...any) (any, error) {
 	if len(args) != 2 {
-		return nil, fmt.Errorf("template: %s expects exactly two operands", op)
+		return nil, &preflighterr.TemplateError{Err: fmt.Errorf("%s expects exactly two operands", op)}
 	}
 	if isUnresolved(args[0]) || isUnresolved(args[1]) {
 		return false, nil
@@ -327,11 +329,11 @@ func numericCompare(op string, args ...any) (any, error) {
 
 	left, err := coerceFloat(args[0])
 	if err != nil {
-		return false, fmt.Errorf("template: numeric comparison %q: left operand %q is not a number", op, fmt.Sprintf("%v", args[0]))
+		return false, &preflighterr.TemplateError{Err: fmt.Errorf("numeric comparison %q: left operand %q is not a number", op, fmt.Sprintf("%v", args[0]))}
 	}
 	right, err := coerceFloat(args[1])
 	if err != nil {
-		return false, fmt.Errorf("template: numeric comparison %q: right operand %q is not a number", op, fmt.Sprintf("%v", args[1]))
+		return false, &preflighterr.TemplateError{Err: fmt.Errorf("numeric comparison %q: right operand %q is not a number", op, fmt.Sprintf("%v", args[1]))}
 	}
 
 	switch op {
@@ -344,7 +346,7 @@ func numericCompare(op string, args ...any) (any, error) {
 	case "<=":
 		return left <= right, nil
 	default:
-		return nil, fmt.Errorf("template: unknown comparison operator %q", op)
+		return nil, &preflighterr.TemplateError{Err: fmt.Errorf("unknown comparison operator %q", op)}
 	}
 }
 
@@ -413,27 +415,27 @@ func dotLookup(root any, path []string) (any, error) {
 
 	key := path[0]
 	if key == "" {
-		return nil, fmt.Errorf("template: empty path segment")
+		return nil, &preflighterr.TemplateError{Err: errors.New("empty path segment")}
 	}
 
 	switch m := root.(type) {
 	case map[string]any:
 		value, ok := m[key]
 		if !ok {
-			return nil, fmt.Errorf("template: key %q not found", key)
+			return nil, &preflighterr.TemplateError{Err: fmt.Errorf("key %q not found", key)}
 		}
 		return dotLookup(value, path[1:])
 	case map[string]string:
 		value, ok := m[key]
 		if !ok {
-			return nil, fmt.Errorf("template: key %q not found", key)
+			return nil, &preflighterr.TemplateError{Err: fmt.Errorf("key %q not found", key)}
 		}
 		if len(path) > 1 {
-			return nil, fmt.Errorf("template: cannot traverse into string value at %q", key)
+			return nil, &preflighterr.TemplateError{Err: fmt.Errorf("cannot traverse into string value at %q", key)}
 		}
 		return value, nil
 	default:
-		return nil, fmt.Errorf("template: cannot index into %T", root)
+		return nil, &preflighterr.TemplateError{Err: fmt.Errorf("cannot index into %T", root)}
 	}
 }
 
