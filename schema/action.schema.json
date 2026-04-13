@@ -9,8 +9,8 @@
   "properties": {
     "name": {
       "type": "string",
-      "description": "Namespaced action name, e.g. org/action-name",
-      "pattern": "^[a-zA-Z0-9._-]+/[a-zA-Z0-9._/-]+$"
+      "description": "Action name, optionally namespaced, e.g. org/action-name",
+      "pattern": "^[a-zA-Z0-9._-]+(?:/[a-zA-Z0-9._/-]+)?$"
     },
     "version": {
       "type": "string",
@@ -353,8 +353,10 @@
           "description": "Working directory for the task action"
         },
         "trigger": {
-          "type": "string",
-          "enum": ["startup", "onlogon", "daily", "once"],
+          "anyOf": [
+            { "type": "string", "enum": ["startup", "onlogon", "daily", "once"] },
+            { "type": "string" }
+          ],
           "description": "Task trigger"
         },
         "start_at": {
@@ -374,17 +376,24 @@
           "description": "Legacy alias for run_as"
         },
         "run_level": {
-          "type": "string",
-          "enum": ["least", "highest"],
+          "anyOf": [
+            { "type": "string", "enum": ["least", "highest"] },
+            { "type": "string" }
+          ],
           "default": "least"
         },
         "enabled": {
-          "type": "boolean",
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string" }
+          ],
           "default": true
         },
         "ensure": {
-          "type": "string",
-          "enum": ["present", "absent"],
+          "anyOf": [
+            { "type": "string", "enum": ["present", "absent"] },
+            { "type": "string" }
+          ],
           "default": "present"
         }
       }
@@ -512,7 +521,10 @@
           "type": "string"
         },
         "activate": {
-          "type": "boolean",
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string" }
+          ],
           "default": true
         },
         "settings": {
@@ -520,8 +532,10 @@
           "items": { "$ref": "#/$defs/powerPlanSetting" }
         },
         "ensure": {
-          "type": "string",
-          "enum": ["present", "absent"],
+          "anyOf": [
+            { "type": "string", "enum": ["present", "absent"] },
+            { "type": "string" }
+          ],
           "default": "present"
         }
       }
@@ -538,10 +552,16 @@
           "type": "string"
         },
         "ac_value": {
-          "type": "integer"
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" }
+          ]
         },
         "dc_value": {
-          "type": "integer"
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" }
+          ]
         }
       }
     },
@@ -673,6 +693,10 @@
         "working_dir": {
           "type": "string",
           "description": "Working directory for the command"
+        },
+        "env": {
+          "type": "object",
+          "description": "Environment variable map for the command"
         }
       }
     },

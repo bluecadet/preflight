@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"sync"
 
-	schemafiles "github.com/bluecadet/preflight/schema"
 	"github.com/santhosh-tekuri/jsonschema/v6"
 	"gopkg.in/yaml.v3"
+
+	schemafiles "github.com/bluecadet/preflight/schema"
 )
 
 const (

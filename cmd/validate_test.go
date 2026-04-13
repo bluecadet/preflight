@@ -235,3 +235,55 @@ tasks:
 		t.Fatalf("expected refs resolved message, got %q", out)
 	}
 }
+
+func TestRunValidateRejectsSchemaInvalidPlaybook(t *testing.T) {
+	dir := t.TempDir()
+	path := writeValidatePlaybook(t, dir, `
+name: invalid
+tasks:
+  - shell:
+      cmd: echo
+`)
+
+	err := runValidate(nil, []string{path})
+	if err == nil {
+		t.Fatal("expected validation error for schema-invalid playbook")
+	}
+	if !strings.Contains(err.Error(), "playbook validation error") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRunValidateRejectsSchemaInvalidLocalAction(t *testing.T) {
+	dir := t.TempDir()
+	actionsDir := filepath.Join(dir, "actions", "myorg", "broken")
+	if err := os.MkdirAll(actionsDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(actionsDir, "action.yml"), []byte(`
+name: myorg/broken
+tasks:
+  - shell:
+      cmd: echo
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(action.yml): %v", err)
+	}
+
+	playbookPath := filepath.Join(dir, "playbook.yml")
+	if err := os.WriteFile(playbookPath, []byte(`
+name: invalid-local-action
+tasks:
+  - name: use broken
+    uses: myorg/broken
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(playbook.yml): %v", err)
+	}
+
+	err := runValidate(nil, []string{playbookPath})
+	if err == nil {
+		t.Fatal("expected validation error for schema-invalid local action")
+	}
+	if !strings.Contains(err.Error(), "validation failed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

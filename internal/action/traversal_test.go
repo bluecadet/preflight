@@ -46,7 +46,7 @@ func TestLocalResolver_Traversal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(legitimate, "action.yml"), []byte(`
-name: test
+name: myorg/myaction
 tasks: []
 `), 0o644); err != nil {
 		t.Fatal(err)

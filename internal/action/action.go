@@ -20,12 +20,14 @@ type TaskDefaults struct {
 	Become map[string]any `yaml:"become" json:"become,omitempty"`
 }
 
-// inlineModuleFields maps the YAML key of each inline module field to a
-// function that extracts the params map from the Task.
-var inlineModuleFields = []struct {
+type inlineModuleField struct {
 	name   string
 	getter func(*Task) map[string]any
-}{
+}
+
+// inlineModuleFields maps the YAML key of each inline module field to a
+// function that extracts the params map from the Task.
+var inlineModuleFields = []inlineModuleField{
 	{"registry", func(t *Task) map[string]any { return t.Registry }},
 	{"service", func(t *Task) map[string]any { return t.Service }},
 	{"file", func(t *Task) map[string]any { return t.File }},
@@ -47,6 +49,9 @@ var inlineModuleFields = []struct {
 }
 
 // Task is a single step inside an action or playbook.
+//
+// Module and Params are the canonical internal representation used after
+// parsing/normalization. The inline module fields remain as decode-time sugar.
 type Task struct {
 	Name         string         `yaml:"name"`
 	Uses         string         `yaml:"uses"`
@@ -54,8 +59,8 @@ type Task struct {
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
 	ModuleName   string         `yaml:"module"`
 	ModuleParams map[string]any `yaml:"params"`
-	Module       string         `yaml:"-"` // resolved module name
-	Params       map[string]any `yaml:"-"` // resolved module params
+	Module       string         `yaml:"-"` // canonical module name
+	Params       map[string]any `yaml:"-"` // canonical module params
 	When         string         `yaml:"when"`
 	DependsOn    []string       `yaml:"depends_on"`
 	IgnoreErrors bool           `yaml:"ignore_errors"`
@@ -82,46 +87,21 @@ type Task struct {
 	Wait               map[string]any `yaml:"wait"`
 }
 
-// ResolveModule inspects inline module fields and sets Module + Params.
+// ResolveModule canonicalizes a task into its internal module+params form.
 // Returns an error if more than one inline module field is set, or if both
-// "uses" and an inline module field are set.
+// "uses" and a concrete module are set.
 func (t *Task) ResolveModule() error {
-	var found []string
-	for _, f := range inlineModuleFields {
-		if f.getter(t) != nil {
-			found = append(found, f.name)
-		}
+	module, params, found, err := resolveTaskModule(t)
+	if err != nil {
+		return err
 	}
-
-	if len(found) > 1 {
-		return fmt.Errorf("task %q: multiple inline module fields set: %v (only one is allowed)", t.Name, found)
-	}
-
-	if t.ModuleName != "" {
-		if t.Uses != "" {
-			return fmt.Errorf("task %q: cannot set both 'uses' and 'module'", t.Name)
-		}
-		if len(found) > 0 {
-			return fmt.Errorf("task %q: cannot set both 'module' and inline module field %q", t.Name, found[0])
-		}
-		t.Module = t.ModuleName
-		t.Params = t.ModuleParams
+	if !found {
+		t.Module = ""
+		t.Params = nil
 		return nil
 	}
-
-	if len(found) == 1 {
-		if t.Uses != "" {
-			return fmt.Errorf("task %q: cannot set both 'uses' and inline module field %q", t.Name, found[0])
-		}
-		t.Module = found[0]
-		for _, f := range inlineModuleFields {
-			if f.name == found[0] {
-				t.Params = f.getter(t)
-				break
-			}
-		}
-	}
-
+	t.Module = module
+	t.Params = params
 	return nil
 }
 
@@ -136,11 +116,30 @@ type Action struct {
 	Tasks       []Task           `yaml:"tasks"`
 }
 
+// Normalize canonicalizes all tasks in the action.
+func (a *Action) Normalize() error {
+	if a == nil {
+		return nil
+	}
+	for i := range a.Tasks {
+		if err := a.Tasks[i].ResolveModule(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ParseAction parses action YAML bytes into an Action.
 func ParseAction(data []byte) (*Action, error) {
+	if err := ValidateActionYAML(data); err != nil {
+		return nil, fmt.Errorf("action: %w", err)
+	}
 	var a Action
 	if err := yaml.Unmarshal(data, &a); err != nil {
 		return nil, fmt.Errorf("action: parse error: %w", err)
+	}
+	if err := a.Normalize(); err != nil {
+		return nil, err
 	}
 	return &a, nil
 }
@@ -155,11 +154,30 @@ type Playbook struct {
 	Tasks       []Task         `yaml:"tasks"`
 }
 
+// Normalize canonicalizes all tasks in the playbook.
+func (p *Playbook) Normalize() error {
+	if p == nil {
+		return nil
+	}
+	for i := range p.Tasks {
+		if err := p.Tasks[i].ResolveModule(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ParsePlaybook parses playbook YAML bytes into a Playbook.
 func ParsePlaybook(data []byte) (*Playbook, error) {
+	if err := ValidatePlaybookYAML(data); err != nil {
+		return nil, fmt.Errorf("playbook: %w", err)
+	}
 	var p Playbook
 	if err := yaml.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("playbook: parse error: %w", err)
+	}
+	if err := p.Normalize(); err != nil {
+		return nil, err
 	}
 	return &p, nil
 }
@@ -171,4 +189,44 @@ func ParsePlaybookFile(path string) (*Playbook, error) {
 		return nil, fmt.Errorf("playbook: read %q: %w", path, err)
 	}
 	return ParsePlaybook(data)
+}
+
+func resolveTaskModule(t *Task) (string, map[string]any, bool, error) {
+	var found []inlineModuleField
+	for _, field := range inlineModuleFields {
+		if field.getter(t) != nil {
+			found = append(found, field)
+		}
+	}
+
+	if len(found) > 1 {
+		names := make([]string, 0, len(found))
+		for _, field := range found {
+			names = append(names, field.name)
+		}
+		return "", nil, false, fmt.Errorf("task %q: multiple inline module fields set: %v (only one is allowed)", t.Name, names)
+	}
+
+	if t.ModuleName != "" {
+		if t.Uses != "" {
+			return "", nil, false, fmt.Errorf("task %q: cannot set both 'uses' and 'module'", t.Name)
+		}
+		if len(found) > 0 {
+			return "", nil, false, fmt.Errorf("task %q: cannot set both 'module' and inline module field %q", t.Name, found[0].name)
+		}
+		return t.ModuleName, t.ModuleParams, true, nil
+	}
+
+	if len(found) == 1 {
+		if t.Uses != "" {
+			return "", nil, false, fmt.Errorf("task %q: cannot set both 'uses' and inline module field %q", t.Name, found[0].name)
+		}
+		return found[0].name, found[0].getter(t), true, nil
+	}
+
+	if t.ModuleParams != nil {
+		return "", nil, false, fmt.Errorf("task %q: cannot set 'params' without 'module'", t.Name)
+	}
+
+	return "", nil, false, nil
 }

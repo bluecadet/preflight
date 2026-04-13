@@ -45,7 +45,7 @@ func TestGitResolverResolveUsesPinnedCacheFromLockfile(t *testing.T) {
 	pinnedRef := "github.com/acme/actions/signage@" + sha
 
 	writeCachedAction(t, cacheDir, pinnedRef, `
-name: signage
+name: acme/signage
 tasks:
   - name: run
     shell:
@@ -65,7 +65,7 @@ tasks:
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if action == nil || action.Name != "signage" {
+	if action == nil || action.Name != "acme/signage" {
 		t.Fatalf("expected signage action, got %#v", action)
 	}
 }
@@ -74,7 +74,7 @@ func TestGitResolverResolvePinnedRefFromCacheWithoutLockfile(t *testing.T) {
 	cacheDir := t.TempDir()
 	ref := "github.com/acme/actions/signage@0123456789abcdef0123456789abcdef01234567"
 	writeCachedAction(t, cacheDir, ref, `
-name: signage
+name: acme/signage
 tasks:
   - name: run
     shell:
@@ -86,7 +86,7 @@ tasks:
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if action == nil || action.Name != "signage" {
+	if action == nil || action.Name != "acme/signage" {
 		t.Fatalf("expected signage action, got %#v", action)
 	}
 }
@@ -113,7 +113,7 @@ func TestGitResolverFetchCachesActionAndUpdatesLockfile(t *testing.T) {
 			sha:      sha,
 			files: map[string]string{
 				"signage/action.yml": `
-name: signage
+name: acme/signage
 tasks:
   - name: child
     uses: github.com/acme/child/setup@v9

@@ -32,7 +32,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	pb, err := action.LoadPlaybookFile(playbookPath)
 	if err != nil {
-		return fmt.Errorf("playbook parse error: %w", err)
+		return fmt.Errorf("playbook validation error: %w", err)
 	}
 
 	projectDir, _ := playbookDir(playbookPath)
@@ -44,13 +44,9 @@ func runValidate(cmd *cobra.Command, args []string) error {
 	visited := make(map[string]bool)
 	resolvedRefs := make(map[string]bool)
 
-	var resolveRefs func(tasks []action.Task)
-	resolveRefs = func(tasks []action.Task) {
-		for _, task := range tasks {
-			if task.Uses == "" {
-				continue
-			}
-			ref := task.Uses
+	var resolveRefs func(refs []string)
+	resolveRefs = func(refs []string) {
+		for _, ref := range refs {
 			if visited[ref] {
 				continue
 			}
@@ -58,17 +54,17 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 			resolved, err := chain.Resolve(ctx, ref)
 			if err != nil {
-				errs = append(errs, fmt.Errorf("task %q: %w", task.Name, err))
+				errs = append(errs, fmt.Errorf("action ref %q: %w", ref, err))
 				continue
 			}
 			resolvedRefs[ref] = true
 			if resolved != nil {
-				resolveRefs(resolved.Tasks)
+				resolveRefs(action.ActionUses(resolved))
 			}
 		}
 	}
 
-	resolveRefs(pb.Tasks)
+	resolveRefs(action.PlaybookUses(pb))
 
 	sortedResolvedRefs := make([]string, 0, len(resolvedRefs))
 	for ref := range resolvedRefs {

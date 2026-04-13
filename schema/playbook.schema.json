@@ -219,14 +219,37 @@
         "command": { "type": "string" },
         "arguments": { "type": "string" },
         "working_dir": { "type": "string" },
-        "trigger": { "type": "string", "enum": ["startup", "onlogon", "daily", "once"] },
+        "trigger": {
+          "anyOf": [
+            { "type": "string", "enum": ["startup", "onlogon", "daily", "once"] },
+            { "type": "string" }
+          ]
+        },
         "start_at": { "type": "string" },
         "delay": { "type": "string" },
         "run_as": { "type": "string" },
         "user": { "type": "string" },
-        "run_level": { "type": "string", "enum": ["least", "highest"], "default": "least" },
-        "enabled": { "type": "boolean", "default": true },
-        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+        "run_level": {
+          "anyOf": [
+            { "type": "string", "enum": ["least", "highest"] },
+            { "type": "string" }
+          ],
+          "default": "least"
+        },
+        "enabled": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string" }
+          ],
+          "default": true
+        },
+        "ensure": {
+          "anyOf": [
+            { "type": "string", "enum": ["present", "absent"] },
+            { "type": "string" }
+          ],
+          "default": "present"
+        }
       }
     },
     "moduleUser": {
@@ -294,9 +317,21 @@
       "properties": {
         "name": { "type": "string" },
         "base": { "type": "string" },
-        "activate": { "type": "boolean", "default": true },
+        "activate": {
+          "oneOf": [
+            { "type": "boolean" },
+            { "type": "string" }
+          ],
+          "default": true
+        },
         "settings": { "type": "array", "items": { "$ref": "#/$defs/powerPlanSetting" } },
-        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+        "ensure": {
+          "anyOf": [
+            { "type": "string", "enum": ["present", "absent"] },
+            { "type": "string" }
+          ],
+          "default": "present"
+        }
       }
     },
     "powerPlanSetting": {
@@ -306,8 +341,18 @@
       "properties": {
         "subgroup": { "type": "string" },
         "setting": { "type": "string" },
-        "ac_value": { "type": "integer" },
-        "dc_value": { "type": "integer" }
+        "ac_value": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" }
+          ]
+        },
+        "dc_value": {
+          "oneOf": [
+            { "type": "integer" },
+            { "type": "string" }
+          ]
+        }
       }
     },
     "moduleWindowsFeature": {
@@ -364,7 +409,8 @@
         "cmd": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } },
         "creates": { "type": "string" },
-        "working_dir": { "type": "string" }
+        "working_dir": { "type": "string" },
+        "env": { "type": "object" }
       }
     },
     "moduleReboot": {

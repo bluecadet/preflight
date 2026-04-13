@@ -5,16 +5,30 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/ast"
 )
 
 const maxRenderPasses = 16
+
+const (
+	lookupFuncName = "__preflight_lookup"
+	truthyFuncName = "__preflight_truthy"
+	eqFuncName     = "__preflight_eq"
+	neqFuncName    = "__preflight_neq"
+	gtFuncName     = "__preflight_gt"
+	gteFuncName    = "__preflight_gte"
+	ltFuncName     = "__preflight_lt"
+	lteFuncName    = "__preflight_lte"
+)
 
 // exprRe matches {{ ... }} expressions, capturing the inner expression.
 // It tolerates optional whitespace inside the delimiters.
 var exprRe = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
 
-// Engine evaluates {{ expression }} placeholders in strings using a simple
-// dot-path resolver. Supported namespaces: vars, env, target, facts.
+// Engine evaluates {{ expression }} placeholders in strings using an
+// expression engine with custom lookup semantics for vars/env/target/facts.
 //
 // Unknown vars.* keys return an error so missing configuration is caught early.
 // Unknown env.*, target.*, and facts.* keys resolve to an empty string by
@@ -27,6 +41,12 @@ type Engine struct {
 
 	preserveUnknown bool
 }
+
+type unresolvedValue struct{}
+
+type exprCompatPatcher struct{}
+
+type namespaceIdentifierPatcher struct{}
 
 // New creates an Engine pre-loaded with the merged variable map.
 func New(vars map[string]any) *Engine {
@@ -103,13 +123,12 @@ func (e *Engine) renderOnce(s string) (string, error) {
 		if renderErr != nil {
 			return match
 		}
-		// Extract inner expression (strip delimiters + whitespace)
 		inner := exprRe.FindStringSubmatch(match)
 		if len(inner) < 2 {
 			return match
 		}
-		expr := strings.TrimSpace(inner[1])
-		val, resolved, err := e.evalExpr(expr)
+		expression := strings.TrimSpace(inner[1])
+		value, resolved, err := e.evalExprValue(expression)
 		if err != nil {
 			renderErr = err
 			return match
@@ -120,7 +139,7 @@ func (e *Engine) renderOnce(s string) (string, error) {
 			}
 			return ""
 		}
-		return val
+		return fmt.Sprintf("%v", value)
 	})
 	if renderErr != nil {
 		return "", renderErr
@@ -165,12 +184,6 @@ func (e *Engine) RenderMap(m map[string]any) (map[string]any, error) {
 func (e *Engine) renderValue(v any) (any, error) {
 	switch val := v.(type) {
 	case string:
-		// Whole-value substitution: if the entire string is a single {{ expr }},
-		// return the actual typed value rather than stringifying. This lets
-		// non-string vars (lists, maps, booleans) flow through action inputs
-		// without being coerced to their string representation.
-		// If the resolved value is itself a string, fall through to normal
-		// rendering so recursive variable references still work.
 		if m := exprRe.FindStringIndex(val); m != nil && m[0] == 0 && m[1] == len(val) {
 			inner := strings.TrimSpace(exprRe.FindStringSubmatch(val)[1])
 			raw, resolved, err := e.evalExprValue(inner)
@@ -181,9 +194,6 @@ func (e *Engine) renderValue(v any) (any, error) {
 				if strVal, ok := raw.(string); ok {
 					return e.Render(strVal)
 				}
-				// Only bypass stringification for structural types (lists, maps).
-				// Scalars (int, bool, float64, etc.) still stringify so that
-				// `ac_value: "{{ vars.count }}"` keeps behaving as a string field.
 				switch raw.(type) {
 				case map[string]any, []any:
 					return raw, nil
@@ -214,91 +224,159 @@ func (e *Engine) renderValue(v any) (any, error) {
 	}
 }
 
-// evalExpr resolves a dot-path expression such as "vars.foo.bar" against the
-// engine's context and returns its string representation. Undefined vars.*
-// paths are errors; unknown env.*, target.*, and facts.* paths are unresolved.
-func (e *Engine) evalExpr(expr string) (string, bool, error) {
-	val, resolved, err := e.evalExprValue(expr)
-	if !resolved || err != nil {
-		return "", resolved, err
+// evalExprValue returns the raw typed value for an expression.
+func (e *Engine) evalExprValue(expression string) (any, bool, error) {
+	program, err := expr.Compile(expression, e.compileOptions()...)
+	if err != nil {
+		return nil, false, err
 	}
-	return fmt.Sprintf("%v", val), true, nil
+
+	value, err := expr.Run(program, map[string]any{})
+	if err != nil {
+		return nil, false, err
+	}
+	if isUnresolved(value) {
+		return nil, false, nil
+	}
+	return value, true, nil
 }
 
-// evalExprValue is like evalExpr but returns the raw typed value without
-// stringifying it, enabling whole-value substitution for non-string types.
-//
-// Ternary expressions are evaluated first: condition ? trueExpr : falseExpr.
-// Comparison operators are evaluated next. Supported operators: ==, !=, >=, <=, >, <.
-//
-// Coercion rules:
-//   - == and !=: both operands rendered to strings, then compared.
-//   - >, >=, <, <=: both operands coerced to float64; error if not numeric.
-func (e *Engine) evalExprValue(expr string) (any, bool, error) {
-	// Check for ternary: condition ? trueExpr : falseExpr
-	if before, after, ok := strings.Cut(expr, "?"); ok {
-		condPart := strings.TrimSpace(before)
-		branches := strings.TrimSpace(after)
-		if before, after, ok := strings.Cut(branches, ":"); ok {
-			truePart := strings.TrimSpace(before)
-			falsePart := strings.TrimSpace(after)
+func (e *Engine) compileOptions() []expr.Option {
+	return []expr.Option{
+		expr.Env(map[string]any{}),
+		expr.AsAny(),
+		expr.AllowUndefinedVariables(),
+		expr.Patch(&exprCompatPatcher{}),
+		expr.Patch(&namespaceIdentifierPatcher{}),
+		expr.Function(lookupFuncName, e.lookupExprFunc, new(func(string) any)),
+		expr.Function(truthyFuncName, truthyExprFunc, new(func(any) bool)),
+		expr.Function(eqFuncName, eqExprFunc, new(func(any, any) bool)),
+		expr.Function(neqFuncName, neqExprFunc, new(func(any, any) bool)),
+		expr.Function(gtFuncName, gtExprFunc, new(func(any, any) bool)),
+		expr.Function(gteFuncName, gteExprFunc, new(func(any, any) bool)),
+		expr.Function(ltFuncName, ltExprFunc, new(func(any, any) bool)),
+		expr.Function(lteFuncName, lteExprFunc, new(func(any, any) bool)),
+		expr.Operator("==", eqFuncName),
+		expr.Operator("!=", neqFuncName),
+		expr.Operator(">", gtFuncName),
+		expr.Operator(">=", gteFuncName),
+		expr.Operator("<", ltFuncName),
+		expr.Operator("<=", lteFuncName),
+	}
+}
 
-			condStr, condResolved, err := e.evalOperand(condPart)
-			if err != nil {
-				return nil, false, err
-			}
-			if !condResolved {
-				return false, true, nil
-			}
+func (e *Engine) lookupExprFunc(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("template: lookup expects exactly one argument")
+	}
+	path, ok := args[0].(string)
+	if !ok {
+		return nil, fmt.Errorf("template: lookup path must be a string")
+	}
+	return e.lookupPath(path)
+}
 
-			var branch string
-			if !isFalsy(condStr) {
-				branch = truePart
-			} else {
-				branch = falsePart
-			}
+func truthyExprFunc(args ...any) (any, error) {
+	if len(args) != 1 {
+		return nil, fmt.Errorf("template: truthy expects exactly one argument")
+	}
+	return !isFalsyValue(args[0]), nil
+}
 
-			val, resolved, err := e.evalOperand(branch)
-			if err != nil {
-				return nil, false, err
-			}
-			return val, resolved, nil
-		}
+func eqExprFunc(args ...any) (any, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("template: == expects exactly two operands")
+	}
+	if isUnresolved(args[0]) || isUnresolved(args[1]) {
+		return false, nil
+	}
+	return fmt.Sprintf("%v", args[0]) == fmt.Sprintf("%v", args[1]), nil
+}
+
+func neqExprFunc(args ...any) (any, error) {
+	result, err := eqExprFunc(args...)
+	if err != nil {
+		return nil, err
+	}
+	return !result.(bool), nil
+}
+
+func gtExprFunc(args ...any) (any, error) {
+	return numericCompare(">", args...)
+}
+
+func gteExprFunc(args ...any) (any, error) {
+	return numericCompare(">=", args...)
+}
+
+func ltExprFunc(args ...any) (any, error) {
+	return numericCompare("<", args...)
+}
+
+func lteExprFunc(args ...any) (any, error) {
+	return numericCompare("<=", args...)
+}
+
+func numericCompare(op string, args ...any) (any, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("template: %s expects exactly two operands", op)
+	}
+	if isUnresolved(args[0]) || isUnresolved(args[1]) {
+		return false, nil
 	}
 
-	// Check for comparison operators (longest first to avoid mis-splitting on >=/>).
-	for _, op := range []string{">=", "<=", "!=", "==", ">", "<"} {
-		lhsRaw, rhsRaw, found := strings.Cut(expr, op)
-		if !found {
-			continue
-		}
-		lhsExpr := strings.TrimSpace(lhsRaw)
-		rhsExpr := strings.TrimSpace(rhsRaw)
-
-		lhsStr, lhsResolved, err := e.evalOperand(lhsExpr)
-		if err != nil {
-			return nil, false, err
-		}
-		rhsStr, rhsResolved, err := e.evalOperand(rhsExpr)
-		if err != nil {
-			return nil, false, err
-		}
-
-		// If either operand is an unresolved non-vars reference treat as false.
-		if !lhsResolved || !rhsResolved {
-			return false, true, nil
-		}
-
-		result, err := evalComparison(op, lhsStr, rhsStr)
-		if err != nil {
-			return nil, false, err
-		}
-		return result, true, nil
+	left, err := coerceFloat(args[0])
+	if err != nil {
+		return false, fmt.Errorf("template: numeric comparison %q: left operand %q is not a number", op, fmt.Sprintf("%v", args[0]))
+	}
+	right, err := coerceFloat(args[1])
+	if err != nil {
+		return false, fmt.Errorf("template: numeric comparison %q: right operand %q is not a number", op, fmt.Sprintf("%v", args[1]))
 	}
 
-	parts := strings.Split(expr, ".")
+	switch op {
+	case ">":
+		return left > right, nil
+	case ">=":
+		return left >= right, nil
+	case "<":
+		return left < right, nil
+	case "<=":
+		return left <= right, nil
+	default:
+		return nil, fmt.Errorf("template: unknown comparison operator %q", op)
+	}
+}
+
+func coerceFloat(v any) (float64, error) {
+	return strconv.ParseFloat(fmt.Sprintf("%v", v), 64)
+}
+
+func isFalsyValue(v any) bool {
+	if isUnresolved(v) {
+		return true
+	}
+	return isFalsy(fmt.Sprintf("%v", v))
+}
+
+func isFalsy(s string) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "false", "0", "no":
+		return true
+	default:
+		return false
+	}
+}
+
+func isUnresolved(v any) bool {
+	_, ok := v.(unresolvedValue)
+	return ok
+}
+
+func (e *Engine) lookupPath(path string) (any, error) {
+	parts := strings.Split(path, ".")
 	if len(parts) == 0 || parts[0] == "" {
-		return nil, false, fmt.Errorf("empty template expression")
+		return nil, fmt.Errorf("empty template expression")
 	}
 
 	namespace := parts[0]
@@ -315,110 +393,45 @@ func (e *Engine) evalExprValue(expr string) (any, bool, error) {
 	case "facts":
 		root = mapToIface(e.facts)
 	default:
-		return nil, false, nil
+		return unresolvedValue{}, nil
 	}
 
-	val, err := dotLookup(root, rest)
+	value, err := dotLookup(root, rest)
 	if err != nil {
 		if namespace == "vars" {
-			return nil, false, fmt.Errorf("undefined variable %q", expr)
+			return nil, fmt.Errorf("undefined variable %q", path)
 		}
-		return nil, false, nil
+		return unresolvedValue{}, nil
 	}
-	return val, true, nil
+	return value, nil
 }
 
-// evalOperand resolves a single comparison operand. It renders dot-path
-// expressions and strips surrounding single or double quotes from literals.
-// Bare numeric literals (e.g. 5 or 3.14) are returned as-is so numeric
-// comparisons work. Unresolved dot-path expressions propagate resolved=false.
-func (e *Engine) evalOperand(operand string) (string, bool, error) {
-	// Quoted string literal.
-	if (strings.HasPrefix(operand, "'") && strings.HasSuffix(operand, "'")) ||
-		(strings.HasPrefix(operand, `"`) && strings.HasSuffix(operand, `"`)) {
-		return operand[1 : len(operand)-1], true, nil
-	}
-	// Dot-path expression (must start with a known namespace).
-	val, resolved, err := e.evalExprValue(operand)
-	if err != nil {
-		return "", false, err
-	}
-	if resolved {
-		return fmt.Sprintf("%v", val), true, nil
-	}
-	// Bare numeric literal (e.g. 5, 3.14). Only treat as resolved if it
-	// parses as a number; unknown namespaces or unresolved refs propagate false.
-	if _, err := strconv.ParseFloat(operand, 64); err == nil {
-		return operand, true, nil
-	}
-	return operand, false, nil
-}
-
-func isFalsy(s string) bool {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "false", "0", "no":
-		return true
-	default:
-		return false
-	}
-}
-
-// evalComparison applies op to two already-rendered string operands.
-func evalComparison(op, lhs, rhs string) (bool, error) {
-	switch op {
-	case "==":
-		return lhs == rhs, nil
-	case "!=":
-		return lhs != rhs, nil
-	}
-	// Numeric operators.
-	l, err := strconv.ParseFloat(lhs, 64)
-	if err != nil {
-		return false, fmt.Errorf("template: numeric comparison %q: left operand %q is not a number", op, lhs)
-	}
-	r, err := strconv.ParseFloat(rhs, 64)
-	if err != nil {
-		return false, fmt.Errorf("template: numeric comparison %q: right operand %q is not a number", op, rhs)
-	}
-	switch op {
-	case ">":
-		return l > r, nil
-	case ">=":
-		return l >= r, nil
-	case "<":
-		return l < r, nil
-	case "<=":
-		return l <= r, nil
-	default:
-		return false, fmt.Errorf("template: unknown comparison operator %q", op)
-	}
-}
-
-// dotLookup traverses a nested map structure following the given path segments.
 func dotLookup(root any, path []string) (any, error) {
 	if len(path) == 0 {
 		return root, nil
 	}
+
 	key := path[0]
 	if key == "" {
 		return nil, fmt.Errorf("template: empty path segment")
 	}
+
 	switch m := root.(type) {
 	case map[string]any:
-		val, ok := m[key]
+		value, ok := m[key]
 		if !ok {
 			return nil, fmt.Errorf("template: key %q not found", key)
 		}
-		return dotLookup(val, path[1:])
+		return dotLookup(value, path[1:])
 	case map[string]string:
-		val, ok := m[key]
+		value, ok := m[key]
 		if !ok {
 			return nil, fmt.Errorf("template: key %q not found", key)
 		}
 		if len(path) > 1 {
 			return nil, fmt.Errorf("template: cannot traverse into string value at %q", key)
 		}
-		return val, nil
+		return value, nil
 	default:
 		return nil, fmt.Errorf("template: cannot index into %T", root)
 	}
@@ -430,4 +443,106 @@ func mapToIface(m map[string]any) any {
 
 func envToIface(m map[string]string) any {
 	return m
+}
+
+func (p *exprCompatPatcher) Visit(node *ast.Node) {
+	switch n := (*node).(type) {
+	case *ast.MemberNode:
+		if path, ok := collectMemberPath(n); ok {
+			ast.Patch(node, lookupCallNode(path))
+		}
+	case *ast.ConditionalNode:
+		if !isTruthyCall(n.Cond) {
+			n.Cond = truthyCallNode(n.Cond)
+		}
+	}
+}
+
+func (p *namespaceIdentifierPatcher) Visit(node *ast.Node) {
+	ident, ok := (*node).(*ast.IdentifierNode)
+	if !ok {
+		return
+	}
+	if !isNamespaceIdentifier(ident.Value) {
+		return
+	}
+	ast.Patch(node, lookupCallNode(ident.Value))
+}
+
+func collectMemberPath(node *ast.MemberNode) (string, bool) {
+	if node.Method {
+		return "", false
+	}
+
+	property, ok := node.Property.(*ast.StringNode)
+	if !ok {
+		return "", false
+	}
+
+	base, ok := collectPathNode(node.Node)
+	if !ok {
+		return "", false
+	}
+	return base + "." + property.Value, true
+}
+
+func collectPathNode(node ast.Node) (string, bool) {
+	switch n := node.(type) {
+	case *ast.IdentifierNode:
+		return n.Value, true
+	case *ast.MemberNode:
+		return collectMemberPath(n)
+	case *ast.CallNode:
+		return lookupPathFromCall(n)
+	default:
+		return "", false
+	}
+}
+
+func lookupPathFromCall(node *ast.CallNode) (string, bool) {
+	ident, ok := node.Callee.(*ast.IdentifierNode)
+	if !ok || ident.Value != lookupFuncName || len(node.Arguments) != 1 {
+		return "", false
+	}
+	path, ok := node.Arguments[0].(*ast.StringNode)
+	if !ok {
+		return "", false
+	}
+	return path.Value, true
+}
+
+func lookupCallNode(path string) ast.Node {
+	return &ast.CallNode{
+		Callee: &ast.IdentifierNode{Value: lookupFuncName},
+		Arguments: []ast.Node{
+			&ast.StringNode{Value: path},
+		},
+	}
+}
+
+func truthyCallNode(node ast.Node) ast.Node {
+	return &ast.CallNode{
+		Callee: &ast.IdentifierNode{Value: truthyFuncName},
+		Arguments: []ast.Node{
+			node,
+		},
+	}
+}
+
+func isTruthyCall(node ast.Node) bool {
+	call, ok := node.(*ast.CallNode)
+	if !ok {
+		return false
+	}
+	ident, ok := call.Callee.(*ast.IdentifierNode)
+	return ok && ident.Value == truthyFuncName
+}
+
+func isNamespaceIdentifier(value string) bool {
+	switch value {
+	case "vars", "env", "target", "facts":
+		return true
+	default:
+		return false
+	}
 }

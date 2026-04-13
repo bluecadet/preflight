@@ -7,8 +7,10 @@ require (
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/expr-lang/expr v1.17.8
 	github.com/go-git/go-git/v5 v5.17.2
 	github.com/masterzen/winrm v0.0.0-20250927112105-5f8e6c707321
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.45.0
 	gopkg.in/yaml.v3 v3.0.1

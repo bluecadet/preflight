@@ -58,6 +58,12 @@ func TestParseAction_Valid(t *testing.T) {
 	if len(a.Tasks) != 1 {
 		t.Errorf("expected 1 task, got %d", len(a.Tasks))
 	}
+	if a.Tasks[0].Module != "shell" {
+		t.Errorf("expected canonical module shell, got %q", a.Tasks[0].Module)
+	}
+	if a.Tasks[0].Params == nil {
+		t.Fatal("expected canonical params to be populated")
+	}
 }
 
 func TestParseAction_Invalid(t *testing.T) {
@@ -109,9 +115,62 @@ tasks:
     shell:
       cmd: echo
 `
-	a, _ := action.ParseAction([]byte(yaml))
-	if err := a.Tasks[0].ResolveModule(); err == nil {
-		t.Error("expected error when both uses and inline module are set")
+	if _, err := action.ParseAction([]byte(yaml)); err == nil {
+		t.Error("expected parse error when both uses and inline module are set")
+	}
+}
+
+func TestParseAction_ExplicitModuleCanonicalizes(t *testing.T) {
+	a, err := action.ParseAction([]byte(`
+name: myorg/test-action
+tasks:
+  - name: explicit
+    module: shell
+    params:
+      cmd: echo
+      args: ["hello"]
+`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	task := a.Tasks[0]
+	if task.Module != "shell" {
+		t.Fatalf("expected module shell, got %q", task.Module)
+	}
+	if got := task.Params["cmd"]; got != "echo" {
+		t.Fatalf("expected params.cmd=echo, got %#v", got)
+	}
+}
+
+func TestParseAction_RejectsParamsWithoutModule(t *testing.T) {
+	_, err := action.ParseAction([]byte(`
+name: myorg/test-action
+tasks:
+  - name: broken
+    params:
+      cmd: echo
+`))
+	if err == nil {
+		t.Fatal("expected error when params are set without module")
+	}
+	if got := err.Error(); got == "" {
+		t.Fatal("expected non-empty error")
+	}
+}
+
+func TestValidateActionYAML_SchemaValidationFailure(t *testing.T) {
+	err := action.ValidateActionYAML([]byte(`
+name: myorg/bad-action
+tasks:
+  - shell:
+      cmd: echo
+`))
+	if err == nil {
+		t.Fatal("expected schema validation error")
+	}
+	if got := err.Error(); got == "" {
+		t.Fatal("expected non-empty error")
 	}
 }
 

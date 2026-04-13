@@ -493,3 +493,44 @@ func TestRenderBool_ComparisonUndefinedVar(t *testing.T) {
 		t.Fatal("expected error for undefined vars reference in comparison")
 	}
 }
+
+func TestRenderBool_ComparisonUnknownFactsIsFalse(t *testing.T) {
+	e := New(nil)
+
+	got, err := e.RenderBool("{{ facts.os.build == '19041' }}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got {
+		t.Fatal("expected false when comparing against unresolved facts")
+	}
+}
+
+func TestRender_PreserveUnknownSelectedTernaryBranch(t *testing.T) {
+	e := New(map[string]any{
+		"use_target": "yes",
+	}).WithPreserveUnknown()
+
+	got, err := e.Render("{{ vars.use_target ? target.hostname : 'fallback' }}")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "{{ vars.use_target ? target.hostname : 'fallback' }}"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestRenderMap_WholeValuePreserveUnknown(t *testing.T) {
+	e := New(nil).WithPreserveUnknown()
+
+	got, err := e.RenderMap(map[string]any{
+		"hostname": "{{ target.hostname }}",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["hostname"] != "{{ target.hostname }}" {
+		t.Errorf("hostname = %v, want {{ target.hostname }}", got["hostname"])
+	}
+}
