@@ -24,8 +24,8 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 	return &LocalTarget{registry: registry}
 }
 
-// IsLocal implements the localMarker interface used by the facts package.
-func (t *LocalTarget) IsLocal() bool { return true }
+// Transport identifies the local target connection type.
+func (t *LocalTarget) Transport() Transport { return TransportLocal }
 
 // Execute looks up the named module, runs Check, and conditionally runs Apply.
 // If dryRun is true, Apply is never called.
@@ -147,6 +147,8 @@ func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 		Hostname:  hostname,
 		OSVersion: runtime.GOOS,
 		Arch:      runtime.GOARCH,
+		OSFamily:  normalizeOSFamily(runtime.GOOS),
+		Transport: t.Transport(),
 	}, nil
 }
 

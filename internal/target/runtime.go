@@ -26,6 +26,35 @@ type remoteModule interface {
 
 type remoteModuleRegistry map[string]remoteModule
 
+var knownRemoteModules = []string{
+	"directory",
+	"file",
+	"shell",
+	"powershell",
+	"environment",
+	"wait",
+	"reboot",
+	"registry",
+	"service",
+	"package",
+	"shortcut",
+	"scheduled_task",
+	"user",
+	"winget_package",
+	"remove_appx_packages",
+	"power_plan",
+	"windows_feature",
+	"firewall_rule",
+}
+
+var knownRemoteModuleSet = func() map[string]struct{} {
+	set := make(map[string]struct{}, len(knownRemoteModules))
+	for _, module := range knownRemoteModules {
+		set[module] = struct{}{}
+	}
+	return set
+}()
+
 type remoteModuleFuncs struct {
 	check           func(ctx context.Context, params map[string]any) (bool, string, error)
 	checkWithOutput func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error)
@@ -56,6 +85,25 @@ func unsupportedRemoteModule(err error) remoteModule {
 			return "", err
 		},
 	}
+}
+
+func buildRemoteModuleRegistry(kind RuntimeKind, supported remoteModuleRegistry, unsupported func(module string) error) remoteModuleRegistry {
+	registry := make(remoteModuleRegistry, len(knownRemoteModules))
+	for module, impl := range supported {
+		if _, ok := knownRemoteModuleSet[module]; !ok {
+			panic(fmt.Sprintf("%s runtime: unknown module registration %q", kind, module))
+		}
+		registry[module] = impl
+	}
+
+	for _, module := range knownRemoteModules {
+		if _, ok := registry[module]; ok {
+			continue
+		}
+		registry[module] = unsupportedRemoteModule(unsupported(module))
+	}
+
+	return registry
 }
 
 func executeRemoteModule(
@@ -161,4 +209,8 @@ func splitOutputLines(output string) []string {
 
 func unsupportedRuntimeModuleError(kind RuntimeKind, module string) error {
 	return fmt.Errorf("%s runtime: module %q is not supported", kind, module)
+}
+
+func unsupportedRuntimeModuleDetailError(kind RuntimeKind, module, detail string) error {
+	return fmt.Errorf("%s runtime: module %q %s", kind, module, detail)
 }

@@ -11,20 +11,20 @@ import (
 
 // stubTarget is a minimal target.Target for testing fact gathering.
 type stubTarget struct {
-	info target.TargetInfo
+	info             target.TargetInfo
+	runPowerShellOut string
+	runPowerShellErr error
 }
 
 func (s *stubTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
 	return target.Result{}, nil
 }
+
 func (s *stubTarget) Info(_ context.Context) (target.TargetInfo, error) { return s.info, nil }
-
-// localStubTarget is a stubTarget that also satisfies the localMarker interface.
-type localStubTarget struct {
-	stubTarget
+func (s *stubTarget) Transport() target.Transport                       { return s.info.Transport }
+func (s *stubTarget) RunPowerShell(_ context.Context, _ string) (string, error) {
+	return s.runPowerShellOut, s.runPowerShellErr
 }
-
-func (l *localStubTarget) IsLocal() bool { return true }
 
 func TestGather_RemoteNonWindows_EnvIsEmpty(t *testing.T) {
 	// A remote non-Windows (SSH-like) target must not leak local env vars.
@@ -32,6 +32,8 @@ func TestGather_RemoteNonWindows_EnvIsEmpty(t *testing.T) {
 		info: target.TargetInfo{
 			Hostname:  "remote-linux",
 			OSVersion: "ubuntu-22.04",
+			OSFamily:  target.OSFamilyLinux,
+			Transport: target.TransportSSH,
 		},
 	}
 	g := facts.New(remote)
@@ -52,12 +54,12 @@ func TestGather_LocalNonWindows_EnvIsPopulated(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("PREFLIGHT_TEST_MARKER") })
 
-	local := &localStubTarget{
-		stubTarget: stubTarget{
-			info: target.TargetInfo{
-				Hostname:  "local",
-				OSVersion: "darwin",
-			},
+	local := &stubTarget{
+		info: target.TargetInfo{
+			Hostname:  "local",
+			OSVersion: "darwin",
+			OSFamily:  target.OSFamilyDarwin,
+			Transport: target.TransportLocal,
 		},
 	}
 	g := facts.New(local)

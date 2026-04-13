@@ -17,7 +17,7 @@ type windowsPowerShellBackend interface {
 }
 
 func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModuleRegistry {
-	return remoteModuleRegistry{
+	supported := remoteModuleRegistry{
 		"directory": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsDirectory(ctx, backend, params)
@@ -185,6 +185,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			},
 		},
 	}
+	return buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, supported, func(module string) error {
+		return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
+	})
 }
 
 func windowsRunScript(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, body string) (string, error) {

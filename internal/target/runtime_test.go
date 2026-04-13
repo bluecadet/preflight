@@ -7,6 +7,49 @@ import (
 	"testing"
 )
 
+func TestBuildRemoteModuleRegistryFillsUnsupportedModules(t *testing.T) {
+	registry := buildRemoteModuleRegistry(RuntimeKindPOSIXShell, remoteModuleRegistry{
+		"shell": remoteModuleFuncs{
+			check: func(context.Context, map[string]any) (bool, string, error) {
+				return false, "", nil
+			},
+			apply: func(context.Context, map[string]any) (string, error) {
+				return "", nil
+			},
+		},
+	}, func(module string) error {
+		return errors.New("unsupported: " + module)
+	})
+
+	if _, ok := registry["shell"]; !ok {
+		t.Fatal("expected supported module to remain in registry")
+	}
+
+	result, err := executeRemoteModule(context.Background(), "task-1", "service", nil, false, nil, registry, errors.New)
+	if err == nil || err.Error() != "unsupported: service" {
+		t.Fatalf("expected unsupported service error, got result=%+v err=%v", result, err)
+	}
+}
+
+func TestBuildRemoteModuleRegistryPanicsOnUnknownModule(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("expected panic for unknown module registration")
+		}
+	}()
+
+	buildRemoteModuleRegistry(RuntimeKindPOSIXShell, remoteModuleRegistry{
+		"not-a-real-module": remoteModuleFuncs{
+			check: func(context.Context, map[string]any) (bool, string, error) {
+				return false, "", nil
+			},
+			apply: func(context.Context, map[string]any) (string, error) {
+				return "", nil
+			},
+		},
+	}, errors.New)
+}
+
 func TestExecuteRemoteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) {
 	registry := remoteModuleRegistry{
 		"demo": remoteModuleFuncs{

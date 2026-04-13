@@ -21,10 +21,11 @@ import (
 )
 
 type mockTarget struct {
-	results []target.Result // in order; last result is reused if list is exhausted
-	calls   []mockCall
-	output  []string
-	execErr error
+	results   []target.Result // in order; last result is reused if list is exhausted
+	calls     []mockCall
+	output    []string
+	execErr   error
+	transport target.Transport
 }
 
 type mockCall struct {
@@ -65,7 +66,18 @@ func (m *mockTarget) Execute(_ context.Context, taskID, module string, params ma
 }
 
 func (m *mockTarget) Info(_ context.Context) (target.TargetInfo, error) {
-	return target.TargetInfo{}, nil
+	return target.TargetInfo{Transport: m.Transport()}, nil
+}
+
+func (m *mockTarget) Transport() target.Transport {
+	if m.transport != "" {
+		return m.transport
+	}
+	return target.TransportSSH
+}
+
+func (m *mockTarget) RunPowerShell(_ context.Context, _ string) (string, error) {
+	return "", nil
 }
 
 type recordingRenderer struct {

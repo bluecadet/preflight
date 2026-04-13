@@ -44,12 +44,43 @@ type Result struct {
 	Error   error
 }
 
+// Transport identifies how the controller reaches a target.
+type Transport string
+
+const (
+	TransportLocal Transport = "local"
+	TransportSSH   Transport = "ssh"
+	TransportWinRM Transport = "winrm"
+)
+
+// OSFamily is a normalized operating-system family used for behavior checks.
+type OSFamily string
+
+const (
+	OSFamilyUnknown OSFamily = "unknown"
+	OSFamilyWindows OSFamily = "windows"
+	OSFamilyLinux   OSFamily = "linux"
+	OSFamilyDarwin  OSFamily = "darwin"
+)
+
 // TargetInfo holds basic facts about a target machine.
 type TargetInfo struct {
 	Hostname  string
 	OSVersion string
 	OSBuild   string
 	Arch      string
+	OSFamily  OSFamily
+	Transport Transport
+}
+
+// IsLocal reports whether the target is the controller machine.
+func (i TargetInfo) IsLocal() bool {
+	return i.Transport == TransportLocal
+}
+
+// IsWindows reports whether the target belongs to the Windows OS family.
+func (i TargetInfo) IsWindows() bool {
+	return i.OSFamily == OSFamilyWindows
 }
 
 // Target is the central abstraction for all operations against a machine.
@@ -61,4 +92,10 @@ type Target interface {
 
 	// Info returns basic facts about the target machine.
 	Info(ctx context.Context) (TargetInfo, error)
+
+	// Transport returns the connection type used to reach the target.
+	Transport() Transport
+
+	// RunPowerShell executes an inline PowerShell script against the target.
+	RunPowerShell(ctx context.Context, script string) (string, error)
 }

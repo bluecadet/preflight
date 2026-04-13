@@ -157,11 +157,7 @@ func (r *Runner) emitActivityResult(message, status string) {
 }
 
 func (r *Runner) isRemoteTarget() bool {
-	type localMarker interface{ IsLocal() bool }
-	if marker, ok := r.target.(localMarker); ok {
-		return !marker.IsLocal()
-	}
-	return r.target != nil
+	return r.target != nil && r.target.Transport() != target.TransportLocal
 }
 
 // PlannedTaskState renders the current plan with execution-time target context

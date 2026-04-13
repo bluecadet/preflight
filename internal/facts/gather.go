@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"runtime"
 	"strconv"
 	"strings"
 
@@ -128,10 +127,9 @@ func windowsBuildName(majorMinor string, build int) string {
 }
 
 // GatherDisks collects disk space facts.
-// On Windows targets (detected via TargetInfo.OSVersion prefix) it runs a
-// PowerShell command via target.Execute. On a local non-Windows host it
-// delegates to the platform-specific gatherLocalDisks helper. On other
-// non-Windows targets an empty list is returned.
+// Windows targets are queried through the target's PowerShell transport.
+// Local non-Windows hosts use the platform-specific syscall helper.
+// Other non-Windows targets currently return an empty list.
 func (g *Gatherer) GatherDisks(ctx context.Context) ([]DiskFacts, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -142,36 +140,15 @@ func (g *Gatherer) GatherDisks(ctx context.Context) ([]DiskFacts, error) {
 		return nil, fmt.Errorf("facts: GatherDisks: target info: %w", err)
 	}
 
-	isWindows := isWindowsTarget(info.OSVersion)
-
-	if isWindows {
+	if info.IsWindows() {
 		return g.gatherWindowsDisks(ctx)
 	}
 
-	// Local non-Windows: use syscall-based helper (unix.go / stub.go).
-	if runtime.GOOS != "windows" {
+	if info.IsLocal() {
 		return gatherLocalDisks()
 	}
 
-	// Remote non-Windows target — not currently supported; return empty.
 	return []DiskFacts{}, nil
-}
-
-// isLocalTarget reports whether t is the local machine target.
-func isLocalTarget(t target.Target) bool {
-	type localMarker interface{ IsLocal() bool }
-	if m, ok := t.(localMarker); ok {
-		return m.IsLocal()
-	}
-	return false
-}
-
-// isWindowsTarget returns true when the OS version string looks like Windows.
-func isWindowsTarget(osVersion string) bool {
-	lower := strings.ToLower(osVersion)
-	return strings.HasPrefix(lower, "10.0") ||
-		strings.HasPrefix(lower, "windows") ||
-		strings.HasPrefix(lower, "6.")
 }
 
 // gatherWindowsDisks runs a PowerShell command against the target to obtain
@@ -181,14 +158,7 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 		return nil, err
 	}
 
-	runner, ok := g.target.(interface {
-		RunPowerShell(context.Context, string) (string, error)
-	})
-	if !ok {
-		return nil, fmt.Errorf("facts: gatherWindowsDisks: target does not support powershell execution")
-	}
-
-	stdout, err := runner.RunPowerShell(ctx, "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json")
+	stdout, err := g.target.RunPowerShell(ctx, "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json")
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsDisks: execute: %w", err)
 	}
@@ -201,9 +171,8 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 }
 
 // gatherEnv collects environment variables from the target.
-// On Windows it uses PowerShell; on a local non-Windows host it uses os.Environ.
-// On a remote non-Windows target it returns an empty map — remote env gathering
-// for non-Windows targets is not currently supported.
+// Windows targets use PowerShell. Local non-Windows hosts use the local
+// process environment. Remote non-Windows targets currently return an empty map.
 func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -214,12 +183,11 @@ func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
 		return nil, fmt.Errorf("facts: gatherEnv: target info: %w", err)
 	}
 
-	if isWindowsTarget(info.OSVersion) {
+	if info.IsWindows() {
 		return g.gatherWindowsEnv(ctx)
 	}
 
-	// Only gather local env when running against the local machine.
-	if isLocalTarget(g.target) {
+	if info.IsLocal() {
 		return gatherLocalEnv(), nil
 	}
 
@@ -232,14 +200,7 @@ func (g *Gatherer) gatherWindowsEnv(ctx context.Context) (map[string]string, err
 		return nil, err
 	}
 
-	runner, ok := g.target.(interface {
-		RunPowerShell(context.Context, string) (string, error)
-	})
-	if !ok {
-		return nil, fmt.Errorf("facts: gatherWindowsEnv: target does not support powershell execution")
-	}
-
-	stdout, err := runner.RunPowerShell(ctx, `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`)
+	stdout, err := g.target.RunPowerShell(ctx, `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`)
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsEnv: execute: %w", err)
 	}

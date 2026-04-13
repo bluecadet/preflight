@@ -17,7 +17,7 @@ type posixShellBackend interface {
 }
 
 func newPOSIXShellRegistry(backend posixShellBackend) remoteModuleRegistry {
-	registry := remoteModuleRegistry{
+	supported := remoteModuleRegistry{
 		"directory": remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPOSIXDirectory(ctx, backend, params)
@@ -50,24 +50,9 @@ func newPOSIXShellRegistry(backend posixShellBackend) remoteModuleRegistry {
 				return "", applyPOSIXWait(ctx, backend, params)
 			},
 		},
-		"environment":          unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is not supported yet", "environment")),
-		"reboot":               unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is not supported yet", "reboot")),
-		"registry":             unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "registry")),
-		"service":              unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "service")),
-		"package":              unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "package")),
-		"shortcut":             unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "shortcut")),
-		"scheduled_task":       unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "scheduled_task")),
-		"user":                 unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "user")),
-		"winget_package":       unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "winget_package")),
-		"remove_appx_packages": unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "remove_appx_packages")),
-		"power_plan":           unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "power_plan")),
-		"windows_feature":      unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "windows_feature")),
-		"firewall_rule":        unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q is Windows-only", "firewall_rule")),
 	}
-	if backend.PowerShellBinary() == "" {
-		registry["powershell"] = unsupportedRemoteModule(fmt.Errorf("posix-shell runtime: module %q requires pwsh or powershell on the remote host", "powershell"))
-	} else {
-		registry["powershell"] = remoteModuleFuncs{
+	if backend.PowerShellBinary() != "" {
+		supported["powershell"] = remoteModuleFuncs{
 			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPowerShellModule(ctx, backend, params)
 			},
@@ -76,7 +61,16 @@ func newPOSIXShellRegistry(backend posixShellBackend) remoteModuleRegistry {
 			},
 		}
 	}
-	return registry
+	return buildRemoteModuleRegistry(RuntimeKindPOSIXShell, supported, func(module string) error {
+		switch module {
+		case "powershell":
+			return fmt.Errorf("posix-shell runtime: module %q requires pwsh or powershell on the remote host", module)
+		case "environment", "reboot":
+			return unsupportedRuntimeModuleDetailError(RuntimeKindPOSIXShell, module, "is not supported yet")
+		default:
+			return unsupportedRuntimeModuleDetailError(RuntimeKindPOSIXShell, module, "is Windows-only")
+		}
+	})
 }
 
 func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {

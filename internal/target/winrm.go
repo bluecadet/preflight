@@ -105,6 +105,10 @@ func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	}
 }
 
+func (t *WinRMTarget) Transport() Transport {
+	return TransportWinRM
+}
+
 func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
 	if err != nil {
@@ -215,6 +219,8 @@ func (t *WinRMTarget) Info(ctx context.Context) (TargetInfo, error) {
 		OSVersion: payload.Version,
 		OSBuild:   payload.Build,
 		Arch:      normalizeWindowsArch(payload.Arch),
+		OSFamily:  OSFamilyWindows,
+		Transport: t.Transport(),
 	}, nil
 }
 

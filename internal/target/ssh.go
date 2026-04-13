@@ -97,6 +97,7 @@ type sshRuntime interface {
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	Reachable(ctx context.Context) (bool, error)
 	Info(ctx context.Context) (TargetInfo, error)
+	RunPowerShellScript(ctx context.Context, script string) (string, error)
 }
 
 // SSHTarget communicates with a remote machine over SSH.
@@ -124,6 +125,10 @@ func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
 // Config returns the SSHConfig that was used to construct this target.
 func (t *SSHTarget) Config() SSHConfig {
 	return t.config
+}
+
+func (t *SSHTarget) Transport() Transport {
+	return TransportSSH
 }
 
 func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
@@ -206,6 +211,14 @@ func (t *SSHTarget) Info(ctx context.Context) (TargetInfo, error) {
 		return TargetInfo{}, err
 	}
 	return runtime.Info(ctx)
+}
+
+func (t *SSHTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
+	runtime, err := t.runtimeForUse(ctx)
+	if err != nil {
+		return "", err
+	}
+	return runtime.RunPowerShellScript(ctx, script)
 }
 
 func (t *SSHTarget) clientRunner() (sshRunner, error) {
@@ -546,6 +559,8 @@ func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, err
 		OSVersion: payload.Version,
 		OSBuild:   payload.Build,
 		Arch:      normalizeWindowsArch(payload.Arch),
+		OSFamily:  OSFamilyWindows,
+		Transport: r.target.Transport(),
 	}, nil
 }
 
@@ -645,6 +660,8 @@ func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 		Hostname:  parts[0],
 		OSVersion: parts[1],
 		Arch:      parts[2],
+		OSFamily:  normalizeOSFamily(parts[1]),
+		Transport: r.target.Transport(),
 	}, nil
 }
 
