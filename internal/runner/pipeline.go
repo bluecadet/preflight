@@ -837,6 +837,16 @@ type executionContext struct {
 	env    map[string]string
 }
 
+// taskEngine builds a template engine pre-loaded with the task's variables and
+// the execution context (target info, facts, environment). Used by all task
+// rendering functions to avoid repeating the same construction chain.
+func taskEngine(task *PlanTask, execCtx *executionContext) *template.Engine {
+	return template.New(task.TemplateVars).
+		WithTarget(execCtx.target).
+		WithFacts(execCtx.facts).
+		WithEnv(execCtx.env)
+}
+
 func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, error) {
 	targetVars := cloneMap(r.config.TargetVars)
 	r.emitActivityStart("connecting")
@@ -875,19 +885,11 @@ func renderTaskWhen(task *PlanTask, execCtx *executionContext) (bool, error) {
 	if task.When == "" {
 		return true, nil
 	}
-
-	eng := template.New(task.TemplateVars).
-		WithTarget(execCtx.target).
-		WithFacts(execCtx.facts).
-		WithEnv(execCtx.env)
-	return eng.RenderBool(task.When)
+	return taskEngine(task, execCtx).RenderBool(task.When)
 }
 
 func renderTaskParams(task *PlanTask, execCtx *executionContext) (map[string]any, string, error) {
-	eng := template.New(task.TemplateVars).
-		WithTarget(execCtx.target).
-		WithFacts(execCtx.facts).
-		WithEnv(execCtx.env)
+	eng := taskEngine(task, execCtx)
 
 	params, err := eng.RenderMap(task.Params)
 	if err != nil {
@@ -910,12 +912,7 @@ func renderTaskExecutionOptions(task *PlanTask, execCtx *executionContext) (map[
 		return nil, target.ExecutionOptions{}, nil
 	}
 
-	eng := template.New(task.TemplateVars).
-		WithTarget(execCtx.target).
-		WithFacts(execCtx.facts).
-		WithEnv(execCtx.env)
-
-	become, err := eng.RenderMap(task.Become)
+	become, err := taskEngine(task, execCtx).RenderMap(task.Become)
 	if err != nil {
 		return nil, target.ExecutionOptions{}, err
 	}
