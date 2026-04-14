@@ -114,16 +114,7 @@ Write-Output 'changed'
 			onOutput(line)
 		}
 	}
-	switch marker {
-	case "ok":
-		return false, "already in desired state", nil
-	case "would-change":
-		return true, "would apply change (dry-run)", nil
-	case "changed":
-		return true, "change applied", nil
-	default:
-		return false, "", fmt.Errorf("powershell ensure: unexpected output %q", marker)
-	}
+	return parseEnsureMarkerOutput("powershell", marker)
 }
 
 func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (string, error) {

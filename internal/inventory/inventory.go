@@ -5,15 +5,16 @@ import (
 	"slices"
 
 	"github.com/bluecadet/preflight/internal/maputil"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // Transport is the connection protocol to use for a target host.
-type Transport string
+type Transport = target.Transport
 
 const (
-	TransportWinRM Transport = "winrm"
-	TransportSSH   Transport = "ssh"
-	TransportLocal Transport = "local"
+	TransportWinRM = target.TransportWinRM
+	TransportSSH   = target.TransportSSH
+	TransportLocal = target.TransportLocal
 )
 
 // Host represents a single target machine.

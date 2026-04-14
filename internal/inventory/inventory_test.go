@@ -4,7 +4,17 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/maputil"
+	"github.com/bluecadet/preflight/internal/target"
 )
+
+func TestTransportAliasesTargetTransport(t *testing.T) {
+	inventoryTransport := TransportSSH
+	targetTransport := target.Transport(inventoryTransport)
+
+	if targetTransport != target.TransportSSH {
+		t.Fatalf("expected inventory transport to reuse target transport constants, got %q", targetTransport)
+	}
+}
 
 // baseInventory builds a small inventory used across several tests.
 //

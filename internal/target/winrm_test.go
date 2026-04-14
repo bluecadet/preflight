@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/masterzen/winrm"
 )
 
 type fakeWinRMClient struct {
@@ -27,6 +30,18 @@ func (f *fakeWinRMClient) RunCmdWithContext(ctx context.Context, command string)
 		return "", "", 0, nil
 	}
 	return f.runCmd(ctx, command)
+}
+
+type fakeWinRMShellClient struct {
+	fakeWinRMClient
+	createShell func() (*winrm.Shell, error)
+}
+
+func (f *fakeWinRMShellClient) CreateShell() (*winrm.Shell, error) {
+	if f.createShell == nil {
+		return nil, nil
+	}
+	return f.createShell()
 }
 
 func TestWinRMTarget_ExecuteShell(t *testing.T) {
@@ -264,6 +279,35 @@ func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 	}
 	if string(data) != "hello" {
 		t.Fatalf("expected hello, got %q", string(data))
+	}
+}
+
+func TestWinRMTarget_CopyFileFallsBackWhenPersistentSessionCreationFails(t *testing.T) {
+	var runPSCalls int
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMShellClient{
+		createShell: func() (*winrm.Shell, error) {
+			return nil, errors.New("shell unavailable")
+		},
+		fakeWinRMClient: fakeWinRMClient{
+			runPS: func(_ context.Context, command string) (string, string, int, error) {
+				runPSCalls++
+				return "", "", 0, nil
+			},
+		},
+	}
+
+	src := t.TempDir() + "/src.txt"
+	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	err := tgt.CopyFile(context.Background(), src, "C:\\Temp\\dst.txt")
+	if err != nil {
+		t.Fatalf("expected CopyFile fallback to succeed, got %v", err)
+	}
+	if runPSCalls == 0 {
+		t.Fatal("expected CopyFile to fall back to legacy PowerShell copy path")
 	}
 }
 

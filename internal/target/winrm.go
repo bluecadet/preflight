@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -142,42 +141,25 @@ func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("winrm: read src %q: %w", src, err)
 	}
-	ps, _ := t.getOrCreatePSSession(ctx)
-	if ps != nil {
+	ps, err := t.getOrCreatePSSession(ctx)
+	if err == nil && ps != nil {
 		err := t.copyBytesViaSession(ctx, ps, data, dst)
 		if err == nil {
 			return nil
 		}
 		if !isSessionError(err) {
-			return fmt.Errorf("winrm: copy %q -> %q: %w", src, dst, err)
+			return wrapWinRMTargetError(fmt.Sprintf("copy %q -> %q", src, dst), err)
 		}
 		t.resetPSSession()
 	}
 	if err := t.copyBytes(ctx, data, dst); err != nil {
-		return fmt.Errorf("winrm: copy %q -> %q: %w", src, dst, err)
+		return wrapWinRMTargetError(fmt.Sprintf("copy %q -> %q", src, dst), err)
 	}
 	return nil
 }
 
 func (t *WinRMTarget) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	script, err := powershellJSONVar("path", path)
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := t.runPS(ctx, script+`
-if (-not (Test-Path -LiteralPath $path)) {
-  throw "file not found: $path"
-}
-[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
-`)
-	if err != nil {
-		return nil, err
-	}
-	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
-	if err != nil {
-		return nil, fmt.Errorf("winrm: decode remote file %q: %w", path, err)
-	}
-	return decoded, nil
+	return readRemoteWindowsFile(ctx, t.Transport(), t.runPS, path)
 }
 
 func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
@@ -189,38 +171,7 @@ func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
 }
 
 func (t *WinRMTarget) Info(ctx context.Context) (TargetInfo, error) {
-	stdout, err := t.runPS(ctx, `
-	$os = Get-CimInstance Win32_OperatingSystem
-	$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-	[pscustomobject]@{
-	  hostname = $env:COMPUTERNAME
-	  version  = [string]$os.Version
-  build    = [string]$os.BuildNumber
-  arch     = $arch
-} | ConvertTo-Json -Compress
-`)
-	if err != nil {
-		return TargetInfo{}, err
-	}
-
-	var payload struct {
-		Hostname string `json:"hostname"`
-		Version  string `json:"version"`
-		Build    string `json:"build"`
-		Arch     string `json:"arch"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
-		return TargetInfo{}, fmt.Errorf("winrm: parse target info: %w", err)
-	}
-
-	return TargetInfo{
-		Hostname:  payload.Hostname,
-		OSVersion: payload.Version,
-		OSBuild:   payload.Build,
-		Arch:      normalizeWindowsArch(payload.Arch),
-		OSFamily:  OSFamilyWindows,
-		Transport: t.Transport(),
-	}, nil
+	return remoteWindowsTargetInfo(ctx, t.Transport(), t.runPS)
 }
 
 func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
@@ -246,7 +197,7 @@ func (t *WinRMTarget) clientForUse() (winRMClient, error) {
 	}
 	client, err := t.clientFactory(t.config)
 	if err != nil {
-		return nil, fmt.Errorf("winrm: create client: %w", err)
+		return nil, wrapWinRMTargetError("create client", err)
 	}
 	t.client = client
 	return client, nil
@@ -274,13 +225,13 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 
 	shell, err := creator.CreateShell()
 	if err != nil {
-		return nil, fmt.Errorf("winrm: create persistent shell: %w", err)
+		return nil, wrapWinRMTargetError("create persistent shell", err)
 	}
 
 	cmd, err := shell.ExecuteWithContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "-")
 	if err != nil {
 		_ = shell.Close()
-		return nil, fmt.Errorf("winrm: start persistent powershell: %w", err)
+		return nil, wrapWinRMTargetError("start persistent powershell", err)
 	}
 
 	scanner := bufio.NewScanner(cmd.Stdout)
@@ -339,13 +290,13 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string) (string, e
 	}
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
-		return "", fmt.Errorf("winrm powershell failed: %w", err)
+		return "", wrapWinRMTargetError("powershell failed", err)
 	}
 	if code != 0 {
 		if isWinRMCommandLineTooLong(stderr) {
 			return t.runPSViaTempFile(ctx, script)
 		}
-		return "", fmt.Errorf("winrm powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
 	return stdout, nil
 }
@@ -357,10 +308,10 @@ func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error
 	}
 	stdout, stderr, code, err := client.RunCmdWithContext(ctx, command)
 	if err != nil {
-		return "", fmt.Errorf("winrm command failed: %w", err)
+		return "", wrapWinRMTargetError("command failed", err)
 	}
 	if code != 0 {
-		return "", fmt.Errorf("winrm command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return "", wrapWinRMTargetError("command failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
 	return stdout, nil
 }
@@ -416,10 +367,10 @@ func (t *WinRMTarget) runPSDirect(ctx context.Context, script string) (string, e
 	}
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
-		return "", fmt.Errorf("winrm powershell failed: %w", err)
+		return "", wrapWinRMTargetError("powershell failed", err)
 	}
 	if code != 0 {
-		return "", fmt.Errorf("winrm powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
 	return stdout, nil
 }

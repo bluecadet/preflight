@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -85,20 +84,20 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 
 	session, err := creator.NewSession()
 	if err != nil {
-		return nil, fmt.Errorf("ssh: create persistent PS session: %w", err)
+		return nil, wrapSSHTargetError("create persistent powershell session", err)
 	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		_ = session.Close()
-		return nil, fmt.Errorf("ssh: persistent PS stdin pipe: %w", err)
+		return nil, wrapSSHTargetError("persistent powershell stdin pipe", err)
 	}
 
 	stdoutPipe, err := session.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = session.Close()
-		return nil, fmt.Errorf("ssh: persistent PS stdout pipe: %w", err)
+		return nil, wrapSSHTargetError("persistent powershell stdout pipe", err)
 	}
 
 	// Start PowerShell in stdin-reading mode. -Command - causes PS to read
@@ -107,7 +106,7 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 	if err := session.Start(cmd); err != nil {
 		_ = stdin.Close()
 		_ = session.Close()
-		return nil, fmt.Errorf("ssh: start persistent powershell: %w", err)
+		return nil, wrapSSHTargetError("start persistent powershell", err)
 	}
 
 	scanner := bufio.NewScanner(stdoutPipe)
@@ -123,6 +122,11 @@ func (r *sshWindowsPowerShellRuntime) resetPSSession() {
 		r.psSession.close()
 		r.psSession = nil
 	}
+}
+
+func (r *sshWindowsPowerShellRuntime) Close() error {
+	r.resetPSSession()
+	return nil
 }
 
 // RunPowerShellScript executes a PowerShell script on the remote Windows host.
@@ -149,10 +153,10 @@ func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, s
 func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string) (string, error) {
 	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
 	if err != nil {
-		return "", err
+		return "", wrapSSHTargetError("powershell failed", err)
 	}
 	if code != 0 {
-		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return "", wrapSSHTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
 	return stdout, nil
 }
@@ -176,33 +180,20 @@ $payload = [Console]::In.ReadToEnd()
 [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($payload))
 `), []byte(encoded))
 	if err != nil {
-		return err
+		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), err)
 	}
 	if code != 0 {
 		message := strings.TrimSpace(stderr)
 		if message == "" {
 			message = strings.TrimSpace(stdout)
 		}
-		return fmt.Errorf("ssh copy exited with code %d: %s", code, message)
+		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), fmt.Errorf("exited with code %d: %s", code, message))
 	}
 	return nil
 }
 
 func (r *sshWindowsPowerShellRuntime) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	script, err := powershellJSONVar("path", path)
-	if err != nil {
-		return nil, err
-	}
-	stdout, err := r.RunPowerShellScript(ctx, script+`
-if (-not (Test-Path -LiteralPath $path)) {
-  throw "file not found: $path"
-}
-[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
-`)
-	if err != nil {
-		return nil, err
-	}
-	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	return readRemoteWindowsFile(ctx, r.target.Transport(), r.RunPowerShellScript, path)
 }
 
 func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, error) {
@@ -214,36 +205,7 @@ func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, erro
 }
 
 func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
-	stdout, err := r.RunPowerShellScript(ctx, `
-	$os = Get-CimInstance Win32_OperatingSystem
-	$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
-	[pscustomobject]@{
-	  hostname = $env:COMPUTERNAME
-	  version  = [string]$os.Version
-  build    = [string]$os.BuildNumber
-  arch     = $arch
-} | ConvertTo-Json -Compress
-`)
-	if err != nil {
-		return TargetInfo{}, err
-	}
-	var payload struct {
-		Hostname string `json:"hostname"`
-		Version  string `json:"version"`
-		Build    string `json:"build"`
-		Arch     string `json:"arch"`
-	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
-		return TargetInfo{}, fmt.Errorf("ssh: parse target info: %w", err)
-	}
-	return TargetInfo{
-		Hostname:  payload.Hostname,
-		OSVersion: payload.Version,
-		OSBuild:   payload.Build,
-		Arch:      normalizeWindowsArch(payload.Arch),
-		OSFamily:  OSFamilyWindows,
-		Transport: r.target.Transport(),
-	}, nil
+	return remoteWindowsTargetInfo(ctx, r.target.Transport(), r.RunPowerShellScript)
 }
 
 func (r *sshWindowsPowerShellRuntime) RemoteTempDir() string {

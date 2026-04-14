@@ -42,10 +42,10 @@ func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) er
 	cmd := fmt.Sprintf("mkdir -p %q && base64 -d > %q", shellDir(dst), dst)
 	stdout, stderr, code, err := r.target.run(ctx, cmd, []byte(encoded))
 	if err != nil {
-		return err
+		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), err)
 	}
 	if code != 0 {
-		return fmt.Errorf("ssh copy exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr))
+		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), fmt.Errorf("exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr)))
 	}
 	fileMode := info.Mode().Perm()
 	if info.Mode()&os.ModeSetuid != 0 {
@@ -61,10 +61,10 @@ func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) er
 	chmodCmd := fmt.Sprintf("chmod %s %q", mode, dst)
 	stdout, stderr, code, err = r.target.run(ctx, chmodCmd, nil)
 	if err != nil {
-		return err
+		return wrapSSHTargetError(fmt.Sprintf("chmod %q", dst), err)
 	}
 	if code != 0 {
-		return fmt.Errorf("ssh chmod exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr))
+		return wrapSSHTargetError(fmt.Sprintf("chmod %q", dst), fmt.Errorf("exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr)))
 	}
 	return nil
 }
@@ -72,12 +72,16 @@ func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) er
 func (r *sshPOSIXShellRuntime) ReadFile(ctx context.Context, path string) ([]byte, error) {
 	stdout, _, code, err := r.target.run(ctx, fmt.Sprintf("base64 < %q", path), nil)
 	if err != nil {
-		return nil, err
+		return nil, wrapSSHTargetError(fmt.Sprintf("read %q", path), err)
 	}
 	if code != 0 {
-		return nil, fmt.Errorf("ssh read exited with code %d", code)
+		return nil, wrapSSHTargetError(fmt.Sprintf("read %q", path), fmt.Errorf("exited with code %d", code))
 	}
-	return base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	if err != nil {
+		return nil, wrapSSHTargetError(fmt.Sprintf("read %q", path), fmt.Errorf("decode remote file: %w", err))
+	}
+	return data, nil
 }
 
 func (r *sshPOSIXShellRuntime) Reachable(ctx context.Context) (bool, error) {
@@ -91,14 +95,14 @@ func (r *sshPOSIXShellRuntime) Reachable(ctx context.Context) (bool, error) {
 func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 	stdout, _, code, err := r.target.run(ctx, "printf '%s|%s|%s\\n' \"$(hostname)\" \"$(uname -s)\" \"$(uname -m)\"", nil)
 	if err != nil {
-		return TargetInfo{}, err
+		return TargetInfo{}, wrapSSHTargetError("info", err)
 	}
 	if code != 0 {
-		return TargetInfo{}, fmt.Errorf("ssh info exited with code %d", code)
+		return TargetInfo{}, wrapSSHTargetError("info", fmt.Errorf("exited with code %d", code))
 	}
 	parts := strings.Split(strings.TrimSpace(stdout), "|")
 	if len(parts) != 3 {
-		return TargetInfo{}, fmt.Errorf("ssh info: unexpected output %q", stdout)
+		return TargetInfo{}, wrapSSHTargetError("info", fmt.Errorf("unexpected output %q", stdout))
 	}
 	return TargetInfo{
 		Hostname:  parts[0],
@@ -115,10 +119,10 @@ func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script s
 	}
 	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.powerShellBinary, script), nil)
 	if err != nil {
-		return "", err
+		return "", wrapSSHTargetError("powershell failed", err)
 	}
 	if code != 0 {
-		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return "", wrapSSHTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
 	return stdout, nil
 }
@@ -182,6 +186,10 @@ func sshStringSlice(value any) ([]string, error) {
 
 type sshClientRunner struct {
 	client *ssh.Client
+}
+
+func (r *sshClientRunner) Close() error {
+	return r.client.Close()
 }
 
 // NewSession opens a new multiplexed channel on the existing SSH connection.

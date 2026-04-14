@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -59,10 +60,27 @@ func New(t target.Target, resolver action.Chain, cfg Config) *Runner {
 	}
 }
 
+func (r *Runner) closeTarget() error {
+	if r.target == nil {
+		return nil
+	}
+	if closer, ok := r.target.(interface{ Close() error }); ok {
+		return closer.Close()
+	}
+	if closer, ok := r.target.(interface{ Close() }); ok {
+		closer.Close()
+	}
+	return nil
+}
+
 // Run executes the playbook through the configured phases.
 // If Config.Phase is empty, all phases run in order: plan, fetch, stage, apply.
 // Otherwise only the specified phase runs (plan is always required first).
-func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) error {
+func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error) {
+	defer func() {
+		err = errors.Join(err, r.closeTarget())
+	}()
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}

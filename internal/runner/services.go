@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 
 	"github.com/bluecadet/preflight/internal/action"
 )
@@ -63,7 +64,10 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) error {
 }
 
 // Apply executes the task graph against the target.
-func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) error {
+func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) (err error) {
+	defer func() {
+		err = errors.Join(err, r.closeTarget())
+	}()
 	return r.NewExecutor().Apply(ctx, plan)
 }
 
@@ -79,7 +83,8 @@ func (p *Planner) Plan(ctx context.Context, playbook *action.Playbook) (*Executi
 
 // Stage runs the stage phase.
 func (s *Stager) Stage(ctx context.Context, plan *ExecutionPlan) error {
-	return s.runner.stage(ctx, plan)
+	err := s.runner.stage(ctx, plan)
+	return errors.Join(err, s.runner.closeTarget())
 }
 
 // Apply runs the apply phase.

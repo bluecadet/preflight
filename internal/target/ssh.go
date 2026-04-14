@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -92,6 +93,10 @@ type sshRuntime interface {
 	Reachable(ctx context.Context) (bool, error)
 	Info(ctx context.Context) (TargetInfo, error)
 	RunPowerShellScript(ctx context.Context, script string) (string, error)
+}
+
+type sshCloser interface {
+	Close() error
 }
 
 // SSHTarget communicates with a remote machine over SSH.
@@ -215,6 +220,27 @@ func (t *SSHTarget) RunPowerShell(ctx context.Context, script string) (string, e
 	return runtime.RunPowerShellScript(ctx, script)
 }
 
+func (t *SSHTarget) Close() error {
+	t.runtimeMu.Lock()
+	runtime := t.runtime
+	t.runtime = nil
+	t.runtimeMu.Unlock()
+
+	t.mu.Lock()
+	runner := t.runner
+	t.runner = nil
+	t.mu.Unlock()
+
+	var err error
+	if closer, ok := runtime.(sshCloser); ok {
+		err = closer.Close()
+	}
+	if closer, ok := runner.(sshCloser); ok {
+		err = errors.Join(err, closer.Close())
+	}
+	return err
+}
+
 func (t *SSHTarget) clientRunner() (sshRunner, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -226,7 +252,7 @@ func (t *SSHTarget) clientRunner() (sshRunner, error) {
 	}
 	runner, err := t.runnerFactory(t.config)
 	if err != nil {
-		return nil, err
+		return nil, wrapSSHTargetError("connect", err)
 	}
 	t.runner = runner
 	return runner, nil
@@ -287,7 +313,7 @@ func (t *SSHTarget) detectRuntime(ctx context.Context) (sshRuntime, error) {
 	if message == "" {
 		message = "no supported remote shell runtime detected"
 	}
-	return nil, fmt.Errorf("ssh: unable to detect a supported remote runtime: %s", message)
+	return nil, wrapSSHTargetError("detect runtime", fmt.Errorf("unable to detect a supported remote runtime: %s", message))
 }
 
 func (t *SSHTarget) probePowerShellBinary(ctx context.Context, binary string) (bool, bool, error) {

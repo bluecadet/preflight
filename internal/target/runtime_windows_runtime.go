@@ -498,16 +498,7 @@ Write-Output 'changed'
 	if err != nil {
 		return false, "", err
 	}
-	switch strings.TrimSpace(out) {
-	case "ok":
-		return false, "already in desired state", nil
-	case "would-change":
-		return true, "would apply change (dry-run)", nil
-	case "changed":
-		return true, "change applied", nil
-	default:
-		return false, "", fmt.Errorf("environment ensure: unexpected output %q", strings.TrimSpace(out))
-	}
+	return parseEnsureMarkerOutput("environment", out)
 }
 
 func checkWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
@@ -675,16 +666,7 @@ func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerSh
 	if err != nil {
 		return false, "", err
 	}
-	switch strings.TrimSpace(out) {
-	case "ok":
-		return false, "already in desired state", nil
-	case "would-change":
-		return true, "would apply change (dry-run)", nil
-	case "changed":
-		return true, "change applied", nil
-	default:
-		return false, "", fmt.Errorf("remove_appx_packages ensure: unexpected output %q", strings.TrimSpace(out))
-	}
+	return parseEnsureMarkerOutput("remove_appx_packages", out)
 }
 
 func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
@@ -817,16 +799,7 @@ func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend
 	if err != nil {
 		return false, "", err
 	}
-	switch strings.TrimSpace(out) {
-	case "ok":
-		return false, "already in desired state", nil
-	case "would-change":
-		return true, "would apply change (dry-run)", nil
-	case "changed":
-		return true, "change applied", nil
-	default:
-		return false, "", fmt.Errorf("registry ensure: unexpected output %q", strings.TrimSpace(out))
-	}
+	return parseEnsureMarkerOutput("registry", out)
 }
 
 func checkWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {

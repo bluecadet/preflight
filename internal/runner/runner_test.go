@@ -28,6 +28,11 @@ type mockTarget struct {
 	transport target.Transport
 }
 
+type closableMockTarget struct {
+	mockTarget
+	closeCalls int
+}
+
 type mockCall struct {
 	TaskID string
 	Module string
@@ -78,6 +83,11 @@ func (m *mockTarget) Transport() target.Transport {
 
 func (m *mockTarget) RunPowerShell(_ context.Context, _ string) (string, error) {
 	return "", nil
+}
+
+func (m *closableMockTarget) Close() error {
+	m.closeCalls++
+	return nil
 }
 
 type recordingRenderer struct {
@@ -141,6 +151,22 @@ func TestPlanSingleTask(t *testing.T) {
 	}
 	if strings.Contains(plan.Tasks[0].ID, "task-0") {
 		t.Fatalf("expected non-positional task ID, got %q", plan.Tasks[0].ID)
+	}
+}
+
+func TestRunClosesTarget(t *testing.T) {
+	mt := &closableMockTarget{
+		mockTarget: mockTarget{
+			results: []target.Result{{Status: target.StatusOK}},
+		},
+	}
+	r := New(mt, emptyResolver(), Config{})
+
+	if err := r.Run(context.Background(), newShellPlaybook("close target")); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if mt.closeCalls != 1 {
+		t.Fatalf("Close called %d times, want 1", mt.closeCalls)
 	}
 }
 

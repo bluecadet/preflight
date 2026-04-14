@@ -7,8 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-
-	"github.com/bluecadet/preflight/internal/preflighterr"
 )
 
 // ModuleRegistry maps module names to their implementations.
@@ -24,7 +22,15 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 	if registry == nil {
 		registry = make(ModuleRegistry)
 	}
-	return &LocalTarget{registry: registry}
+	cloned := make(ModuleRegistry, len(registry))
+	for name, mod := range registry {
+		if plugin, ok := mod.(*pluginModule); ok {
+			cloned[name] = plugin.clone()
+			continue
+		}
+		cloned[name] = mod
+	}
+	return &LocalTarget{registry: cloned}
 }
 
 // Transport identifies the local target connection type.
@@ -43,9 +49,9 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 
 		unsupported := func(module string) error {
 			if _, ok := t.registry[module]; ok {
-				return &preflighterr.TargetError{Transport: "local", Err: fmt.Errorf("module %q does not support become", module)}
+				return wrapLocalTargetError("", fmt.Errorf("module %q does not support become", module))
 			}
-			return &preflighterr.TargetError{Transport: "local", Err: fmt.Errorf("unknown module %q", module)}
+			return wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
 		}
 
 		if kind == RuntimeKindWindowsPowerShell {
@@ -64,7 +70,7 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 
 	mod, ok := t.registry[module]
 	if !ok {
-		return Result{}, &preflighterr.TargetError{Transport: "local", Err: fmt.Errorf("unknown module %q", module)}
+		return Result{}, wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
 	}
 
 	var captured []string
@@ -114,14 +120,14 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 func (t *LocalTarget) CopyFile(_ context.Context, src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
-		return &preflighterr.TargetError{Transport: "local", Op: fmt.Sprintf("stat src %q", src), Err: err}
+		return wrapLocalTargetError(fmt.Sprintf("stat src %q", src), err)
 	}
 	data, err := os.ReadFile(src)
 	if err != nil {
-		return &preflighterr.TargetError{Transport: "local", Op: fmt.Sprintf("read src %q", src), Err: err}
+		return wrapLocalTargetError(fmt.Sprintf("read src %q", src), err)
 	}
 	if err := os.WriteFile(dst, data, info.Mode()); err != nil {
-		return &preflighterr.TargetError{Transport: "local", Op: fmt.Sprintf("write dst %q", dst), Err: err}
+		return wrapLocalTargetError(fmt.Sprintf("write dst %q", dst), err)
 	}
 	return nil
 }
@@ -130,7 +136,7 @@ func (t *LocalTarget) CopyFile(_ context.Context, src, dst string) error {
 func (t *LocalTarget) ReadFile(_ context.Context, path string) ([]byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, &preflighterr.TargetError{Transport: "local", Op: fmt.Sprintf("read %q", path), Err: err}
+		return nil, wrapLocalTargetError(fmt.Sprintf("read %q", path), err)
 	}
 	return data, nil
 }
@@ -144,7 +150,7 @@ func (t *LocalTarget) Reachable(_ context.Context) (bool, error) {
 func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return TargetInfo{}, &preflighterr.TargetError{Transport: "local", Op: "hostname", Err: err}
+		return TargetInfo{}, wrapLocalTargetError("hostname", err)
 	}
 	return TargetInfo{
 		Hostname:  hostname,
@@ -158,7 +164,7 @@ func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 // RunPowerShell executes a PowerShell script on the local machine.
 func (t *LocalTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
 	if runtime.GOOS != "windows" {
-		return "", &preflighterr.TargetError{Transport: "local", Err: errors.New("powershell is only available on Windows")}
+		return "", wrapLocalTargetError("", fmt.Errorf("powershell is only available on Windows"))
 	}
 	out, err := exec.CommandContext(ctx, "powershell.exe",
 		"-NoProfile",
@@ -167,7 +173,20 @@ func (t *LocalTarget) RunPowerShell(ctx context.Context, script string) (string,
 		"-Command", script,
 	).CombinedOutput()
 	if err != nil {
-		return "", &preflighterr.TargetError{Transport: "local", Op: "powershell failed", Err: fmt.Errorf("%w\noutput: %s", err, string(out))}
+		return "", wrapLocalTargetError("powershell failed", fmt.Errorf("%w\noutput: %s", err, string(out)))
 	}
 	return string(out), nil
+}
+
+// Close releases any module-level resources owned by this target instance.
+func (t *LocalTarget) Close() error {
+	var err error
+	for _, mod := range t.registry {
+		closer, ok := mod.(interface{ Close() error })
+		if !ok {
+			continue
+		}
+		err = errors.Join(err, closer.Close())
+	}
+	return err
 }

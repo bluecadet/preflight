@@ -1,11 +1,27 @@
 package target
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/winutil"
 )
+
+const windowsTargetInfoScript = `
+$os = Get-CimInstance Win32_OperatingSystem
+$arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+[pscustomobject]@{
+  hostname = $env:COMPUTERNAME
+  version  = [string]$os.Version
+  build    = [string]$os.BuildNumber
+  arch     = $arch
+} | ConvertTo-Json -Compress
+`
+
+type windowsPowerShellRunner func(context.Context, string) (string, error)
 
 func powershellJSONVar(name string, value any) (string, error) {
 	return winutil.JSONVarScript(name, value)
@@ -21,14 +37,71 @@ func parseWindowsBoolOutput(out string) (bool, []string, error) {
 	if len(lines) == 0 {
 		return false, nil, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
 	}
-	switch strings.ToLower(strings.TrimSpace(lines[len(lines)-1])) {
-	case "true":
-		return true, lines[:len(lines)-1], nil
-	case "false":
-		return false, lines[:len(lines)-1], nil
-	default:
+	value, err := winutil.ParseBool(lines[len(lines)-1])
+	if err != nil {
 		return false, nil, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(out))
 	}
+	return value, lines[:len(lines)-1], nil
+}
+
+func parseEnsureMarkerOutput(name, out string) (bool, string, error) {
+	switch strings.TrimSpace(out) {
+	case "ok":
+		return false, "already in desired state", nil
+	case "would-change":
+		return true, "would apply change (dry-run)", nil
+	case "changed":
+		return true, "change applied", nil
+	default:
+		return false, "", fmt.Errorf("%s ensure: unexpected output %q", name, strings.TrimSpace(out))
+	}
+}
+
+func readRemoteWindowsFile(ctx context.Context, transport Transport, run windowsPowerShellRunner, path string) ([]byte, error) {
+	script, err := powershellJSONVar("path", path)
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := run(ctx, script+`
+if (-not (Test-Path -LiteralPath $path)) {
+  throw "file not found: $path"
+}
+[Convert]::ToBase64String([IO.File]::ReadAllBytes($path))
+`)
+	if err != nil {
+		return nil, wrapTargetError(transport, fmt.Sprintf("read %q", path), err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(stdout))
+	if err != nil {
+		return nil, wrapTargetError(transport, fmt.Sprintf("read %q", path), fmt.Errorf("decode remote file: %w", err))
+	}
+	return decoded, nil
+}
+
+func remoteWindowsTargetInfo(ctx context.Context, transport Transport, run windowsPowerShellRunner) (TargetInfo, error) {
+	stdout, err := run(ctx, windowsTargetInfoScript)
+	if err != nil {
+		return TargetInfo{}, wrapTargetError(transport, "info", err)
+	}
+
+	var payload struct {
+		Hostname string `json:"hostname"`
+		Version  string `json:"version"`
+		Build    string `json:"build"`
+		Arch     string `json:"arch"`
+	}
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &payload); err != nil {
+		return TargetInfo{}, wrapTargetError(transport, "info", fmt.Errorf("parse target info: %w", err))
+	}
+
+	return TargetInfo{
+		Hostname:  payload.Hostname,
+		OSVersion: payload.Version,
+		OSBuild:   payload.Build,
+		Arch:      normalizeWindowsArch(payload.Arch),
+		OSFamily:  OSFamilyWindows,
+		Transport: transport,
+	}, nil
 }
 
 func normalizeWindowsArch(raw string) string {
