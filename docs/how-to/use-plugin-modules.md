@@ -23,7 +23,7 @@ Inspect one plugin:
 preflight plugin info signage_sync
 ```
 
-Fix any initialization error here before you wire the plugin into YAML. Preflight refuses to register plugins that fail startup, collide with built-in module names, or appear more than once under the same logical name.
+Fix any initialization error here before you wire the plugin into YAML. Preflight discovers plugin executables lazily during normal startup, but `plugin list`, `plugin info`, staging, and first runtime use still initialize the plugin and will fail if startup is broken or the reported logical name does not match the discovered module name.
 
 ## 2. Call The Plugin From A Task
 
@@ -75,7 +75,7 @@ If a staged plan references a plugin task, Preflight includes that plugin execut
 preflight stage playbooks/lobby.yml
 ```
 
-Staging only succeeds if the plugin can be initialized and copied during the stage step.
+Staging only succeeds if the plugin can be initialized, reports the expected logical name, and can be copied during the stage step.
 
 ## Troubleshooting
 
@@ -87,7 +87,7 @@ Use the logical name reported by:
 preflight plugin info <name>
 ```
 
-That logical name, not necessarily the raw filename, is what belongs in `module:`.
+That logical name must match the filename suffix, and it is what belongs in `module:`.
 
 ### The plugin conflicts with a built-in module
 

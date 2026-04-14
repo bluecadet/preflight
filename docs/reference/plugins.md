@@ -14,13 +14,20 @@ The runner treats a plugin-backed module like any other module:
 
 ## Discovery
 
-Plugins are scanned in this order:
+Plugin executables are discovered by filename in this order:
 
 1. The directory alongside the `preflight` binary
 2. `~/.preflight/plugins`
 3. `./plugins` relative to the working directory
 
 During staged bundle apply, Preflight uses the bundle-local `plugins/` directory and can isolate discovery to that payload.
+
+Preflight does not initialize every discovered plugin during normal command startup. Initialization is deferred until one of these points:
+
+- `preflight plugin list`
+- `preflight plugin info <name>`
+- staging a bundle that includes the plugin
+- first runtime use of the plugin-backed module
 
 ## File Naming
 
@@ -35,18 +42,22 @@ On Windows, the executable must end in `.exe`.
 
 ## Registration Rules
 
-Preflight initializes discovered plugins before registering them.
+Preflight registers discovered plugin executables by filename and validates the plugin's reported logical name when it is initialized.
 
 Registration fails when:
 
+- two discovered plugin filenames resolve to the same module name
+- a discovered plugin filename conflicts with a built-in module name
+
+Initialization fails when:
+
 - the plugin cannot be started
 - `initialize` fails
-- two plugins resolve to the same logical name
-- a plugin name conflicts with a built-in module name
+- the plugin reports a logical name that does not match the discovered module name
 
 ## YAML Invocation
 
-Use the explicit module task form:
+Use the explicit module task form. The `module:` name must match both the executable filename suffix and the plugin's reported logical name:
 
 ```yaml
 tasks:
@@ -88,7 +99,7 @@ When a staged plan references a plugin module, the bundle includes:
 - the plugin executable under `plugins/`
 - module metadata in `manifest.json`
 
-Staging fails if the plugin cannot be initialized or copied.
+Staging fails if the plugin cannot be initialized, reports the wrong logical name, or cannot be copied.
 
 ## Related Commands
 

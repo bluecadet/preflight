@@ -77,7 +77,7 @@ Staging fails when:
 
 - a task would require embedding a decrypted secret value
 - the plan references an unknown module
-- a referenced plugin cannot be initialized or copied into the bundle
+- a referenced plugin cannot be initialized, reports the wrong logical name, or cannot be copied into the bundle
 
 Offline apply does not:
 
@@ -101,7 +101,7 @@ Confirm the plugin is discoverable before staging:
 preflight plugin list
 ```
 
-Only plugins actually referenced by the staged plan are copied into the bundle.
+Only plugins actually referenced by the staged plan are copied into the bundle, and each referenced plugin is initialized during staging to verify that its reported logical name matches the module name used by the plan.
 
 ### I am not sure which bundle belongs to which host
 

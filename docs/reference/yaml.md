@@ -109,16 +109,38 @@ Mixing these forms in the same task is an error.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `name` | string | Task label used in output and `depends_on` |
+| `name` | string | Task label used in output and as a fallback dependency reference |
+| `id` | string | Optional stable task reference for `depends_on` |
+| `ref` | string | Alias for `id`; if both are set they must match |
 | `uses` | string | Action reference |
 | `with` | object | Inputs passed to the referenced action |
 | `become` | object | Execute the task as another user |
 | `module` | string | Explicit module name, including plugin-backed modules |
 | `params` | object | Parameters for `module` |
 | `when` | string | Template condition expression |
-| `depends_on` | string[] | Task-name dependencies |
+| `depends_on` | string[] | Task dependencies; Preflight resolves `id`/`ref` first, then falls back to `name` when no explicit ref is set |
 | `ignore_errors` | bool | Continue after a task failure |
 | `tags` | string[] | Tags used by `--tags` and `--skip-tags` |
+
+Use `id` or `ref` when tasks need a stable dependency key that should not change with display-name edits.
+
+Example:
+
+```yaml
+tasks:
+  - name: Prepare content volume
+    id: prepare-volume
+    directory:
+      path: "C:\\Content"
+      ensure: present
+
+  - name: Sync content
+    module: signage_sync
+    depends_on: ["prepare-volume"]
+    params:
+      source: "\\\\nas01\\content"
+      destination: "C:\\Content"
+```
 
 ### Task Defaults
 

@@ -59,7 +59,7 @@ Each `modules[]` entry records:
 Staging fails when:
 
 - a task references an unknown module
-- a referenced plugin cannot be initialized or copied
+- a referenced plugin cannot be initialized, reports the wrong logical name, or cannot be copied
 - a task preview contains secret values that would need to be embedded in the bundle
 
 ## Bundle Apply

@@ -113,6 +113,8 @@ go build -o preflight-plugin-marker_file.exe .
 
 The filename matters. Preflight only discovers executables named `preflight-plugin-<name>` or, on Windows, `preflight-plugin-<name>.exe`.
 
+The plugin's `Name()` result must match that `<name>` value. Preflight now validates that the discovered filename, YAML module name, and reported logical name all line up.
+
 ## 4. Install It Into A Plugin Directory
 
 Preflight scans plugin directories in this order:
@@ -137,7 +139,7 @@ preflight plugin list
 preflight plugin info marker_file
 ```
 
-Fix discovery or initialization errors here before using the plugin in a playbook.
+Fix discovery or initialization errors here before using the plugin in a playbook. A plugin can be discoverable by filename and still fail later if `initialize` fails or `Name()` does not match the filename suffix.
 
 ## 6. Call The Plugin From YAML
 
@@ -170,7 +172,7 @@ Common patterns:
 - ship the plugin executable alongside the `preflight` binary in an internal tools package
 - commit the executable under a project-local `plugins/` directory when the team wants the plugin versioned with the repo
 
-If you use `preflight stage`, the plugin must be discoverable on the staging machine. Preflight copies referenced plugin executables into the staged bundle automatically.
+If you use `preflight stage`, the plugin must be discoverable on the staging machine. Preflight copies referenced plugin executables into the staged bundle automatically, but staging now fails if the plugin cannot initialize or reports the wrong logical name.
 
 ## Troubleshooting
 
