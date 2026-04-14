@@ -46,16 +46,11 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
-	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	session, err := newPlaybookSession(ctx, playbookPath, false)
 	if err != nil {
 		return err
 	}
-
-	registry, _, err := buildModuleRegistry(projectDir)
-	if err != nil {
-		return err
-	}
-	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
+	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectDir, session.Registry, session.Secrets)
 	if err != nil {
 		return err
 	}
@@ -65,22 +60,22 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			DryRun:         false,
 			Tags:           tags,
 			SkipTags:       skipTags,
-			ProjectName:    projectCfg.Project,
-			ProjectEnv:     projectCfg.Environment,
-			ProjectVars:    projectCfg.Vars,
+			ProjectName:    session.ProjectCfg.Project,
+			ProjectEnv:     session.ProjectCfg.Environment,
+			ProjectVars:    session.ProjectCfg.Vars,
 			InventoryVars:  host.Vars,
 			Vars:           vars,
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
 			Phase:          "plan",
-			Secrets:        secretsResolver,
-			ModuleRegistry: registry,
+			Secrets:        session.Secrets,
+			ModuleRegistry: session.Registry,
 		}
 
-		r := runner.New(host.Target, chain, cfg)
-		plan, err := r.Plan(ctx, pb)
+		r := runner.New(host.Target, session.Chain, cfg)
+		plan, err := r.Plan(ctx, session.Playbook)
 		if err != nil {
-			return fmt.Errorf("plan for %s: %w", host.Name, err)
+			return wrapLabelError("plan for "+host.Name, err)
 		}
 
 		tasks := make([]output.PlanTaskEntry, 0, len(plan.Tasks))

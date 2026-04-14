@@ -91,29 +91,20 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
-	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	session, err := newPlaybookSession(ctx, playbookPath, false)
 	if err != nil {
 		return err
 	}
-
-	registry, loadedPlugins, err := buildModuleRegistry(projectDir)
+	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectDir, session.Registry, session.Secrets)
 	if err != nil {
 		return err
 	}
-	lockfile, err := loadProjectLockfile(projectDir)
-	if err != nil {
-		return err
-	}
-	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
-	if err != nil {
-		return err
-	}
-	if err := runner.New(nil, chain, runner.Config{}).Fetch(ctx, pb); err != nil {
+	if err := runner.New(nil, session.Chain, runner.Config{}).Fetch(ctx, session.Playbook); err != nil {
 		return err
 	}
 
 	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
-		bundleDir, err := bundleOutputDir(cmd, projectDir)
+		bundleDir, err := bundleOutputDir(cmd, session.ProjectDir)
 		if err != nil {
 			return fmt.Errorf("resolve bundle output dir: %w", err)
 		}
@@ -122,24 +113,24 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			Tags:                          tags,
 			SkipTags:                      skipTags,
 			Concurrency:                   concurrency,
-			ProjectDir:                    projectDir,
-			ProjectName:                   projectCfg.Project,
-			ProjectEnv:                    projectCfg.Environment,
-			ProjectVars:                   projectCfg.Vars,
+			ProjectDir:                    session.ProjectDir,
+			ProjectName:                   session.ProjectCfg.Project,
+			ProjectEnv:                    session.ProjectCfg.Environment,
+			ProjectVars:                   session.ProjectCfg.Vars,
 			InventoryVars:                 host.Vars,
 			Vars:                          vars,
 			TargetVars:                    host.TargetVars,
 			TargetName:                    host.Name,
 			Renderer:                      renderer,
 			SkipFetch:                     true,
-			Secrets:                       secretsResolver,
-			SecretsConfig:                 projectCfg.Secrets,
+			Secrets:                       session.Secrets,
+			SecretsConfig:                 session.ProjectCfg.Secrets,
 			StatePath:                     host.StatePath,
-			ModuleRegistry:                registry,
+			ModuleRegistry:                session.Registry,
 			BundleOutputDir:               bundleDir,
-			BundlePlugins:                 loadedPlugins,
+			BundlePlugins:                 session.LoadedPlugins,
 			AllowPlaintextSecretsInBundle: allowPlaintextSecrets,
-			Lockfile:                      lockfile,
+			Lockfile:                      session.Lockfile,
 			Version:                       buildVersion,
 			Commit:                        buildCommit,
 			BuildDate:                     buildDate,
@@ -148,13 +139,13 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			cfg.Phase = "stage"
 		}
 
-		r := runner.New(host.Target, chain, cfg)
-		if err := r.Run(runCtx, pb); err != nil {
+		r := runner.New(host.Target, session.Chain, cfg)
+		if err := r.Run(runCtx, session.Playbook); err != nil {
 			action := "apply"
 			if opts.stageOnly {
 				action = "stage"
 			}
-			return fmt.Errorf("%s for %s: %w", action, host.Name, err)
+			return wrapHostLabelError(action, action, host.Name, err)
 		}
 		return nil
 	})

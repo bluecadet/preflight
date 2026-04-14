@@ -127,6 +127,56 @@ func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *con
 	return pb, projectDir, projectCfg, secretsResolver, newActionChain(projectDir), nil
 }
 
+type playbookSession struct {
+	Playbook      *action.Playbook
+	ProjectDir    string
+	ProjectCfg    *config.Config
+	Secrets       *secrets.Resolver
+	Chain         action.Chain
+	Registry      target.ModuleRegistry
+	LoadedPlugins []plugins.LoadedPlugin
+	Lockfile      *action.Lockfile
+}
+
+func newPlaybookSession(ctx context.Context, playbookPath string, fetchRefs bool) (*playbookSession, error) {
+	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	if err != nil {
+		return nil, err
+	}
+
+	registry, loadedPlugins, err := buildModuleRegistry(projectDir)
+	if err != nil {
+		return nil, err
+	}
+	lockfile, err := loadProjectLockfile(projectDir)
+	if err != nil {
+		return nil, err
+	}
+	if fetchRefs {
+		if err := fetchPlaybookActionRefs(ctx, pb, chain); err != nil {
+			return nil, err
+		}
+	}
+	return &playbookSession{
+		Playbook:      pb,
+		ProjectDir:    projectDir,
+		ProjectCfg:    projectCfg,
+		Secrets:       secretsResolver,
+		Chain:         chain,
+		Registry:      registry,
+		LoadedPlugins: loadedPlugins,
+		Lockfile:      lockfile,
+	}, nil
+}
+
+func wrapLabelError(label string, err error) error {
+	return fmt.Errorf("%s: %w", label, err)
+}
+
+func wrapHostLabelError(label, action, host string, err error) error {
+	return fmt.Errorf("%s: %s for %s: %w", label, action, host, err)
+}
+
 func loadInventoryRunContext(inventoryPath string) (*inventory.Inventory, string, *config.Config, *secrets.Resolver, error) {
 	projectDir, err := projectDirForPath(inventoryPath)
 	if err != nil {

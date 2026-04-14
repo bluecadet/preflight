@@ -119,21 +119,13 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
-	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
+	session, err := newPlaybookSession(ctx, playbookPath, true)
 	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
+		return wrapLabelError(label, err)
 	}
-	if err := fetchPlaybookActionRefs(ctx, pb, chain); err != nil {
-		return fmt.Errorf("%s: %w", label, err)
-	}
-
-	registry, _, err := buildModuleRegistry(projectDir)
+	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectDir, session.Registry, session.Secrets)
 	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
-	}
-	hosts, err := resolveRunHosts(ctx, cmd, projectDir, registry, secretsResolver)
-	if err != nil {
-		return fmt.Errorf("%s: %w", label, err)
+		return wrapLabelError(label, err)
 	}
 
 	overrideStatePath, hasStateOverride, err := stateFileOverride(cmd)
@@ -159,22 +151,22 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		}
 
 		cfg := runner.Config{
-			ProjectName:    projectCfg.Project,
-			ProjectEnv:     projectCfg.Environment,
-			ProjectVars:    projectCfg.Vars,
+			ProjectName:    session.ProjectCfg.Project,
+			ProjectEnv:     session.ProjectCfg.Environment,
+			ProjectVars:    session.ProjectCfg.Vars,
 			InventoryVars:  host.Vars,
 			Vars:           vars,
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
 			Phase:          "plan",
-			Secrets:        secretsResolver,
-			ModuleRegistry: registry,
+			Secrets:        session.Secrets,
+			ModuleRegistry: session.Registry,
 		}
 
-		r := runner.New(host.Target, chain, cfg)
-		plan, err := r.Plan(ctx, pb)
+		r := runner.New(host.Target, session.Chain, cfg)
+		plan, err := r.Plan(ctx, session.Playbook)
 		if err != nil {
-			return fmt.Errorf("%s: plan for %s: %w", label, host.Name, err)
+			return wrapHostLabelError(label, "plan", host.Name, err)
 		}
 
 		plannedState, err := r.PlannedTaskState(ctx, plan)
