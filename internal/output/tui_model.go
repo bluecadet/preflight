@@ -135,39 +135,43 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
-	switch e := event.(type) {
-	case PlayStartEvent:
-		return m.handlePlayStart(e)
-	case TaskStartEvent:
-		return m.handleTaskStart(e)
-	case ActivityStartEvent:
-		return m.handleActivityStart(e)
-	case ActivityResultEvent:
-		return m.handleActivityResult(e)
-	case TaskOutputEvent:
-		return m.handleTaskOutput(e)
-	case TaskResultEvent:
-		return m.handleTaskResult(e)
-	case PlayEndEvent:
-		return m.handlePlayEnd(e)
-	case WarningEvent:
-		return m, tea.Println("  " + tsChanged.Render("⚠") + "  " + tsMuted.Render(e.Message))
-	case ErrorEvent:
-		return m, tea.Println("  " + tsFailed.Render("✗") + "  " + tsFailed.Render(e.Message))
-	case FactsEvent:
-		return m.handleFacts(e)
-	case PlanEvent:
-		return m.printStaticBlock(renderPlanCard(e))
-	case StateEvent:
-		return m.printStaticBlock(renderStateCard(e))
-	case ValidationEvent:
-		return m.printStaticBlock(renderValidationCard(e))
-	case ActionCatalogEvent:
-		return m.printStaticBlock(renderActionCatalogCard(e))
-	case ActionInfoEvent:
-		return m.printStaticBlock(renderActionInfoCard(e))
-	case ActionFetchEvent:
-		return m.printStaticBlock(renderActionFetchCard(e))
+	p, ok := projectEvent(event)
+	if !ok {
+		return m, nil
+	}
+	switch p.kind {
+	case EventPlayStart:
+		return m.handlePlayStart(PlayStartEvent{PlayName: p.playName})
+	case EventTaskStart:
+		return m.handleTaskStart(TaskStartEvent{TaskName: p.task, TaskID: p.taskID, ActionPath: p.actionPath, Target: p.target})
+	case EventActivityStart:
+		return m.handleActivityStart(ActivityStartEvent{Target: p.target, Message: p.message})
+	case EventActivityResult:
+		return m.handleActivityResult(ActivityResultEvent{Target: p.target, Message: p.message, Status: p.status})
+	case EventTaskOutput:
+		return m.handleTaskOutput(TaskOutputEvent{TaskName: p.task, TaskID: p.taskID, Target: p.target, Lines: p.lines})
+	case EventTaskResult:
+		return m.handleTaskResult(TaskResultEvent{TaskName: p.task, TaskID: p.taskID, ActionPath: p.actionPath, Target: p.target, Status: p.status, Message: p.message, Output: p.output})
+	case EventPlayEnd:
+		return m.handlePlayEnd(PlayEndEvent{Target: p.target, OKCount: p.okCount, ChangedCount: p.changedCount, FailedCount: p.failedCount, SkippedCount: p.skippedCount})
+	case EventWarning:
+		return m, tea.Println("  " + tsChanged.Render("⚠") + "  " + tsMuted.Render(p.message))
+	case EventError:
+		return m, tea.Println("  " + tsFailed.Render("✗") + "  " + tsFailed.Render(p.errorMessage))
+	case EventFacts:
+		return m.handleFacts(FactsEvent{Target: p.target, Facts: p.facts})
+	case EventPlan:
+		return m.printStaticBlock(renderPlanCard(PlanEvent{Target: p.target, PlaybookName: p.playName, Tasks: p.tasks}))
+	case EventState:
+		return m.printStaticBlock(renderStateCard(StateEvent{Target: p.target, PlaybookName: p.playName, StatePath: p.statePath, LastApplied: p.lastApplied, Comparisons: p.comparisons}))
+	case EventValidate:
+		return m.printStaticBlock(renderValidationCard(ValidationEvent{PlaybookPath: p.playbookPath, PlaybookName: p.playName, TaskCount: p.taskCount, VisitedRefCount: p.visitedRefs, ResolvedRefs: p.resolvedRefs, ErrorCount: p.errorCount}))
+	case EventActionList:
+		return m.printStaticBlock(renderActionCatalogCard(ActionCatalogEvent{EmbeddedNamespace: p.namespace, EmbeddedRefs: p.embeddedRefs, LocalDir: p.localDir, LocalRefs: p.localRefs}))
+	case EventActionInfo:
+		return m.printStaticBlock(renderActionInfoCard(ActionInfoEvent{Ref: p.ref, Name: p.name, Version: p.version, Description: p.description, Author: p.author, Inputs: p.inputs, TaskNames: p.taskNames}))
+	case EventActionFetch:
+		return m.printStaticBlock(renderActionFetchCard(ActionFetchEvent{Entries: p.entries}))
 	default:
 		return m, nil
 	}

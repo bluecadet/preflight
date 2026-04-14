@@ -69,129 +69,57 @@ func (r *JSONRenderer) Emit(event Event) {
 	var je jsonEvent
 	je.TS = ts
 
-	switch e := event.(type) {
-	case PlayStartEvent:
-		je.Type = EventPlayStart
-		je.PlayName = e.PlayName
-
-	case TaskStartEvent:
-		je.Type = EventTaskStart
-		je.Task = e.TaskName
-		je.TaskID = e.TaskID
-		je.Target = e.Target
-
-	case TaskOutputEvent:
-		je.Type = EventTaskOutput
-		je.Task = e.TaskName
-		je.TaskID = e.TaskID
-		je.Target = e.Target
-		if len(e.Lines) > 0 {
-			je.Lines = e.Lines
-		}
-
-	case TaskResultEvent:
-		je.Type = EventTaskResult
-		je.Task = e.TaskName
-		je.TaskID = e.TaskID
-		je.Target = e.Target
-		je.Status = e.Status
-		je.Message = e.Message
-		if len(e.Output) > 0 {
-			je.Output = e.Output
-		}
-
-	case PlayEndEvent:
-		je.Type = EventPlayEnd
-		je.Target = e.Target
-		ok := e.OKCount
-		ch := e.ChangedCount
-		fa := e.FailedCount
-		sk := e.SkippedCount
-		je.OKCount = &ok
-		je.ChangedCount = &ch
-		je.FailedCount = &fa
-		je.SkippedCount = &sk
-
-	case WarningEvent:
-		je.Type = EventWarning
-		je.Message = e.Message
-
-	case ErrorEvent:
-		je.Type = EventError
-		je.Error = e.Message
-
-	case ActivityStartEvent:
-		je.Type = EventActivityStart
-		je.Target = e.Target
-		je.Message = e.Message
-
-	case ActivityResultEvent:
-		je.Type = EventActivityResult
-		je.Target = e.Target
-		je.Message = e.Message
-		je.Status = e.Status
-
-	case FactsEvent:
-		je.Type = EventFacts
-		je.Target = e.Target
-		je.Facts = e.Facts
-
-	case PlanEvent:
-		je.Type = EventPlan
-		je.Target = e.Target
-		je.PlayName = e.PlaybookName
-		je.Tasks = e.Tasks
-
-	case StateEvent:
-		je.Type = EventState
-		je.Target = e.Target
-		je.PlayName = e.PlaybookName
-		je.StatePath = e.StatePath
-		je.LastApplied = e.LastApplied
-		je.Comparisons = e.Comparisons
-
-	case ValidationEvent:
-		je.Type = EventValidate
-		je.PlayName = e.PlaybookName
-		je.PlaybookPath = e.PlaybookPath
-		je.TaskCount = e.TaskCount
-		je.VisitedRefs = e.VisitedRefCount
-		je.ResolvedRefs = e.ResolvedRefs
-		je.ErrorCount = e.ErrorCount
-
-	case ActionCatalogEvent:
-		je.Type = EventActionList
-		je.Namespace = e.EmbeddedNamespace
-		je.EmbeddedRefs = e.EmbeddedRefs
-		je.LocalDir = e.LocalDir
-		je.LocalRefs = e.LocalRefs
-
-	case ActionInfoEvent:
-		je.Type = EventActionInfo
-		je.Ref = e.Ref
-		je.Name = e.Name
-		je.Version = e.Version
-		je.Description = e.Description
-		je.Author = e.Author
-		je.Inputs = e.Inputs
-		je.TaskNames = e.TaskNames
-
-	case ActionFetchEvent:
-		je.Type = EventActionFetch
-		je.Entries = e.Entries
-
-	case PluginListEvent:
-		je.Type = EventPluginList
-		je.Plugins = e.Entries
-
-	case InventoryListEvent:
-		je.Type = EventInventoryList
-		je.Hosts = e.Hosts
-
-	case SecretListEvent:
-		je.Type = EventSecretList
-		je.Secrets = e.Entries
+	p, ok := projectEvent(event)
+	if !ok {
+		_ = r.enc.Encode(je)
+		return
 	}
+
+	je.Type = p.kind
+	je.PlayName = p.playName
+	je.Name = p.name
+	je.Namespace = p.namespace
+	je.Ref = p.ref
+	je.TaskID = p.taskID
+	je.Task = p.task
+	je.Target = p.target
+	je.Status = p.status
+	je.Message = p.message
+	je.Error = p.errorMessage
+	je.TaskCount = p.taskCount
+	if p.kind == EventPlayEnd {
+		okCount := p.okCount
+		changedCount := p.changedCount
+		failedCount := p.failedCount
+		skippedCount := p.skippedCount
+		je.OKCount = &okCount
+		je.ChangedCount = &changedCount
+		je.FailedCount = &failedCount
+		je.SkippedCount = &skippedCount
+	}
+	je.Lines = p.lines
+	je.Output = p.output
+	je.Facts = p.facts
+	je.Tasks = p.tasks
+	je.StatePath = p.statePath
+	je.LastApplied = p.lastApplied
+	je.Comparisons = p.comparisons
+	je.PlaybookPath = p.playbookPath
+	je.VisitedRefs = p.visitedRefs
+	je.ResolvedRefs = p.resolvedRefs
+	je.ErrorCount = p.errorCount
+	je.EmbeddedRefs = p.embeddedRefs
+	je.LocalDir = p.localDir
+	je.LocalRefs = p.localRefs
+	je.Version = p.version
+	je.Description = p.description
+	je.Author = p.author
+	je.Inputs = p.inputs
+	je.TaskNames = p.taskNames
+	je.Entries = p.entries
+	je.Plugins = p.plugins
+	je.Hosts = p.hosts
+	je.Secrets = p.secrets
 
 	// Ignore encode errors — nothing useful to do with them at render time.
 	_ = r.enc.Encode(je)
