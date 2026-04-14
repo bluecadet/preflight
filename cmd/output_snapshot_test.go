@@ -188,8 +188,8 @@ func normalizePath(s, path string) string {
 	if path == "" {
 		return s
 	}
-	s = strings.ReplaceAll(s, path, "<cwd>")
-	return strings.ReplaceAll(s, "/private"+path, "<cwd>")
+	s = strings.ReplaceAll(s, "/private"+path, "<cwd>")
+	return strings.ReplaceAll(s, path, "<cwd>")
 }
 
 var (
