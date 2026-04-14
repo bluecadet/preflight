@@ -27,6 +27,7 @@ inputs:
 
 tasks:
   - name: Run shell command
+    id: shell-step
     shell:
       cmd: echo
       args: ["hello"]
@@ -66,6 +67,9 @@ func TestParseAction_Valid(t *testing.T) {
 	if a.Tasks[0].Params == nil {
 		t.Fatal("expected canonical params to be populated")
 	}
+	if a.Tasks[0].Key() != "shell-step" {
+		t.Fatalf("expected stable key shell-step, got %q", a.Tasks[0].Key())
+	}
 	if got := a.Tasks[0].InlineModules["shell"]["cmd"]; got != "echo" {
 		t.Fatalf("expected inline shell cmd=echo, got %#v", got)
 	}
@@ -94,6 +98,9 @@ func TestParsePlaybook_Valid(t *testing.T) {
 	}
 	if p.Tasks[0].Uses != "preflight/kiosk-mode" {
 		t.Errorf("expected uses=preflight/kiosk-mode, got %q", p.Tasks[0].Uses)
+	}
+	if p.Tasks[0].Ref != "" {
+		t.Errorf("expected empty ref, got %q", p.Tasks[0].Ref)
 	}
 }
 
@@ -160,6 +167,21 @@ file:
 	}
 	if got := task.InlineModules["file"]["dest"]; got != "/foo" {
 		t.Fatalf("expected inline file dest=/foo, got %#v", got)
+	}
+}
+
+func TestTask_ValidateRefRejectsConflictingIDAndRef(t *testing.T) {
+	_, err := action.ParseAction([]byte(`
+name: bad-refs
+tasks:
+  - name: create file
+    id: first
+    ref: second
+    file:
+      dest: /tmp/example
+`))
+	if err == nil {
+		t.Fatal("expected error for conflicting id and ref")
 	}
 }
 

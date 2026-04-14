@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/bluecadet/preflight/internal/modulecatalog"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,34 +21,9 @@ type TaskDefaults struct {
 	Become map[string]any `yaml:"become" json:"become,omitempty"`
 }
 
-var knownInlineModules = []string{
-	"registry",
-	"service",
-	"file",
-	"directory",
-	"package",
-	"shortcut",
-	"scheduled_task",
-	"user",
-	"winget_package",
-	"remove_appx_packages",
-	"power_plan",
-	"windows_feature",
-	"environment",
-	"firewall_rule",
-	"powershell",
-	"shell",
-	"reboot",
-	"wait",
-}
+var knownInlineModules = modulecatalog.Names(modulecatalog.CapabilityInline)
 
-var knownInlineModuleSet = func() map[string]struct{} {
-	set := make(map[string]struct{}, len(knownInlineModules))
-	for _, name := range knownInlineModules {
-		set[name] = struct{}{}
-	}
-	return set
-}()
+var knownInlineModuleSet = modulecatalog.Set(modulecatalog.CapabilityInline)
 
 // Task is a single step inside an action or playbook.
 //
@@ -56,6 +32,8 @@ var knownInlineModuleSet = func() map[string]struct{} {
 // inline module YAML keys.
 type Task struct {
 	Name         string         `yaml:"name"`
+	ID           string         `yaml:"id"`
+	Ref          string         `yaml:"ref"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
@@ -74,6 +52,8 @@ type Task struct {
 
 type taskKnownFields struct {
 	Name         string         `yaml:"name"`
+	ID           string         `yaml:"id"`
+	Ref          string         `yaml:"ref"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
@@ -93,6 +73,8 @@ func (t *Task) UnmarshalYAML(value *yaml.Node) error {
 
 	*t = Task{
 		Name:         decoded.Name,
+		ID:           decoded.ID,
+		Ref:          decoded.Ref,
 		Uses:         decoded.Uses,
 		With:         decoded.With,
 		Become:       decoded.Become,
@@ -127,6 +109,23 @@ func (t *Task) UnmarshalYAML(value *yaml.Node) error {
 		t.InlineModules[key] = params
 	}
 
+	return nil
+}
+
+func (t *Task) Key() string {
+	if t.ID != "" {
+		return t.ID
+	}
+	if t.Ref != "" {
+		return t.Ref
+	}
+	return t.Name
+}
+
+func (t *Task) validateRef() error {
+	if t.ID != "" && t.Ref != "" && t.ID != t.Ref {
+		return fmt.Errorf("task %q: id and ref must match when both are set", t.Name)
+	}
 	return nil
 }
 
@@ -165,6 +164,9 @@ func (a *Action) Normalize() error {
 		return nil
 	}
 	for i := range a.Tasks {
+		if err := a.Tasks[i].validateRef(); err != nil {
+			return err
+		}
 		if err := a.Tasks[i].ResolveModule(); err != nil {
 			return err
 		}
@@ -203,6 +205,9 @@ func (p *Playbook) Normalize() error {
 		return nil
 	}
 	for i := range p.Tasks {
+		if err := p.Tasks[i].validateRef(); err != nil {
+			return err
+		}
 		if err := p.Tasks[i].ResolveModule(); err != nil {
 			return err
 		}

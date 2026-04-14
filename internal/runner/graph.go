@@ -5,14 +5,14 @@ import "fmt"
 // DAG is a directed acyclic graph of tasks for dependency-ordered execution.
 type DAG struct {
 	tasks    map[string]*PlanTask // keyed by task ID
-	nameToID map[string]string    // task name → task ID
+	nameToID map[string]string    // canonical dependency ref → task ID
 	edges    map[string][]string  // task ID → list of task IDs it depends on
 	order    []string             // topological order (task IDs)
 }
 
 // BuildDAG constructs a DAG from the given tasks. DependsOn values are resolved
-// by task name. Returns an error if a dependency references an unknown task name,
-// if two tasks share the same name, or if there is a cycle.
+// by canonical dependency refs prepared during planning. Returns an error if a
+// dependency references an unknown task ref or if there is a cycle.
 func BuildDAG(tasks []*PlanTask) (*DAG, error) {
 	d := &DAG{
 		tasks:    make(map[string]*PlanTask, len(tasks)),
@@ -20,22 +20,28 @@ func BuildDAG(tasks []*PlanTask) (*DAG, error) {
 		edges:    make(map[string][]string, len(tasks)),
 	}
 
-	// Index tasks by ID and name.
+	// Index tasks by ID and canonical dependency ref.
 	for _, t := range tasks {
 		d.tasks[t.ID] = t
-		if existing, dup := d.nameToID[t.Name]; dup {
-			return nil, fmt.Errorf("duplicate task name %q: task IDs %s and %s", t.Name, existing, t.ID)
+		key := t.Ref
+		if key == "" {
+			key = t.Name
 		}
-		d.nameToID[t.Name] = t.ID
+		if key != "" {
+			if existing, dup := d.nameToID[key]; dup {
+				return nil, fmt.Errorf("duplicate task name/ref %q: task IDs %s and %s", key, existing, t.ID)
+			}
+			d.nameToID[key] = t.ID
+		}
 		d.edges[t.ID] = nil // initialise even if no deps
 	}
 
-	// Build edges: resolve depends_on names → IDs.
+	// Build edges: resolve depends_on refs/names → IDs.
 	for _, t := range tasks {
-		for _, depName := range t.DependsOn {
-			depID, ok := d.nameToID[depName]
+		for _, depRef := range t.DependsOn {
+			depID, ok := d.nameToID[depRef]
 			if !ok {
-				return nil, fmt.Errorf("task %q depends on unknown task %q", t.Name, depName)
+				return nil, fmt.Errorf("task %q depends on unknown task %q", t.Name, depRef)
 			}
 			d.edges[t.ID] = append(d.edges[t.ID], depID)
 		}

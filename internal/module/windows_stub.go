@@ -6,16 +6,13 @@ import (
 	"context"
 	"errors"
 
+	"github.com/bluecadet/preflight/internal/modulecatalog"
 	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
 func addWindowsModules(reg target.ModuleRegistry) {
-	for _, name := range []string{
-		"registry", "service", "package", "shortcut",
-		"scheduled_task", "user", "winget_package", "remove_appx_packages",
-		"power_plan", "windows_feature", "firewall_rule",
-	} {
+	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinWindows) {
 		n := name
 		reg[n] = &windowsStubModule{name: n}
 	}

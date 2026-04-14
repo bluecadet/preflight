@@ -40,9 +40,17 @@
       "required": ["name"],
       "additionalProperties": false,
       "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable task ref used for dependency resolution"
+        },
+        "ref": {
+          "type": "string",
+          "description": "Alias for id when a shorter stable dependency key is preferred"
+        },
         "name": {
           "type": "string",
-          "description": "Human-readable label used in output and depends_on references"
+          "description": "Human-readable label used in output and as a fallback dependency reference"
         },
         "uses": {
           "type": "string",
@@ -70,7 +78,7 @@
         "depends_on": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Task names this task depends on"
+          "description": "Task refs, or task names when no explicit ref is set"
         },
         "ignore_errors": {
           "type": "boolean",

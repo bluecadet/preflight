@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/bluecadet/preflight/internal/modulecatalog"
 )
 
 // errEnsureNotHandled is returned by an ensure function to signal that it
@@ -26,34 +28,9 @@ type remoteModule interface {
 
 type remoteModuleRegistry map[string]remoteModule
 
-var knownRemoteModules = []string{
-	"directory",
-	"file",
-	"shell",
-	"powershell",
-	"environment",
-	"wait",
-	"reboot",
-	"registry",
-	"service",
-	"package",
-	"shortcut",
-	"scheduled_task",
-	"user",
-	"winget_package",
-	"remove_appx_packages",
-	"power_plan",
-	"windows_feature",
-	"firewall_rule",
-}
+var knownRemoteModules = modulecatalog.Names(modulecatalog.CapabilityRemote)
 
-var knownRemoteModuleSet = func() map[string]struct{} {
-	set := make(map[string]struct{}, len(knownRemoteModules))
-	for _, module := range knownRemoteModules {
-		set[module] = struct{}{}
-	}
-	return set
-}()
+var knownRemoteModuleSet = modulecatalog.Set(modulecatalog.CapabilityRemote)
 
 type remoteModuleFuncs struct {
 	check           func(ctx context.Context, params map[string]any) (bool, string, error)

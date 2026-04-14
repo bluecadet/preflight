@@ -23,6 +23,7 @@ type ExecutionPlan struct {
 type PlanTask struct {
 	ID           string // unique ID, e.g. "task-0", "task-1"
 	Name         string
+	Ref          string
 	ActionPath   string // human-readable parent path, e.g. "Apply machine baseline/Configure computer name"
 	Module       string
 	Params       map[string]any
@@ -170,6 +171,7 @@ func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[
 // templates for later per-target rendering.
 func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, become map[string]any, vars map[string]any) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
+	scope := lineage[:max(len(lineage)-1, 0)]
 	// ActionPath is the display lineage minus the leaf (the task's own name).
 	var actionPath string
 	if len(displayLineage) > 1 {
@@ -177,20 +179,32 @@ func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, be
 	}
 	rawParams := cloneMap(t.Params)
 	templateVars := cloneMap(vars)
+	dependsOn := make([]string, 0, len(t.DependsOn))
+	for _, dep := range t.DependsOn {
+		dependsOn = append(dependsOn, scopedDependencyRef(scope, dep))
+	}
 
 	return &PlanTask{
 		ID:           id,
 		Name:         t.Name,
+		Ref:          scopedDependencyRef(scope, t.Key()),
 		ActionPath:   actionPath,
 		Module:       t.Module,
 		Params:       rawParams,
 		Become:       cloneMap(become),
 		TemplateVars: templateVars,
-		DependsOn:    t.DependsOn,
+		DependsOn:    dependsOn,
 		When:         t.When,
 		Tags:         t.Tags,
 		IgnoreErrors: t.IgnoreErrors,
 	}, nil
+}
+
+func scopedDependencyRef(scope []string, ref string) string {
+	if ref == "" || len(scope) == 0 {
+		return ref
+	}
+	return strings.Join(scope, "/") + "::" + ref
 }
 
 // taskDisplaySegment returns the human-readable label for a task in the display lineage.

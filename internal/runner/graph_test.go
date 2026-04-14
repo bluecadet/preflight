@@ -40,8 +40,8 @@ func TestBuildDAG_UniqueNamesBuildsCorrectly(t *testing.T) {
 
 func TestBuildDAG_DependsOnResolvesToCorrectID(t *testing.T) {
 	tasks := []*PlanTask{
-		{ID: "task-0", Name: "alpha"},
-		{ID: "task-1", Name: "beta", DependsOn: []string{"alpha"}},
+		{ID: "task-0", Name: "alpha", Ref: "alpha-ref"},
+		{ID: "task-1", Name: "beta", DependsOn: []string{"alpha-ref"}},
 	}
 	dag, err := BuildDAG(tasks)
 	if err != nil {
@@ -64,6 +64,28 @@ func TestBuildDAG_DependsOnResolvesToCorrectID(t *testing.T) {
 	edges := dag.edges["task-1"]
 	if len(edges) != 1 || edges[0] != "task-0" {
 		t.Errorf("expected edge task-1 -> task-0, got %v", edges)
+	}
+}
+
+func TestBuildDAG_DependsOnFallsBackToName(t *testing.T) {
+	tasks := []*PlanTask{
+		{ID: "task-0", Name: "alpha", Ref: "alpha"},
+		{ID: "task-1", Name: "beta", Ref: "beta", DependsOn: []string{"alpha"}},
+	}
+	if _, err := BuildDAG(tasks); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildDAG_AllowsScopedRefsWithSameLeafName(t *testing.T) {
+	tasks := []*PlanTask{
+		{ID: "task-0", Name: "prepare", Ref: "action-a::prepare"},
+		{ID: "task-1", Name: "prepare", Ref: "action-b::prepare"},
+		{ID: "task-2", Name: "apply a", Ref: "action-a::apply", DependsOn: []string{"action-a::prepare"}},
+		{ID: "task-3", Name: "apply b", Ref: "action-b::apply", DependsOn: []string{"action-b::prepare"}},
+	}
+	if _, err := BuildDAG(tasks); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

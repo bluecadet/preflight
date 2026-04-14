@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/module"
+	"github.com/bluecadet/preflight/internal/modulecatalog"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -27,6 +28,33 @@ func TestRegistry_CoreModulesPresent(t *testing.T) {
 		}
 	}
 }
+
+func TestRegistry_MatchesCatalog(t *testing.T) {
+	reg := module.Registry()
+	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinCommon) {
+		if _, ok := reg[name]; !ok {
+			t.Fatalf("expected common catalog module %q in registry", name)
+		}
+	}
+	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinWindows) {
+		if _, ok := reg[name]; !ok {
+			t.Fatalf("expected windows catalog module %q in registry", name)
+		}
+	}
+	for name := range reg {
+		if _, ok := targetModules[name]; !ok {
+			t.Fatalf("registry contains uncataloged module %q", name)
+		}
+	}
+}
+
+var targetModules = func() map[string]struct{} {
+	all := make(map[string]struct{})
+	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinCommon | modulecatalog.CapabilityBuiltinWindows) {
+		all[name] = struct{}{}
+	}
+	return all
+}()
 
 func TestFileModule_Check_Missing(t *testing.T) {
 	reg := module.Registry()

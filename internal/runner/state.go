@@ -202,7 +202,11 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 			params: params,
 			become: become,
 		})
-		nameToKey[task.Name] = task.ID
+		key := task.Ref
+		if key == "" {
+			key = task.Name
+		}
+		nameToKey[key] = task.ID
 	}
 
 	for idx, task := range plan.Tasks {

@@ -938,6 +938,7 @@ func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
 			{
 				ID:           "task-0",
 				Name:         "prepare {{ target.name }}",
+				Ref:          "prepare",
 				Module:       "shell",
 				Params:       map[string]any{"cmd": "echo"},
 				TemplateVars: map[string]any{},
@@ -946,7 +947,7 @@ func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
 				ID:           "task-1",
 				Name:         "apply",
 				Module:       "shell",
-				DependsOn:    []string{"prepare {{ target.name }}"},
+				DependsOn:    []string{"prepare"},
 				Params:       map[string]any{"cmd": "echo"},
 				TemplateVars: map[string]any{},
 			},
@@ -964,6 +965,43 @@ func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
 	}
 	if len(planned[1].DependsOn) != 1 || planned[1].DependsOn[0] != "task-0" {
 		t.Fatalf("expected dependency on task-0, got %#v", planned[1].DependsOn)
+	}
+}
+
+func TestApplySavesStateWithStableDependsOnKeys(t *testing.T) {
+	dir := t.TempDir()
+	statePath := filepath.Join(dir, "state", "provision.json")
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusChanged}, {Status: target.StatusChanged}}}
+	r := New(mt, emptyResolver(), Config{StatePath: statePath})
+	plan := &ExecutionPlan{
+		PlaybookName: "state-save",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "prepare",
+			Ref:    "prepare",
+			Module: "shell",
+			Params: map[string]any{"cmd": "echo"},
+		}, {
+			ID:        "task-1",
+			Name:      "apply",
+			Module:    "shell",
+			DependsOn: []string{"prepare"},
+			Params:    map[string]any{"cmd": "echo"},
+		}},
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+
+	state, err := LoadState(statePath)
+	if err != nil {
+		t.Fatalf("LoadState returned error: %v", err)
+	}
+	recorded := state.Tasks["task-1"]
+	if len(recorded.DependsOn) != 1 || recorded.DependsOn[0] != "task-0" {
+		t.Fatalf("expected saved depends_on to use stable task keys, got %#v", recorded.DependsOn)
 	}
 }
 
