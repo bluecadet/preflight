@@ -4,7 +4,10 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 type fakeGitClient struct {
@@ -222,5 +225,61 @@ func writeCachedAction(t *testing.T, cacheDir, ref, yaml string) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "action.yml"), []byte(yaml), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", filepath.Join(dir, "action.yml"), err)
+	}
+}
+
+func TestShallowCloneReferenceNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		revision string
+		want     []plumbing.ReferenceName
+	}{
+		{
+			name:     "pinned sha skips shallow clone",
+			revision: "0123456789abcdef0123456789abcdef01234567",
+			want:     nil,
+		},
+		{
+			name:     "plain revision skips shallow clone",
+			revision: "v1.2.3",
+			want:     nil,
+		},
+		{
+			name:     "explicit branch ref clones branch",
+			revision: "refs/heads/release/v1",
+			want: []plumbing.ReferenceName{
+				plumbing.ReferenceName("refs/heads/release/v1"),
+			},
+		},
+		{
+			name:     "remote tracking ref maps to branch",
+			revision: "refs/remotes/origin/release/v1",
+			want: []plumbing.ReferenceName{
+				plumbing.NewBranchReferenceName("release/v1"),
+			},
+		},
+		{
+			name:     "origin shorthand maps to branch",
+			revision: "origin/release/v1",
+			want: []plumbing.ReferenceName{
+				plumbing.NewBranchReferenceName("release/v1"),
+			},
+		},
+		{
+			name:     "other full ref uses exact ref",
+			revision: "refs/pull/123/head",
+			want: []plumbing.ReferenceName{
+				plumbing.ReferenceName("refs/pull/123/head"),
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := shallowCloneReferenceNames(tt.revision)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("shallowCloneReferenceNames(%q): got %#v want %#v", tt.revision, got, tt.want)
+			}
+		})
 	}
 }

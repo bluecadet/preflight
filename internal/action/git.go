@@ -247,9 +247,27 @@ func (r *GitResolver) checkoutRemote(ctx context.Context, remote *RemoteRef, dst
 }
 
 func (goGitClient) Checkout(ctx context.Context, repoURL, revision, dstDir string) (string, error) {
-	repo, err := git.PlainCloneContext(ctx, dstDir, false, &git.CloneOptions{
-		URL: repoURL,
-	})
+	for _, refName := range shallowCloneReferenceNames(revision) {
+		sha, err := cloneAndCheckoutRevision(ctx, dstDir, revision, &git.CloneOptions{
+			URL:           repoURL,
+			ReferenceName: refName,
+			SingleBranch:  true,
+			Depth:         1,
+		})
+		if err == nil {
+			return sha, nil
+		}
+	}
+
+	return cloneAndCheckoutRevision(ctx, dstDir, revision, &git.CloneOptions{URL: repoURL})
+}
+
+func cloneAndCheckoutRevision(ctx context.Context, dstDir, revision string, opts *git.CloneOptions) (string, error) {
+	if err := resetCloneDestination(dstDir); err != nil {
+		return "", err
+	}
+
+	repo, err := git.PlainCloneContext(ctx, dstDir, false, opts)
 	if err != nil {
 		return "", err
 	}
@@ -271,6 +289,36 @@ func (goGitClient) Checkout(ctx context.Context, repoURL, revision, dstDir strin
 	}
 
 	return hash.String(), nil
+}
+
+func resetCloneDestination(dstDir string) error {
+	if err := os.RemoveAll(dstDir); err != nil {
+		return err
+	}
+	return os.MkdirAll(dstDir, 0o755)
+}
+
+func shallowCloneReferenceNames(revision string) []plumbing.ReferenceName {
+	if isLikelyCommitSHA(revision) {
+		return nil
+	}
+
+	switch {
+	case strings.HasPrefix(revision, "refs/tags/"):
+		return []plumbing.ReferenceName{plumbing.ReferenceName(revision)}
+	case strings.HasPrefix(revision, "refs/heads/"):
+		return []plumbing.ReferenceName{plumbing.ReferenceName(revision)}
+	case strings.HasPrefix(revision, "refs/remotes/origin/"):
+		branch := strings.TrimPrefix(revision, "refs/remotes/origin/")
+		return []plumbing.ReferenceName{plumbing.NewBranchReferenceName(branch)}
+	case strings.HasPrefix(revision, "origin/"):
+		branch := strings.TrimPrefix(revision, "origin/")
+		return []plumbing.ReferenceName{plumbing.NewBranchReferenceName(branch)}
+	case strings.HasPrefix(revision, "refs/"):
+		return []plumbing.ReferenceName{plumbing.ReferenceName(revision)}
+	default:
+		return nil
+	}
 }
 
 func resolveGitRevision(repo *git.Repository, revision string) (*plumbing.Hash, error) {
