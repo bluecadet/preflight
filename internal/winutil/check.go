@@ -156,16 +156,5 @@ func splitOutputLines(output string) []string {
 }
 
 func asBool(value any) (bool, error) {
-	switch typed := value.(type) {
-	case bool:
-		return typed, nil
-	case string:
-		switch strings.ToLower(strings.TrimSpace(typed)) {
-		case "true":
-			return true, nil
-		case "false":
-			return false, nil
-		}
-	}
-	return false, fmt.Errorf("expected bool, got %T", value)
+	return ParseBool(value)
 }

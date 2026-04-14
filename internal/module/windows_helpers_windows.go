@@ -185,14 +185,11 @@ func powershellJSONVar(name string, value any) (string, error) {
 }
 
 func parseWindowsBool(out []byte) (bool, error) {
-	switch strings.ToLower(strings.TrimSpace(string(out))) {
-	case "true":
-		return true, nil
-	case "false":
-		return false, nil
-	default:
+	value, err := winutil.ParseBool(out)
+	if err != nil {
 		return false, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(string(out)))
 	}
+	return value, nil
 }
 
 func firewallPortsArg(params map[string]any) (string, error) {

@@ -6,7 +6,6 @@ import (
 	"maps"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/template"
@@ -231,26 +230,5 @@ func taskLineageSegment(task *action.Task) string {
 }
 
 func sanitizeLineageSegment(s string) string {
-	if s == "" {
-		return "task"
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	lastDash := false
-	for _, r := range strings.ToLower(s) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-	out := strings.Trim(b.String(), "-")
-	if out == "" {
-		return "task"
-	}
-	return out
+	return sanitizeSlug(s, "task")
 }

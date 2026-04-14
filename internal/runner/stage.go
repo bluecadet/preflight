@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/action"
@@ -239,29 +238,7 @@ func stageSecretBundlePath(name string, encrypted bool) string {
 }
 
 func sanitizeStageSecretName(name string) string {
-	name = strings.TrimSpace(strings.ToLower(name))
-	if name == "" {
-		return "secret"
-	}
-	var b strings.Builder
-	lastDash := false
-	for _, r := range name {
-		switch {
-		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
-			b.WriteRune(r)
-			lastDash = false
-		default:
-			if !lastDash {
-				b.WriteByte('-')
-				lastDash = true
-			}
-		}
-	}
-	trimmed := strings.Trim(b.String(), "-")
-	if trimmed == "" {
-		return "secret"
-	}
-	return trimmed
+	return sanitizeSlug(name, "secret")
 }
 
 func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {

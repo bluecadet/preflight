@@ -5,6 +5,46 @@ import (
 	"testing"
 )
 
+func TestParseBool(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   any
+		want    bool
+		wantErr string
+	}{
+		{name: "bool true", input: true, want: true},
+		{name: "bool false", input: false, want: false},
+		{name: "string true", input: " true ", want: true},
+		{name: "string false", input: "false", want: false},
+		{name: "numeric true", input: "1", want: true},
+		{name: "numeric false", input: "0", want: false},
+		{name: "yes", input: "yes", want: true},
+		{name: "no", input: "no", want: false},
+		{name: "bytes yes", input: []byte("YES"), want: true},
+		{name: "bytes no", input: []byte(" no "), want: false},
+		{name: "invalid string", input: "maybe", wantErr: "expected bool"},
+		{name: "invalid type", input: 1, wantErr: "expected bool"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ParseBool(tt.input)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("expected error %q, got %v", tt.wantErr, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("ParseBool(%#v) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeRegistryParams_BoolStringValues(t *testing.T) {
 	for _, tc := range []struct {
 		input string

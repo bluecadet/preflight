@@ -10,7 +10,7 @@ import (
 // NormalizeRegistryParams canonicalizes registry value specs into a list form
 // that is easy for PowerShell scripts to consume.
 func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
-	cloned := cloneParams(params)
+	cloned := CloneParams(params)
 	values, err := normalizeRegistryValues(cloned["values"])
 	if err != nil {
 		return nil, err

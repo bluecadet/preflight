@@ -2,7 +2,6 @@ package winutil
 
 import (
 	"fmt"
-	"maps"
 	"strings"
 )
 
@@ -190,13 +189,4 @@ func NormalizeFirewallPorts(value any) (string, error) {
 	default:
 		return "", fmt.Errorf("ports must be a string, number, or list, got %T", value)
 	}
-}
-
-func cloneParams(params map[string]any) map[string]any {
-	if params == nil {
-		return nil
-	}
-	cloned := make(map[string]any, len(params))
-	maps.Copy(cloned, params)
-	return cloned
 }

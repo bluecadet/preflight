@@ -29,11 +29,13 @@ func (g *Gatherer) Gather(ctx context.Context) (*Facts, error) {
 		return nil, err
 	}
 
+	info, infoErr := g.target.Info(ctx)
+
 	facts := &Facts{
 		Env: make(map[string]string),
 	}
 
-	osFacts, err := g.GatherOS(ctx)
+	osFacts, err := g.gatherOS(info, infoErr)
 	if err != nil {
 		slog.Warn("fact gathering failed", "category", "os", "error", err)
 	} else {
@@ -41,14 +43,14 @@ func (g *Gatherer) Gather(ctx context.Context) (*Facts, error) {
 		facts.Hostname = osFacts.Hostname
 	}
 
-	disks, err := g.GatherDisks(ctx)
+	disks, err := g.gatherDisks(ctx, info, infoErr)
 	if err != nil {
 		slog.Warn("fact gathering failed", "category", "disk", "error", err)
 	} else {
 		facts.Disks = disks
 	}
 
-	env, err := g.gatherEnv(ctx)
+	env, err := g.gatherEnv(ctx, info, infoErr)
 	if err != nil {
 		slog.Warn("fact gathering failed", "category", "env", "error", err)
 	} else {
@@ -65,8 +67,12 @@ func (g *Gatherer) GatherOS(ctx context.Context) (OSFacts, error) {
 	}
 
 	info, err := g.target.Info(ctx)
-	if err != nil {
-		return OSFacts{}, fmt.Errorf("facts: GatherOS: %w", err)
+	return g.gatherOS(info, err)
+}
+
+func (g *Gatherer) gatherOS(info target.TargetInfo, infoErr error) (OSFacts, error) {
+	if infoErr != nil {
+		return OSFacts{}, fmt.Errorf("facts: GatherOS: %w", infoErr)
 	}
 
 	f := OSFacts{
@@ -136,8 +142,13 @@ func (g *Gatherer) GatherDisks(ctx context.Context) ([]DiskFacts, error) {
 	}
 
 	info, err := g.target.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("facts: GatherDisks: target info: %w", err)
+
+	return g.gatherDisks(ctx, info, err)
+}
+
+func (g *Gatherer) gatherDisks(ctx context.Context, info target.TargetInfo, infoErr error) ([]DiskFacts, error) {
+	if infoErr != nil {
+		return nil, fmt.Errorf("facts: GatherDisks: target info: %w", infoErr)
 	}
 
 	if info.IsWindows() {
@@ -173,14 +184,13 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 // gatherEnv collects environment variables from the target.
 // Windows targets use PowerShell. Local non-Windows hosts use the local
 // process environment. Remote non-Windows targets currently return an empty map.
-func (g *Gatherer) gatherEnv(ctx context.Context) (map[string]string, error) {
+func (g *Gatherer) gatherEnv(ctx context.Context, info target.TargetInfo, infoErr error) (map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
-	info, err := g.target.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("facts: gatherEnv: target info: %w", err)
+	if infoErr != nil {
+		return nil, fmt.Errorf("facts: gatherEnv: target info: %w", infoErr)
 	}
 
 	if info.IsWindows() {

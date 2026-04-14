@@ -11,7 +11,7 @@ import (
 // NormalizeScheduledTaskParams applies aliases and defaults so both the local
 // Windows module and the WinRM implementation use the same semantics.
 func NormalizeScheduledTaskParams(params map[string]any) (map[string]any, error) {
-	cloned := cloneParams(params)
+	cloned := CloneParams(params)
 
 	if execute, ok := cloned["command"]; ok {
 		if _, exists := cloned["execute"]; !exists {
@@ -55,7 +55,7 @@ func NormalizeScheduledTaskParams(params map[string]any) (map[string]any, error)
 
 	enabled := true
 	if rawEnabled, ok := cloned["enabled"]; ok && rawEnabled != nil {
-		value, err := parseBool(rawEnabled)
+		value, err := ParseBool(rawEnabled)
 		if err != nil {
 			return nil, fmt.Errorf("scheduled_task enabled: %w", err)
 		}
@@ -238,19 +238,4 @@ func normalizeIntegralValue(value any, bits int) (int64, error) {
 	default:
 		return 0, fmt.Errorf("expected integer-like value, got %T", value)
 	}
-}
-
-func parseBool(value any) (bool, error) {
-	switch typed := value.(type) {
-	case bool:
-		return typed, nil
-	case string:
-		switch strings.ToLower(strings.TrimSpace(typed)) {
-		case "true", "1", "yes":
-			return true, nil
-		case "false", "0", "no":
-			return false, nil
-		}
-	}
-	return false, fmt.Errorf("expected bool, got %T", value)
 }
