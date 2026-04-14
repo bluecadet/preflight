@@ -2,6 +2,7 @@ package inventory_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/inventory"
@@ -144,6 +145,22 @@ func TestParseFile(t *testing.T) {
 	}
 	if len(inv.Groups) == 0 {
 		t.Error("expected groups")
+	}
+}
+
+func TestParse_SchemaValidationFailure(t *testing.T) {
+	_, err := inventory.Parse([]byte(`
+groups:
+  broken:
+    hosts:
+      - name: bad-host
+        transport: telnet
+`))
+	if err == nil {
+		t.Fatal("expected schema validation error")
+	}
+	if !strings.Contains(err.Error(), "inventory: schema validation failed") {
+		t.Fatalf("error = %q, want substring %q", err.Error(), "inventory: schema validation failed")
 	}
 }
 

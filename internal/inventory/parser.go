@@ -33,6 +33,10 @@ type rawHost struct {
 
 // Parse parses inventory YAML data into an Inventory.
 func Parse(data []byte) (*Inventory, error) {
+	if err := ValidateYAML(data); err != nil {
+		return nil, fmt.Errorf("inventory: %w", err)
+	}
+
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("inventory: parse error: %w", err)

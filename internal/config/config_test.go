@@ -78,8 +78,18 @@ func TestParse_InvalidYAML(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}
-	if !strings.Contains(err.Error(), "config: parse error") {
-		t.Fatalf("error = %q, want substring %q", err.Error(), "config: parse error")
+	if !strings.Contains(err.Error(), "config: schema validation parse error") {
+		t.Fatalf("error = %q, want substring %q", err.Error(), "config: schema validation parse error")
+	}
+}
+
+func TestParse_SchemaValidationFailure(t *testing.T) {
+	_, err := config.Parse([]byte("vars: []\n"))
+	if err == nil {
+		t.Fatal("expected schema validation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "config: schema validation failed") {
+		t.Fatalf("error = %q, want substring %q", err.Error(), "config: schema validation failed")
 	}
 }
 

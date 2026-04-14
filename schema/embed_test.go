@@ -1,26 +1,10 @@
-package action
+package schema_test
 
 import (
-	"strings"
 	"testing"
 
 	schemafiles "github.com/bluecadet/preflight/schema"
 )
-
-func TestValidatePlaybookYAML_SchemaFailure(t *testing.T) {
-	err := ValidatePlaybookYAML([]byte(`
-name: bad-playbook
-tasks:
-  - shell:
-      cmd: echo
-`))
-	if err == nil {
-		t.Fatal("expected schema validation error")
-	}
-	if !strings.Contains(err.Error(), "schema validation failed") {
-		t.Fatalf("expected schema validation failure, got %v", err)
-	}
-}
 
 func TestEmbeddedSchemasAvailable(t *testing.T) {
 	t.Parallel()

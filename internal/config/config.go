@@ -35,6 +35,10 @@ type SecretEntry struct {
 
 // Parse parses project config YAML bytes.
 func Parse(data []byte) (*Config, error) {
+	if err := ValidateYAML(data); err != nil {
+		return nil, fmt.Errorf("config: %w", err)
+	}
+
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("config: parse error: %w", err)
