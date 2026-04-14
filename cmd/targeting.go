@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -146,48 +146,11 @@ func runHosts(
 		concurrency = len(hosts)
 	}
 
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	jobs := make(chan targeting.ResolvedHost)
-	var wg sync.WaitGroup
-	var once sync.Once
-	var firstErr error
-
-	worker := func() {
-		defer wg.Done()
-		for host := range jobs {
-			if err := fn(ctx, host); err != nil {
-				once.Do(func() {
-					firstErr = err
-					cancel()
-				})
-			}
-		}
-	}
-
-	wg.Add(concurrency)
-	for i := 0; i < concurrency; i++ {
-		go worker()
-	}
-
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency)
 	for _, host := range hosts {
-		select {
-		case <-ctx.Done():
-			close(jobs)
-			wg.Wait()
-			if firstErr != nil {
-				return firstErr
-			}
-			return ctx.Err()
-		case jobs <- host:
-		}
+		host := host
+		g.Go(func() error { return fn(ctx, host) })
 	}
-	close(jobs)
-	wg.Wait()
-
-	if firstErr != nil {
-		return firstErr
-	}
-	return ctx.Err()
+	return g.Wait()
 }

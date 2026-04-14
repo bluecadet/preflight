@@ -13,6 +13,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/google/renameio/v2"
 )
 
 const stateVersion2 = 2
@@ -109,12 +110,8 @@ func (s *State) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("state: mkdir %q: %w", filepath.Dir(path), err)
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return fmt.Errorf("state: write %q: %w", tmp, err)
-	}
-	if err := os.Rename(tmp, path); err != nil {
-		return fmt.Errorf("state: rename %q → %q: %w", tmp, path, err)
+	if err := renameio.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("state: write %q: %w", path, err)
 	}
 	return nil
 }

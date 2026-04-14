@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/google/renameio/v2"
 )
 
 // LockEntry records a pinned action reference.
@@ -49,7 +51,7 @@ func (l *Lockfile) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("lockfile: mkdir %q: %w", filepath.Dir(path), err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := renameio.WriteFile(path, data, 0o644); err != nil {
 		return fmt.Errorf("lockfile: write %q: %w", path, err)
 	}
 	return nil

@@ -43,7 +43,10 @@ func Parse(data []byte) (*Inventory, error) {
 	}
 
 	var raw rawInventory
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	if len(root.Content) == 0 {
+		return &Inventory{Groups: make(map[string]Group), GroupOrder: nil}, nil
+	}
+	if err := root.Content[0].Decode(&raw); err != nil {
 		return nil, fmt.Errorf("inventory: parse error: %w", err)
 	}
 
