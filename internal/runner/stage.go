@@ -268,6 +268,12 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)
 			}
 			status := sdk.InspectPlugin(plugin.Path, plugin.Source)
+			if status.ErrorMessage != "" {
+				return nil, nil, fmt.Errorf("stage: inspect plugin %q: %s", plugin.Path, status.ErrorMessage)
+			}
+			if status.Name != "" && status.Name != name {
+				return nil, nil, fmt.Errorf("stage: plugin %q reported logical name %q, want %q", plugin.Path, status.Name, name)
+			}
 			entryPath := filepath.ToSlash(filepath.Join("plugins", filepath.Base(plugin.Path)))
 			files = append(files, bundle.FileSpec{
 				Path: entryPath,

@@ -9,6 +9,7 @@ import (
 )
 
 type pluginClient interface {
+	Name() string
 	Check(args map[string]any) (sdk.CheckResult, error)
 	Apply(args map[string]any) (sdk.ApplyResult, error)
 	Close() error
@@ -47,6 +48,10 @@ func (m *pluginModule) Check(ctx context.Context, params map[string]any) (bool, 
 	if err != nil {
 		return false, fmt.Errorf("plugin %q: %w", m.name, err)
 	}
+	if name := client.Name(); name != "" && name != m.name {
+		_ = m.Close()
+		return false, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
+	}
 
 	result, err := client.Check(params)
 	if err != nil {
@@ -60,6 +65,10 @@ func (m *pluginModule) Apply(ctx context.Context, params map[string]any) error {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
 		return fmt.Errorf("plugin %q: %w", m.name, err)
+	}
+	if name := client.Name(); name != "" && name != m.name {
+		_ = m.Close()
+		return fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
 	if _, err := client.Apply(params); err != nil {

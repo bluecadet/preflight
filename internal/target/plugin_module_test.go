@@ -12,6 +12,7 @@ type fakePluginClient struct {
 	applyCalls  int
 	closeCalls  int
 	needsChange bool
+	name        string
 }
 
 func (c *fakePluginClient) Check(_ map[string]any) (sdk.CheckResult, error) {
@@ -28,6 +29,8 @@ func (c *fakePluginClient) Close() error {
 	c.closeCalls++
 	return nil
 }
+
+func (c *fakePluginClient) Name() string { return c.name }
 
 func TestPluginModuleReusesClientAcrossCalls(t *testing.T) {
 	var (
@@ -88,6 +91,24 @@ func TestPluginModuleReusesClientAcrossCalls(t *testing.T) {
 	}
 	if client.closeCalls != 1 {
 		t.Fatalf("Close called %d times after second shutdown, want 1", client.closeCalls)
+	}
+}
+
+func TestPluginModuleRejectsNameMismatch(t *testing.T) {
+	client := &fakePluginClient{name: "wrong"}
+	mod := &pluginModule{
+		name: "custom",
+		path: "/tmp/plugin",
+		newClient: func(context.Context, string) (pluginClient, error) {
+			return client, nil
+		},
+	}
+
+	if _, err := mod.Check(context.Background(), nil); err == nil {
+		t.Fatal("Check() error = nil, want mismatch error")
+	}
+	if client.closeCalls != 1 {
+		t.Fatalf("Close called %d times, want 1", client.closeCalls)
 	}
 }
 
