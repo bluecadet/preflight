@@ -108,7 +108,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	if err != nil {
 		return err
 	}
-	if err := runner.New(nil, chain, runner.Config{}).NewFetcher().Fetch(ctx, pb); err != nil {
+	if err := runner.New(nil, chain, runner.Config{}).Fetch(ctx, pb); err != nil {
 		return err
 	}
 

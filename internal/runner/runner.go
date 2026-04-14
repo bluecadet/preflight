@@ -91,7 +91,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	if r.config.Phase == "plan" {
 		slog.Debug("starting phase", "phase", "plan")
-		_, err := r.NewPlanner().Plan(ctx, playbook)
+		_, err := r.Plan(ctx, playbook)
 		if err != nil {
 			r.emitError(fmt.Errorf("plan phase failed: %w", err))
 		}
@@ -100,14 +100,14 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	if !r.config.SkipFetch {
 		slog.Debug("starting phase", "phase", "fetch")
-		if err := r.NewFetcher().Fetch(ctx, playbook); err != nil {
+		if err := r.Fetch(ctx, playbook); err != nil {
 			r.emitError(fmt.Errorf("fetch phase failed: %w", err))
 			return err
 		}
 	}
 
 	slog.Debug("starting phase", "phase", "plan")
-	plan, err := r.NewPlanner().Plan(ctx, playbook)
+	plan, err := r.Plan(ctx, playbook)
 	if err != nil {
 		r.emitError(fmt.Errorf("plan phase failed: %w", err))
 		return err
@@ -119,7 +119,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	if r.config.Phase == "stage" {
 		slog.Debug("starting phase", "phase", "stage")
-		err := r.NewStager().Stage(ctx, plan)
+		err := r.stage(ctx, plan)
 		if err != nil {
 			r.emitError(fmt.Errorf("stage phase failed: %w", err))
 		}
@@ -127,7 +127,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	}
 
 	slog.Debug("starting phase", "phase", "apply")
-	if err := r.NewExecutor().Apply(ctx, plan); err != nil {
+	if err := r.apply(ctx, plan); err != nil {
 		r.emitError(fmt.Errorf("apply phase failed: %w", err))
 		return err
 	}
@@ -195,4 +195,22 @@ func (r *Runner) PlannedTaskState(ctx context.Context, plan *ExecutionPlan) ([]P
 		return nil, err
 	}
 	return BuildPlannedTaskState(ctx, plan, execCtx, r.config.Secrets)
+}
+
+func (r *Runner) Fetch(ctx context.Context, playbook *action.Playbook) error {
+	return r.fetch(ctx, playbook)
+}
+
+func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {
+	return r.plan(ctx, playbook)
+}
+
+func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) (err error) {
+	defer func() { err = errors.Join(err, r.closeTarget()) }()
+	return r.stage(ctx, plan)
+}
+
+func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) (err error) {
+	defer func() { err = errors.Join(err, r.closeTarget()) }()
+	return r.apply(ctx, plan)
 }

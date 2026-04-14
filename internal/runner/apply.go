@@ -96,39 +96,32 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			continue
 		}
 
-		// Evaluate when: condition.
-		if pt.When != "" {
-			ok, err := renderTaskWhen(pt, execCtx)
-			if err != nil {
-				return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
-			}
-			if !ok {
-				r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
-				state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
-				skippedCount++
-				continue
-			}
+		// Evaluate when before rendering params/become so skipped tasks do not fail
+		// on unrelated template expansion errors.
+		whenOK, err := evaluateTaskWhen(pt, execCtx)
+		if err != nil {
+			return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
+		}
+		if !whenOK {
+			r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
+			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
+			skippedCount++
+			continue
 		}
 
-		params, taskName, err := renderTaskParams(pt, execCtx)
+		bound, err := bindTask(pt, execCtx, false)
 		if err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
 		}
-		sourceBecome, execOpts, err := renderTaskExecutionOptions(pt, execCtx)
+		stateSource := cloneMap(bound.Params)
+		sourceBecome := cloneMap(bound.Become)
+		if err := bound.resolveSecrets(ctx, r.config.Secrets); err != nil {
+			return fmt.Errorf("apply: task %q: %w", pt.Name, err)
+		}
+		resolvedBecome := cloneMap(bound.Become)
+		_, execOpts, err := bound.executionOptions()
 		if err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
-		}
-		stateSource := params
-		resolvedBecome := sourceBecome
-		if r.config.Secrets != nil && r.config.Secrets.HasProviders() {
-			params, err = r.config.Secrets.ResolveMap(ctx, params)
-			if err != nil {
-				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
-			}
-			resolvedBecome, execOpts, err = resolveExecutionOptions(ctx, r.config.Secrets, sourceBecome)
-			if err != nil {
-				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
-			}
 		}
 
 		// Execute the task against the target.
@@ -139,30 +132,25 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			onOutput = func(line string) {
 				r.config.Renderer.Emit(output.TaskOutputEvent{
 					TaskID:   pt.ID,
-					TaskName: taskName,
+					TaskName: bound.Name,
 					Target:   r.targetName(),
 					Lines:    []string{line},
 				})
 			}
 		}
-		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, params, execOpts, r.config.DryRun, onOutput)
+		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, execOpts, r.config.DryRun, onOutput)
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error(), result.Output)
-				state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
+				state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
 				return finishApply()
 			}
-			// IgnoreErrors: treat as ok.
-			result = target.Result{
-				Status:  target.StatusOK,
-				Message: execErr.Error(),
-				Output:  result.Output,
-			}
+			result = target.Result{Status: target.StatusOK, Message: execErr.Error(), Output: result.Output}
 		}
 
-		state.RecordTask(newTaskSnapshot(pt, taskName, stateSource, params, sourceBecome, resolvedBecome, result.Status, result.Message, dag))
+		state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, result.Status, result.Message, dag))
 
 		r.emitTaskResult(pt, result.Status, result.Message, result.Output)
 
@@ -311,86 +299,20 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, 
 	}, nil
 }
 
-func renderTaskWhen(task *PlanTask, execCtx *executionContext) (bool, error) {
-	if task.When == "" {
-		return true, nil
-	}
-	return taskEngine(task, execCtx).RenderBool(task.When)
-}
-
-func renderTaskParams(task *PlanTask, execCtx *executionContext) (map[string]any, string, error) {
-	eng := taskEngine(task, execCtx)
-
-	params, err := eng.RenderMap(task.Params)
-	if err != nil {
-		return nil, "", err
-	}
-
-	name := task.Name
-	if task.Name != "" {
-		name, err = eng.Render(task.Name)
-		if err != nil {
-			return nil, "", err
-		}
-	}
-
-	return params, name, nil
-}
-
-func renderTaskExecutionOptions(task *PlanTask, execCtx *executionContext) (map[string]any, target.ExecutionOptions, error) {
-	if len(task.Become) == 0 {
-		return nil, target.ExecutionOptions{}, nil
-	}
-
-	become, err := taskEngine(task, execCtx).RenderMap(task.Become)
-	if err != nil {
-		return nil, target.ExecutionOptions{}, err
-	}
-	opts, err := target.NormalizeExecutionOptions(map[string]any{"become": become})
-	if err != nil {
-		return nil, target.ExecutionOptions{}, err
-	}
-	return become, opts, nil
-}
-
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
 	preview.TemplateVars = cloneMap(task.TemplateVars)
 	preview.Params = cloneMap(task.Params)
 	preview.Become = cloneMap(task.Become)
-
-	eng := template.New(task.TemplateVars).WithTarget(targetVars).WithPreserveUnknown()
-
-	if preview.Name != "" {
-		name, err := eng.Render(preview.Name)
-		if err != nil {
-			return nil, err
-		}
-		preview.Name = name
-	}
-
-	if preview.When != "" {
-		when, err := eng.Render(preview.When)
-		if err != nil {
-			return nil, err
-		}
-		preview.When = when
-	}
-
-	params, err := eng.RenderMap(task.Params)
+	execCtx := &executionContext{target: targetVars}
+	bound, err := bindTask(&preview, execCtx, true)
 	if err != nil {
 		return nil, err
 	}
-	preview.Params = params
-
-	if len(task.Become) > 0 {
-		become, err := eng.RenderMap(task.Become)
-		if err != nil {
-			return nil, err
-		}
-		preview.Become = become
-	}
-
+	preview.Name = bound.Name
+	preview.When = bound.When
+	preview.Params = bound.Params
+	preview.Become = bound.Become
 	return &preview, nil
 }
 

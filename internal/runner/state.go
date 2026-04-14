@@ -182,26 +182,13 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 
 	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
 	nameToKey := make(map[string]string, len(plan.Tasks))
-	type renderedTask struct {
-		name   string
-		params map[string]any
-		become map[string]any
-	}
-	renderedTasks := make([]renderedTask, 0, len(plan.Tasks))
+	renderedTasks := make([]*BoundTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
-		params, taskName, err := renderTaskParams(task, execCtx)
+		bound, err := bindTask(task, execCtx, false)
 		if err != nil {
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}
-		become, _, err := renderTaskExecutionOptions(task, execCtx)
-		if err != nil {
-			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
-		}
-		renderedTasks = append(renderedTasks, renderedTask{
-			name:   taskName,
-			params: params,
-			become: become,
-		})
+		renderedTasks = append(renderedTasks, bound)
 		key := task.Ref
 		if key == "" {
 			key = task.Name
@@ -214,19 +201,19 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 			return nil, err
 		}
 		rendered := renderedTasks[idx]
-		params := rendered.params
-		stateSource := rendered.params
-		become := rendered.become
-		becomeSource := rendered.become
+		params := rendered.Params
+		stateSource := cloneMap(rendered.Params)
+		become := rendered.Become
+		becomeSource := cloneMap(rendered.Become)
 		if resolver != nil && resolver.HasProviders() {
 			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
-				return nil, fmt.Errorf("state: task %q: %w", rendered.name, err)
+				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
 			}
 			params = resolved
 			become, _, err = resolveExecutionOptions(ctx, resolver, become)
 			if err != nil {
-				return nil, fmt.Errorf("state: task %q: %w", rendered.name, err)
+				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
 			}
 		}
 
@@ -241,14 +228,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 		paramHash := StateParamHash(stateSource, params, becomeSource, become)
 		tasks = append(tasks, PlannedTaskState{
 			TaskKey:      task.ID,
-			TaskName:     rendered.name,
+			TaskName:     rendered.Name,
 			Module:       task.Module,
 			DependsOn:    dependsOn,
 			ParamHash:    paramHash,
 			ParamSummary: StateParamSummary(stateSource, params, becomeSource, become),
 			TaskHash: hashValue(map[string]any{
 				"task_key":   task.ID,
-				"task_name":  rendered.name,
+				"task_name":  rendered.Name,
 				"module":     task.Module,
 				"depends_on": dependsOn,
 				"param_hash": paramHash,
