@@ -12,6 +12,7 @@ import (
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/plugins"
+	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 // stage assembles a self-contained artifact bundle (zip).
@@ -266,6 +267,7 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 			if err != nil {
 				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)
 			}
+			status := sdk.InspectPlugin(plugin.Path, plugin.Source)
 			entryPath := filepath.ToSlash(filepath.Join("plugins", filepath.Base(plugin.Path)))
 			files = append(files, bundle.FileSpec{
 				Path: entryPath,
@@ -276,7 +278,7 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 				Name:    name,
 				Kind:    "plugin",
 				Path:    entryPath,
-				Version: plugin.Version,
+				Version: status.Version,
 			})
 			continue
 		}

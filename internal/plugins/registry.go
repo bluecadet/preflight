@@ -32,7 +32,7 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 	registry := make(target.ModuleRegistry, len(base))
 	maps.Copy(registry, base)
 
-	discovered, err := sdk.Inspect(sdk.DiscoveryOptions{
+	discovered, err := sdk.Scan(sdk.DiscoveryOptions{
 		BinaryDir:           opts.BinaryDir,
 		WorkingDir:          opts.WorkingDir,
 		PreferredDirs:       opts.PreferredDirs,
@@ -53,18 +53,14 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 		if existingPath, duplicate := seenPlugins[plugin.Name]; duplicate {
 			return nil, nil, fmt.Errorf("plugin %q discovered more than once (%s, %s)", plugin.Name, existingPath, plugin.Path)
 		}
-		if plugin.ErrorMessage != "" {
-			return nil, nil, fmt.Errorf("plugin %q failed to initialize from %s: %s", plugin.Name, plugin.Path, plugin.ErrorMessage)
-		}
 		seenPlugins[plugin.Name] = plugin.Path
 		registry[plugin.Name] = target.NewPluginModule(plugin.Name, plugin.Path)
 		loaded = append(loaded, LoadedPlugin{
-			Name:    plugin.Name,
-			Path:    plugin.Path,
-			Source:  plugin.Source,
-			Version: plugin.Version,
+			Name:   plugin.Name,
+			Path:   plugin.Path,
+			Source: plugin.Source,
 		})
-		slog.Debug("plugin registered", "name", plugin.Name, "path", plugin.Path, "version", plugin.Version)
+		slog.Debug("plugin registered", "name", plugin.Name, "path", plugin.Path)
 	}
 	slog.Debug("plugin discovery complete", "discovered", len(discovered), "loaded", len(loaded))
 

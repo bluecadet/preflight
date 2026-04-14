@@ -137,6 +137,29 @@ func Inspect(opts DiscoveryOptions) ([]PluginStatus, error) {
 	return statuses, nil
 }
 
+// InspectPlugin initializes a single plugin executable and returns its status.
+func InspectPlugin(path, source string) PluginStatus {
+	status := PluginStatus{Path: path, Source: source}
+	name, ok := pluginName(filepath.Base(path))
+	if ok {
+		status.Name = name
+	}
+
+	client, err := NewClient(path)
+	if err != nil {
+		status.ErrorMessage = err.Error()
+		return status
+	}
+	defer func() { _ = client.Close() }()
+
+	status.Initialized = true
+	status.Version = client.Version()
+	if client.Name() != "" {
+		status.Name = client.Name()
+	}
+	return status
+}
+
 // discoverDirs returns the ordered list of directories to scan.
 func discoverDirs(opts DiscoveryOptions) ([]string, error) {
 	dirs := []string{}
