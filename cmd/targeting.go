@@ -149,7 +149,6 @@ func runHosts(
 	g, ctx := errgroup.WithContext(ctx)
 	g.SetLimit(concurrency)
 	for _, host := range hosts {
-		host := host
 		g.Go(func() error { return fn(ctx, host) })
 	}
 	return g.Wait()

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/bluecadet/preflight/internal/modulecatalog"
 	"gopkg.in/yaml.v3"
+
+	"github.com/bluecadet/preflight/internal/modulecatalog"
 )
 
 // Input describes a typed input parameter for an action.
