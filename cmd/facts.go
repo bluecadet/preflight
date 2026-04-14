@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -48,19 +47,25 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
+	statePath, err := stateFilePath(cmd)
+	if err != nil {
+		return fmt.Errorf("facts: %w", err)
+	}
 	var hosts []targeting.ResolvedHost
-	invPath := inventoryFilePath(cmd, "")
+	invPath, err := inventoryFilePath(cmd, "")
+	if err != nil {
+		return fmt.Errorf("facts: %w", err)
+	}
 	if selectorsAreLocal(selectors) || !shouldUseInventory(cmd, invPath, selectors) {
 		registry, _, err := buildModuleRegistry("")
 		if err != nil {
 			return err
 		}
-		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}
+		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}
 	} else {
 		inv, projectDir, _, secretsResolver, err := loadInventoryRunContext(invPath)
 		if err != nil {
@@ -70,7 +75,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 		if err != nil {
 			return err
 		}
-		hosts, err = resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, secretsResolver, stateFilePath(cmd))
+		hosts, err = resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, secretsResolver, statePath)
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}

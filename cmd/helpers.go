@@ -70,6 +70,18 @@ func getRendererOptions(cmd *cobra.Command) output.Options {
 	return output.Options{Verbose: verbose}
 }
 
+func newRenderer(cmd *cobra.Command) output.Renderer {
+	return output.Synchronized(output.NewWithOptions(getOutputFormat(cmd), os.Stdout, getRendererOptions(cmd)))
+}
+
+func newTextJSONRenderer(cmd *cobra.Command) output.Renderer {
+	format := getOutputFormat(cmd)
+	if format == output.FormatTUI {
+		format = output.FormatText
+	}
+	return output.Synchronized(output.NewWithOptions(format, os.Stdout, getRendererOptions(cmd)))
+}
+
 // getPlaybookPath returns the first element of args (the playbook path).
 func getPlaybookPath(args []string) string {
 	if len(args) == 0 {
@@ -169,16 +181,19 @@ func loadProjectLockfile(projectDir string) (*action.Lockfile, error) {
 	return action.LoadLockfile(filepath.Join(projectDir, action.LockfileName))
 }
 
-func bundleOutputDir(cmd *cobra.Command, projectDir string) string {
+func bundleOutputDir(cmd *cobra.Command, projectDir string) (string, error) {
 	p, _ := cmd.Flags().GetString("bundle-output-dir")
 	if p != "" {
-		return p
+		return p, nil
 	}
 	if projectDir != "" {
-		return filepath.Join(projectDir, "dist", "bundles")
+		return filepath.Join(projectDir, "dist", "bundles"), nil
 	}
-	cwd, _ := os.Getwd()
-	return filepath.Join(cwd, "dist", "bundles")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory for bundle output dir: %w", err)
+	}
+	return filepath.Join(cwd, "dist", "bundles"), nil
 }
 
 func playbookDir(playbookPath string) (string, error) {

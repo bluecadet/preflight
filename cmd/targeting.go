@@ -17,16 +17,19 @@ import (
 
 var resolveInventoryHosts = targeting.ResolveHosts
 
-func inventoryFilePath(cmd *cobra.Command, projectDir string) string {
+func inventoryFilePath(cmd *cobra.Command, projectDir string) (string, error) {
 	invPath, _ := cmd.Flags().GetString("inventory")
 	if invPath != "" {
-		return invPath
+		return invPath, nil
 	}
 	if projectDir != "" {
-		return filepath.Join(projectDir, "inventory.yml")
+		return filepath.Join(projectDir, "inventory.yml"), nil
 	}
-	cwd, _ := os.Getwd()
-	return filepath.Join(cwd, "inventory.yml")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("get working directory for inventory file: %w", err)
+	}
+	return filepath.Join(cwd, "inventory.yml"), nil
 }
 
 func resolveRunHosts(
@@ -37,13 +40,20 @@ func resolveRunHosts(
 	resolver *secrets.Resolver,
 ) ([]targeting.ResolvedHost, error) {
 	selectors, _ := cmd.Flags().GetStringSlice("target")
+	statePath, err := stateFilePath(cmd)
+	if err != nil {
+		return nil, fmt.Errorf("resolve state file path: %w", err)
+	}
 	if selectorsAreLocal(selectors) {
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}, nil
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}, nil
 	}
 
-	invPath := inventoryFilePath(cmd, projectDir)
+	invPath, err := inventoryFilePath(cmd, projectDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve inventory path: %w", err)
+	}
 	if !shouldUseInventory(cmd, invPath, selectors) {
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, stateFilePath(cmd))}, nil
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}, nil
 	}
 
 	inv, err := inventory.ParseFile(invPath)
@@ -51,7 +61,7 @@ func resolveRunHosts(
 		return nil, fmt.Errorf("load inventory %q: %w", invPath, err)
 	}
 
-	hosts, err := resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, resolver, stateFilePath(cmd))
+	hosts, err := resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, resolver, statePath)
 	if err != nil {
 		return nil, err
 	}

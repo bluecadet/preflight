@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -178,6 +179,71 @@ func renderTextActionFetch(e ActionFetchEvent) []string {
 	lines := make([]string, 0, len(e.Entries))
 	for _, entry := range e.Entries {
 		lines = append(lines, fmt.Sprintf("Fetched %s -> %s", entry.Ref, entry.SHA))
+	}
+	return lines
+}
+
+func renderTextPluginList(e PluginListEvent) []string {
+	if len(e.Entries) == 0 {
+		return []string{"No plugins found."}
+	}
+
+	lines := []string{
+		fmt.Sprintf("%-24s %-12s %-8s %s", "NAME", "VERSION", "STATUS", "PATH"),
+		fmt.Sprintf("%-24s %-12s %-8s %s", "----", "-------", "------", "----"),
+	}
+	for _, entry := range e.Entries {
+		lines = append(lines, fmt.Sprintf("%-24s %-12s %-8s %s", entry.Name, entry.Version, entry.Status, entry.Path))
+	}
+	return lines
+}
+
+func renderTextInventoryList(e InventoryListEvent) []string {
+	if len(e.Hosts) == 0 {
+		return []string{"No hosts found in inventory."}
+	}
+
+	nameW, addrW := len("NAME"), len("ADDRESS")
+	for _, host := range e.Hosts {
+		if len(host.Name) > nameW {
+			nameW = len(host.Name)
+		}
+		if len(host.Address) > addrW {
+			addrW = len(host.Address)
+		}
+	}
+	nameW += 2
+	addrW += 2
+
+	row := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6s %%s", nameW, addrW)
+	lines := []string{
+		fmt.Sprintf(row, "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS"),
+		fmt.Sprintf(row,
+			strings.Repeat("-", nameW-2),
+			strings.Repeat("-", addrW-2),
+			strings.Repeat("-", 10),
+			strings.Repeat("-", 6),
+			strings.Repeat("-", 20),
+		),
+	}
+
+	rowData := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6d %%s", nameW, addrW)
+	for _, host := range e.Hosts {
+		groups := append([]string(nil), host.Groups...)
+		sort.Strings(groups)
+		lines = append(lines, fmt.Sprintf(rowData, host.Name, host.Address, host.Transport, host.Port, strings.Join(groups, ", ")))
+	}
+	return lines
+}
+
+func renderTextSecretList(e SecretListEvent) []string {
+	if len(e.Entries) == 0 {
+		return []string{"No secrets configured."}
+	}
+
+	lines := make([]string, 0, len(e.Entries))
+	for _, entry := range e.Entries {
+		lines = append(lines, fmt.Sprintf("%-24s %s", entry.Name, entry.File))
 	}
 	return lines
 }

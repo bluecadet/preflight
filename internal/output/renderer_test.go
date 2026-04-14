@@ -153,6 +153,70 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_PluginInventorySecretLists(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(PluginListEvent{Entries: []PluginListEntry{{Name: "custom", Version: "1.0.0", Status: "ready", Path: "/tmp/preflight-plugin-custom"}}})
+	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "10.0.0.1", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
+	r.Emit(SecretListEvent{Entries: []SecretListEntry{{Name: "api-token", File: "secrets/api-token.age"}}})
+
+	out := buf.String()
+	for _, needle := range []string{"NAME", "custom", "kiosk-a", "10.0.0.1", "api-token", "secrets/api-token.age"} {
+		if !strings.Contains(out, needle) {
+			t.Fatalf("expected %q in output, got %q", needle, out)
+		}
+	}
+}
+
+func TestJSONRenderer_ListEvents(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewJSONRenderer(&buf)
+	r.Emit(PluginListEvent{Entries: []PluginListEntry{{Name: "custom", Version: "1.0.0", Status: "ready", Path: "/tmp/preflight-plugin-custom"}}})
+	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "10.0.0.1", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
+	r.Emit(SecretListEvent{Entries: []SecretListEntry{{Name: "api-token", File: "secrets/api-token.age"}}})
+
+	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 JSON lines, got %d: %q", len(lines), buf.String())
+	}
+
+	var plugin map[string]any
+	if err := json.Unmarshal([]byte(lines[0]), &plugin); err != nil {
+		t.Fatalf("unmarshal plugin line: %v", err)
+	}
+	if plugin["type"] != string(EventPluginList) {
+		t.Fatalf("expected type=%q, got %v", EventPluginList, plugin["type"])
+	}
+	plugins, ok := plugin["plugins"].([]any)
+	if !ok || len(plugins) != 1 {
+		t.Fatalf("expected one plugin entry, got %#v", plugin["plugins"])
+	}
+
+	var inventory map[string]any
+	if err := json.Unmarshal([]byte(lines[1]), &inventory); err != nil {
+		t.Fatalf("unmarshal inventory line: %v", err)
+	}
+	if inventory["type"] != string(EventInventoryList) {
+		t.Fatalf("expected type=%q, got %v", EventInventoryList, inventory["type"])
+	}
+	hosts, ok := inventory["hosts"].([]any)
+	if !ok || len(hosts) != 1 {
+		t.Fatalf("expected one host entry, got %#v", inventory["hosts"])
+	}
+
+	var secret map[string]any
+	if err := json.Unmarshal([]byte(lines[2]), &secret); err != nil {
+		t.Fatalf("unmarshal secret line: %v", err)
+	}
+	if secret["type"] != string(EventSecretList) {
+		t.Fatalf("expected type=%q, got %v", EventSecretList, secret["type"])
+	}
+	secrets, ok := secret["secrets"].([]any)
+	if !ok || len(secrets) != 1 {
+		t.Fatalf("expected one secret entry, got %#v", secret["secrets"])
+	}
+}
+
 func TestTextRenderer_TaskOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)

@@ -18,6 +18,9 @@ const (
 	EventActionList     EventType = "action_list"
 	EventActionInfo     EventType = "action_info"
 	EventActionFetch    EventType = "action_fetch"
+	EventPluginList     EventType = "plugin_list"
+	EventInventoryList  EventType = "inventory_list"
+	EventSecretList     EventType = "secret_list"
 	EventActivityStart  EventType = "activity_start"
 	EventActivityResult EventType = "activity_result"
 )
@@ -162,6 +165,38 @@ type ActionFetchEvent struct {
 	Entries []ActionFetchEntry
 }
 
+type PluginListEntry struct {
+	Name    string
+	Version string
+	Status  string
+	Path    string
+}
+
+type PluginListEvent struct {
+	Entries []PluginListEntry
+}
+
+type InventoryHostEntry struct {
+	Name      string
+	Address   string
+	Transport string
+	Port      int
+	Groups    []string
+}
+
+type InventoryListEvent struct {
+	Hosts []InventoryHostEntry
+}
+
+type SecretListEntry struct {
+	Name string
+	File string
+}
+
+type SecretListEvent struct {
+	Entries []SecretListEntry
+}
+
 func (PlayStartEvent) isEvent()      {}
 func (TaskStartEvent) isEvent()      {}
 func (TaskOutputEvent) isEvent()     {}
@@ -178,3 +213,6 @@ func (ValidationEvent) isEvent()     {}
 func (ActionCatalogEvent) isEvent()  {}
 func (ActionInfoEvent) isEvent()     {}
 func (ActionFetchEvent) isEvent()    {}
+func (PluginListEvent) isEvent()     {}
+func (InventoryListEvent) isEvent()  {}
+func (SecretListEvent) isEvent()     {}

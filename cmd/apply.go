@@ -88,8 +88,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage command")
 	}
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
@@ -114,6 +113,10 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	}
 
 	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+		bundleDir, err := bundleOutputDir(cmd, projectDir)
+		if err != nil {
+			return fmt.Errorf("resolve bundle output dir: %w", err)
+		}
 		cfg := runner.Config{
 			DryRun:                        opts.dryRun,
 			Tags:                          tags,
@@ -133,7 +136,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			SecretsConfig:                 projectCfg.Secrets,
 			StatePath:                     host.StatePath,
 			ModuleRegistry:                registry,
-			BundleOutputDir:               bundleOutputDir(cmd, projectDir),
+			BundleOutputDir:               bundleDir,
 			BundlePlugins:                 loadedPlugins,
 			AllowPlaintextSecretsInBundle: allowPlaintextSecrets,
 			Lockfile:                      lockfile,
@@ -164,8 +167,7 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	}
 	defer cancel()
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	extracted, err := bundle.Extract(bundlePath)
@@ -205,11 +207,15 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	if renderer != nil {
 		renderer.Emit(output.PlayStartEvent{PlayName: plan.PlaybookName})
 	}
+	statePath, err := stateFilePath(cmd)
+	if err != nil {
+		return fmt.Errorf("apply bundle: %w", err)
+	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,
 		Renderer:       renderer,
 		Secrets:        secretResolver,
-		StatePath:      stateFilePath(cmd),
+		StatePath:      statePath,
 		TargetName:     extracted.Manifest.TargetName,
 		ModuleRegistry: registry,
 		Version:        extracted.Manifest.Build.Version,

@@ -3,7 +3,6 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
 
 	"github.com/spf13/cobra"
@@ -26,8 +25,7 @@ func init() {
 
 func runValidate(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	pb, err := action.LoadPlaybookFile(playbookPath)

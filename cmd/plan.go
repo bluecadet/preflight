@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -44,8 +43,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	tags, _ := cmd.Flags().GetStringSlice("tags")
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)

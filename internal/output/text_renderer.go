@@ -86,6 +86,12 @@ func (r *TextRenderer) Emit(event Event) {
 		r.writeLines(renderTextActionInfo(e))
 	case ActionFetchEvent:
 		r.writeLines(renderTextActionFetch(e))
+	case PluginListEvent:
+		r.writeLines(renderTextPluginList(e))
+	case InventoryListEvent:
+		r.writeLines(renderTextInventoryList(e))
+	case SecretListEvent:
+		r.writeLines(renderTextSecretList(e))
 	}
 }
 

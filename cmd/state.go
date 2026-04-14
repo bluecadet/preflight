@@ -32,33 +32,42 @@ func init() {
 	rootCmd.AddCommand(stateCmd)
 }
 
-func stateFilePath(cmd *cobra.Command) string {
+func stateFilePath(cmd *cobra.Command) (string, error) {
 	p, _ := cmd.Flags().GetString("state-file")
 	if p == "" {
-		cwd, _ := os.Getwd()
-		return filepath.Join(cwd, defaultStatePath)
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", fmt.Errorf("get working directory for state file: %w", err)
+		}
+		return filepath.Join(cwd, defaultStatePath), nil
 	}
-	return p
+	return p, nil
 }
 
-func stateFileOverride(cmd *cobra.Command) (string, bool) {
+func stateFileOverride(cmd *cobra.Command) (string, bool, error) {
 	flag := cmd.Flags().Lookup("state-file")
 	if flag == nil || !flag.Changed {
-		return "", false
+		return "", false, nil
 	}
-	return stateFilePath(cmd), true
+	path, err := stateFilePath(cmd)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve state file override: %w", err)
+	}
+	return path, true, nil
 }
 
 func runStateShow(cmd *cobra.Command, _ []string) error {
-	path := stateFilePath(cmd)
+	path, err := stateFilePath(cmd)
+	if err != nil {
+		return fmt.Errorf("state show: %w", err)
+	}
 
 	state, err := runner.LoadState(path)
 	if err != nil {
 		return fmt.Errorf("state show: %w", err)
 	}
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	renderer.Emit(output.StateEvent{
@@ -107,8 +116,7 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	}
 	defer cancel()
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	pb, projectDir, projectCfg, secretsResolver, chain, err := loadPlaybookRunContext(playbookPath)
@@ -128,7 +136,10 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
-	overrideStatePath, hasStateOverride := stateFileOverride(cmd)
+	overrideStatePath, hasStateOverride, err := stateFileOverride(cmd)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 	if hasStateOverride && len(hosts) > 1 {
 		return fmt.Errorf("%s: --state-file can only be used when exactly one host is resolved", label)
 	}

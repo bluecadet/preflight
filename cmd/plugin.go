@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
@@ -28,20 +29,16 @@ var pluginInfoCmd = &cobra.Command{
 }
 
 func init() {
+	addOutputFlags(pluginListCmd)
 	pluginCmd.AddCommand(pluginListCmd)
 	pluginCmd.AddCommand(pluginInfoCmd)
 	rootCmd.AddCommand(pluginCmd)
 }
 
-func runPluginList(_ *cobra.Command, _ []string) error {
+func runPluginList(cmd *cobra.Command, _ []string) error {
 	plugins, err := sdk.Inspect(sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin list: %w", err)
-	}
-
-	if len(plugins) == 0 {
-		fmt.Println("No plugins found.")
-		return nil
 	}
 
 	sort.Slice(plugins, func(i, j int) bool {
@@ -51,15 +48,23 @@ func runPluginList(_ *cobra.Command, _ []string) error {
 		return plugins[i].Name < plugins[j].Name
 	})
 
-	fmt.Printf("%-24s %-12s %-8s %s\n", "NAME", "VERSION", "STATUS", "PATH")
-	fmt.Printf("%-24s %-12s %-8s %s\n", "----", "-------", "------", "----")
+	entries := make([]output.PluginListEntry, 0, len(plugins))
 	for _, plugin := range plugins {
 		status := "ready"
 		if !plugin.Initialized {
 			status = "error"
 		}
-		fmt.Printf("%-24s %-12s %-8s %s\n", plugin.Name, plugin.Version, status, plugin.Path)
+		entries = append(entries, output.PluginListEntry{
+			Name:    plugin.Name,
+			Version: plugin.Version,
+			Status:  status,
+			Path:    plugin.Path,
+		})
 	}
+
+	renderer := newTextJSONRenderer(cmd)
+	defer renderer.Close()
+	renderer.Emit(output.PluginListEvent{Entries: entries})
 
 	return nil
 }

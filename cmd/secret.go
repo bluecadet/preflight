@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/config"
+	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/secrets"
 )
 
@@ -40,6 +41,7 @@ var secretEditCmd = &cobra.Command{
 }
 
 func init() {
+	addOutputFlags(secretListCmd)
 	secretEncryptCmd.Flags().String("from-file", "", "path to a plaintext file to encrypt")
 	_ = secretEncryptCmd.MarkFlagRequired("from-file")
 	secretEncryptCmd.Flags().StringSlice("recipient", nil, "age recipient(s) to encrypt to")
@@ -53,21 +55,24 @@ func init() {
 	rootCmd.AddCommand(secretCmd)
 }
 
-func runSecretList(_ *cobra.Command, _ []string) error {
-	cwd, _ := os.Getwd()
+func runSecretList(cmd *cobra.Command, _ []string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("secret list: get working directory: %w", err)
+	}
 	cfg, err := loadProjectConfig(cwd)
 	if err != nil {
 		return err
 	}
-	if len(cfg.Secrets.Entries) == 0 {
-		fmt.Println("No secrets configured.")
-		return nil
-	}
 	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
+	entries := make([]output.SecretListEntry, 0, len(cfg.Secrets.Entries))
 	for _, name := range provider.List() {
 		entry := cfg.Secrets.Entries[name]
-		fmt.Printf("%-24s %s\n", name, entry.File)
+		entries = append(entries, output.SecretListEntry{Name: name, File: entry.File})
 	}
+	renderer := newTextJSONRenderer(cmd)
+	defer renderer.Close()
+	renderer.Emit(output.SecretListEvent{Entries: entries})
 	return nil
 }
 
@@ -75,7 +80,10 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 	name := args[0]
 	fromFile, _ := cmd.Flags().GetString("from-file")
 
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("secret encrypt: get working directory: %w", err)
+	}
 	cfgPath := projectConfigPath(cwd)
 	cfg, err := config.LoadOptional(cfgPath)
 	if err != nil {
@@ -126,7 +134,10 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 
 func runSecretEdit(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("secret edit: get working directory: %w", err)
+	}
 	cfgPath := projectConfigPath(cwd)
 	cfg, err := config.LoadOptional(cfgPath)
 	if err != nil {

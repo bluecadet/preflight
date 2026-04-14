@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/output"
 )
 
 var inventoryCmd = &cobra.Command{
@@ -24,6 +25,7 @@ var inventoryListCmd = &cobra.Command{
 
 func init() {
 	addInventoryFlag(inventoryListCmd)
+	addOutputFlags(inventoryListCmd)
 	inventoryCmd.AddCommand(inventoryListCmd)
 	rootCmd.AddCommand(inventoryCmd)
 }
@@ -31,7 +33,10 @@ func init() {
 func runInventoryList(cmd *cobra.Command, _ []string) error {
 	invPath, _ := cmd.Flags().GetString("inventory")
 	if invPath == "" {
-		cwd, _ := os.Getwd()
+		cwd, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("inventory list: get working directory: %w", err)
+		}
 		invPath = filepath.Join(cwd, "inventory.yml")
 	}
 
@@ -41,10 +46,6 @@ func runInventoryList(cmd *cobra.Command, _ []string) error {
 	}
 
 	hosts := inv.AllHosts()
-	if len(hosts) == 0 {
-		fmt.Println("No hosts found in inventory.")
-		return nil
-	}
 
 	// Collect group membership for display.
 	hostGroups := make(map[string][]string)
@@ -57,34 +58,22 @@ func runInventoryList(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	// Compute column widths from actual data.
-	nameW, addrW := len("NAME"), len("ADDRESS")
+	entries := make([]output.InventoryHostEntry, 0, len(hosts))
 	for _, h := range hosts {
-		if len(h.Name) > nameW {
-			nameW = len(h.Name)
-		}
-		if len(h.Address) > addrW {
-			addrW = len(h.Address)
-		}
+		groups := append([]string(nil), hostGroups[h.Name]...)
+		sort.Strings(groups)
+		entries = append(entries, output.InventoryHostEntry{
+			Name:      h.Name,
+			Address:   h.Address,
+			Transport: string(h.Transport),
+			Port:      h.Port,
+			Groups:    groups,
+		})
 	}
-	nameW += 2
-	addrW += 2
 
-	row := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6s %%s\n", nameW, addrW)
-	fmt.Printf(row, "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS")
-	fmt.Printf(row,
-		strings.Repeat("-", nameW-2),
-		strings.Repeat("-", addrW-2),
-		strings.Repeat("-", 10),
-		strings.Repeat("-", 6),
-		strings.Repeat("-", 20),
-	)
-
-	rowData := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6d %%s\n", nameW, addrW)
-	for _, h := range hosts {
-		groups := strings.Join(hostGroups[h.Name], ", ")
-		fmt.Printf(rowData, h.Name, h.Address, string(h.Transport), h.Port, groups)
-	}
+	renderer := newTextJSONRenderer(cmd)
+	defer renderer.Close()
+	renderer.Emit(output.InventoryListEvent{Hosts: entries})
 
 	return nil
 }

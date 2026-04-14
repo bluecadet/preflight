@@ -60,7 +60,10 @@ func runActionList(cmd *cobra.Command, _ []string) error {
 	sort.Strings(embeddedRefs)
 
 	// List local ./actions/ actions.
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("action list: get working directory: %w", err)
+	}
 	localActionsDir := filepath.Join(cwd, "actions")
 	localRefs, err := listLocalActions(localActionsDir)
 	if err != nil && !os.IsNotExist(err) {
@@ -68,8 +71,7 @@ func runActionList(cmd *cobra.Command, _ []string) error {
 	}
 	sort.Strings(localRefs)
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	renderer.Emit(output.ActionCatalogEvent{
@@ -118,7 +120,10 @@ func listLocalActions(dir string) ([]string, error) {
 
 func runActionInfo(cmd *cobra.Command, args []string) error {
 	ref := args[0]
-	cwd, _ := os.Getwd()
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("action info: get working directory: %w", err)
+	}
 	chain := newActionChain(cwd)
 
 	a, err := chain.Resolve(context.Background(), ref)
@@ -153,8 +158,7 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 		taskNames = append(taskNames, task.Name)
 	}
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	renderer.Emit(output.ActionInfoEvent{
@@ -197,8 +201,7 @@ func runActionFetch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	outFmt := getOutputFormat(cmd)
-	renderer := output.Synchronized(output.NewWithOptions(outFmt, os.Stdout, getRendererOptions(cmd)))
+	renderer := newRenderer(cmd)
 	defer renderer.Close()
 
 	renderer.Emit(output.ActionFetchEvent{Entries: fetchedEntries})
