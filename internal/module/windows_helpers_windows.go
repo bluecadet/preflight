@@ -4,6 +4,7 @@ package module
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -56,7 +57,10 @@ func runWindowsPowerShellWithOutput(ctx context.Context, script string, onOutput
 		defer close(done)
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := normalizeWindowsOutputLine(scanner.Text())
+			if line == "" {
+				continue
+			}
 			lines = append(lines, line)
 			if onOutput != nil {
 				onOutput(line)
@@ -141,7 +145,10 @@ func runWindowsPowerShellBoolWithOutput(ctx context.Context, params map[string]a
 		defer close(done)
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
-			line := scanner.Text()
+			line := normalizeWindowsOutputLine(scanner.Text())
+			if line == "" {
+				continue
+			}
 			lines = append(lines, line)
 			if hasLine && onOutput != nil {
 				onOutput(pending)
@@ -185,11 +192,39 @@ func powershellJSONVar(name string, value any) (string, error) {
 }
 
 func parseWindowsBool(out []byte) (bool, error) {
-	value, err := winutil.ParseBool(out)
+	lines := splitWindowsOutputLines(out)
+	if len(lines) == 0 {
+		return false, fmt.Errorf("unexpected boolean output %q", "")
+	}
+	value, err := winutil.ParseBool(lines[len(lines)-1])
 	if err != nil {
 		return false, fmt.Errorf("unexpected boolean output %q", strings.TrimSpace(string(out)))
 	}
 	return value, nil
+}
+
+func splitWindowsOutputLines(out []byte) []string {
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	var lines []string
+	for scanner.Scan() {
+		line := normalizeWindowsOutputLine(scanner.Text())
+		if line == "" {
+			continue
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func normalizeWindowsOutputLine(line string) string {
+	parts := strings.Split(line, "\r")
+	for i := len(parts) - 1; i >= 0; i-- {
+		part := strings.TrimSpace(parts[i])
+		if part != "" {
+			return part
+		}
+	}
+	return strings.TrimSpace(line)
 }
 
 func firewallPortsArg(params map[string]any) (string, error) {

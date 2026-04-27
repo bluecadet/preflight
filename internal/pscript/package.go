@@ -61,14 +61,30 @@ const WingetPackageCheckScript = `
 $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
+$stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
+$stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
 try {
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
   if ($process.ExitCode -ne 0) {
+    $details = @()
+    if (Test-Path -LiteralPath $stdoutPath) {
+      $stdout = Get-Content -LiteralPath $stdoutPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($stdout)) { $details += $stdout.Trim() }
+    }
+    if (Test-Path -LiteralPath $stderrPath) {
+      $stderr = Get-Content -LiteralPath $stderrPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($stderr)) { $details += $stderr.Trim() }
+    }
+    if ($details.Count -gt 0) {
+      throw ("winget export failed with exit code $($process.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $details))
+    }
     throw "winget export failed with exit code $($process.ExitCode)"
   }
   $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
 }
 $installedMap = @{}
 foreach ($src in @($doc.Sources)) {
@@ -96,14 +112,30 @@ const WingetPackageApplyScript = `
 $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
+$stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
+$stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
 try {
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow
+  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
   if ($process.ExitCode -ne 0) {
+    $details = @()
+    if (Test-Path -LiteralPath $stdoutPath) {
+      $stdout = Get-Content -LiteralPath $stdoutPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($stdout)) { $details += $stdout.Trim() }
+    }
+    if (Test-Path -LiteralPath $stderrPath) {
+      $stderr = Get-Content -LiteralPath $stderrPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($stderr)) { $details += $stderr.Trim() }
+    }
+    if ($details.Count -gt 0) {
+      throw ("winget export failed with exit code $($process.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $details))
+    }
     throw "winget export failed with exit code $($process.ExitCode)"
   }
   $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
 }
 $installedMap = @{}
 foreach ($src in @($doc.Sources)) {
