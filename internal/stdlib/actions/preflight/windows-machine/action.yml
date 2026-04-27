@@ -59,4 +59,12 @@ tasks:
         if ([string]::IsNullOrWhiteSpace($policy)) {
           exit 0
         }
-        Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy $policy -Force
+        try {
+          Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy $policy -Force -ErrorAction Stop
+        } catch {
+          $current = Get-ExecutionPolicy -Scope LocalMachine
+          if ($current -eq $policy -and $_.FullyQualifiedErrorId -like 'ExecutionPolicyOverride*') {
+            exit 0
+          }
+          throw
+        }
