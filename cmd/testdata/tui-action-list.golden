@@ -3,12 +3,13 @@
 ──────────────────────────────────────────
   Namespace  preflight/
   Local dir  <cwd>/actions
-  Embedded   8
+  Embedded   9
   Local      0
 
   Embedded actions
   • preflight/autologin
   • preflight/debloat
+  • preflight/git-sync
   • preflight/windows-input
   • preflight/windows-machine
   • preflight/windows-power

@@ -20,6 +20,39 @@ Configure Windows automatic logon.
 | `password` | string | Password or secret reference |
 | `domain` | string | Domain or `.` for local accounts |
 
+### `preflight/git-sync`
+
+Clone or update a Git repository on a Windows target.
+
+Use `become` when the checkout should be owned by a kiosk, exhibit, or service account. Authentication values should usually be passed as `secret:<name>` values. The action passes HTTPS and SSH credentials through environment variables to the PowerShell process instead of putting them in the script text.
+
+| Input | Type | Meaning |
+| --- | --- | --- |
+| `repo` | string | Git remote URL |
+| `dest` | path | Destination working tree directory |
+| `ref` | string | Branch, tag, or commit to check out |
+| `remote` | string | Remote name, default `origin` |
+| `local_branch` | string | Local branch to create or reset from `ref` |
+| `detach` | bool | Check out `ref` detached |
+| `fetch` | bool | Fetch remote updates when the repo already exists |
+| `prune` | bool | Prune deleted remote refs during fetch |
+| `fetch_tags` | bool | Fetch tags during sync |
+| `reset` | bool | Hard-reset the working tree to the resolved ref |
+| `clean` | bool | Remove untracked files after checkout |
+| `clean_ignored` | bool | Include ignored files when cleaning |
+| `submodules` | bool | Sync and update submodules recursively |
+| `lfs` | bool | Run Git LFS install and pull |
+| `depth` | int | Shallow clone or fetch depth; `0` means full history |
+| `git_path` | string | Git executable path |
+| `create_parent` | bool | Create the parent directory for `dest` |
+| `set_remote_url` | bool | Ensure `remote` points at `repo` |
+| `safe_directory` | bool | Add `dest` to Git `safe.directory` |
+| `http_username` | string | HTTPS askpass username |
+| `http_password` | string | HTTPS askpass password or token |
+| `ssh_private_key` | string | SSH private key content |
+| `ssh_known_hosts` | string | SSH known hosts content |
+| `ssh_strict_host_key_checking` | bool | Require SSH host key verification |
+
 ## Grouped Windows Baseline Actions
 
 ### `preflight/windows-machine`

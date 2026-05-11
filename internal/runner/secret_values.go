@@ -36,6 +36,9 @@ func analyzeSecretValue(key string, value any, refs map[string]struct{}, forceSe
 			refs[name] = struct{}{}
 			return false
 		}
+		if t == "" {
+			return false
+		}
 		return secretContext
 	case map[string]any:
 		literal := false

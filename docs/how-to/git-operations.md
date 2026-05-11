@@ -2,6 +2,8 @@
 
 Use this guide when you need to clone a repository, pull the latest commits, or configure git on a remote target. Preflight does not have a built-in `git` module — git operations run through the `shell` module on POSIX targets or the `powershell` module on Windows targets.
 
+For Windows targets, prefer the embedded `preflight/git-sync` action when you need a reusable clone-or-update task. It handles fetch, checkout, reset, clean, submodules, Git LFS, and temporary HTTPS or SSH credential wiring.
+
 ## Prerequisites
 
 - A working playbook and target connection
@@ -101,6 +103,45 @@ Set user name and email on the target before committing:
 ```
 
 ## Credentials
+
+### Stdlib Git Sync Action
+
+Use `preflight/git-sync` when the target should sync a private repository during a playbook run:
+
+```yaml
+vars:
+  github_token: secret:github-deploy-token
+
+tasks:
+  - name: Sync exhibit content
+    uses: preflight/git-sync
+    with:
+      repo: https://github.com/example/private-repo.git
+      dest: C:\Exhibits\App
+      ref: main
+      http_password: "{{ vars.github_token }}"
+      clean: true
+```
+
+For SSH, pass the private key as a secret and optionally provide known-hosts content:
+
+```yaml
+vars:
+  deploy_key: secret:github-deploy-key
+  github_known_hosts: secret:github-known-hosts
+
+tasks:
+  - name: Sync exhibit content
+    uses: preflight/git-sync
+    with:
+      repo: git@github.com:example/private-repo.git
+      dest: C:\Exhibits\App
+      ref: main
+      ssh_private_key: "{{ vars.deploy_key }}"
+      ssh_known_hosts: "{{ vars.github_known_hosts }}"
+```
+
+In bundle flow, encrypted secrets are included in the staged bundle and decrypted on the target with `preflight apply --bundle <bundle.zip> --secret-identity <identity-file>`.
 
 ### HTTPS With A Personal Access Token
 

@@ -16,15 +16,23 @@ var powershellCombinedOutput = func(ctx context.Context, name string, args ...st
 	return exec.CommandContext(ctx, name, args...).CombinedOutput()
 }
 
+var powershellCombinedOutputWithEnv = func(ctx context.Context, name string, args []string, env map[string]string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = mergeEnv(env)
+	return cmd.CombinedOutput()
+}
+
 type PowershellCheckParams struct {
-	CheckScript string `param:"check_script"`
-	Creates     string `param:"creates"`
+	CheckScript string            `param:"check_script"`
+	Creates     string            `param:"creates"`
+	Env         map[string]string `param:"env"`
 }
 
 type PowershellApplyParams struct {
-	Script string   `param:"script"`
-	File   string   `param:"file"`
-	Args   []string `param:"args"`
+	Script string            `param:"script"`
+	File   string            `param:"file"`
+	Args   []string          `param:"args"`
+	Env    map[string]string `param:"env"`
 }
 
 func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {
@@ -43,10 +51,10 @@ func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOut
 		}
 		var out []byte
 		if onOutput == nil {
-			out, err = runPowerShellInline(ctx, script)
+			out, err = runPowerShellInline(ctx, script, p.Env)
 		} else {
 			var lines []string
-			lines, err = runPowerShellInlineWithOutput(ctx, script, func(line string) {
+			lines, err = runPowerShellInlineWithOutput(ctx, script, p.Env, func(line string) {
 				if !winutil.IsPowerShellCheckResultLine(line) {
 					onOutput(line)
 				}
@@ -89,9 +97,9 @@ func powershellApply(ctx context.Context, params map[string]any) error {
 
 	var err error
 	if p.Script != "" {
-		_, err = runPowerShellInline(ctx, p.Script)
+		_, err = runPowerShellInline(ctx, p.Script, p.Env)
 	} else {
-		_, err = runPowerShellFile(ctx, p.File, p.Args)
+		_, err = runPowerShellFile(ctx, p.File, p.Args, p.Env)
 	}
 	return err
 }
@@ -111,44 +119,45 @@ func powershellApplyWithOutput(ctx context.Context, params map[string]any, onOut
 	}
 
 	if p.Script != "" {
-		_, err := runPowerShellInlineWithOutput(ctx, p.Script, onOutput)
+		_, err := runPowerShellInlineWithOutput(ctx, p.Script, p.Env, onOutput)
 		return err
 	}
-	return runPowerShellFileWithOutput(ctx, p.File, p.Args, onOutput)
+	return runPowerShellFileWithOutput(ctx, p.File, p.Args, p.Env, onOutput)
 }
 
-func runPowerShellInline(ctx context.Context, script string) ([]byte, error) {
-	return runPowerShellCommand(ctx, append(platformPowerShellArgs(), "-Command", script)...)
+func runPowerShellInline(ctx context.Context, script string, env map[string]string) ([]byte, error) {
+	return runPowerShellCommand(ctx, env, append(platformPowerShellArgs(), "-Command", script)...)
 }
 
-func runPowerShellFile(ctx context.Context, file string, args []string) ([]byte, error) {
+func runPowerShellFile(ctx context.Context, file string, args []string, env map[string]string) ([]byte, error) {
 	commandArgs := append(platformPowerShellArgs(), "-File", file)
 	commandArgs = append(commandArgs, args...)
-	return runPowerShellCommand(ctx, commandArgs...)
+	return runPowerShellCommand(ctx, env, commandArgs...)
 }
 
-func runPowerShellCommand(ctx context.Context, args ...string) ([]byte, error) {
-	out, err := powershellCombinedOutput(ctx, platformPowerShellBinary(), args...)
+func runPowerShellCommand(ctx context.Context, env map[string]string, args ...string) ([]byte, error) {
+	out, err := powershellCommandOutput(ctx, platformPowerShellBinary(), args, env)
 	if err != nil {
 		return out, fmt.Errorf("powershell: command failed: %w\noutput: %s", err, string(out))
 	}
 	return out, nil
 }
 
-func runPowerShellInlineWithOutput(ctx context.Context, script string, onOutput target.OutputFunc) ([]string, error) {
-	return runPowerShellCommandWithOutput(ctx, onOutput, append(platformPowerShellArgs(), "-Command", script)...)
+func runPowerShellInlineWithOutput(ctx context.Context, script string, env map[string]string, onOutput target.OutputFunc) ([]string, error) {
+	return runPowerShellCommandWithOutput(ctx, onOutput, env, append(platformPowerShellArgs(), "-Command", script)...)
 }
 
-func runPowerShellFileWithOutput(ctx context.Context, file string, args []string, onOutput target.OutputFunc) error {
+func runPowerShellFileWithOutput(ctx context.Context, file string, args []string, env map[string]string, onOutput target.OutputFunc) error {
 	commandArgs := append(platformPowerShellArgs(), "-File", file)
 	commandArgs = append(commandArgs, args...)
-	_, err := runPowerShellCommandWithOutput(ctx, onOutput, commandArgs...)
+	_, err := runPowerShellCommandWithOutput(ctx, onOutput, env, commandArgs...)
 	return err
 }
 
-func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, args ...string) ([]string, error) {
+func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, env map[string]string, args ...string) ([]string, error) {
 	pw, done := NewOutputPipe(onOutput)
 	cmd := exec.CommandContext(ctx, platformPowerShellBinary(), args...)
+	cmd.Env = mergeEnv(env)
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 
@@ -175,4 +184,11 @@ func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputF
 		return result.Lines, fmt.Errorf("powershell: close command output pipe: %w", closeErr)
 	}
 	return result.Lines, nil
+}
+
+func powershellCommandOutput(ctx context.Context, name string, args []string, env map[string]string) ([]byte, error) {
+	if len(env) == 0 {
+		return powershellCombinedOutput(ctx, name, args...)
+	}
+	return powershellCombinedOutputWithEnv(ctx, name, args, env)
 }

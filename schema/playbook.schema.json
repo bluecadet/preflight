@@ -407,7 +407,8 @@
         "file": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } },
         "check_script": { "type": "string" },
-        "creates": { "type": "string" }
+        "creates": { "type": "string" },
+        "env": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
     "moduleShell": {
@@ -418,7 +419,7 @@
         "args": { "type": "array", "items": { "type": "string" } },
         "creates": { "type": "string" },
         "working_dir": { "type": "string" },
-        "env": { "type": "object" }
+        "env": { "type": "object", "additionalProperties": { "type": "string" } }
       }
     },
     "moduleReboot": {

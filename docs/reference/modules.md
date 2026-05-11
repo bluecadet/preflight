@@ -319,6 +319,7 @@ Run PowerShell.
 | `args` | string[] | Arguments passed to the script file path |
 | `check_script` | string | Inline non-mutating PowerShell check script |
 | `creates` | string | Skip when this path already exists |
+| `env` | object | Environment variables visible to the PowerShell process |
 
 Exactly one of `script` or `file` should be provided for meaningful behavior.
 
@@ -337,6 +338,7 @@ Run a shell command.
 | `args` | string[] | Command arguments |
 | `creates` | string | Skip when this path already exists |
 | `working_dir` | string | Working directory |
+| `env` | object | Environment variables visible to the command process |
 
 ### `reboot`
 

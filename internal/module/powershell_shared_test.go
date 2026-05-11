@@ -141,6 +141,57 @@ func TestPowershellApply_InlineScript(t *testing.T) {
 	}
 }
 
+func TestPowershellApply_PassesEnvironment(t *testing.T) {
+	orig := powershellCombinedOutputWithEnv
+	t.Cleanup(func() { powershellCombinedOutputWithEnv = orig })
+
+	var captured map[string]string
+	powershellCombinedOutputWithEnv = func(_ context.Context, _ string, _ []string, env map[string]string) ([]byte, error) {
+		captured = env
+		return []byte("ok"), nil
+	}
+
+	if err := powershellApply(context.Background(), map[string]any{
+		"script": "Write-Output $env:PREFLIGHT_TEST",
+		"env": map[string]any{
+			"PREFLIGHT_TEST": "expected",
+		},
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if captured["PREFLIGHT_TEST"] != "expected" {
+		t.Fatalf("expected env to be passed, got %#v", captured)
+	}
+}
+
+func TestPowershellCheck_PassesEnvironment(t *testing.T) {
+	orig := powershellCombinedOutputWithEnv
+	t.Cleanup(func() { powershellCombinedOutputWithEnv = orig })
+
+	var captured map[string]string
+	powershellCombinedOutputWithEnv = func(_ context.Context, _ string, _ []string, env map[string]string) ([]byte, error) {
+		captured = env
+		return []byte(`{"needs_change":false}`), nil
+	}
+
+	needed, err := powershellCheck(context.Background(), map[string]any{
+		"check_script": "return $false",
+		"env": map[string]any{
+			"PREFLIGHT_TEST": "expected",
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if needed {
+		t.Fatal("expected check to report no change")
+	}
+	if captured["PREFLIGHT_TEST"] != "expected" {
+		t.Fatalf("expected env to be passed, got %#v", captured)
+	}
+}
+
 func TestPowershellApply_FileScript(t *testing.T) {
 	orig := powershellCombinedOutput
 	t.Cleanup(func() { powershellCombinedOutput = orig })

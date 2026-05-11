@@ -1,0 +1,433 @@
+name: preflight/git-sync
+version: "1.0.0"
+description: Clone or update a Git repository on a Windows target
+author: preflight
+
+inputs:
+  repo:
+    type: string
+    required: true
+    description: Git remote URL to clone or sync
+  dest:
+    type: path
+    required: true
+    description: Destination directory for the working tree
+  ref:
+    type: string
+    default: ""
+    description: Branch, tag, or commit to check out after syncing
+  remote:
+    type: string
+    default: origin
+    description: Remote name to create or update
+  local_branch:
+    type: string
+    default: ""
+    description: Local branch to create or reset from ref
+  detach:
+    type: bool
+    default: false
+    description: Check out ref in detached HEAD mode
+  fetch:
+    type: bool
+    default: true
+    description: Fetch remote updates when the repository already exists
+  prune:
+    type: bool
+    default: true
+    description: Prune deleted remote refs during fetch
+  fetch_tags:
+    type: bool
+    default: true
+    description: Fetch tags during sync
+  reset:
+    type: bool
+    default: true
+    description: Hard-reset the working tree to the resolved ref
+  clean:
+    type: bool
+    default: false
+    description: Remove untracked files after checkout
+  clean_ignored:
+    type: bool
+    default: false
+    description: Include ignored files when clean is enabled
+  submodules:
+    type: bool
+    default: false
+    description: Initialize and update submodules recursively
+  lfs:
+    type: bool
+    default: false
+    description: Run Git LFS install and pull after checkout
+  depth:
+    type: int
+    default: 0
+    description: Shallow clone or fetch depth; 0 means full history
+  git_path:
+    type: string
+    default: git
+    description: Git executable path
+  create_parent:
+    type: bool
+    default: true
+    description: Create the parent directory for dest before cloning
+  set_remote_url:
+    type: bool
+    default: true
+    description: Ensure the named remote points at repo before fetching
+  safe_directory:
+    type: bool
+    default: false
+    description: Add dest to Git safe.directory before operating
+  http_username:
+    type: string
+    default: x-access-token
+    description: Username returned to Git askpass for HTTPS authentication
+  http_password:
+    type: string
+    default: ""
+    description: Password or token returned to Git askpass for HTTPS authentication
+  ssh_private_key:
+    type: string
+    default: ""
+    description: Private key content used through temporary GIT_SSH_COMMAND
+  ssh_known_hosts:
+    type: string
+    default: ""
+    description: Known hosts content used with the temporary SSH key
+  ssh_strict_host_key_checking:
+    type: bool
+    default: true
+    description: Require SSH host key verification
+
+tasks:
+  - name: Sync Git repository
+    powershell:
+      env:
+        PREFLIGHT_GIT_HTTP_USERNAME: "{{ vars.http_username }}"
+        PREFLIGHT_GIT_HTTP_PASSWORD: "{{ vars.http_password }}"
+        PREFLIGHT_GIT_SSH_PRIVATE_KEY: "{{ vars.ssh_private_key }}"
+        PREFLIGHT_GIT_SSH_KNOWN_HOSTS: "{{ vars.ssh_known_hosts }}"
+      check_script: |
+        $git = @'
+        {{ vars.git_path }}
+        '@
+        $git = $git.Trim()
+        $dest = @'
+        {{ vars.dest }}
+        '@
+        $dest = $dest.Trim()
+        $ref = @'
+        {{ vars.ref }}
+        '@
+        $ref = $ref.Trim()
+        $remote = @'
+        {{ vars.remote }}
+        '@
+        $remote = $remote.Trim()
+        $fetch = [System.Convert]::ToBoolean('{{ vars.fetch }}')
+
+        function Invoke-GitOutput([string[]]$Arguments) {
+          $output = & $git @Arguments 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            return $null
+          }
+          return (($output | Out-String).Trim())
+        }
+
+        if ([string]::IsNullOrWhiteSpace($dest)) {
+          return $true
+        }
+        if (-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
+          return $true
+        }
+        if ($fetch) {
+          return $true
+        }
+        if ([string]::IsNullOrWhiteSpace($ref)) {
+          return $false
+        }
+
+        $head = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', 'HEAD')
+        if ([string]::IsNullOrWhiteSpace($head)) {
+          return $true
+        }
+
+        $candidates = @($ref)
+        if (-not [string]::IsNullOrWhiteSpace($remote)) {
+          $candidates += "$remote/$ref"
+          $candidates += "refs/remotes/$remote/$ref"
+        }
+        $candidates += "refs/tags/$ref"
+
+        foreach ($candidate in $candidates) {
+          $resolved = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', "$candidate^{commit}")
+          if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+            return ($head -ne $resolved)
+          }
+        }
+        return $true
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        $repo = @'
+        {{ vars.repo }}
+        '@
+        $repo = $repo.Trim()
+        $dest = @'
+        {{ vars.dest }}
+        '@
+        $dest = $dest.Trim()
+        $ref = @'
+        {{ vars.ref }}
+        '@
+        $ref = $ref.Trim()
+        $remote = @'
+        {{ vars.remote }}
+        '@
+        $remote = $remote.Trim()
+        $localBranch = @'
+        {{ vars.local_branch }}
+        '@
+        $localBranch = $localBranch.Trim()
+        $git = @'
+        {{ vars.git_path }}
+        '@
+        $git = $git.Trim()
+        $depth = [int]'{{ vars.depth }}'
+        $detach = [System.Convert]::ToBoolean('{{ vars.detach }}')
+        $fetch = [System.Convert]::ToBoolean('{{ vars.fetch }}')
+        $prune = [System.Convert]::ToBoolean('{{ vars.prune }}')
+        $fetchTags = [System.Convert]::ToBoolean('{{ vars.fetch_tags }}')
+        $reset = [System.Convert]::ToBoolean('{{ vars.reset }}')
+        $clean = [System.Convert]::ToBoolean('{{ vars.clean }}')
+        $cleanIgnored = [System.Convert]::ToBoolean('{{ vars.clean_ignored }}')
+        $submodules = [System.Convert]::ToBoolean('{{ vars.submodules }}')
+        $lfs = [System.Convert]::ToBoolean('{{ vars.lfs }}')
+        $createParent = [System.Convert]::ToBoolean('{{ vars.create_parent }}')
+        $setRemoteUrl = [System.Convert]::ToBoolean('{{ vars.set_remote_url }}')
+        $safeDirectory = [System.Convert]::ToBoolean('{{ vars.safe_directory }}')
+        $sshStrictHostKeyChecking = [System.Convert]::ToBoolean('{{ vars.ssh_strict_host_key_checking }}')
+
+        if ([string]::IsNullOrWhiteSpace($repo)) {
+          throw 'repo is required'
+        }
+        if ([string]::IsNullOrWhiteSpace($dest)) {
+          throw 'dest is required'
+        }
+        if ([string]::IsNullOrWhiteSpace($remote)) {
+          throw 'remote is required'
+        }
+        if ($depth -lt 0) {
+          throw 'depth must be greater than or equal to 0'
+        }
+
+        $tempPaths = New-Object System.Collections.Generic.List[string]
+
+        function New-TempTextFile([string]$Extension, [string]$Content) {
+          $path = Join-Path ([System.IO.Path]::GetTempPath()) ("preflight-git-" + [System.Guid]::NewGuid().ToString('N') + $Extension)
+          Set-Content -LiteralPath $path -Value $Content -NoNewline -Encoding UTF8
+          $script:tempPaths.Add($path) | Out-Null
+          return $path
+        }
+
+        function Format-GitArguments([string[]]$Arguments) {
+          $redacted = foreach ($argument in $Arguments) {
+            $argument -replace '(https?://)([^/@]+)@', '$1***@'
+          }
+          return ($redacted -join ' ')
+        }
+
+        function Invoke-Git([string[]]$Arguments) {
+          Write-Output ("git " + (Format-GitArguments $Arguments))
+          & $git @Arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw ("git command failed with exit code " + $LASTEXITCODE + ": git " + (Format-GitArguments $Arguments))
+          }
+        }
+
+        function Invoke-GitOutput([string[]]$Arguments) {
+          $output = & $git @Arguments 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            return $null
+          }
+          return (($output | Out-String).Trim())
+        }
+
+        function Resolve-GitCommit([string]$Name) {
+          if ([string]::IsNullOrWhiteSpace($Name)) {
+            return ''
+          }
+
+          $candidates = @($Name)
+          if (-not [string]::IsNullOrWhiteSpace($remote)) {
+            $candidates += "$remote/$Name"
+            $candidates += "refs/remotes/$remote/$Name"
+          }
+          $candidates += "refs/tags/$Name"
+
+          foreach ($candidate in $candidates) {
+            $resolved = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', "$candidate^{commit}")
+            if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+              return $candidate
+            }
+          }
+          return $Name
+        }
+
+        function Enable-HttpAskPass() {
+          if ([string]::IsNullOrEmpty($env:PREFLIGHT_GIT_HTTP_PASSWORD)) {
+            return
+          }
+
+          $askPassScript = @'
+        param([string]$Prompt)
+        if ($Prompt -match 'Username') {
+          [Console]::Out.Write($env:PREFLIGHT_GIT_HTTP_USERNAME)
+          exit 0
+        }
+        [Console]::Out.Write($env:PREFLIGHT_GIT_HTTP_PASSWORD)
+        '@
+          $ps1 = New-TempTextFile '.ps1' $askPassScript
+          $cmd = New-TempTextFile '.cmd' ("@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$ps1`" %*`r`n")
+          $env:GIT_ASKPASS = $cmd
+          $env:GIT_TERMINAL_PROMPT = '0'
+        }
+
+        function Enable-SshKey() {
+          if ([string]::IsNullOrEmpty($env:PREFLIGHT_GIT_SSH_PRIVATE_KEY)) {
+            return
+          }
+
+          $keyPath = New-TempTextFile '.key' $env:PREFLIGHT_GIT_SSH_PRIVATE_KEY
+          try {
+            icacls $keyPath /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+          } catch {
+            Write-Output ("Unable to tighten SSH key ACLs: " + $_.Exception.Message)
+          }
+
+          $strict = if ($sshStrictHostKeyChecking) { 'yes' } else { 'no' }
+          $sshCommand = "ssh -i `"$keyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=$strict"
+
+          if (-not [string]::IsNullOrEmpty($env:PREFLIGHT_GIT_SSH_KNOWN_HOSTS)) {
+            $knownHostsPath = New-TempTextFile '.known_hosts' $env:PREFLIGHT_GIT_SSH_KNOWN_HOSTS
+            $sshCommand += " -o UserKnownHostsFile=`"$knownHostsPath`""
+          } elseif (-not $sshStrictHostKeyChecking) {
+            $sshCommand += " -o UserKnownHostsFile=NUL"
+          }
+
+          $env:GIT_SSH_COMMAND = $sshCommand
+          $env:GIT_TERMINAL_PROMPT = '0'
+        }
+
+        try {
+          Enable-HttpAskPass
+          Enable-SshKey
+
+          Invoke-Git @('--version')
+
+          $repoExists = Test-Path -LiteralPath (Join-Path $dest '.git')
+          if (-not $repoExists) {
+            if ($createParent) {
+              $parent = Split-Path -Parent $dest
+              if (-not [string]::IsNullOrWhiteSpace($parent)) {
+                New-Item -ItemType Directory -Path $parent -Force | Out-Null
+              }
+            }
+
+            $cloneArgs = @('clone')
+            if ($depth -gt 0) {
+              $cloneArgs += @('--depth', [string]$depth)
+            }
+            if ($fetchTags) {
+              $cloneArgs += '--tags'
+            } else {
+              $cloneArgs += '--no-tags'
+            }
+            if ($submodules) {
+              $cloneArgs += '--recurse-submodules'
+            }
+            if ($detach) {
+              $cloneArgs += '--no-checkout'
+            }
+            $cloneArgs += @($repo, $dest)
+            Invoke-Git $cloneArgs
+            $repoExists = $true
+          }
+
+          if ($safeDirectory) {
+            Invoke-Git @('config', '--global', '--add', 'safe.directory', $dest)
+          }
+
+          if ($setRemoteUrl) {
+            $currentRemote = Invoke-GitOutput @('-C', $dest, 'remote', 'get-url', $remote)
+            if ([string]::IsNullOrWhiteSpace($currentRemote)) {
+              Invoke-Git @('-C', $dest, 'remote', 'add', $remote, $repo)
+            } elseif ($currentRemote -ne $repo) {
+              Invoke-Git @('-C', $dest, 'remote', 'set-url', $remote, $repo)
+            }
+          }
+
+          if ($fetch) {
+            $fetchArgs = @('-C', $dest, 'fetch', $remote)
+            if ($prune) {
+              $fetchArgs += '--prune'
+            }
+            if ($fetchTags) {
+              $fetchArgs += '--tags'
+            } else {
+              $fetchArgs += '--no-tags'
+            }
+            if ($depth -gt 0) {
+              $fetchArgs += @('--depth', [string]$depth)
+            }
+            Invoke-Git $fetchArgs
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($ref)) {
+            $targetRef = Resolve-GitCommit $ref
+
+            if (-not [string]::IsNullOrWhiteSpace($localBranch)) {
+              Invoke-Git @('-C', $dest, 'checkout', '-B', $localBranch, $targetRef)
+            } elseif ($detach) {
+              Invoke-Git @('-C', $dest, 'checkout', '--detach', $targetRef)
+            } else {
+              $localRefExists = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', "refs/heads/$ref")
+              if (-not [string]::IsNullOrWhiteSpace($localRefExists)) {
+                Invoke-Git @('-C', $dest, 'checkout', $ref)
+              } elseif ($targetRef -eq "$remote/$ref" -or $targetRef -eq "refs/remotes/$remote/$ref") {
+                Invoke-Git @('-C', $dest, 'checkout', '-B', $ref, $targetRef)
+              } else {
+                Invoke-Git @('-C', $dest, 'checkout', '--force', $targetRef)
+              }
+            }
+
+            if ($reset) {
+              $resetRef = Resolve-GitCommit $ref
+              Invoke-Git @('-C', $dest, 'reset', '--hard', $resetRef)
+            }
+          }
+
+          if ($submodules) {
+            Invoke-Git @('-C', $dest, 'submodule', 'sync', '--recursive')
+            Invoke-Git @('-C', $dest, 'submodule', 'update', '--init', '--recursive')
+          }
+
+          if ($lfs) {
+            Invoke-Git @('-C', $dest, 'lfs', 'install', '--local')
+            Invoke-Git @('-C', $dest, 'lfs', 'pull')
+          }
+
+          if ($clean) {
+            $cleanMode = if ($cleanIgnored) { '-fdx' } else { '-fd' }
+            Invoke-Git @('-C', $dest, 'clean', $cleanMode)
+          }
+        } finally {
+          foreach ($path in $tempPaths) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item Env:\GIT_ASKPASS -ErrorAction SilentlyContinue
+          Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
+          Remove-Item Env:\GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
+        }

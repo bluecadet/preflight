@@ -21,6 +21,7 @@ func TestAllStdlibActions(t *testing.T) {
 	for _, name := range []string{
 		"autologin",
 		"debloat",
+		"git-sync",
 		"windows-input",
 		"windows-machine",
 		"windows-power",

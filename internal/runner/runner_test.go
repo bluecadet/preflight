@@ -462,6 +462,164 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	}
 }
 
+func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	r := New(&mockTarget{}, resolver, Config{
+		ProjectVars: map[string]any{
+			"git_token": "secret:github-token",
+			"ssh_key":   "secret:github-deploy-key",
+		},
+	})
+	pb := &action.Playbook{
+		Name: "git-sync",
+		Tasks: []action.Task{
+			{
+				Name: "sync content",
+				Uses: "preflight/git-sync",
+				With: map[string]any{
+					"repo":                         "git@github.com:example/private-repo.git",
+					"dest":                         "C:\\Exhibits\\App",
+					"ref":                          "main",
+					"remote":                       "upstream",
+					"local_branch":                 "deploy",
+					"depth":                        5,
+					"fetch":                        true,
+					"prune":                        true,
+					"fetch_tags":                   false,
+					"reset":                        true,
+					"clean":                        true,
+					"clean_ignored":                true,
+					"submodules":                   true,
+					"lfs":                          true,
+					"safe_directory":               true,
+					"http_password":                "{{ vars.git_token }}",
+					"ssh_private_key":              "{{ vars.ssh_key }}",
+					"ssh_strict_host_key_checking": false,
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 1 {
+		t.Fatalf("expected 1 expanded task, got %d", len(plan.Tasks))
+	}
+
+	preview, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(git sync) returned error: %v", err)
+	}
+	if preview.Module != "powershell" {
+		t.Fatalf("expected powershell task, got %q", preview.Module)
+	}
+
+	env, ok := preview.Params["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected env map, got %T", preview.Params["env"])
+	}
+	if env["PREFLIGHT_GIT_HTTP_PASSWORD"] != "secret:github-token" {
+		t.Fatalf("expected HTTP password to remain a secret ref, got %#v", env["PREFLIGHT_GIT_HTTP_PASSWORD"])
+	}
+	if env["PREFLIGHT_GIT_SSH_PRIVATE_KEY"] != "secret:github-deploy-key" {
+		t.Fatalf("expected SSH key to remain a secret ref, got %#v", env["PREFLIGHT_GIT_SSH_PRIVATE_KEY"])
+	}
+
+	script, ok := preview.Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected script string, got %T", preview.Params["script"])
+	}
+	for _, want := range []string{
+		"git@github.com:example/private-repo.git",
+		"C:\\Exhibits\\App",
+		"$depth = [int]'5'",
+		"$remote = @'",
+		"upstream",
+		"GIT_ASKPASS",
+		"GIT_SSH_COMMAND",
+		"safe.directory",
+		"submodule', 'update', '--init', '--recursive",
+		"lfs', 'pull",
+		"clean', $cleanMode",
+		"checkout', '-B', $localBranch",
+		"--no-tags",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected git-sync script to contain %q, got:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "secret:github-token") || strings.Contains(script, "secret:github-deploy-key") {
+		t.Fatalf("expected git-sync script to avoid embedding secret refs, got:\n%s", script)
+	}
+}
+
+func TestApplyStdlibGitSyncResolvesCredentialEnvSecrets(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+	cfg := config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"github-token": {File: "secrets/github-token.age"},
+		},
+	}
+	provider := secrets.NewRepoProvider(dir, cfg)
+	if err := provider.Encrypt("github-token", []byte("ghp_example")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	mt := &mockTarget{results: []target.Result{{Status: target.StatusChanged}}}
+	r := New(mt, action.Chain{action.NewEmbeddedResolver(stdlib.FS)}, Config{
+		ProjectDir:    dir,
+		SecretsConfig: cfg,
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	pb := &action.Playbook{
+		Name: "git-sync-apply",
+		Tasks: []action.Task{{
+			Name: "sync private repo",
+			Uses: "preflight/git-sync",
+			With: map[string]any{
+				"repo":          "https://github.com/example/private-repo.git",
+				"dest":          "C:\\Exhibits\\App",
+				"http_password": "secret:github-token",
+			},
+		}},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if len(mt.calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(mt.calls))
+	}
+	env, ok := mt.calls[0].Params["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected env map, got %T", mt.calls[0].Params["env"])
+	}
+	if env["PREFLIGHT_GIT_HTTP_PASSWORD"] != "ghp_example" {
+		t.Fatalf("expected resolved token in env, got %#v", env["PREFLIGHT_GIT_HTTP_PASSWORD"])
+	}
+	script, ok := mt.calls[0].Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected script string, got %T", mt.calls[0].Params["script"])
+	}
+	if strings.Contains(script, "ghp_example") {
+		t.Fatalf("expected script to avoid embedding resolved token, got:\n%s", script)
+	}
+}
+
 func TestApplyStdlibWindowsMachineRendersNestedExecutionTimeInputs(t *testing.T) {
 	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
 	mt := &mockTarget{
@@ -1149,6 +1307,84 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 	}
 }
 
+func TestStageStdlibGitSyncBundlesCredentialSecrets(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+	cfg := config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"github-token": {File: "secrets/github-token.age"},
+		},
+	}
+	provider := secrets.NewRepoProvider(dir, cfg)
+	if err := provider.Encrypt("github-token", []byte("ghp_example")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	r := New(&mockTarget{}, action.Chain{action.NewEmbeddedResolver(stdlib.FS)}, Config{
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"powershell": noopModule{}},
+		ProjectDir:      dir,
+		SecretsConfig:   cfg,
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	pb := &action.Playbook{
+		Name: "git-sync-secret",
+		Tasks: []action.Task{{
+			Name: "sync private repo",
+			Uses: "preflight/git-sync",
+			With: map[string]any{
+				"repo":          "https://github.com/example/private-repo.git",
+				"dest":          "C:\\Exhibits\\App",
+				"ref":           "main",
+				"http_password": "secret:github-token",
+			},
+		}},
+	}
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	if err := r.Stage(context.Background(), plan); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	bundlePath := mustOneBundlePath(t, dir)
+	extracted, err := bundle.Extract(bundlePath)
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	defer func() {
+		if err := extracted.Cleanup(); err != nil {
+			t.Fatalf("Cleanup: %v", err)
+		}
+	}()
+
+	if extracted.Manifest.SecretMode != bundle.SecretModeEncrypted {
+		t.Fatalf("expected encrypted secret mode, got %q", extracted.Manifest.SecretMode)
+	}
+	if len(extracted.Manifest.SecretEntries) != 1 || extracted.Manifest.SecretEntries[0].Name != "github-token" {
+		t.Fatalf("unexpected secret entries: %#v", extracted.Manifest.SecretEntries)
+	}
+	planBytes, err := os.ReadFile(extracted.PlanPath)
+	if err != nil {
+		t.Fatalf("ReadFile(plan): %v", err)
+	}
+	if !strings.Contains(string(planBytes), "secret:github-token") {
+		t.Fatalf("expected staged plan to preserve secret ref, got %q", string(planBytes))
+	}
+	if strings.Contains(string(planBytes), "ghp_example") {
+		t.Fatalf("expected staged plan to avoid plaintext token, got %q", string(planBytes))
+	}
+}
+
 func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 	r := New(&mockTarget{}, emptyResolver(), Config{
 		Phase:           "stage",
@@ -1174,6 +1410,34 @@ func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 	err := r.Stage(context.Background(), plan)
 	if err == nil || !strings.Contains(err.Error(), "cannot be embedded in a staged bundle") {
 		t.Fatalf("expected literal secret stage failure, got %v", err)
+	}
+}
+
+func TestStageAllowsEmptySecretishValues(t *testing.T) {
+	r := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:           "stage",
+		BundleOutputDir: t.TempDir(),
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "empty-secretish",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "set empty secretish env",
+			Module: "shell",
+			Params: map[string]any{
+				"cmd": "echo",
+				"env": map[string]any{
+					"PREFLIGHT_GIT_HTTP_PASSWORD":   "",
+					"PREFLIGHT_GIT_SSH_PRIVATE_KEY": "",
+				},
+			},
+		}},
+	}
+
+	if err := r.Stage(context.Background(), plan); err != nil {
+		t.Fatalf("Stage returned error for empty secretish values: %v", err)
 	}
 }
 

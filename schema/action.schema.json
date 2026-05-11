@@ -677,6 +677,11 @@
         "creates": {
           "type": "string",
           "description": "Registry key or file path; skip if it already exists (idempotency hint)"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Environment variable map for the command"
         }
       }
     },
@@ -704,6 +709,7 @@
         },
         "env": {
           "type": "object",
+          "additionalProperties": { "type": "string" },
           "description": "Environment variable map for the command"
         }
       }

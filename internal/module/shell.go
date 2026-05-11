@@ -16,9 +16,10 @@ type ShellCheckParams struct {
 }
 
 type ShellApplyParams struct {
-	Cmd        string   `param:"cmd,required"`
-	Args       []string `param:"args"`
-	WorkingDir string   `param:"working_dir"`
+	Cmd        string            `param:"cmd,required"`
+	Args       []string          `param:"args"`
+	WorkingDir string            `param:"working_dir"`
+	Env        map[string]string `param:"env"`
 }
 
 type ShellModule struct{}
@@ -51,6 +52,7 @@ func (m *ShellModule) ApplyWithOutput(ctx context.Context, params map[string]any
 	if p.WorkingDir != "" {
 		cmd.Dir = p.WorkingDir
 	}
+	cmd.Env = mergeEnv(p.Env)
 	cmd.Stdout = pw
 	cmd.Stderr = pw
 
