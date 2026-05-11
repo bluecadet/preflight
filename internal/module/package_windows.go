@@ -16,5 +16,9 @@ func (m *PackageModule) Check(ctx context.Context, params map[string]any) (bool,
 }
 
 func (m *PackageModule) Apply(ctx context.Context, params map[string]any) error {
-	return runPreparedWindowsApply(ctx, params, pscript.PackageApplyScript, winutil.NormalizePackageParams)
+	if err := runPreparedWindowsApply(ctx, params, pscript.PackageApplyScript, winutil.NormalizePackageParams); err != nil {
+		return err
+	}
+	winutil.RefreshProcessPath()
+	return nil
 }

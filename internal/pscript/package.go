@@ -55,6 +55,9 @@ foreach ($spec in $pkgs) {
     }
   }
 }
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ';'
 `
 
 const WingetPackageCheckScript = `
@@ -166,4 +169,7 @@ foreach ($spec in $pkgs) {
     throw "winget command failed for '$id' with exit code $($process.ExitCode)"
   }
 }
+$machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ';'
 `

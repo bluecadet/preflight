@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/logging"
+	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 var rootCmd = &cobra.Command{
@@ -35,6 +36,7 @@ var (
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 func Execute(version, commit, date string) {
+	winutil.RefreshProcessPath()
 	buildVersion = version
 	buildCommit = commit
 	buildDate = date

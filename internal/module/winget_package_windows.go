@@ -21,9 +21,17 @@ func (m *WingetPackageModule) CheckWithOutput(ctx context.Context, params map[st
 }
 
 func (m *WingetPackageModule) Apply(ctx context.Context, params map[string]any) error {
-	return runPreparedWindowsApply(ctx, params, pscript.WingetPackageApplyScript, winutil.NormalizeWingetParams)
+	if err := runPreparedWindowsApply(ctx, params, pscript.WingetPackageApplyScript, winutil.NormalizeWingetParams); err != nil {
+		return err
+	}
+	winutil.RefreshProcessPath()
+	return nil
 }
 
 func (m *WingetPackageModule) ApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
-	return runPreparedWindowsApplyWithOutput(ctx, params, pscript.WingetPackageApplyScript, winutil.NormalizeWingetParams, onOutput)
+	if err := runPreparedWindowsApplyWithOutput(ctx, params, pscript.WingetPackageApplyScript, winutil.NormalizeWingetParams, onOutput); err != nil {
+		return err
+	}
+	winutil.RefreshProcessPath()
+	return nil
 }
