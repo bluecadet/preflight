@@ -111,11 +111,9 @@ func pipeBackedPS(t *testing.T, scriptResponses map[string][2]string) *sshPersis
 		}
 	}()
 
-	scanner := bufio.NewScanner(stdoutR)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20)
 	return &sshPersistentPS{
-		stdin:   stdinW,
-		scanner: scanner,
+		stdin:  stdinW,
+		reader: bufio.NewReader(stdoutR),
 	}
 }
 
@@ -176,6 +174,14 @@ func TestBuildPSStdinLine_PayloadContainsDoneMark(t *testing.T) {
 	}
 }
 
+func TestBuildPSStdinLine_ResetsPersistentPreferences(t *testing.T) {
+	line := buildPSStdinLine("Write-Output 'hello'", "myid0004")
+	decoded := decodePayloadFromStdinLine(t, line)
+	if !strings.Contains(decoded, "$ErrorActionPreference='Continue'") {
+		t.Errorf("decoded payload does not reset ErrorActionPreference:\n%s", decoded)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // readPSOutput tests
 // ---------------------------------------------------------------------------
@@ -183,9 +189,8 @@ func TestBuildPSStdinLine_PayloadContainsDoneMark(t *testing.T) {
 func TestReadPSOutput_SuccessNoOutput(t *testing.T) {
 	id := "abc12345"
 	raw := psMarkerBase + id + "__DONE\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -197,9 +202,8 @@ func TestReadPSOutput_SuccessNoOutput(t *testing.T) {
 func TestReadPSOutput_SuccessWithSingleLine(t *testing.T) {
 	id := "abc12345"
 	raw := "hello world\n" + psMarkerBase + id + "__DONE\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -211,9 +215,8 @@ func TestReadPSOutput_SuccessWithSingleLine(t *testing.T) {
 func TestReadPSOutput_SuccessWithMultipleLines(t *testing.T) {
 	id := "abc12345"
 	raw := "line one\nline two\nline three\n" + psMarkerBase + id + "__DONE\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -227,9 +230,8 @@ func TestReadPSOutput_ScriptError(t *testing.T) {
 	id := "err12345"
 	errMsg := "something went wrong in PS"
 	raw := psMarkerBase + id + "__ERR:" + encodeBase64String(errMsg) + "\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err == nil {
 		t.Fatalf("expected error, got output %q", out)
 	}
@@ -245,9 +247,8 @@ func TestReadPSOutput_ScriptErrorPreservesOutputBefore(t *testing.T) {
 	id := "err12345"
 	errMsg := "kaboom"
 	raw := "partial output\n" + psMarkerBase + id + "__ERR:" + encodeBase64String(errMsg) + "\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err == nil {
 		t.Fatalf("expected error, got output %q", out)
 	}
@@ -259,9 +260,8 @@ func TestReadPSOutput_ScriptErrorPreservesOutputBefore(t *testing.T) {
 func TestReadPSOutput_SessionClosedBeforeMarker(t *testing.T) {
 	id := "sess1234"
 	// EOF without marker — simulates unexpected session close.
-	scanner := bufio.NewScanner(strings.NewReader("some output\n"))
 
-	_, err := readPSOutput(scanner, id)
+	_, err := readPSOutput(bufio.NewReader(strings.NewReader("some output\n")), id)
 	if err == nil {
 		t.Fatal("expected error when session closes without marker")
 	}
@@ -271,8 +271,7 @@ func TestReadPSOutput_SessionClosedBeforeMarker(t *testing.T) {
 }
 
 func TestReadPSOutput_EmptyReader(t *testing.T) {
-	scanner := bufio.NewScanner(strings.NewReader(""))
-	_, err := readPSOutput(scanner, "anyid00")
+	_, err := readPSOutput(bufio.NewReader(strings.NewReader("")), "anyid00")
 	if err == nil {
 		t.Fatal("expected error on empty reader")
 	}
@@ -289,9 +288,8 @@ func TestReadPSOutput_WrongIDTreatedAsOutput(t *testing.T) {
 	raw := psMarkerBase + otherId + "__DONE\n" + // wrong id — should be plain output
 		"real output\n" +
 		psMarkerBase + id + "__DONE\n"
-	scanner := bufio.NewScanner(strings.NewReader(raw))
 
-	out, err := readPSOutput(scanner, id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -301,6 +299,20 @@ func TestReadPSOutput_WrongIDTreatedAsOutput(t *testing.T) {
 	// The wrong-id marker line should also appear in the collected output.
 	if !strings.Contains(out, psMarkerBase+otherId+"__DONE") {
 		t.Errorf("wrong-id marker line not present in collected output: %q", out)
+	}
+}
+
+func TestReadPSOutput_AllowsLongSingleLine(t *testing.T) {
+	id := "longline"
+	longLine := strings.Repeat("x", 2<<20)
+	raw := longLine + "\n" + psMarkerBase + id + "__DONE\n"
+
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out != longLine {
+		t.Fatalf("long output line was not preserved: got %d bytes, want %d", len(out), len(longLine))
 	}
 }
 
@@ -447,8 +459,8 @@ func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
 	_ = stdinR.Close()
 
 	ps := &sshPersistentPS{
-		stdin:   stdinW,
-		scanner: bufio.NewScanner(strings.NewReader("")),
+		stdin:  stdinW,
+		reader: bufio.NewReader(strings.NewReader("")),
 	}
 
 	var legacyCalled bool

@@ -19,8 +19,8 @@ func TestPowershellCheck_UsesBooleanCheckScriptResult(t *testing.T) {
 	called := false
 	powershellCombinedOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
 		called = true
-		if !containsArg(args, "-Command") {
-			t.Fatalf("expected inline PowerShell command, got args %v", args)
+		if !containsArg(args, "-File") {
+			t.Fatalf("expected temp PowerShell file, got args %v", args)
 		}
 		return []byte(`{"needs_change":true}`), nil
 	}
@@ -136,8 +136,45 @@ func TestPowershellApply_InlineScript(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !containsArg(captured, "-Command") {
-		t.Fatalf("expected -Command invocation, got %v", captured)
+	if !containsArg(captured, "-File") {
+		t.Fatalf("expected -File invocation, got %v", captured)
+	}
+}
+
+func TestPowershellApply_InlineScriptExitsFromNativeExitCode(t *testing.T) {
+	orig := powershellCombinedOutput
+	t.Cleanup(func() { powershellCombinedOutput = orig })
+
+	var captured []string
+	var command string
+	powershellCombinedOutput = func(_ context.Context, _ string, args ...string) ([]byte, error) {
+		captured = append([]string{}, args...)
+		fileIndex := slices.Index(args, "-File")
+		if fileIndex < 0 || fileIndex+1 >= len(args) {
+			t.Fatalf("expected -File script, got %v", args)
+		}
+		data, err := os.ReadFile(args[fileIndex+1])
+		if err != nil {
+			t.Fatalf("read temp script: %v", err)
+		}
+		command = string(data)
+		return []byte("ok"), nil
+	}
+
+	if err := powershellApply(context.Background(), map[string]any{
+		"script": "Write-Output 'hello'",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !containsArg(captured, "-File") {
+		t.Fatalf("expected -File invocation, got %v", captured)
+	}
+	if !strings.Contains(command, "exit $global:LASTEXITCODE") {
+		t.Fatalf("expected inline script to exit from LASTEXITCODE, got %q", command)
+	}
+	if !strings.Contains(command, "$global:LASTEXITCODE = 0") {
+		t.Fatalf("expected inline script to initialize LASTEXITCODE, got %q", command)
 	}
 }
 

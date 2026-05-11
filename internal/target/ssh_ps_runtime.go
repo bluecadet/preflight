@@ -26,7 +26,7 @@ type sshWindowsPowerShellRuntime struct {
 type sshPersistentPS struct {
 	session *ssh.Session
 	stdin   io.WriteCloser
-	scanner *bufio.Scanner
+	reader  *bufio.Reader
 	mu      sync.Mutex
 }
 
@@ -39,7 +39,7 @@ func (p *sshPersistentPS) run(_ context.Context, script string) (string, error) 
 	if _, err := p.stdin.Write([]byte(line)); err != nil {
 		return "", &psSessionError{fmt.Errorf("write stdin: %w", err)}
 	}
-	return readPSOutput(p.scanner, id)
+	return readPSOutput(p.reader, id)
 }
 
 func (p *sshPersistentPS) close() {
@@ -109,9 +109,7 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 		return nil, wrapSSHTargetError("start persistent powershell", err)
 	}
 
-	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB per line; handles large module output
-	r.psSession = &sshPersistentPS{session: session, stdin: stdin, scanner: scanner}
+	r.psSession = &sshPersistentPS{session: session, stdin: stdin, reader: bufio.NewReader(stdoutPipe)}
 	return r.psSession, nil
 }
 

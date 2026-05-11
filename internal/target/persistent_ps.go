@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 )
 
@@ -61,7 +62,8 @@ func buildPSStdinLine(script, id string) string {
 	// Wrapper: define the script as a function so `return` exits only that
 	// function, then call it inside a try/catch that emits the completion
 	// marker regardless of outcome.
-	wrapped := `$ProgressPreference='SilentlyContinue'
+	wrapped := `$ErrorActionPreference='Continue'
+$ProgressPreference='SilentlyContinue'
 $__pf_err=$null
 function __pf_run{
 ` + script + `
@@ -80,17 +82,20 @@ if($__pf_err-ne$null){Write-Output('` + errMark + `'+$__pf_err)}else{Write-Outpu
 	return `&([ScriptBlock]::Create([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('` + encoded + `'))))`
 }
 
-// readPSOutput reads lines from scanner until it sees the completion marker for
+// readPSOutput reads lines from reader until it sees the completion marker for
 // id. Lines before the marker are the user script's stdout. Returns the output
 // and any script-level error. Returns *psSessionError if the underlying reader
 // closes before the marker is found.
-func readPSOutput(scanner *bufio.Scanner, id string) (string, error) {
+func readPSOutput(reader *bufio.Reader, id string) (string, error) {
 	doneMark := psMarkerBase + id + "__DONE"
 	errMark := psMarkerBase + id + "__ERR:"
 
 	var lines []string
-	for scanner.Scan() {
-		line := scanner.Text()
+	for {
+		line, readErr := readPowerShellOutputLine(reader)
+		if readErr != nil && line == "" {
+			return "", &psSessionError{cause: readErr}
+		}
 		switch {
 		case line == doneMark:
 			return strings.Join(lines, "\n"), nil
@@ -104,10 +109,23 @@ func readPSOutput(scanner *bufio.Scanner, id string) (string, error) {
 		default:
 			lines = append(lines, line)
 		}
+		if readErr != nil {
+			return "", &psSessionError{cause: readErr}
+		}
 	}
-	cause := scanner.Err()
-	if cause == nil {
-		cause = errors.New("EOF")
+}
+
+func readPowerShellOutputLine(reader *bufio.Reader) (string, error) {
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		if errors.Is(err, io.EOF) && line == "" {
+			return "", errors.New("EOF")
+		}
+		if line == "" {
+			return "", err
+		}
 	}
-	return "", &psSessionError{cause}
+	line = strings.TrimSuffix(line, "\n")
+	line = strings.TrimSuffix(line, "\r")
+	return line, err
 }

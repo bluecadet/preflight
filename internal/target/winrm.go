@@ -60,10 +60,10 @@ type WinRMTarget struct {
 // inside a reused WinRM shell. All Check/Apply scripts are serialised through
 // it, eliminating per-task shell-create and powershell.exe startup overhead.
 type winRMPersistentPS struct {
-	shell   *winrm.Shell
-	cmd     *winrm.Command
-	scanner *bufio.Scanner
-	mu      sync.Mutex
+	shell  *winrm.Shell
+	cmd    *winrm.Command
+	reader *bufio.Reader
+	mu     sync.Mutex
 }
 
 func (p *winRMPersistentPS) run(_ context.Context, script string) (string, error) {
@@ -75,7 +75,7 @@ func (p *winRMPersistentPS) run(_ context.Context, script string) (string, error
 	if _, err := p.cmd.Stdin.Write([]byte(line)); err != nil {
 		return "", &psSessionError{fmt.Errorf("write stdin: %w", err)}
 	}
-	return readPSOutput(p.scanner, id)
+	return readPSOutput(p.reader, id)
 }
 
 func (p *winRMPersistentPS) close() {
@@ -234,9 +234,7 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 		return nil, wrapWinRMTargetError("start persistent powershell", err)
 	}
 
-	scanner := bufio.NewScanner(cmd.Stdout)
-	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1 MiB per line; handles large module output
-	t.psSession = &winRMPersistentPS{shell: shell, cmd: cmd, scanner: scanner}
+	t.psSession = &winRMPersistentPS{shell: shell, cmd: cmd, reader: bufio.NewReader(cmd.Stdout)}
 	return t.psSession, nil
 }
 
