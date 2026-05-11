@@ -547,6 +547,8 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 		"--no-tags",
 		"credential.helper=",
 		"UTF8Encoding",
+		"function Clear-EnvVar",
+		"Clear-EnvVar 'GCM_INTERACTIVE'",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("expected git-sync script to contain %q, got:\n%s", want, script)
@@ -560,6 +562,9 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 	}
 	if strings.Contains(script, "secret:github-token") || strings.Contains(script, "secret:github-deploy-key") {
 		t.Fatalf("expected git-sync script to avoid embedding secret refs, got:\n%s", script)
+	}
+	if strings.Contains(script, "Remove-Item Env:\\GCM_INTERACTIVE") {
+		t.Fatalf("expected git-sync cleanup to avoid unguarded env removal, got:\n%s", script)
 	}
 }
 

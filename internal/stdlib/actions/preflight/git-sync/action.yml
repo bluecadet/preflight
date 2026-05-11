@@ -260,6 +260,13 @@ tasks:
           return (($output | Out-String).Trim())
         }
 
+        function Clear-EnvVar([string]$Name) {
+          $path = "Env:\$Name"
+          if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+        }
+
         function Resolve-GitCommit([string]$Name) {
           if ([string]::IsNullOrWhiteSpace($Name)) {
             return ''
@@ -435,8 +442,8 @@ tasks:
           foreach ($path in $tempPaths) {
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
           }
-          Remove-Item Env:\GIT_ASKPASS -ErrorAction SilentlyContinue
-          Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
-          Remove-Item Env:\GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
-          Remove-Item Env:\GCM_INTERACTIVE -ErrorAction SilentlyContinue
+          Clear-EnvVar 'GIT_ASKPASS'
+          Clear-EnvVar 'GIT_SSH_COMMAND'
+          Clear-EnvVar 'GIT_TERMINAL_PROMPT'
+          Clear-EnvVar 'GCM_INTERACTIVE'
         }
