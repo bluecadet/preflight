@@ -195,6 +195,33 @@ Command-specific flags:
 | `--recipient` | Override recipients for re-encryption |
 | `--identity` | Override the identity used for decryption |
 
+### `preflight secret identity generate --out <path>`
+
+Generate an age X25519 identity file. The command creates parent directories, refuses to overwrite an existing file, writes the identity with restrictive file permissions, and prints the identity path plus public recipient.
+
+Command-specific flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--out` | Path to write the generated identity file |
+
+### `preflight secret identity recipient <path>`
+
+Read an existing age identity file and print its public recipient strings. Identity files with multiple identities produce one recipient per line in file order.
+
+### `preflight secret rekey [names...]`
+
+Decrypt configured secrets and re-encrypt them to the current configured recipients. When names are provided, only those secrets are rekeyed.
+
+Command-specific flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--recipient` | Override recipients for a full rekey and save them to `preflight.yml` |
+| `--identity` | Override the identity for a full rekey and save it to `preflight.yml` |
+
+Overrides are rejected when specific secret names are supplied, because `secrets.recipients` and `secrets.identity` are project-wide defaults.
+
 ## `state` Commands
 
 ### `preflight state show`

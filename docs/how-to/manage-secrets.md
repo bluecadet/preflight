@@ -6,18 +6,22 @@ If you want the design rationale first, read [Secrets and `age`](../explanation/
 
 ## Prerequisites
 
-- The `age` CLI installed locally
 - A project root that contains `preflight.yml`
 - At least one `age` identity that can decrypt the project secrets
 
 If you are starting from zero, generate an identity:
 
 ```bash
-mkdir -p .age
-age-keygen -o .age/keys.txt
+preflight secret identity generate --out .age/keys.txt
 ```
 
 The output includes a public recipient string beginning with `age1...`. That public value goes into `preflight.yml`; the private identity file stays out of version control.
+
+To print the public recipient for an existing identity file later:
+
+```bash
+preflight secret identity recipient .age/keys.txt
+```
 
 ## 1. Configure Secrets In `preflight.yml`
 
@@ -109,7 +113,31 @@ hosts:
 
 The built-in provider name is `secret`, so repo-backed references use `secret:<name>`.
 
-## 6. Move The Project To Another Machine
+## 6. Rekey Secrets After Recipient Changes
+
+When `secrets.recipients` changes, re-encrypt the secret files so the new recipient set can decrypt them:
+
+```bash
+preflight secret rekey
+```
+
+To rekey only specific secrets:
+
+```bash
+preflight secret rekey autologin-password winrm-password
+```
+
+`secret rekey` uses the configured `secrets.identity` to decrypt existing files and the configured `secrets.recipients` to write updated files. You can override either value for the command:
+
+```bash
+preflight secret rekey \
+  --identity .age/keys.txt \
+  --recipient age1example...
+```
+
+When you pass an identity or recipient override, Preflight saves the updated setting back to `preflight.yml`. Overrides are only allowed when rekeying all configured secrets, because those settings apply project-wide.
+
+## 7. Move The Project To Another Machine
 
 If a different machine will run `preflight`, it needs everything required for local decryption:
 

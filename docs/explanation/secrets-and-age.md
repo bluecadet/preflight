@@ -19,14 +19,19 @@ In Preflight terms:
 If you are new to `age`, the smallest useful setup looks like this:
 
 ```bash
-mkdir -p .age
-age-keygen -o .age/keys.txt
+preflight secret identity generate --out .age/keys.txt
 ```
 
 That creates:
 
 - a private identity file in `.age/keys.txt`
 - a public recipient string you can copy into `preflight.yml`
+
+You can print the recipient for an existing identity file with:
+
+```bash
+preflight secret identity recipient .age/keys.txt
+```
 
 > [!WARNING]
 > The identity file is the secret. Treat it like a private key, keep it out of Git, and distribute it only to people or systems that should be able to decrypt project secrets.
@@ -125,6 +130,12 @@ Why this is better:
 - compromise of one private key is easier to contain
 
 The tradeoff is that when recipients change, you need to re-encrypt secrets so the new recipient set is reflected in the encrypted files.
+
+In Preflight, that rotation step is:
+
+```bash
+preflight secret rekey
+```
 
 ## Do Keys Belong To Developers Or Targets?
 

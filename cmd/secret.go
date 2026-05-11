@@ -3,11 +3,14 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"time"
 
+	"filippo.io/age"
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/config"
@@ -40,6 +43,32 @@ var secretEditCmd = &cobra.Command{
 	RunE:  runSecretEdit,
 }
 
+var secretIdentityCmd = &cobra.Command{
+	Use:   "identity",
+	Short: "Manage age identities for project secrets",
+}
+
+var secretIdentityGenerateCmd = &cobra.Command{
+	Use:   "generate --out <path>",
+	Short: "Generate an age X25519 identity file",
+	Args:  cobra.NoArgs,
+	RunE:  runSecretIdentityGenerate,
+}
+
+var secretIdentityRecipientCmd = &cobra.Command{
+	Use:   "recipient <path>",
+	Short: "Print public recipient(s) for an age identity file",
+	Args:  cobra.ExactArgs(1),
+	RunE:  runSecretIdentityRecipient,
+}
+
+var secretRekeyCmd = &cobra.Command{
+	Use:   "rekey [names...]",
+	Short: "Re-encrypt configured secrets to the current recipients",
+	Args:  cobra.ArbitraryArgs,
+	RunE:  runSecretRekey,
+}
+
 func init() {
 	addOutputFlags(secretListCmd)
 	secretEncryptCmd.Flags().String("from-file", "", "path to a plaintext file to encrypt")
@@ -48,10 +77,18 @@ func init() {
 	secretEncryptCmd.Flags().String("identity", "", "path to an age identity file used for future decrypt/edit operations")
 	secretEditCmd.Flags().StringSlice("recipient", nil, "override age recipient(s) for re-encryption")
 	secretEditCmd.Flags().String("identity", "", "override path to the age identity file used to decrypt")
+	secretIdentityGenerateCmd.Flags().String("out", "", "path to write the generated age identity file")
+	_ = secretIdentityGenerateCmd.MarkFlagRequired("out")
+	secretRekeyCmd.Flags().StringSlice("recipient", nil, "override age recipient(s) for re-encryption")
+	secretRekeyCmd.Flags().String("identity", "", "override path to the age identity file used to decrypt")
 
+	secretIdentityCmd.AddCommand(secretIdentityGenerateCmd)
+	secretIdentityCmd.AddCommand(secretIdentityRecipientCmd)
 	secretCmd.AddCommand(secretListCmd)
 	secretCmd.AddCommand(secretEncryptCmd)
 	secretCmd.AddCommand(secretEditCmd)
+	secretCmd.AddCommand(secretIdentityCmd)
+	secretCmd.AddCommand(secretRekeyCmd)
 	rootCmd.AddCommand(secretCmd)
 }
 
@@ -147,14 +184,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("secret edit: secret %q is not defined", name)
 	}
 
-	recipients, _ := cmd.Flags().GetStringSlice("recipient")
-	if len(recipients) > 0 {
-		cfg.Secrets.Recipients = recipients
-	}
-	identity, _ := cmd.Flags().GetString("identity")
-	if identity != "" {
-		cfg.Secrets.Identity = identity
-	}
+	applySecretOverrides(cmd, cfg)
 
 	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
 	plaintext, err := provider.Resolve(context.Background(), name)
@@ -200,6 +230,139 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Updated secret %q\n", name)
 	return nil
+}
+
+func runSecretIdentityGenerate(cmd *cobra.Command, _ []string) error {
+	outPath, _ := cmd.Flags().GetString("out")
+	if outPath == "" {
+		return fmt.Errorf("secret identity generate: --out is required")
+	}
+	if _, err := os.Stat(outPath); err == nil {
+		return fmt.Errorf("secret identity generate: %q already exists", outPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("secret identity generate: stat %q: %w", outPath, err)
+	}
+
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		return fmt.Errorf("secret identity generate: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(outPath), 0o755); err != nil {
+		return fmt.Errorf("secret identity generate: mkdir %q: %w", filepath.Dir(outPath), err)
+	}
+	contents := fmt.Sprintf("# created: %s\n# public key: %s\n%s\n", time.Now().Format(time.RFC3339), identity.Recipient(), identity)
+	if err := os.WriteFile(outPath, []byte(contents), 0o600); err != nil {
+		return fmt.Errorf("secret identity generate: write %q: %w", outPath, err)
+	}
+
+	fmt.Printf("Wrote identity to %s\n", outPath)
+	fmt.Printf("Public recipient: %s\n", identity.Recipient())
+	return nil
+}
+
+func runSecretIdentityRecipient(_ *cobra.Command, args []string) error {
+	path := args[0]
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("secret identity recipient: open %q: %w", path, err)
+	}
+	defer func() {
+		_ = f.Close()
+	}()
+	recipients, err := identityRecipients(f)
+	if err != nil {
+		return fmt.Errorf("secret identity recipient: %w", err)
+	}
+	for _, recipient := range recipients {
+		fmt.Println(recipient)
+	}
+	return nil
+}
+
+func runSecretRekey(cmd *cobra.Command, args []string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("secret rekey: get working directory: %w", err)
+	}
+	cfgPath := projectConfigPath(cwd)
+	cfg, err := config.LoadOptional(cfgPath)
+	if err != nil {
+		return err
+	}
+	if len(cfg.Secrets.Entries) == 0 {
+		return fmt.Errorf("secret rekey: no secrets configured")
+	}
+	if len(args) > 0 && secretOverridesChanged(cmd) {
+		return fmt.Errorf("secret rekey: --identity and --recipient overrides require rekeying all configured secrets")
+	}
+	applySecretOverrides(cmd, cfg)
+
+	names := args
+	if len(names) == 0 {
+		provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
+		names = provider.List()
+	} else {
+		for _, name := range names {
+			if _, ok := cfg.Secrets.Entries[name]; !ok {
+				return fmt.Errorf("secret rekey: secret %q is not defined", name)
+			}
+		}
+	}
+
+	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
+	plaintexts := make(map[string][]byte, len(names))
+	for _, name := range names {
+		plaintext, err := provider.Resolve(context.Background(), name)
+		if err != nil {
+			return fmt.Errorf("secret rekey: %w", err)
+		}
+		plaintexts[name] = plaintext
+	}
+	for _, name := range names {
+		plaintext := plaintexts[name]
+		if err := provider.Encrypt(name, plaintext); err != nil {
+			return fmt.Errorf("secret rekey: %w", err)
+		}
+		fmt.Printf("Rekeyed secret %q\n", name)
+	}
+	if secretOverridesChanged(cmd) {
+		if err := config.SaveFile(cfgPath, cfg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func applySecretOverrides(cmd *cobra.Command, cfg *config.Config) {
+	recipients, _ := cmd.Flags().GetStringSlice("recipient")
+	if len(recipients) > 0 {
+		cfg.Secrets.Recipients = recipients
+	}
+	identity, _ := cmd.Flags().GetString("identity")
+	if identity != "" {
+		cfg.Secrets.Identity = identity
+	}
+}
+
+func secretOverridesChanged(cmd *cobra.Command) bool {
+	return cmd.Flags().Changed("recipient") || cmd.Flags().Changed("identity")
+}
+
+func identityRecipients(r io.Reader) ([]string, error) {
+	identities, err := age.ParseIdentities(r)
+	if err != nil {
+		return nil, err
+	}
+	recipients := make([]string, 0, len(identities))
+	for _, identity := range identities {
+		switch identity := identity.(type) {
+		case *age.X25519Identity:
+			recipients = append(recipients, identity.Recipient().String())
+		default:
+			return nil, fmt.Errorf("unsupported identity type %T", identity)
+		}
+	}
+	return recipients, nil
 }
 
 func sanitizeSecretName(name string) string {
