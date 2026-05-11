@@ -47,14 +47,50 @@ What each field means:
 
 If multiple people or machines need access, add multiple recipients. They can all decrypt the same encrypted file with their own private identities.
 
-## 2. Encrypt A Secret From A File
+## 2. Encrypt A Secret
 
-Run:
+Preflight can read the plaintext from a file, from standard input, or from an
+interactive prompt. Pick the source that keeps the plaintext closest to memory
+and farthest from disk and shell history.
+
+### From An Interactive Prompt (Recommended For One-Offs)
+
+Run with no source flag in a terminal:
+
+```bash
+preflight secret encrypt autologin-password
+```
+
+Preflight prompts twice without echoing, then encrypts the entered value. The
+plaintext never touches disk and never appears in your shell history.
+
+### From Standard Input (Recommended For Scripts And Password Managers)
+
+```bash
+op read "op://Vault/Item/password" | preflight secret encrypt autologin-password --from-stdin
+```
+
+```bash
+printf '%s' "$LOOKED_UP_PASSWORD" | preflight secret encrypt autologin-password --from-stdin
+```
+
+A single trailing `\n` or `\r\n` is trimmed, so `echo "value" | preflight secret encrypt ... --from-stdin` works as expected. Embedded newlines (for multi-line secrets like PEM blocks) are preserved.
+
+Avoid `preflight secret encrypt foo --from-stdin <<<"$secret"` patterns that
+expand the secret on the command line — that exposes it to process listings.
+Prefer piping from a tool that emits the secret directly.
+
+### From A File
 
 ```bash
 preflight secret encrypt autologin-password \
   --from-file ./secrets/autologin-password.txt
 ```
+
+Useful when the plaintext is already on disk (for example, a downloaded PEM).
+Delete the plaintext file afterwards.
+
+### Common Notes
 
 If the named entry does not already exist, Preflight creates it in `preflight.yml` and defaults the encrypted path to `secrets/<name>.age`.
 
@@ -62,10 +98,13 @@ Override recipients or identity when needed:
 
 ```bash
 preflight secret encrypt autologin-password \
-  --from-file ./secrets/autologin-password.txt \
   --recipient age1example... \
   --identity .age/keys.txt
 ```
+
+`--from-file` and `--from-stdin` are mutually exclusive. If neither is set and
+stdin is not a terminal, Preflight refuses to run rather than silently consume
+whatever happens to be piped in.
 
 ## 3. List Configured Secrets
 

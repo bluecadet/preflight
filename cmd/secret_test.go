@@ -15,6 +15,103 @@ import (
 	"github.com/bluecadet/preflight/internal/secrets"
 )
 
+func TestRunSecretEncryptFromFile(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	identity, _ := writeEncryptProject(t, dir)
+
+	plaintextPath := filepath.Join(dir, "plain.txt")
+	if err := os.WriteFile(plaintextPath, []byte("file-secret"), 0o600); err != nil {
+		t.Fatalf("WriteFile(plain): %v", err)
+	}
+
+	cmd := newSecretEncryptTestCommand()
+	if err := cmd.Flags().Set("from-file", plaintextPath); err != nil {
+		t.Fatalf("Set from-file: %v", err)
+	}
+	if _, err := captureStdout(t, func() error {
+		return runSecretEncrypt(cmd, []string{"api-token"})
+	}); err != nil {
+		t.Fatalf("runSecretEncrypt: %v", err)
+	}
+
+	got := decryptAgeFile(t, filepath.Join(dir, "secrets", "api-token.age"), identity)
+	if string(got) != "file-secret" {
+		t.Fatalf("plaintext = %q, want file-secret", got)
+	}
+}
+
+func TestRunSecretEncryptFromStdinTrimsTrailingNewline(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	identity, _ := writeEncryptProject(t, dir)
+
+	cmd := newSecretEncryptTestCommand()
+	cmd.SetIn(strings.NewReader("stdin-secret\n"))
+	if err := cmd.Flags().Set("from-stdin", "true"); err != nil {
+		t.Fatalf("Set from-stdin: %v", err)
+	}
+	if _, err := captureStdout(t, func() error {
+		return runSecretEncrypt(cmd, []string{"api-token"})
+	}); err != nil {
+		t.Fatalf("runSecretEncrypt: %v", err)
+	}
+
+	got := decryptAgeFile(t, filepath.Join(dir, "secrets", "api-token.age"), identity)
+	if string(got) != "stdin-secret" {
+		t.Fatalf("plaintext = %q, want stdin-secret (trailing newline trimmed)", got)
+	}
+}
+
+func TestRunSecretEncryptFromStdinPreservesEmbeddedNewlines(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	identity, _ := writeEncryptProject(t, dir)
+
+	cmd := newSecretEncryptTestCommand()
+	cmd.SetIn(strings.NewReader("line one\nline two\r\n"))
+	if err := cmd.Flags().Set("from-stdin", "true"); err != nil {
+		t.Fatalf("Set from-stdin: %v", err)
+	}
+	if _, err := captureStdout(t, func() error {
+		return runSecretEncrypt(cmd, []string{"api-token"})
+	}); err != nil {
+		t.Fatalf("runSecretEncrypt: %v", err)
+	}
+
+	got := decryptAgeFile(t, filepath.Join(dir, "secrets", "api-token.age"), identity)
+	if string(got) != "line one\nline two" {
+		t.Fatalf("plaintext = %q, want embedded newlines preserved and final CRLF trimmed", got)
+	}
+}
+
+func TestRunSecretEncryptRequiresSourceWhenNotInteractive(t *testing.T) {
+	dir := t.TempDir()
+	restore := chdirForTest(t, dir)
+	defer restore()
+
+	writeEncryptProject(t, dir)
+
+	cmd := newSecretEncryptTestCommand()
+	cmd.SetIn(strings.NewReader(""))
+
+	_, err := captureStdout(t, func() error {
+		return runSecretEncrypt(cmd, []string{"api-token"})
+	})
+	if err == nil {
+		t.Fatal("expected error when no source flag is set and stdin is not a terminal")
+	}
+	if !strings.Contains(err.Error(), "no plaintext source") {
+		t.Fatalf("error = %v, want \"no plaintext source\" hint", err)
+	}
+}
+
 func TestRunSecretIdentityGenerateWritesPrivateIdentity(t *testing.T) {
 	dir := t.TempDir()
 	identityPath := filepath.Join(dir, ".age", "keys.txt")
@@ -172,6 +269,42 @@ func TestRunSecretRekeyResolvesAllSecretsBeforeWriting(t *testing.T) {
 	if _, err := decryptAgeFileErr(filepath.Join(dir, "secrets", "api-token.age"), newIdentity); err == nil {
 		t.Fatal("expected api-token to remain encrypted only for old identity")
 	}
+}
+
+func newSecretEncryptTestCommand() *cobra.Command {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("from-file", "", "")
+	cmd.Flags().Bool("from-stdin", false, "")
+	cmd.Flags().StringSlice("recipient", nil, "")
+	cmd.Flags().String("identity", "", "")
+	return cmd
+}
+
+func writeEncryptProject(t *testing.T, dir string) (*age.X25519Identity, *config.Config) {
+	t.Helper()
+
+	identity, err := age.GenerateX25519Identity()
+	if err != nil {
+		t.Fatalf("Generate identity: %v", err)
+	}
+	identityPath := filepath.Join(dir, ".age", "keys.txt")
+	if err := os.MkdirAll(filepath.Dir(identityPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll(identity dir): %v", err)
+	}
+	if err := os.WriteFile(identityPath, []byte(identity.String()+"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(identity): %v", err)
+	}
+	cfg := &config.Config{
+		Vars: map[string]any{},
+		Secrets: config.SecretsConfig{
+			Identity:   identityPath,
+			Recipients: []string{identity.Recipient().String()},
+		},
+	}
+	if err := config.SaveFile(filepath.Join(dir, config.FileName), cfg); err != nil {
+		t.Fatalf("SaveFile(config): %v", err)
+	}
+	return identity, cfg
 }
 
 func newSecretIdentityGenerateTestCommand() *cobra.Command {

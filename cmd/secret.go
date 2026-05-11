@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 
 	"filippo.io/age"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
@@ -31,9 +33,18 @@ var secretListCmd = &cobra.Command{
 
 var secretEncryptCmd = &cobra.Command{
 	Use:   "encrypt <name>",
-	Short: "Encrypt a secret from a file into the repo-backed age store",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSecretEncrypt,
+	Short: "Encrypt a secret into the repo-backed age store",
+	Long: `Encrypt a secret into the repo-backed age store.
+
+The plaintext source is selected in this order:
+  --from-file <path>   read from a file
+  --from-stdin         read from standard input (trailing newline trimmed)
+  (no flag, TTY)       prompt interactively without echo, confirming twice
+
+If no source flag is set and stdin is not a terminal, the command exits with an
+error rather than silently consuming piped input.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSecretEncrypt,
 }
 
 var secretEditCmd = &cobra.Command{
@@ -72,7 +83,8 @@ var secretRekeyCmd = &cobra.Command{
 func init() {
 	addOutputFlags(secretListCmd)
 	secretEncryptCmd.Flags().String("from-file", "", "path to a plaintext file to encrypt")
-	_ = secretEncryptCmd.MarkFlagRequired("from-file")
+	secretEncryptCmd.Flags().Bool("from-stdin", false, "read plaintext from standard input")
+	secretEncryptCmd.MarkFlagsMutuallyExclusive("from-file", "from-stdin")
 	secretEncryptCmd.Flags().StringSlice("recipient", nil, "age recipient(s) to encrypt to")
 	secretEncryptCmd.Flags().String("identity", "", "path to an age identity file used for future decrypt/edit operations")
 	secretEditCmd.Flags().StringSlice("recipient", nil, "override age recipient(s) for re-encryption")
@@ -115,7 +127,11 @@ func runSecretList(cmd *cobra.Command, _ []string) error {
 
 func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 	name := args[0]
-	fromFile, _ := cmd.Flags().GetString("from-file")
+
+	data, err := readSecretPlaintext(cmd, name)
+	if err != nil {
+		return fmt.Errorf("secret encrypt: %w", err)
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -154,10 +170,6 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 	}
 
 	provider := secrets.NewRepoProvider(cwd, cfg.Secrets)
-	data, err := os.ReadFile(fromFile)
-	if err != nil {
-		return fmt.Errorf("secret encrypt: read %q: %w", fromFile, err)
-	}
 	if err := provider.Encrypt(name, data); err != nil {
 		return fmt.Errorf("secret encrypt: %w", err)
 	}
@@ -167,6 +179,56 @@ func runSecretEncrypt(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Encrypted secret %q to %s\n", name, entry.File)
 	return nil
+}
+
+func readSecretPlaintext(cmd *cobra.Command, name string) ([]byte, error) {
+	fromFile, _ := cmd.Flags().GetString("from-file")
+	fromStdin, _ := cmd.Flags().GetBool("from-stdin")
+
+	switch {
+	case fromFile != "":
+		data, err := os.ReadFile(fromFile)
+		if err != nil {
+			return nil, fmt.Errorf("read %q: %w", fromFile, err)
+		}
+		return data, nil
+	case fromStdin:
+		data, err := io.ReadAll(cmd.InOrStdin())
+		if err != nil {
+			return nil, fmt.Errorf("read stdin: %w", err)
+		}
+		return bytes.TrimSuffix(bytes.TrimSuffix(data, []byte("\n")), []byte("\r")), nil
+	case stdinIsTerminal():
+		return promptSecretPlaintext(cmd, name)
+	default:
+		return nil, fmt.Errorf("no plaintext source: pass --from-file, --from-stdin, or run from a terminal")
+	}
+}
+
+func stdinIsTerminal() bool {
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
+
+func promptSecretPlaintext(cmd *cobra.Command, name string) ([]byte, error) {
+	fd := int(os.Stdin.Fd())
+	prompt := func(label string) ([]byte, error) {
+		fmt.Fprintf(cmd.ErrOrStderr(), "%s for %q: ", label, name)
+		value, err := term.ReadPassword(fd)
+		fmt.Fprintln(cmd.ErrOrStderr())
+		return value, err
+	}
+	value, err := prompt("Enter value")
+	if err != nil {
+		return nil, fmt.Errorf("read terminal: %w", err)
+	}
+	confirm, err := prompt("Confirm value")
+	if err != nil {
+		return nil, fmt.Errorf("read terminal: %w", err)
+	}
+	if !bytes.Equal(value, confirm) {
+		return nil, fmt.Errorf("values did not match")
+	}
+	return value, nil
 }
 
 func runSecretEdit(cmd *cobra.Command, args []string) error {

@@ -174,15 +174,21 @@ List configured repo-backed secrets from `preflight.yml`.
 
 ### `preflight secret encrypt <name>`
 
-Encrypt a plaintext file into the repo-backed secret store.
+Encrypt a plaintext value into the repo-backed secret store. The plaintext can
+come from a file, from standard input, or from an interactive no-echo prompt
+(confirmed twice). If no source flag is set and stdin is not a terminal, the
+command exits with an error rather than consuming piped input.
 
 Command-specific flags:
 
 | Flag | Meaning |
 | --- | --- |
-| `--from-file` | Plaintext source file |
+| `--from-file` | Read plaintext from a file |
+| `--from-stdin` | Read plaintext from standard input (single trailing newline trimmed) |
 | `--recipient` | Override configured recipients |
 | `--identity` | Override the identity path stored for decrypt/edit flows |
+
+`--from-file` and `--from-stdin` are mutually exclusive.
 
 ### `preflight secret edit <name>`
 
