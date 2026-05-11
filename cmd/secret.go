@@ -212,9 +212,13 @@ func stdinIsTerminal() bool {
 func promptSecretPlaintext(cmd *cobra.Command, name string) ([]byte, error) {
 	fd := int(os.Stdin.Fd())
 	prompt := func(label string) ([]byte, error) {
-		fmt.Fprintf(cmd.ErrOrStderr(), "%s for %q: ", label, name)
+		if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "%s for %q: ", label, name); err != nil {
+			return nil, fmt.Errorf("write prompt: %w", err)
+		}
 		value, err := term.ReadPassword(fd)
-		fmt.Fprintln(cmd.ErrOrStderr())
+		if _, newlineErr := fmt.Fprintln(cmd.ErrOrStderr()); newlineErr != nil && err == nil {
+			return nil, fmt.Errorf("write prompt newline: %w", newlineErr)
+		}
 		return value, err
 	}
 	value, err := prompt("Enter value")

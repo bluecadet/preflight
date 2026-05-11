@@ -15,6 +15,23 @@ func TestBuildPowerShellCheckScriptWrapsResult(t *testing.T) {
 		"[ScriptBlock]::Create($checkScript)",
 		"ConvertTo-Json -Compress",
 		"needs_change",
+		"System.Collections.IDictionary",
+	} {
+		if !strings.Contains(script, fragment) {
+			t.Fatalf("expected wrapper to contain %q, got:\n%s", fragment, script)
+		}
+	}
+}
+
+func TestBuildPowerShellCheckScriptExplainsInvalidFinalOutput(t *testing.T) {
+	script, err := BuildPowerShellCheckScript("Write-Output 'native command noise'")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, fragment := range []string{
+		"final output",
+		"last output was",
+		"Suppress command output or assign it to a variable",
 	} {
 		if !strings.Contains(script, fragment) {
 			t.Fatalf("expected wrapper to contain %q, got:\n%s", fragment, script)

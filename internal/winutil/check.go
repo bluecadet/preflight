@@ -44,10 +44,24 @@ func BuildPowerShellCheckScript(checkScript string) (string, error) {
 
 	return varScript + `
 $ErrorActionPreference = 'Stop'
+function Format-PreflightCheckValue($value) {
+  if ($null -eq $value) {
+    return '<null>'
+  }
+  $text = try { [string]$value } catch { "<$($value.GetType().FullName)>" }
+  $text = ($text -replace "` + "`r" + `", ' ' -replace "` + "`n" + `", ' ').Trim()
+  if ($text.Length -gt 200) {
+    $text = $text.Substring(0, 200) + '...'
+  }
+  if ([string]::IsNullOrWhiteSpace($text)) {
+    return "<$($value.GetType().FullName)>"
+  }
+  return $text
+}
 $block = [ScriptBlock]::Create($checkScript)
 $values = @(& $block)
 if ($values.Count -eq 0) {
-  throw "powershell check_script must return a bool or object"
+  throw "powershell check_script produced no result; return a bool or an object with needs_change as the final output"
 }
 $result = $values[$values.Count - 1]
 if ($values.Count -gt 1) {
@@ -61,10 +75,22 @@ if ($result -is [bool]) {
     needs_change = [bool]$result
     message = $null
   }
+} elseif ($result -is [System.Collections.IDictionary]) {
+  if (-not $result.Contains('needs_change')) {
+    $typeName = $result.GetType().FullName
+    $preview = Format-PreflightCheckValue $result
+    throw "powershell check_script must return a bool or object with needs_change as its final output; last output was $($typeName): $($preview). Suppress command output or assign it to a variable if it is not the check result."
+  }
+  $payload = [pscustomobject]@{
+    needs_change = [bool]$result['needs_change']
+    message = if ($result.Contains('message')) { [string]$result['message'] } else { $null }
+  }
 } else {
   $needsProp = $result.PSObject.Properties['needs_change']
   if ($null -eq $needsProp) {
-    throw "powershell check_script must return a bool or object with needs_change"
+    $typeName = if ($null -eq $result) { '<null>' } else { $result.GetType().FullName }
+    $preview = Format-PreflightCheckValue $result
+    throw "powershell check_script must return a bool or object with needs_change as its final output; last output was $($typeName): $($preview). Suppress command output or assign it to a variable if it is not the check result."
   }
   $messageProp = $result.PSObject.Properties['message']
   $payload = [pscustomobject]@{
