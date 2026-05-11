@@ -224,6 +224,7 @@ tasks:
         }
 
         $tempPaths = New-Object System.Collections.Generic.List[string]
+        $gitGlobalArgs = @()
 
         function New-TempTextFile([string]$Extension, [string]$Content) {
           $path = Join-Path ([System.IO.Path]::GetTempPath()) ("preflight-git-" + [System.Guid]::NewGuid().ToString('N') + $Extension)
@@ -240,15 +241,17 @@ tasks:
         }
 
         function Invoke-Git([string[]]$Arguments) {
-          Write-Output ("git " + (Format-GitArguments $Arguments))
-          & $git @Arguments
+          $full = @() + $script:gitGlobalArgs + $Arguments
+          Write-Output ("git " + (Format-GitArguments $full))
+          & $git @full
           if ($LASTEXITCODE -ne 0) {
-            throw ("git command failed with exit code " + $LASTEXITCODE + ": git " + (Format-GitArguments $Arguments))
+            throw ("git command failed with exit code " + $LASTEXITCODE + ": git " + (Format-GitArguments $full))
           }
         }
 
         function Invoke-GitOutput([string[]]$Arguments) {
-          $output = & $git @Arguments 2>$null
+          $full = @() + $script:gitGlobalArgs + $Arguments
+          $output = & $git @full 2>$null
           if ($LASTEXITCODE -ne 0) {
             return $null
           }
@@ -293,6 +296,8 @@ tasks:
           $cmd = New-TempTextFile '.cmd' ("@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$ps1`" %*`r`n")
           $env:GIT_ASKPASS = $cmd
           $env:GIT_TERMINAL_PROMPT = '0'
+          $env:GCM_INTERACTIVE = 'Never'
+          $script:gitGlobalArgs = @('-c', 'credential.helper=', '-c', 'credential.interactive=false')
         }
 
         function Enable-SshKey() {
@@ -430,4 +435,5 @@ tasks:
           Remove-Item Env:\GIT_ASKPASS -ErrorAction SilentlyContinue
           Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
           Remove-Item Env:\GIT_TERMINAL_PROMPT -ErrorAction SilentlyContinue
+          Remove-Item Env:\GCM_INTERACTIVE -ErrorAction SilentlyContinue
         }
