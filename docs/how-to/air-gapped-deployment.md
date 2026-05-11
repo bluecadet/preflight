@@ -10,7 +10,54 @@ Use this guide when you want to prepare a run on one machine, transfer the resul
 - Any referenced plugin executables discoverable during staging
 - No tasks that would require embedding decrypted secret values into the bundle
 
-## 1. Stage The Bundles
+## 1. Prepare Encrypted Secrets For Target-Side Apply
+
+Skip this section if the staged plan does not reference `secret:<name>` values.
+
+If the staged plan references secrets, the bundle includes the encrypted secret files. The offline machine still needs an identity that can decrypt those files when it runs `preflight apply --bundle`.
+
+Use this pattern when the target should decrypt the bundle locally:
+
+1. Keep or create a developer identity on the staging machine:
+
+   ```bash
+   preflight secret identity generate --out .age/keys.txt
+   ```
+
+2. Generate a separate identity on the target machine:
+
+   ```bash
+   preflight secret identity generate --out .age/target-keys.txt
+   ```
+
+3. On the target, print the target's public recipient:
+
+   ```bash
+   preflight secret identity recipient .age/target-keys.txt
+   ```
+
+4. Copy only the public recipient string back to the project and add it beside the developer recipient in `preflight.yml`:
+
+   ```yaml
+   secrets:
+     identity: ".age/keys.txt"
+     recipients:
+       - "age1developerrecipient..."
+       - "age1targetrecipient..."
+     entries:
+       autologin-password:
+         file: "secrets/autologin-password.age"
+   ```
+
+5. Re-encrypt the configured secrets to the updated recipient list:
+
+   ```bash
+   preflight secret rekey
+   ```
+
+Adding a recipient to `preflight.yml` does not change existing encrypted files by itself. Run `preflight secret rekey` after recipient changes so the staged encrypted secret payloads can be decrypted by the new target identity.
+
+## 2. Stage The Bundles
 
 Run:
 
@@ -28,7 +75,7 @@ preflight stage playbooks/lobby.yml --bundle-output-dir ./out/bundles
 
 Preflight creates one bundle per resolved target, not one site-wide archive.
 
-## 2. Understand What The Bundle Contains
+## 3. Understand What The Bundle Contains
 
 Each bundle is a zip archive that contains:
 
@@ -49,13 +96,13 @@ The manifest records:
 
 This design keeps staged execution reproducible. The offline machine runs the exact task DAG and module structure that was staged. Expressions in `when`, task name templates, and parameters that reference `facts`, `env`, or `target.*` values are rendered at apply time against the target.
 
-## 3. Transfer The Correct Bundle
+## 4. Transfer The Correct Bundle
 
 Copy the target-specific zip to the isolated machine using your normal transfer method.
 
 If you staged more than one target, make sure each machine receives its own bundle. The plan inside the bundle is already target-specific.
 
-## 4. Apply The Bundle Offline
+## 5. Apply The Bundle Offline
 
 Run:
 
@@ -69,9 +116,15 @@ Choose a custom state file if you want:
 preflight apply --bundle ./bundle.zip --state-file ./state/offline.json
 ```
 
+If the bundle includes encrypted secrets, pass the target identity:
+
+```bash
+preflight apply --bundle ./bundle.zip --secret-identity .age/target-keys.txt
+```
+
 Bundle apply reads `plan.json` directly from the archive, extracts the payload to a temporary directory, builds a module registry from the bundled plugins, and then executes the plan locally with the installed `preflight` binary on that machine.
 
-## 5. Know The Important Limits
+## 6. Know The Important Limits
 
 Staging fails when:
 
@@ -91,7 +144,7 @@ That isolation is a feature. It keeps the staged artifact predictable and indepe
 
 ### Staging fails because of secrets
 
-The runner refuses to embed secret values into a staged bundle. Move decryption to the offline machine, or refactor the playbook so the staged run does not depend on those secret-bearing parameters.
+The runner refuses to embed secret values into a staged bundle. Use encrypted bundle secrets with a target identity, or refactor the playbook so the staged run does not depend on those secret-bearing parameters.
 
 ### A plugin works normally but not when staged
 

@@ -83,6 +83,7 @@ That means:
 
 - if you run `preflight apply` on your laptop, your laptop needs the identity
 - if you copy the project to a target PC and run `preflight apply` there, the target PC needs the identity
+- if you run `preflight apply --bundle` on a target PC, that target PC needs an identity matching a recipient used for the bundled encrypted secrets
 
 The encrypted files and the public recipient strings are safe to move around with the project. The private identity file is the sensitive part that must be distributed intentionally.
 

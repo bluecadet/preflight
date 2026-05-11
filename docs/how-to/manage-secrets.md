@@ -149,6 +149,8 @@ If a different machine will run `preflight`, it needs everything required for lo
 
 This is the important rule: decryption happens on whichever machine is actually running Preflight.
 
+For staged offline bundles, that usually means adding a target machine recipient, rekeying the secrets, staging the bundle, and applying it on the target with that target's identity. See [Stage bundles for air-gapped deployment](./air-gapped-deployment.md#1-prepare-encrypted-secrets-for-target-side-apply).
+
 ## Troubleshooting
 
 ### `no recipients configured`
