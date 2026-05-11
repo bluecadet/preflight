@@ -18,6 +18,7 @@ import (
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target/targettest"
 )
 
 type mockTarget struct {
@@ -312,6 +313,52 @@ func TestPlanTaskBecomeCanDisableInheritedDefaults(t *testing.T) {
 	}
 	if len(plan.Tasks[0].Become) != 1 {
 		t.Fatalf("expected disabled override to keep only enabled=false, got %#v", plan.Tasks[0].Become)
+	}
+}
+
+func TestApplyPassesRenderedExecutionOptionsToTarget(t *testing.T) {
+	tgt := &targettest.Fake{
+		InfoValue: target.TargetInfo{
+			Hostname:  "remote-linux",
+			OSFamily:  target.OSFamilyLinux,
+			Transport: target.TransportSSH,
+		},
+		Results: []target.Result{{Status: target.StatusChanged}},
+	}
+	r := New(tgt, emptyResolver(), Config{
+		TargetVars: map[string]any{"run_as": "appuser"},
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "become",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{
+			{
+				ID:           "task-0",
+				Name:         "echo",
+				Ref:          "echo",
+				Module:       "shell",
+				TemplateVars: map[string]any{},
+				Params:       map[string]any{"cmd": "echo"},
+				Become: map[string]any{
+					"user":   "{{ target.run_as }}",
+					"method": "sudo",
+				},
+			},
+		},
+	}
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
+	}
+	if len(tgt.Calls) != 1 {
+		t.Fatalf("expected one target call, got %d", len(tgt.Calls))
+	}
+	got := tgt.Calls[0].Options.Become
+	if got == nil {
+		t.Fatal("expected become options to be passed to target")
+	}
+	if !got.Enabled || got.User != "appuser" || got.Method != "sudo" {
+		t.Fatalf("unexpected become options: %#v", got)
 	}
 }
 

@@ -7,29 +7,13 @@ import (
 
 	"github.com/bluecadet/preflight/internal/facts"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/target/targettest"
 )
-
-// stubTarget is a minimal target.Target for testing fact gathering.
-type stubTarget struct {
-	info             target.TargetInfo
-	runPowerShellOut string
-	runPowerShellErr error
-}
-
-func (s *stubTarget) Execute(_ context.Context, _ string, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
-	return target.Result{}, nil
-}
-
-func (s *stubTarget) Info(_ context.Context) (target.TargetInfo, error) { return s.info, nil }
-func (s *stubTarget) Transport() target.Transport                       { return s.info.Transport }
-func (s *stubTarget) RunPowerShell(_ context.Context, _ string) (string, error) {
-	return s.runPowerShellOut, s.runPowerShellErr
-}
 
 func TestGather_RemoteNonWindows_EnvIsEmpty(t *testing.T) {
 	// A remote non-Windows (SSH-like) target must not leak local env vars.
-	remote := &stubTarget{
-		info: target.TargetInfo{
+	remote := &targettest.Fake{
+		InfoValue: target.TargetInfo{
 			Hostname:  "remote-linux",
 			OSVersion: "ubuntu-22.04",
 			OSFamily:  target.OSFamilyLinux,
@@ -54,8 +38,8 @@ func TestGather_LocalNonWindows_EnvIsPopulated(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Unsetenv("PREFLIGHT_TEST_MARKER") })
 
-	local := &stubTarget{
-		info: target.TargetInfo{
+	local := &targettest.Fake{
+		InfoValue: target.TargetInfo{
 			Hostname:  "local",
 			OSVersion: "darwin",
 			OSFamily:  target.OSFamilyDarwin,
