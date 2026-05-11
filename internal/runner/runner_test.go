@@ -545,10 +545,18 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 		"clean', $cleanMode",
 		"checkout', '-B', $localBranch",
 		"--no-tags",
+		"credential.helper=",
+		"UTF8Encoding",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("expected git-sync script to contain %q, got:\n%s", want, script)
 		}
+	}
+	if strings.Contains(script, "Set-Content -LiteralPath $path -Value $Content -NoNewline -Encoding UTF8") {
+		t.Fatalf("expected git-sync temp files to avoid UTF-8 BOMs, got:\n%s", script)
+	}
+	if strings.Contains(script, "credential.interactive=false") {
+		t.Fatalf("expected git-sync script to keep GIT_ASKPASS available, got:\n%s", script)
 	}
 	if strings.Contains(script, "secret:github-token") || strings.Contains(script, "secret:github-deploy-key") {
 		t.Fatalf("expected git-sync script to avoid embedding secret refs, got:\n%s", script)

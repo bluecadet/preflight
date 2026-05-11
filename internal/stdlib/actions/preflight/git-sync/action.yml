@@ -225,10 +225,12 @@ tasks:
 
         $tempPaths = New-Object System.Collections.Generic.List[string]
         $gitGlobalArgs = @()
+        $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
 
         function New-TempTextFile([string]$Extension, [string]$Content) {
           $path = Join-Path ([System.IO.Path]::GetTempPath()) ("preflight-git-" + [System.Guid]::NewGuid().ToString('N') + $Extension)
-          Set-Content -LiteralPath $path -Value $Content -NoNewline -Encoding UTF8
+          # Windows PowerShell 5.1 writes a BOM for -Encoding UTF8, which makes cmd.exe read "@echo" as an invalid command.
+          [System.IO.File]::WriteAllText($path, $Content, $script:utf8NoBom)
           $script:tempPaths.Add($path) | Out-Null
           return $path
         }
@@ -297,7 +299,8 @@ tasks:
           $env:GIT_ASKPASS = $cmd
           $env:GIT_TERMINAL_PROMPT = '0'
           $env:GCM_INTERACTIVE = 'Never'
-          $script:gitGlobalArgs = @('-c', 'credential.helper=', '-c', 'credential.interactive=false')
+          # Clear configured helpers so GCM cannot intercept, but keep Git's askpass path available for the token above.
+          $script:gitGlobalArgs = @('-c', 'credential.helper=')
         }
 
         function Enable-SshKey() {
