@@ -17,6 +17,7 @@ type ExecutionPlan struct {
 	PlaybookName string
 	Tasks        []*PlanTask
 	Vars         map[string]any
+	dag          *DAG
 }
 
 // PlanTask is a single task entry in the execution plan.
@@ -66,8 +67,10 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		}
 	}
 
-	// Validate the DAG (detects cycles and unknown depends_on refs).
-	if _, err := BuildDAG(planTasks); err != nil {
+	// Validate and keep the DAG so apply/state use the same dependency
+	// resolution that planning accepted.
+	dag, err := BuildDAG(planTasks)
+	if err != nil {
 		return nil, fmt.Errorf("plan: %w", err)
 	}
 
@@ -75,6 +78,7 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		PlaybookName: playbook.Name,
 		Tasks:        planTasks,
 		Vars:         vars,
+		dag:          dag,
 	}, nil
 }
 

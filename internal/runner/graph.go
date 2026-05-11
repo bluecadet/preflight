@@ -1,6 +1,9 @@
 package runner
 
-import "fmt"
+import (
+	"fmt"
+	"slices"
+)
 
 // DAG is a directed acyclic graph of tasks for dependency-ordered execution.
 type DAG struct {
@@ -57,6 +60,23 @@ func BuildDAG(tasks []*PlanTask) (*DAG, error) {
 	return d, nil
 }
 
+// DAG returns the plan's validated dependency graph, rebuilding it only for
+// hand-constructed test plans or older callers that did not come from Plan().
+func (p *ExecutionPlan) DAG() (*DAG, error) {
+	if p == nil {
+		return nil, fmt.Errorf("nil execution plan")
+	}
+	if p.dag != nil {
+		return p.dag, nil
+	}
+	dag, err := BuildDAG(p.Tasks)
+	if err != nil {
+		return nil, err
+	}
+	p.dag = dag
+	return dag, nil
+}
+
 // TopologicalOrder returns tasks in dependency-first execution order.
 func (d *DAG) TopologicalOrder() []*PlanTask {
 	result := make([]*PlanTask, 0, len(d.order))
@@ -64,6 +84,23 @@ func (d *DAG) TopologicalOrder() []*PlanTask {
 		result = append(result, d.tasks[id])
 	}
 	return result
+}
+
+// DependencyIDs resolves a task's dependency refs to stable task IDs.
+func (d *DAG) DependencyIDs(task *PlanTask) ([]string, error) {
+	if task == nil {
+		return nil, nil
+	}
+	dependsOn := make([]string, 0, len(task.DependsOn))
+	for _, depRef := range task.DependsOn {
+		depID, ok := d.nameToID[depRef]
+		if !ok {
+			return nil, fmt.Errorf("task %q depends on unknown task %q", task.Name, depRef)
+		}
+		dependsOn = append(dependsOn, depID)
+	}
+	slices.Sort(dependsOn)
+	return dependsOn, nil
 }
 
 // topoSort returns task IDs in topological order using Kahn's algorithm.

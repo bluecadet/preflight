@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
+	"sort"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/fsutil"
@@ -176,9 +176,12 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 	if execCtx == nil {
 		execCtx = &executionContext{}
 	}
+	dag, err := plan.DAG()
+	if err != nil {
+		return nil, fmt.Errorf("state: build DAG: %w", err)
+	}
 
 	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
-	nameToKey := make(map[string]string, len(plan.Tasks))
 	renderedTasks := make([]*BoundTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
 		bound, err := bindTask(task, execCtx, false)
@@ -186,11 +189,6 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}
 		renderedTasks = append(renderedTasks, bound)
-		key := task.Ref
-		if key == "" {
-			key = task.Name
-		}
-		nameToKey[key] = task.ID
 	}
 
 	for idx, task := range plan.Tasks {
@@ -214,13 +212,10 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 			}
 		}
 
-		dependsOn := make([]string, 0, len(task.DependsOn))
-		for _, depName := range task.DependsOn {
-			if depKey, ok := nameToKey[depName]; ok {
-				dependsOn = append(dependsOn, depKey)
-			}
+		dependsOn, err := dag.DependencyIDs(task)
+		if err != nil {
+			return nil, fmt.Errorf("state: %w", err)
 		}
-		slices.Sort(dependsOn)
 
 		paramHash := StateParamHash(stateSource, params, becomeSource, become)
 		tasks = append(tasks, PlannedTaskState{
@@ -293,7 +288,7 @@ func ComparePlannedTasks(planned []PlannedTaskState, state *State) []TaskCompari
 		}
 		removedKeys = append(removedKeys, taskKey)
 	}
-	slices.Sort(removedKeys)
+	sort.Strings(removedKeys)
 	for _, taskKey := range removedKeys {
 		recorded := state.Tasks[taskKey]
 		comparisons = append(comparisons, TaskComparison{

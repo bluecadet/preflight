@@ -20,7 +20,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		return err
 	}
 
-	dag, err := BuildDAG(plan.Tasks)
+	dag, err := plan.DAG()
 	if err != nil {
 		return fmt.Errorf("apply: build DAG: %w", err)
 	}
@@ -79,11 +79,11 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		// Dependency check: skip if any dependency failed (unless ignore_errors).
 		depFailed := false
-		for _, dep := range pt.DependsOn {
-			depID, ok := dag.nameToID[dep]
-			if !ok {
-				return fmt.Errorf("apply: task %q: dependency %q not found in DAG", pt.Name, dep)
-			}
+		depIDs, err := dag.DependencyIDs(pt)
+		if err != nil {
+			return fmt.Errorf("apply: %w", err)
+		}
+		for _, depID := range depIDs {
 			if failed[depID] {
 				depFailed = true
 				break
@@ -216,15 +216,10 @@ func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message stri
 }
 
 func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
-	dependsOn := make([]string, 0, len(pt.DependsOn))
+	dependsOn := []string(nil)
 	if dag != nil {
-		for _, depName := range pt.DependsOn {
-			if depID, ok := dag.nameToID[depName]; ok {
-				dependsOn = append(dependsOn, depID)
-			}
-		}
+		dependsOn, _ = dag.DependencyIDs(pt)
 	}
-	slices.Sort(dependsOn)
 
 	paramHash := StateParamHash(sourceParams, params, sourceBecome, become)
 	summary := StateParamSummary(sourceParams, params, sourceBecome, become)
