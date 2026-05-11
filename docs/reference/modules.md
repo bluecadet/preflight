@@ -106,8 +106,19 @@ Manage files.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `src` | string | Local source path to copy from |
+| `content` | string | Inline file content to write; may be a `secret:<name>` reference |
 | `dest` | string | Destination path |
 | `ensure` | `present` or `absent` | Desired state |
+
+Use either `src` or `content`, not both. `content` is useful for writing
+secret-backed files without creating a temporary plaintext source file:
+
+```yaml
+- name: Write license file
+  file:
+    dest: "C:\\Exhibits\\license.txt"
+    content: secret:license-file
+```
 
 ### `directory`
 

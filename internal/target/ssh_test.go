@@ -408,6 +408,76 @@ func TestSSHTarget_POSIXFileHashNoop(t *testing.T) {
 	}
 }
 
+func TestSSHTarget_POSIXFileContentWritesStdin(t *testing.T) {
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, stdin []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				return "preflight", "", 0, nil
+			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
+				return "missing", "", 0, nil
+			case strings.Contains(command, "cat > ") && strings.Contains(command, "/tmp/secret.txt"):
+				if string(stdin) != "secret\ncontent\n" {
+					t.Fatalf("unexpected file content stdin %q", string(stdin))
+				}
+				return "", "", 0, nil
+			default:
+				t.Fatalf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
+		"dest":    "/tmp/secret.txt",
+		"content": "secret\ncontent\n",
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected changed status, got %q", result.Status)
+	}
+}
+
+func TestSSHTarget_POSIXFileContentHashNoop(t *testing.T) {
+	content := "secret\ncontent\n"
+	expectedHash := hashBytes([]byte(content))
+
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				return "preflight", "", 0, nil
+			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
+				return "file", "", 0, nil
+			case strings.HasPrefix(command, "sha256sum "):
+				return expectedHash + "  /tmp/secret.txt\n", "", 0, nil
+			default:
+				t.Fatalf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
+		"dest":    "/tmp/secret.txt",
+		"content": content,
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusOK {
+		t.Fatalf("expected no-op status, got %q", result.Status)
+	}
+}
+
 func TestSSHTarget_POSIXPowerShellModuleUsesRemoteBinary(t *testing.T) {
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 	tgt.runner = &fakeSSHRunner{

@@ -191,3 +191,18 @@ func unsupportedRuntimeModuleError(kind RuntimeKind, module string) error {
 func unsupportedRuntimeModuleDetailError(kind RuntimeKind, module, detail string) error {
 	return fmt.Errorf("%s runtime: module %q %s", kind, module, detail)
 }
+
+func fileContentParam(params map[string]any, label, src string) (string, bool, error) {
+	value, ok := params["content"]
+	if !ok {
+		return "", false, nil
+	}
+	if src != "" {
+		return "", false, fmt.Errorf("%s: src and content are mutually exclusive", label)
+	}
+	content, ok := value.(string)
+	if !ok {
+		return "", false, fmt.Errorf("%s: content must be a string, got %T", label, value)
+	}
+	return content, true, nil
+}

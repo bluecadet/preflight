@@ -534,8 +534,12 @@ func hashLocalFile(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("hash %q: %w", path, err)
 	}
+	return hashBytes(data), nil
+}
+
+func hashBytes(data []byte) string {
 	sum := sha256.Sum256(data)
-	return fmt.Sprintf("%x", sum), nil
+	return fmt.Sprintf("%x", sum)
 }
 
 func winRMPackageRemotePath(index int, source string) string {

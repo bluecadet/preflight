@@ -136,6 +136,10 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 		ensure = "present"
 	}
 	src, _ := params["src"].(string)
+	content, hasContent, err := fileContentParam(params, "file", src)
+	if err != nil {
+		return false, "", err
+	}
 
 	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("if [ ! -e %q ]; then printf missing; elif [ -d %q ]; then printf dir; else printf file; fi", dest, dest), nil)
 	if err != nil {
@@ -164,7 +168,16 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 			return false, "", fmt.Errorf("file: %q is a directory, not a file", dest)
 		case "file":
 			if src == "" {
-				return false, "", nil
+				if !hasContent {
+					return false, "", nil
+				}
+			}
+			if hasContent {
+				remoteHash, err := posixRemoteFileHash(ctx, backend, dest)
+				if err != nil {
+					return false, "", err
+				}
+				return hashBytes([]byte(content)) != remoteHash, "", nil
 			}
 			localHash, err := hashLocalFile(src)
 			if err != nil {
@@ -193,6 +206,10 @@ func applyPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 		ensure = "present"
 	}
 	src, _ := params["src"].(string)
+	content, hasContent, err := fileContentParam(params, "file", src)
+	if err != nil {
+		return err
+	}
 
 	switch ensure {
 	case "absent":
@@ -200,6 +217,9 @@ func applyPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 	case "present":
 		if src != "" {
 			return backend.CopyFile(ctx, src, dest)
+		}
+		if hasContent {
+			return posixMustRunWithStdin(ctx, backend, fmt.Sprintf("mkdir -p %q && cat > %q", shellDir(dest), dest), []byte(content))
 		}
 		return posixMustRun(ctx, backend, fmt.Sprintf("mkdir -p %q && : > %q", shellDir(dest), dest))
 	default:
@@ -358,7 +378,11 @@ func posixNonZeroExitMeansChange(ctx context.Context, backend posixShellBackend,
 }
 
 func posixMustRun(ctx context.Context, backend posixShellBackend, command string) error {
-	_, stderr, code, err := backend.RunPOSIXCommand(ctx, command, nil)
+	return posixMustRunWithStdin(ctx, backend, command, nil)
+}
+
+func posixMustRunWithStdin(ctx context.Context, backend posixShellBackend, command string, stdin []byte) error {
+	_, stderr, code, err := backend.RunPOSIXCommand(ctx, command, stdin)
 	if err != nil {
 		return err
 	}

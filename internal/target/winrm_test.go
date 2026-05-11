@@ -70,6 +70,66 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 	}
 }
 
+func TestWinRMTarget_ExecuteFileContent(t *testing.T) {
+	var sawApply bool
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			switch {
+			case strings.Contains(command, "Get-FileHash"):
+				return "missing", "", 0, nil
+			case strings.Contains(command, "[Text.Encoding]::UTF8.GetBytes"):
+				sawApply = true
+				return "", "", 0, nil
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
+		"dest":    `C:\Temp\secret.txt`,
+		"content": "secret\ncontent\n",
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected changed result, got %q", result.Status)
+	}
+	if !sawApply {
+		t.Fatal("expected file content apply script to run")
+	}
+}
+
+func TestWinRMTarget_ExecuteFileContentHashNoop(t *testing.T) {
+	expectedHash := hashBytes([]byte("secret\ncontent\n"))
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			switch {
+			case strings.Contains(command, "Get-FileHash"):
+				return "present:" + expectedHash, "", 0, nil
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
+		"dest":    `C:\Temp\secret.txt`,
+		"content": "secret\ncontent\n",
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusOK {
+		t.Fatalf("expected no-op status, got %q", result.Status)
+	}
+}
+
 func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	var sawRunCmd bool
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})

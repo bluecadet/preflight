@@ -115,6 +115,74 @@ func TestFileModule_ApplyCopyCreatesParentDirectories(t *testing.T) {
 	}
 }
 
+func TestFileModule_ApplyWritesContent(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	dest := filepath.Join(t.TempDir(), "nested", "secret.txt")
+
+	if err := m.Apply(context.Background(), map[string]any{
+		"dest":    dest,
+		"content": "line one\nline two\n",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	data, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("ReadFile(%q): %v", dest, err)
+	}
+	if string(data) != "line one\nline two\n" {
+		t.Fatalf("expected content to be written, got %q", string(data))
+	}
+}
+
+func TestFileModule_CheckComparesContent(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	dest := filepath.Join(t.TempDir(), "content.txt")
+	if err := os.WriteFile(dest, []byte("same"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", dest, err)
+	}
+
+	needed, err := m.Check(context.Background(), map[string]any{
+		"dest":    dest,
+		"content": "same",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if needed {
+		t.Fatal("expected matching content to need no change")
+	}
+
+	needed, err = m.Check(context.Background(), map[string]any{
+		"dest":    dest,
+		"content": "different",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !needed {
+		t.Fatal("expected different content to need change")
+	}
+}
+
+func TestFileModule_RejectsSrcAndContent(t *testing.T) {
+	reg := module.Registry()
+	m := reg["file"]
+	_, err := m.Check(context.Background(), map[string]any{
+		"dest":    "/some/path",
+		"src":     "/source/path",
+		"content": "hello",
+	})
+	if err == nil {
+		t.Fatal("expected error for src and content, got nil")
+	}
+	if !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("expected mutual exclusion error, got %q", err.Error())
+	}
+}
+
 func TestDirectoryModule_Check_Existing(t *testing.T) {
 	dir := t.TempDir()
 	reg := module.Registry()

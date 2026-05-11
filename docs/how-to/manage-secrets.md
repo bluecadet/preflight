@@ -150,6 +150,16 @@ hosts:
     password: secret:winrm-password
 ```
 
+For file payloads, use the `file` module's `content` field:
+
+```yaml
+tasks:
+  - name: Write license file
+    file:
+      dest: "C:\\Exhibits\\license.txt"
+      content: secret:license-file
+```
+
 The built-in provider name is `secret`, so repo-backed references use `secret:<name>`.
 
 ## 6. Rekey Secrets After Recipient Changes

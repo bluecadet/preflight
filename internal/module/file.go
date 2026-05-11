@@ -10,9 +10,10 @@ import (
 )
 
 type FileParams struct {
-	Dest   string `param:"dest,required"`
-	Ensure string `param:"ensure" default:"present"`
-	Src    string `param:"src"`
+	Dest    string `param:"dest,required"`
+	Ensure  string `param:"ensure" default:"present"`
+	Src     string `param:"src"`
+	Content string `param:"content"`
 }
 
 type FileModule struct{}
@@ -23,6 +24,10 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 	}
 	var p FileParams
 	if err := Decode(params, &p); err != nil {
+		return false, err
+	}
+	hasContent, err := validateFileContentParams("file", params, p.Src)
+	if err != nil {
 		return false, err
 	}
 
@@ -50,6 +55,13 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 				}
 				return srcHash != dstHash, nil
 			}
+			if hasContent {
+				dstHash, err := hashFile(p.Dest)
+				if err != nil {
+					return false, fmt.Errorf("file: hash dest %q: %w", p.Dest, err)
+				}
+				return hashBytes([]byte(p.Content)) != dstHash, nil
+			}
 			return false, nil
 		},
 		func() (bool, error) {
@@ -72,11 +84,18 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 	if err := Decode(params, &p); err != nil {
 		return err
 	}
+	hasContent, err := validateFileContentParams("file", params, p.Src)
+	if err != nil {
+		return err
+	}
 
 	return EnsureApply("file", p.Ensure,
 		func() error {
 			if p.Src != "" {
 				return copyFile(p.Src, p.Dest)
+			}
+			if hasContent {
+				return writeFileContent(p.Dest, p.Content)
 			}
 			if err := ensureParentDir(p.Dest); err != nil {
 				return err
@@ -94,6 +113,19 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 			return nil
 		},
 	)
+}
+
+func validateFileContentParams(module string, params map[string]any, src string) (bool, error) {
+	_, hasContent := params["content"]
+	if src != "" && hasContent {
+		return false, fmt.Errorf("%s: src and content are mutually exclusive", module)
+	}
+	return hasContent, nil
+}
+
+func hashBytes(data []byte) string {
+	sum := sha256.Sum256(data)
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func hashFile(path string) (string, error) {
@@ -131,6 +163,16 @@ func copyFile(src, dst string) error {
 	}
 	if err := out.Close(); err != nil {
 		return fmt.Errorf("file: close dest %q: %w", dst, err)
+	}
+	return nil
+}
+
+func writeFileContent(dst, content string) error {
+	if err := ensureParentDir(dst); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dst, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("file: write %q: %w", dst, err)
 	}
 	return nil
 }

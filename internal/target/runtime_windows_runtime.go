@@ -274,6 +274,10 @@ func checkWindowsFile(ctx context.Context, backend windowsPowerShellBackend, par
 		ensure = "present"
 	}
 	src, _ := params["src"].(string)
+	content, hasContent, err := fileContentParam(params, "windows file", src)
+	if err != nil {
+		return false, "", err
+	}
 
 	script, err := powershellJSONVar("dest", dest)
 	if err != nil {
@@ -306,7 +310,13 @@ Write-Output ("present:" + $hash)
 			return true, "", nil
 		}
 		if src == "" {
-			return false, "", nil
+			if !hasContent {
+				return false, "", nil
+			}
+		}
+		if hasContent {
+			remoteHash := strings.TrimPrefix(trimmed, "present:")
+			return hashBytes([]byte(content)) != remoteHash, "", nil
 		}
 		localHash, err := hashLocalFile(src)
 		if err != nil {
@@ -329,6 +339,10 @@ func applyWindowsFile(ctx context.Context, backend windowsPowerShellBackend, par
 		ensure = "present"
 	}
 	src, _ := params["src"].(string)
+	content, hasContent, err := fileContentParam(params, "windows file", src)
+	if err != nil {
+		return err
+	}
 
 	switch ensure {
 	case "absent":
@@ -339,6 +353,16 @@ Remove-Item -LiteralPath $params.dest -Force -ErrorAction SilentlyContinue
 	case "present":
 		if src != "" {
 			return backend.CopyFile(ctx, src, dest)
+		}
+		if hasContent {
+			_, err := windowsRunScript(ctx, backend, map[string]any{"dest": dest, "content": content}, `
+$dir = Split-Path -Parent $params.dest
+if ($dir) {
+  New-Item -ItemType Directory -Path $dir -Force | Out-Null
+}
+[IO.File]::WriteAllBytes($params.dest, [Text.Encoding]::UTF8.GetBytes([string]$params.content))
+`)
+			return err
 		}
 		_, err := windowsRunScript(ctx, backend, map[string]any{"dest": dest}, `
 $dir = Split-Path -Parent $params.dest
