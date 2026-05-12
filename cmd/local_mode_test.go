@@ -22,7 +22,7 @@ import (
 )
 
 func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
-	playbookPath, inventoryPath := writeTestPlaybookWithInventory(t)
+	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	tests := []struct {
 		name string
@@ -38,9 +38,6 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 			cmd := newTestCommand()
 			if err := cmd.Flags().Set("target", "lab"); err != nil {
 				t.Fatalf("Set target: %v", err)
-			}
-			if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-				t.Fatalf("Set inventory: %v", err)
 			}
 
 			var stdout bytes.Buffer
@@ -76,7 +73,7 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 }
 
 func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
-	playbookPath, inventoryPath := writeTestPlaybookWithInventory(t)
+	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	tests := []struct {
 		name          string
@@ -85,24 +82,19 @@ func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing
 		expectInvCall bool
 	}{
 		{
-			name: "apply with explicit inventory",
-			run:  runApply,
-			configure: func(t *testing.T, cmd *cobra.Command) {
-				t.Helper()
-				if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-					t.Fatalf("Set inventory: %v", err)
-				}
-			},
+			name:          "apply with embedded inventory",
+			run:           runApply,
+			configure:     func(*testing.T, *cobra.Command) {},
 			expectInvCall: true,
 		},
 		{
-			name:          "check with discovered inventory",
+			name:          "check with embedded inventory",
 			run:           runCheck,
 			configure:     func(*testing.T, *cobra.Command) {},
 			expectInvCall: true,
 		},
 		{
-			name:          "plan with discovered inventory",
+			name:          "plan with embedded inventory",
 			run:           runPlan,
 			configure:     func(*testing.T, *cobra.Command) {},
 			expectInvCall: true,
@@ -115,7 +107,7 @@ func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing
 			var calls int
 			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
 				calls++
-				if !reflect.DeepEqual(selectors, []string{"all"}) {
+				if !reflect.DeepEqual(selectors, []string{}) {
 					t.Fatalf("unexpected selectors: %#v", selectors)
 				}
 				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
@@ -139,7 +131,7 @@ func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing
 }
 
 func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
-	playbookPath, inventoryPath := writeTestPlaybookWithInventory(t)
+	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	oldResolveHosts := resolveInventoryHosts
 	resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver, string) ([]targeting.ResolvedHost, error) {
@@ -149,9 +141,6 @@ func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
 	defer func() { resolveInventoryHosts = oldResolveHosts }()
 
 	cmd := newTestCommand()
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
-	}
 	if err := cmd.Flags().Set("target", "local"); err != nil {
 		t.Fatalf("Set target: %v", err)
 	}
@@ -168,13 +157,12 @@ func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
 }
 
 func TestRunFactsWithInventoryMultipleHostsEmitsPerHostEvents(t *testing.T) {
-	_, inventoryPath := writeTestPlaybookWithInventory(t)
+	_, configPath := writeTestPlaybookWithInventory(t)
+	restore := chdirForTest(t, filepath.Dir(configPath))
+	t.Cleanup(restore)
 	cmd := newTestCommand()
 	if err := cmd.Flags().Set("target", "lab"); err != nil {
 		t.Fatalf("Set target: %v", err)
-	}
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
 	}
 
 	oldStdout := os.Stdout
@@ -205,24 +193,15 @@ func TestRunFactsWithInventoryMultipleHostsEmitsPerHostEvents(t *testing.T) {
 }
 
 func TestRunFactsDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
-	_, inventoryPath := writeTestPlaybookWithInventory(t)
-	dir := filepath.Dir(inventoryPath)
+	_, configPath := writeTestPlaybookWithInventory(t)
+	dir := filepath.Dir(configPath)
 
 	tests := []struct {
 		name      string
 		configure func(*testing.T, *cobra.Command)
 	}{
 		{
-			name: "explicit inventory",
-			configure: func(t *testing.T, cmd *cobra.Command) {
-				t.Helper()
-				if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-					t.Fatalf("Set inventory: %v", err)
-				}
-			},
-		},
-		{
-			name: "discovered inventory",
+			name: "embedded inventory",
 			configure: func(t *testing.T, cmd *cobra.Command) {
 				t.Helper()
 				restore := chdirForTest(t, dir)
@@ -237,7 +216,7 @@ func TestRunFactsDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T)
 			var calls int
 			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
 				calls++
-				if !reflect.DeepEqual(selectors, []string{"all"}) {
+				if !reflect.DeepEqual(selectors, []string{}) {
 					t.Fatalf("unexpected selectors: %#v", selectors)
 				}
 				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
@@ -424,7 +403,7 @@ func TestRunDiffFetchesRemoteActions(t *testing.T) {
 func TestRunDiffUsesResolvedHostContext(t *testing.T) {
 	dir := t.TempDir()
 	playbookPath := filepath.Join(dir, "playbook.yml")
-	inventoryPath := filepath.Join(dir, "inventory.yml")
+	configPath := filepath.Join(dir, "preflight.yml")
 	statePath := filepath.Join(dir, "state", "kiosk-a.json")
 
 	if err := os.WriteFile(playbookPath, []byte(`
@@ -437,15 +416,17 @@ tasks:
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", playbookPath, err)
 	}
-	if err := os.WriteFile(inventoryPath, []byte(`
-groups:
-  lab:
-    hosts:
-      - name: kiosk-a
-        address: 10.0.0.1
-        transport: local
+	if err := os.WriteFile(configPath, []byte(`
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      address: 10.0.0.1
+      transport: local
+      groups: [lab]
 `), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+		t.Fatalf("WriteFile(%q): %v", configPath, err)
 	}
 
 	hostVars := map[string]any{"message": "hello"}
@@ -519,9 +500,6 @@ groups:
 	if err := cmd.Flags().Set("target", "lab"); err != nil {
 		t.Fatalf("Set target: %v", err)
 	}
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
-	}
 	if err := cmd.Flags().Set("state-file", statePath); err != nil {
 		t.Fatalf("Set state-file: %v", err)
 	}
@@ -545,26 +523,25 @@ groups:
 
 func TestRunFactsWithInventoryUsesSecretsResolver(t *testing.T) {
 	dir := t.TempDir()
-	inventoryPath := filepath.Join(dir, "inventory.yml")
 	configPath := filepath.Join(dir, "preflight.yml")
+	restore := chdirForTest(t, dir)
+	t.Cleanup(restore)
 
-	if err := os.WriteFile(inventoryPath, []byte(`
-groups:
-  lab:
-    hosts:
-      - name: kiosk-a
-        transport: winrm
-        username: exhibit
-        password: secret:winrm-password
-`), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
-	}
 	if err := os.WriteFile(configPath, []byte(`
 secrets:
   identity: .age/keys.txt
   entries:
     winrm-password:
       file: secrets/winrm-password.age
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      transport: winrm
+      username: exhibit
+      password: secret:winrm-password
+      groups: [lab]
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(%q): %v", configPath, err)
 	}
@@ -584,9 +561,6 @@ secrets:
 	cmd := newTestCommand()
 	if err := cmd.Flags().Set("target", "lab"); err != nil {
 		t.Fatalf("Set target: %v", err)
-	}
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
 	}
 
 	if _, err := captureStdout(t, func() error {
@@ -612,7 +586,6 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("secret-identity", "", "")
 	cmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "")
 	cmd.Flags().String("state-file", "", "")
-	cmd.Flags().String("inventory", "", "")
 	cmd.SetContext(context.Background())
 	return cmd
 }
@@ -662,7 +635,7 @@ func writeTestPlaybookWithInventory(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	playbookPath := filepath.Join(dir, "playbook.yml")
-	inventoryPath := filepath.Join(dir, "inventory.yml")
+	configPath := filepath.Join(dir, "preflight.yml")
 
 	if err := os.WriteFile(playbookPath, []byte(`
 name: test
@@ -675,19 +648,22 @@ tasks:
 		t.Fatalf("WriteFile(%q): %v", playbookPath, err)
 	}
 
-	if err := os.WriteFile(inventoryPath, []byte(`
-groups:
-  lab:
-    hosts:
-      - name: kiosk-a
-        transport: local
-      - name: kiosk-b
-        transport: local
+	if err := os.WriteFile(configPath, []byte(`
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      transport: local
+      groups: [lab]
+    - name: kiosk-b
+      transport: local
+      groups: [lab]
 `), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+		t.Fatalf("WriteFile(%q): %v", configPath, err)
 	}
 
-	return playbookPath, inventoryPath
+	return playbookPath, configPath
 }
 
 const testRemoteActionRef = "github.com/acme/actions/signage@v1"

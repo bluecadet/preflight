@@ -10,22 +10,23 @@ import (
 
 func TestRunInventoryListDisplaysHosts(t *testing.T) {
 	dir := t.TempDir()
-	inventoryPath := filepath.Join(dir, "inventory.yml")
-	if err := os.WriteFile(inventoryPath, []byte(`
-groups:
-  lab:
-    hosts:
-      - name: kiosk-a
-        address: 10.0.0.1
-        transport: winrm
+	configPath := filepath.Join(dir, "preflight.yml")
+	if err := os.WriteFile(configPath, []byte(`
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      address: 10.0.0.1
+      transport: winrm
+      groups: [lab]
 `), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+		t.Fatalf("WriteFile(%q): %v", configPath, err)
 	}
+	restore := chdirForTest(t, dir)
+	defer restore()
 
 	cmd := newTestCommand()
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
-	}
 	out, err := captureStdout(t, func() error {
 		return runInventoryList(cmd, nil)
 	})
@@ -98,22 +99,23 @@ func TestRunSecretListHandlesEmptyConfig(t *testing.T) {
 
 func TestRunInventoryListJSONOutput(t *testing.T) {
 	dir := t.TempDir()
-	inventoryPath := filepath.Join(dir, "inventory.yml")
-	if err := os.WriteFile(inventoryPath, []byte(`
-groups:
-  lab:
-    hosts:
-      - name: kiosk-a
-        address: 10.0.0.1
-        transport: winrm
+	configPath := filepath.Join(dir, "preflight.yml")
+	if err := os.WriteFile(configPath, []byte(`
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      address: 10.0.0.1
+      transport: winrm
+      groups: [lab]
 `), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", inventoryPath, err)
+		t.Fatalf("WriteFile(%q): %v", configPath, err)
 	}
+	restore := chdirForTest(t, dir)
+	defer restore()
 
 	cmd := newTestCommand()
-	if err := cmd.Flags().Set("inventory", inventoryPath); err != nil {
-		t.Fatalf("Set inventory: %v", err)
-	}
 	if err := cmd.Flags().Set("output", "json"); err != nil {
 		t.Fatalf("Set output: %v", err)
 	}

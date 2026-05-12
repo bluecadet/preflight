@@ -1,7 +1,6 @@
 package inventory_test
 
 import (
-	"os"
 	"strings"
 	"testing"
 
@@ -9,30 +8,34 @@ import (
 )
 
 const sampleInventory = `
+vars:
+  timezone: "America/New_York"
 groups:
-  all:
-    vars:
-      timezone: "America/New_York"
   lobby:
     vars:
       resolution: "3840x2160"
-    hosts:
-      - name: lobby-pc-01
-        address: 192.168.1.10
-        transport: winrm
-      - name: lobby-pc-02
-        address: 192.168.1.11
-        transport: winrm
+  windows:
+    vars:
+      shell: powershell
   gallery:
     vars:
       resolution: "1920x1080"
-    hosts:
-      - name: gallery-pc-01
-        address: 192.168.1.20
-        transport: winrm
+hosts:
+  - name: lobby-pc-01
+    address: 192.168.1.10
+    transport: winrm
+    groups: [lobby, windows]
+  - name: lobby-pc-02
+    address: 192.168.1.11
+    transport: winrm
+    groups: [lobby, windows]
+  - name: gallery-pc-01
+    address: 192.168.1.20
+    transport: winrm
+    groups: [gallery, windows]
 `
 
-func TestParse_Groups(t *testing.T) {
+func TestParse_HostFirstInventory(t *testing.T) {
 	inv, err := inventory.Parse([]byte(sampleInventory))
 	if err != nil {
 		t.Fatalf("unexpected parse error: %v", err)
@@ -43,11 +46,11 @@ func TestParse_Groups(t *testing.T) {
 	if _, ok := inv.Groups["gallery"]; !ok {
 		t.Error("expected gallery group")
 	}
-	if len(inv.GroupOrder) != 3 {
-		t.Fatalf("expected 3 ordered groups, got %d", len(inv.GroupOrder))
+	if len(inv.Hosts) != 3 {
+		t.Fatalf("expected 3 hosts, got %d", len(inv.Hosts))
 	}
-	if inv.GroupOrder[0] != "all" || inv.GroupOrder[1] != "lobby" || inv.GroupOrder[2] != "gallery" {
-		t.Fatalf("unexpected group order: %#v", inv.GroupOrder)
+	if got := inv.Hosts[0].Groups; len(got) != 2 || got[0] != "lobby" || got[1] != "windows" {
+		t.Fatalf("unexpected host groups: %#v", got)
 	}
 }
 
@@ -100,67 +103,108 @@ func TestHostsForTarget_Unknown(t *testing.T) {
 	}
 }
 
-func TestAllGroupVarsMergedIntoHosts(t *testing.T) {
+func TestInventoryVarsMergedIntoHosts(t *testing.T) {
 	inv, _ := inventory.Parse([]byte(sampleInventory))
 	hosts, _ := inv.HostsForTarget("lobby-pc-01")
 	h := hosts[0]
 	tz, ok := h.Vars["timezone"]
 	if !ok {
-		t.Fatal("expected timezone var from 'all' group")
+		t.Fatal("expected timezone var from inventory vars")
 	}
 	if tz != "America/New_York" {
 		t.Errorf("expected America/New_York, got %v", tz)
 	}
 }
 
-func TestGroupVarsMergedIntoHosts(t *testing.T) {
-	inv, _ := inventory.Parse([]byte(sampleInventory))
-	hosts, _ := inv.HostsForTarget("lobby-pc-01")
+func TestGroupVarsMergedInHostGroupOrder(t *testing.T) {
+	data := `
+vars:
+  nested:
+    base: true
+groups:
+  first:
+    vars:
+      role: first
+      nested:
+        first: true
+        shared: first
+  second:
+    vars:
+      role: second
+      nested:
+        second: true
+        shared: second
+hosts:
+  - name: ordered
+    groups: [first, second]
+    vars:
+      host_var: yes
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("ordered")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
 	h := hosts[0]
-	res, ok := h.Vars["resolution"]
+	if got := h.Vars["role"]; got != "second" {
+		t.Fatalf("role = %v, want second", got)
+	}
+	nested, ok := h.Vars["nested"].(map[string]any)
 	if !ok {
-		t.Fatal("expected resolution var from lobby group")
+		t.Fatalf("nested is %T, want map[string]any", h.Vars["nested"])
 	}
-	if res != "3840x2160" {
-		t.Errorf("expected 3840x2160, got %v", res)
+	for _, key := range []string{"base", "first", "second"} {
+		if nested[key] != true {
+			t.Fatalf("nested[%s] = %v, want true", key, nested[key])
+		}
 	}
-}
-
-func TestParseFile(t *testing.T) {
-	f, err := os.CreateTemp("", "inventory-*.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Remove(f.Name()) })
-	if _, err := f.WriteString(sampleInventory); err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	inv, err := inventory.ParseFile(f.Name())
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(inv.Groups) == 0 {
-		t.Error("expected groups")
+	if nested["shared"] != "second" {
+		t.Fatalf("nested.shared = %v, want second", nested["shared"])
 	}
 }
 
 func TestParse_SchemaValidationFailure(t *testing.T) {
 	_, err := inventory.Parse([]byte(`
-groups:
-  broken:
-    hosts:
-      - name: bad-host
-        transport: telnet
+hosts:
+  - name: bad-host
+    transport: telnet
 `))
 	if err == nil {
 		t.Fatal("expected schema validation error")
 	}
 	if !strings.Contains(err.Error(), "inventory: schema validation failed") {
 		t.Fatalf("error = %q, want substring %q", err.Error(), "inventory: schema validation failed")
+	}
+}
+
+func TestParse_UndefinedGroupReference(t *testing.T) {
+	_, err := inventory.Parse([]byte(`
+hosts:
+  - name: kiosk-a
+    groups: [missing]
+`))
+	if err == nil {
+		t.Fatal("expected undefined group error")
+	}
+	if !strings.Contains(err.Error(), `host "kiosk-a" references undefined group "missing"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestParse_DuplicateHostName(t *testing.T) {
+	_, err := inventory.Parse([]byte(`
+hosts:
+  - name: kiosk-a
+  - name: kiosk-a
+`))
+	if err == nil {
+		t.Fatal("expected duplicate host error")
+	}
+	if !strings.Contains(err.Error(), `duplicate host name "kiosk-a"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -174,13 +218,11 @@ func TestDefaultPort_WinRM(t *testing.T) {
 
 func TestDefaultPort_WinRMHTTPS(t *testing.T) {
 	data := `
-groups:
-  secure:
-    hosts:
-      - name: https-host
-        address: 10.0.0.1
-        transport: winrm
-        https: true
+hosts:
+  - name: https-host
+    address: 10.0.0.1
+    transport: winrm
+    https: true
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -197,14 +239,12 @@ groups:
 
 func TestDefaultPort_WinRMHTTPSExplicitPort(t *testing.T) {
 	data := `
-groups:
-  secure:
-    hosts:
-      - name: https-host-explicit
-        address: 10.0.0.2
-        transport: winrm
-        https: true
-        port: 9999
+hosts:
+  - name: https-host-explicit
+    address: 10.0.0.2
+    transport: winrm
+    https: true
+    port: 9999
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -221,12 +261,10 @@ groups:
 
 func TestDefaultPort_Local(t *testing.T) {
 	data := `
-groups:
-  local:
-    hosts:
-      - name: local-host
-        address: localhost
-        transport: local
+hosts:
+  - name: local-host
+    address: localhost
+    transport: local
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -241,16 +279,36 @@ groups:
 	}
 }
 
+func TestDefaultTransport(t *testing.T) {
+	data := `
+hosts:
+  - name: default-transport
+    address: 10.0.0.1
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("default-transport")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Transport != inventory.TransportWinRM {
+		t.Errorf("expected default transport WinRM, got %s", hosts[0].Transport)
+	}
+}
+
 func TestParseSecretReferenceFields(t *testing.T) {
 	data := `
 groups:
-  secure:
-    hosts:
-      - name: secure-host
-        address: 10.0.0.10
-        transport: ssh
-        password: secret:winrm-password
-        private_key: secret:signage-key
+  secure: {}
+hosts:
+  - name: secure-host
+    address: 10.0.0.10
+    transport: ssh
+    password: secret:winrm-password
+    private_key: secret:signage-key
+    groups: [secure]
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -270,16 +328,14 @@ groups:
 
 func TestParseSSHHostKeyVerificationFields(t *testing.T) {
 	data := `
-groups:
-  staging:
-    hosts:
-      - name: staging-pc-01
-        address: 10.1.0.5
-        transport: ssh
-        known_hosts_file: /home/user/.ssh/known_hosts
-        host_key_algorithms:
-          - ssh-ed25519
-          - ssh-rsa
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    known_hosts_file: /home/user/.ssh/known_hosts
+    host_key_algorithms:
+      - ssh-ed25519
+      - ssh-rsa
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -324,5 +380,19 @@ func TestSelectTargets_DedupesInSelectorOrder(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("host[%d] = %q, want %q (all=%v)", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestHostGroupsPreserved(t *testing.T) {
+	inv, err := inventory.Parse([]byte(sampleInventory))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("lobby-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got := hosts[0].Groups; len(got) != 2 || got[0] != "lobby" || got[1] != "windows" {
+		t.Fatalf("unexpected groups: %#v", got)
 	}
 }

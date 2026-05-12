@@ -18,43 +18,38 @@ func TestTransportAliasesTargetTransport(t *testing.T) {
 
 // baseInventory builds a small inventory used across several tests.
 //
-// Groups:
+// Vars:
 //
-//	all   — vars: {env: prod, nested: {a: 1}}
-//	web   — hosts: [web01, shared01]; vars: {role: web, nested: {b: 2}}
-//	cache — hosts: [shared01];        vars: {role: cache, nested: {c: 3}}
+//	inventory — vars: {env: prod, nested: {a: 1}}
+//	web       — vars: {role: web, nested: {b: 2}}
+//	cache     — vars: {role: cache, nested: {c: 3}}
 //
-// shared01 appears in both "web" and "cache".
+// shared01 references both "web" and "cache".
 func baseInventory() *Inventory {
-	web01 := Host{Name: "web01", Vars: map[string]any{"host_var": "web01_val"}}
-	shared01 := Host{Name: "shared01", Vars: map[string]any{"host_var": "shared_val"}}
-
 	return &Inventory{
-		GroupOrder: []string{"all", "web", "cache"},
+		Vars: map[string]any{
+			"env":    "prod",
+			"nested": map[string]any{"a": 1},
+		},
 		Groups: map[string]Group{
-			"all": {
-				Name: "all",
-				Vars: map[string]any{
-					"env":    "prod",
-					"nested": map[string]any{"a": 1},
-				},
-			},
 			"web": {
-				Name:  "web",
-				Hosts: []Host{web01, shared01},
+				Name: "web",
 				Vars: map[string]any{
 					"role":   "web",
 					"nested": map[string]any{"b": 2},
 				},
 			},
 			"cache": {
-				Name:  "cache",
-				Hosts: []Host{shared01},
+				Name: "cache",
 				Vars: map[string]any{
 					"role":   "cache",
 					"nested": map[string]any{"c": 3},
 				},
 			},
+		},
+		Hosts: []Host{
+			{Name: "web01", Groups: []string{"web"}, Vars: map[string]any{"host_var": "web01_val"}},
+			{Name: "shared01", Groups: []string{"web", "cache"}, Vars: map[string]any{"host_var": "shared_val"}},
 		},
 	}
 }
@@ -73,7 +68,7 @@ func TestHostsForTarget_SingleGroup(t *testing.T) {
 	}
 	h := hosts[0]
 
-	// "all" group var
+	// inventory var
 	if got := h.Vars["env"]; got != "prod" {
 		t.Errorf("env: want %q, got %v", "prod", got)
 	}
@@ -87,9 +82,8 @@ func TestHostsForTarget_SingleGroup(t *testing.T) {
 	}
 }
 
-// TestHostsForTarget_MultiGroup is the regression test for bug #37.
-// shared01 lives in both "web" and "cache"; it should receive vars from
-// both groups, with the later group's scalar vars winning.
+// TestHostsForTarget_MultiGroup verifies group vars are applied in the order
+// listed on the host, with later scalar vars winning.
 func TestHostsForTarget_MultiGroup(t *testing.T) {
 	inv := baseInventory()
 
@@ -102,13 +96,13 @@ func TestHostsForTarget_MultiGroup(t *testing.T) {
 	}
 	h := hosts[0]
 
-	// "all" group var is always present.
+	// inventory var is always present.
 	if got := h.Vars["env"]; got != "prod" {
 		t.Errorf("env: want %q, got %v", "prod", got)
 	}
 
-	// "cache" group comes after "web" in GroupOrder, so its scalar "role"
-	// overwrites "web"'s.
+	// "cache" comes after "web" in the host's group list, so its scalar
+	// "role" overwrites "web"'s.
 	if got := h.Vars["role"]; got != "cache" {
 		t.Errorf("role: want %q (last group wins), got %v", "cache", got)
 	}
@@ -136,7 +130,7 @@ func TestHostsForTarget_MultiGroup_DeepMerge(t *testing.T) {
 		t.Fatalf("nested is not map[string]any: %T", h.Vars["nested"])
 	}
 
-	// "a" comes from the "all" group.
+	// "a" comes from inventory vars.
 	if got := nested["a"]; got != 1 {
 		t.Errorf("nested.a: want 1, got %v", got)
 	}
@@ -174,12 +168,15 @@ func TestHostsForTarget_NotFound(t *testing.T) {
 	}
 }
 
-// TestAllHosts_Deduplication confirms that a host in multiple groups appears
-// only once in AllHosts output.
+// TestAllHosts_Deduplication confirms that group selectors do not duplicate a
+// host selected through more than one group.
 func TestAllHosts_Deduplication(t *testing.T) {
 	inv := baseInventory()
 
-	hosts := inv.AllHosts()
+	hosts, err := inv.SelectTargets([]string{"web", "cache"})
+	if err != nil {
+		t.Fatalf("SelectTargets returned error: %v", err)
+	}
 	seen := map[string]int{}
 	for _, h := range hosts {
 		seen[h.Name]++

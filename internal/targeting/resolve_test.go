@@ -13,15 +13,18 @@ func TestBuildTargetSSH_PassesHostKeyFields(t *testing.T) {
 	data := `
 groups:
   staging:
-    hosts:
-      - name: staging-pc-01
-        address: 10.1.0.5
-        transport: ssh
-        username: exhibit
-        known_hosts_file: /home/user/.ssh/known_hosts
-        host_key_algorithms:
-          - ssh-ed25519
-          - ssh-rsa
+    vars:
+      area: staging
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    known_hosts_file: /home/user/.ssh/known_hosts
+    host_key_algorithms:
+      - ssh-ed25519
+      - ssh-rsa
+    groups: [staging]
 `
 	inv, err := inventory.Parse([]byte(data))
 	if err != nil {
@@ -64,5 +67,49 @@ groups:
 	}
 	if cfg.HostKeyAlgorithms[0] != "ssh-ed25519" || cfg.HostKeyAlgorithms[1] != "ssh-rsa" {
 		t.Errorf("SSHConfig.HostKeyAlgorithms: got %v", cfg.HostKeyAlgorithms)
+	}
+}
+
+func TestResolveHosts_EmptySelectorsDefaultToAllHosts(t *testing.T) {
+	inv := &inventory.Inventory{
+		Groups: map[string]inventory.Group{},
+		Hosts: []inventory.Host{
+			{Name: "kiosk-a", Transport: inventory.TransportLocal},
+			{Name: "kiosk-b", Transport: inventory.TransportLocal},
+		},
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, nil, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 2 {
+		t.Fatalf("expected 2 hosts, got %d", len(resolved))
+	}
+	if resolved[0].Name != "kiosk-a" || resolved[1].Name != "kiosk-b" {
+		t.Fatalf("unexpected host order: %#v", []string{resolved[0].Name, resolved[1].Name})
+	}
+}
+
+func TestResolveHosts_GroupAndHostSelectorsDeduplicate(t *testing.T) {
+	inv := &inventory.Inventory{
+		Groups: map[string]inventory.Group{
+			"lobby": {Name: "lobby"},
+		},
+		Hosts: []inventory.Host{
+			{Name: "kiosk-a", Transport: inventory.TransportLocal, Groups: []string{"lobby"}},
+			{Name: "kiosk-b", Transport: inventory.TransportLocal, Groups: []string{"lobby"}},
+		},
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"lobby", "kiosk-a"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 2 {
+		t.Fatalf("expected 2 deduplicated hosts, got %d", len(resolved))
+	}
+	if resolved[0].Name != "kiosk-a" || resolved[1].Name != "kiosk-b" {
+		t.Fatalf("unexpected host order: %#v", []string{resolved[0].Name, resolved[1].Name})
 	}
 }

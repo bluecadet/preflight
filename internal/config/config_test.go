@@ -23,6 +23,17 @@ secrets:
     db_password:
       file: secrets/db-password.age
       type: age
+inventory:
+  vars:
+    timezone: America/New_York
+  groups:
+    lobby:
+      vars:
+        area: lobby
+  hosts:
+    - name: lobby-pc-01
+      transport: local
+      groups: [lobby]
 `)
 
 	cfg, err := config.Parse(data)
@@ -57,6 +68,19 @@ secrets:
 	}
 	if entry.Type != "age" {
 		t.Fatalf("entry.Type = %q, want %q", entry.Type, "age")
+	}
+	if cfg.Inventory == nil {
+		t.Fatal("Inventory is nil")
+	}
+	hosts, err := cfg.Inventory.HostsForTarget("lobby-pc-01")
+	if err != nil {
+		t.Fatalf("HostsForTarget returned error: %v", err)
+	}
+	if got := hosts[0].Vars["timezone"]; got != "America/New_York" {
+		t.Fatalf("Inventory host timezone = %#v, want America/New_York", got)
+	}
+	if got := hosts[0].Vars["area"]; got != "lobby" {
+		t.Fatalf("Inventory host area = %#v, want lobby", got)
 	}
 }
 
