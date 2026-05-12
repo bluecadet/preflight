@@ -126,9 +126,9 @@ If a Microsoft-backed sign-in, domain-backed sign-in, or ambiguous administrator
 Example in elevated PowerShell:
 
 ```powershell
-$pw = ConvertTo-SecureString 'TempPreflight123!' -AsPlainText -Force
-New-LocalUser -Name 'preflight-test' -Password $pw -PasswordNeverExpires
-Add-LocalGroupMember -Group 'Administrators' -Member 'preflight-test'
+$pw = ConvertTo-SecureString 'SOME_PASSWORD' -AsPlainText -Force
+New-LocalUser -Name 'preflight-winrm' -Password $pw -PasswordNeverExpires
+Add-LocalGroupMember -Group 'Administrators' -Member 'preflight-winrm'
 ```
 
 This avoids several common sources of confusion:
