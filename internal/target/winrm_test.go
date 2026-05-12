@@ -371,6 +371,48 @@ func TestWinRMTarget_CopyFileFallsBackWhenPersistentSessionCreationFails(t *test
 	}
 }
 
+func TestWinRMTarget_ExecuteRecyclesPersistentSessionAfterPowerShellModule(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			tgt.psSession = &winRMPersistentPS{}
+			return "ok", "", 0, nil
+		},
+	}
+
+	_, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
+		"check_script": "$true",
+		"script":       "Write-Output 'noop'",
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if tgt.psSession != nil {
+		t.Fatal("expected persistent session to be reset after powershell module")
+	}
+}
+
+func TestWinRMTarget_ExecuteKeepsPersistentSessionAfterBuiltinModule(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			tgt.psSession = &winRMPersistentPS{}
+			return "applied", "", 0, nil
+		},
+	}
+
+	_, err := tgt.Execute(context.Background(), "task-shell", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if tgt.psSession == nil {
+		t.Fatal("expected persistent session to be retained after non-powershell module")
+	}
+}
+
 func TestWinRMTarget_ReachableAndInfo(t *testing.T) {
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{

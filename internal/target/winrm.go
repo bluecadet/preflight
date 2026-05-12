@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,7 +67,14 @@ type winRMPersistentPS struct {
 	mu     sync.Mutex
 }
 
-func (p *winRMPersistentPS) run(_ context.Context, script string) (string, error) {
+// winRMPersistentPSReadTimeout caps how long we wait for a single script's
+// completion marker before declaring the session wedged. Without this, a
+// PowerShell host that gets stuck (waiting on file I/O, a previous task that
+// never returned, a blocked Test-Path, etc.) causes the whole runner to hang
+// indefinitely with no actionable error.
+const winRMPersistentPSReadTimeout = 90 * time.Second
+
+func (p *winRMPersistentPS) run(ctx context.Context, script string) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -75,7 +83,27 @@ func (p *winRMPersistentPS) run(_ context.Context, script string) (string, error
 	if _, err := p.cmd.Stdin.Write([]byte(line)); err != nil {
 		return "", &psSessionError{fmt.Errorf("write stdin: %w", err)}
 	}
-	return readPSOutput(p.reader, id)
+
+	type readResult struct {
+		out string
+		err error
+	}
+	resultCh := make(chan readResult, 1)
+	go func() {
+		out, err := readPSOutput(p.reader, id)
+		resultCh <- readResult{out: out, err: err}
+	}()
+
+	readCtx, cancel := context.WithTimeout(ctx, winRMPersistentPSReadTimeout)
+	defer cancel()
+
+	select {
+	case r := <-resultCh:
+		return r.out, r.err
+	case <-readCtx.Done():
+		slog.Warn("winrm persistent ps: read timed out, declaring session wedged", "id", id, "timeout", winRMPersistentPSReadTimeout)
+		return "", &psSessionError{fmt.Errorf("read stdout: %w (no DONE/ERR marker within %s)", readCtx.Err(), winRMPersistentPSReadTimeout)}
+	}
 }
 
 func (p *winRMPersistentPS) close() {
@@ -108,6 +136,18 @@ func (t *WinRMTarget) Transport() Transport {
 }
 
 func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+	// User-authored powershell scripts can leave the persistent powershell.exe
+	// in a wedged state (process-level $env, async output formatting state,
+	// in-flight child processes) such that the next stdin command is accepted
+	// but never evaluated. Built-in modules use bounded scripts and keep the
+	// session for performance; the powershell module is the only user-script
+	// vector, so recycle after it.
+	defer func() {
+		if module == "powershell" {
+			t.resetPSSession()
+		}
+	}()
+
 	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
@@ -266,7 +306,7 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) 
 			return out, nil
 		}
 		if isSessionError(psErr) {
-			// Transport broke; discard the session and retry via legacy path.
+			slog.Warn("winrm runPS: persistent session error, falling back to legacy", "err", psErr)
 			t.resetPSSession()
 		} else {
 			return out, psErr
