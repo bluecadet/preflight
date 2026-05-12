@@ -60,9 +60,46 @@ $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ';'
 `
 
+const wingetPackagePresenceScript = `
+function Test-WingetPackageListed {
+  param(
+    [string]$Id,
+    [string]$Source
+  )
+  $listStdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
+  $listStderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
+  try {
+    $listArgs = @('list', '--id', $Id, '--exact', '--accept-source-agreements', '--disable-interactivity')
+    if ($Source) { $listArgs += @('--source', $Source) }
+    $process = Start-Process -FilePath 'winget.exe' -ArgumentList $listArgs -Wait -PassThru -NoNewWindow -RedirectStandardOutput $listStdoutPath -RedirectStandardError $listStderrPath
+    return $process.ExitCode -eq 0
+  } finally {
+    Remove-Item -LiteralPath $listStdoutPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $listStderrPath -Force -ErrorAction SilentlyContinue
+  }
+}
+function Test-WingetDesiredPresent {
+  param(
+    $Spec,
+    $InstalledMap
+  )
+  $id = [string]$Spec.id
+  $version = if ($Spec.version) { [string]$Spec.version } else { '' }
+  $source = if ($Spec.source) { [string]$Spec.source } else { '' }
+  $match = $InstalledMap[$id]
+  if ($null -eq $match) {
+    if (-not $version) { return (Test-WingetPackageListed -Id $id -Source $source) }
+    return $false
+  }
+  if ($version) { return [string]$match.Version -eq $version }
+  return $true
+}
+`
+
 const WingetPackageCheckScript = `
 $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
+` + wingetPackagePresenceScript + `
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
 $stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
 $stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
@@ -96,16 +133,12 @@ foreach ($src in @($doc.Sources)) {
   }
 }
 foreach ($spec in $pkgs) {
-  $id = [string]$spec.id
   $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
-  $version = if ($spec.version) { [string]$spec.version } else { '' }
-  $match = $installedMap[$id]
-  $isInstalled = $null -ne $match
+  $isPresent = Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap
   if ($ensure -eq 'absent') {
-    if ($isInstalled) { Write-Output 'true'; exit 0 }
+    if ($isPresent) { Write-Output 'true'; exit 0 }
   } else {
-    if (-not $isInstalled) { Write-Output 'true'; exit 0 }
-    if ($version -and [string]$match.Version -ne $version) { Write-Output 'true'; exit 0 }
+    if (-not $isPresent) { Write-Output 'true'; exit 0 }
   }
 }
 Write-Output 'false'
@@ -114,6 +147,7 @@ Write-Output 'false'
 const WingetPackageApplyScript = `
 $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
+` + wingetPackagePresenceScript + `
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
 $stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
 $stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
@@ -156,10 +190,9 @@ foreach ($spec in $pkgs) {
   if ($spec.args) {
     foreach ($arg in $spec.args) { $wingetArgs += [string]$arg }
   }
-  $match = $installedMap[$id]
-  $isInstalled = $null -ne $match
-  if ($ensure -eq 'absent' -and -not $isInstalled) { continue }
-  if ($ensure -ne 'absent' -and $isInstalled -and (-not $version -or [string]$match.Version -eq $version)) { continue }
+  $isPresent = Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap
+  if ($ensure -eq 'absent' -and -not $isPresent) { continue }
+  if ($ensure -ne 'absent' -and $isPresent) { continue }
   $args = @()
   if ($ensure -eq 'absent') {
     $args = @('uninstall', '--id', $id, '--exact', '--disable-interactivity', '--accept-source-agreements')
@@ -171,6 +204,11 @@ foreach ($spec in $pkgs) {
   $args += $wingetArgs
   $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
   if ($process.ExitCode -ne 0) {
+    # WinGet can turn "install an already-present package" into an update path
+    # and return UPDATE_NOT_APPLICABLE even when the unversioned desired state is satisfied.
+    if ($ensure -ne 'absent' -and $process.ExitCode -eq -1978335189 -and (Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap)) {
+      continue
+    }
     throw "winget command failed for '$id' with exit code $($process.ExitCode)"
   }
 }
