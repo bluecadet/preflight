@@ -13,6 +13,10 @@ type powerShellScriptBackend interface {
 	RunPowerShellScript(ctx context.Context, script string) (string, error)
 }
 
+// User-authored scripts may inspect $LASTEXITCODE even when the previous or
+// current native command did not set it. Start each script from a known success.
+const powerShellLastExitCodeReset = "$global:LASTEXITCODE = 0\n"
+
 func checkPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (bool, string, error) {
 	return checkPowerShellModuleWithOutput(ctx, backend, params, nil)
 }
@@ -23,6 +27,7 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 		if err != nil {
 			return false, "", err
 		}
+		script = powerShellLastExitCodeReset + script
 		script, err = wrapPowerShellEnv(params, script)
 		if err != nil {
 			return false, "", err
@@ -93,6 +98,7 @@ func ensurePowerShellModule(ctx context.Context, backend powerShellScriptBackend
 	combined := checkScriptVar + "\n" + applyScriptVar + "\n" + `$__pf_dry_run = ` + dryRunVal + `
 $ErrorActionPreference = 'Stop'
 $__pf_block = [ScriptBlock]::Create($__pf_check_script)
+$global:LASTEXITCODE = 0
 $__pf_vals = @(& $__pf_block)
 if ($__pf_vals.Count -eq 0) { throw "powershell check_script must return a bool or object" }
 $__pf_result = $__pf_vals[$__pf_vals.Count - 1]
@@ -104,6 +110,7 @@ if (-not $__pf_needs) { Write-Output 'ok'; exit 0 }
 if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
 $ErrorActionPreference = 'Stop'
 $__pf_apply_block = [ScriptBlock]::Create($__pf_apply_script)
+$global:LASTEXITCODE = 0
 & $__pf_apply_block
 Write-Output 'changed'
 `
@@ -131,6 +138,7 @@ Write-Output 'changed'
 
 func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (string, error) {
 	if script, _ := params["script"].(string); script != "" {
+		script = powerShellLastExitCodeReset + script
 		wrapped, err := wrapPowerShellEnv(params, script)
 		if err != nil {
 			return "", err
@@ -161,6 +169,7 @@ func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend,
 	script, err := wrapPowerShellEnv(params, scriptVar+`
 	`+scriptArgsVar+`
 $block = [ScriptBlock]::Create($script)
+$global:LASTEXITCODE = 0
 & $block @scriptArgs
 `)
 	if err != nil {

@@ -55,6 +55,49 @@ func TestEnsurePowerShellModuleWrapsEnv(t *testing.T) {
 	}
 }
 
+func TestEnsurePowerShellModuleResetsLastExitCodeBeforeCheckAndApply(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: "changed"}
+	params := map[string]any{
+		"check_script": "return $true",
+		"script":       "if ($LASTEXITCODE -ne 0) { throw $LASTEXITCODE }",
+	}
+
+	_, _, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
+	if err != nil {
+		t.Fatalf("ensurePowerShellModule returned error: %v", err)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+
+	script := backend.scripts[0]
+	for _, want := range []string{
+		"$global:LASTEXITCODE = 0\n$__pf_vals = @(& $__pf_block)",
+		"$global:LASTEXITCODE = 0\n& $__pf_apply_block",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected wrapped script to contain %q, got:\n%s", want, script)
+		}
+	}
+}
+
+func TestCheckPowerShellModuleResetsLastExitCode(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: `__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOmZhbHNlLCJtZXNzYWdlIjpudWxsfQ==`}
+
+	_, _, err := checkPowerShellModule(context.Background(), backend, map[string]any{
+		"check_script": "return ($LASTEXITCODE -ne 0)",
+	})
+	if err != nil {
+		t.Fatalf("checkPowerShellModule returned error: %v", err)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+	if !strings.HasPrefix(backend.scripts[0], "$global:LASTEXITCODE = 0\n") {
+		t.Fatalf("expected check script to reset LASTEXITCODE, got:\n%s", backend.scripts[0])
+	}
+}
+
 func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: "done"}
 	params := map[string]any{
@@ -80,6 +123,23 @@ func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 	}
 	if !strings.Contains(script, "Write-Output $env:NAME") {
 		t.Fatalf("expected wrapped script body, got:\n%s", script)
+	}
+}
+
+func TestApplyPowerShellModuleResetsLastExitCode(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: "done"}
+
+	_, err := applyPowerShellModule(context.Background(), backend, map[string]any{
+		"script": "if ($LASTEXITCODE -ne 0) { throw $LASTEXITCODE }",
+	})
+	if err != nil {
+		t.Fatalf("applyPowerShellModule returned error: %v", err)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+	if !strings.HasPrefix(backend.scripts[0], "$global:LASTEXITCODE = 0\n") {
+		t.Fatalf("expected inline script to reset LASTEXITCODE, got:\n%s", backend.scripts[0])
 	}
 }
 
