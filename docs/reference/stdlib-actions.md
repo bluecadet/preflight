@@ -26,6 +26,8 @@ Clone or update a Git repository on a Windows target.
 
 Use `become` when the checkout should be owned by a kiosk, exhibit, or service account. Authentication values should usually be passed as `secret:<name>` values. The action passes HTTPS and SSH credentials through environment variables to the PowerShell process instead of putting them in the script text.
 
+By default, the action adds `dest` to Git's global `safe.directory` list before running sync checks. This prevents Git for Windows from rejecting repositories whose files are owned by another account, which is common when setup runs as an administrator but the exhibit app runs as a kiosk user.
+
 | Input | Type | Meaning |
 | --- | --- | --- |
 | `repo` | string | Git remote URL |
@@ -46,7 +48,7 @@ Use `become` when the checkout should be owned by a kiosk, exhibit, or service a
 | `git_path` | string | Git executable path |
 | `create_parent` | bool | Create the parent directory for `dest` |
 | `set_remote_url` | bool | Ensure `remote` points at `repo` |
-| `safe_directory` | bool | Add `dest` to Git `safe.directory` |
+| `safe_directory` | bool | Add `dest` to Git `safe.directory`, default `true` |
 | `http_username` | string | HTTPS askpass username |
 | `http_password` | string | HTTPS askpass password or token |
 | `ssh_private_key` | string | SSH private key content |

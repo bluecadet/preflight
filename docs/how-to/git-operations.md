@@ -4,6 +4,8 @@ Use this guide when you need to clone a repository, pull the latest commits, or 
 
 For Windows targets, prefer the embedded `preflight/git-sync` action when you need a reusable clone-or-update task. It handles fetch, checkout, reset, clean, submodules, Git LFS, and temporary HTTPS or SSH credential wiring.
 
+`preflight/git-sync` also adds the destination path to Git's global `safe.directory` list by default before it runs sync checks. This avoids Git for Windows "dubious ownership" failures when the checkout is owned by a different Windows account than the one running Preflight.
+
 ## Prerequisites
 
 - A working playbook and target connection

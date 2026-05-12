@@ -551,11 +551,34 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	if len(plan.Tasks) != 1 {
-		t.Fatalf("expected 1 expanded task, got %d", len(plan.Tasks))
+	if len(plan.Tasks) != 2 {
+		t.Fatalf("expected 2 expanded tasks, got %d", len(plan.Tasks))
 	}
 
-	preview, err := PreviewTask(plan.Tasks[0], nil)
+	trustPreview, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(git trust) returned error: %v", err)
+	}
+	if trustPreview.Name != "Trust Git repository directory" {
+		t.Fatalf("expected trust task first, got %q", trustPreview.Name)
+	}
+	if trustPreview.When != "true" {
+		t.Fatalf("expected trust task to be gated by safe_directory, got %q", trustPreview.When)
+	}
+	trustScript, ok := trustPreview.Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected trust script string, got %T", trustPreview.Params["script"])
+	}
+	for _, want := range []string{
+		"Convert-ToGitSafeDirectory",
+		"config', '--global', '--add', 'safe.directory', $safePath",
+	} {
+		if !strings.Contains(trustScript, want) {
+			t.Fatalf("expected git trust script to contain %q, got:\n%s", want, trustScript)
+		}
+	}
+
+	preview, err := PreviewTask(plan.Tasks[1], nil)
 	if err != nil {
 		t.Fatalf("PreviewTask(git sync) returned error: %v", err)
 	}
@@ -592,9 +615,11 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 		"clean', $cleanMode",
 		"checkout', '-B', $localBranch",
 		"--no-tags",
-		"credential.helper=",
+		"Add-GitGlobalConfig 'credential.helper' ''",
 		"UTF8Encoding",
-		"Set-Variable -Name gitGlobalArgs",
+		"System.Collections.Generic.List[string]",
+		"$gitGlobalArgs.Add('-c')",
+		"$gitGlobalArgs.Add(\"$Key=$Value\")",
 		"function Clear-EnvVar",
 		"Clear-EnvVar 'GCM_INTERACTIVE'",
 	} {
@@ -616,6 +641,89 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 	}
 	if strings.Contains(script, "$script:") {
 		t.Fatalf("expected git-sync script to avoid script-scope variables under persistent PowerShell, got:\n%s", script)
+	}
+	if strings.Contains(script, "Set-Variable -Name gitGlobalArgs") {
+		t.Fatalf("expected git-sync script to avoid scope-sensitive gitGlobalArgs mutation, got:\n%s", script)
+	}
+}
+
+func TestPlanStdlibGitSyncEnablesSafeDirectoryByDefault(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	r := New(&mockTarget{}, resolver, Config{})
+	pb := &action.Playbook{
+		Name: "git-sync",
+		Tasks: []action.Task{
+			{
+				Name: "sync content",
+				Uses: "preflight/git-sync",
+				With: map[string]any{
+					"repo": "https://github.com/example/content.git",
+					"dest": "C:\\bluecadet\\phillies-rings-touchscreen",
+					"ref":  "main",
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	if len(plan.Tasks) != 2 {
+		t.Fatalf("expected 2 expanded tasks, got %d", len(plan.Tasks))
+	}
+	trustPreview, err := PreviewTask(plan.Tasks[0], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(git trust) returned error: %v", err)
+	}
+	trustCheck, ok := trustPreview.Params["check_script"].(string)
+	if !ok {
+		t.Fatalf("expected trust check_script string, got %T", trustPreview.Params["check_script"])
+	}
+	trustScript, ok := trustPreview.Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected trust script string, got %T", trustPreview.Params["script"])
+	}
+	if trustPreview.When != "true" {
+		t.Fatalf("expected trust task to be gated by safe_directory, got %q", trustPreview.When)
+	}
+	for _, got := range []string{trustCheck, trustScript} {
+		if !strings.Contains(got, "Convert-ToGitSafeDirectory") {
+			t.Fatalf("expected git trust task to normalize safe.directory paths, got:\n%s", got)
+		}
+		if strings.Contains(got, "safe.directory', '*'") {
+			t.Fatalf("expected git trust task not to persist wildcard safe.directory, got:\n%s", got)
+		}
+	}
+	if !strings.Contains(trustScript, "config', '--global', '--add', 'safe.directory', $safePath") {
+		t.Fatalf("expected git trust task to persist safe.directory before sync checks, got:\n%s", trustScript)
+	}
+
+	preview, err := PreviewTask(plan.Tasks[1], nil)
+	if err != nil {
+		t.Fatalf("PreviewTask(git sync) returned error: %v", err)
+	}
+	checkScript, ok := preview.Params["check_script"].(string)
+	if !ok {
+		t.Fatalf("expected check_script string, got %T", preview.Params["check_script"])
+	}
+	script, ok := preview.Params["script"].(string)
+	if !ok {
+		t.Fatalf("expected script string, got %T", preview.Params["script"])
+	}
+
+	if strings.Contains(checkScript, "safe.directory") {
+		t.Fatalf("expected sync check script to rely on the preceding trust task, got:\n%s", checkScript)
+	}
+	if !strings.Contains(script, "$safeDirectory = [System.Convert]::ToBoolean('true')") {
+		t.Fatalf("expected git-sync apply script to keep safe.directory enabled by default, got:\n%s", script)
+	}
+	if !strings.Contains(script, "Convert-ToGitSafeDirectory") {
+		t.Fatalf("expected git-sync apply script to normalize safe.directory paths, got:\n%s", script)
+	}
+	if !strings.Contains(script, "config', '--global', '--add', 'safe.directory', $safePath") {
+		t.Fatalf("expected git-sync script to persist safe.directory config, got:\n%s", script)
 	}
 }
 
@@ -665,19 +773,19 @@ func TestApplyStdlibGitSyncResolvesCredentialEnvSecrets(t *testing.T) {
 	if err := r.Apply(context.Background(), plan); err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
-	if len(mt.calls) != 1 {
-		t.Fatalf("expected 1 call, got %d", len(mt.calls))
+	if len(mt.calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(mt.calls))
 	}
-	env, ok := mt.calls[0].Params["env"].(map[string]any)
+	env, ok := mt.calls[1].Params["env"].(map[string]any)
 	if !ok {
-		t.Fatalf("expected env map, got %T", mt.calls[0].Params["env"])
+		t.Fatalf("expected env map, got %T", mt.calls[1].Params["env"])
 	}
 	if env["PREFLIGHT_GIT_HTTP_PASSWORD"] != "ghp_example" {
 		t.Fatalf("expected resolved token in env, got %#v", env["PREFLIGHT_GIT_HTTP_PASSWORD"])
 	}
-	script, ok := mt.calls[0].Params["script"].(string)
+	script, ok := mt.calls[1].Params["script"].(string)
 	if !ok {
-		t.Fatalf("expected script string, got %T", mt.calls[0].Params["script"])
+		t.Fatalf("expected script string, got %T", mt.calls[1].Params["script"])
 	}
 	if strings.Contains(script, "ghp_example") {
 		t.Fatalf("expected script to avoid embedding resolved token, got:\n%s", script)

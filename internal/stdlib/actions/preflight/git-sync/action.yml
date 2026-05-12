@@ -78,7 +78,7 @@ inputs:
     description: Ensure the named remote points at repo before fetching
   safe_directory:
     type: bool
-    default: false
+    default: true
     description: Add dest to Git safe.directory before operating
   http_username:
     type: string
@@ -102,6 +102,77 @@ inputs:
     description: Require SSH host key verification
 
 tasks:
+  - name: Trust Git repository directory
+    when: "{{ vars.safe_directory }}"
+    powershell:
+      check_script: |
+        $git = @'
+        {{ vars.git_path }}
+        '@
+        $git = $git.Trim()
+        $dest = @'
+        {{ vars.dest }}
+        '@
+        $dest = $dest.Trim()
+
+        function Convert-ToGitSafeDirectory([string]$Path) {
+          return ([System.IO.Path]::GetFullPath($Path)).Replace('\', '/')
+        }
+
+        function Get-SafeDirectoryEntries() {
+          $output = & $git config --global --get-all safe.directory 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            return @()
+          }
+          return @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+
+        if ([string]::IsNullOrWhiteSpace($dest)) {
+          return $false
+        }
+        $safePath = Convert-ToGitSafeDirectory $dest
+        $entries = Get-SafeDirectoryEntries
+        return ($entries -notcontains $safePath)
+      script: |
+        $ErrorActionPreference = 'Stop'
+
+        $git = @'
+        {{ vars.git_path }}
+        '@
+        $git = $git.Trim()
+        $dest = @'
+        {{ vars.dest }}
+        '@
+        $dest = $dest.Trim()
+
+        function Convert-ToGitSafeDirectory([string]$Path) {
+          return ([System.IO.Path]::GetFullPath($Path)).Replace('\', '/')
+        }
+
+        function Invoke-Git([string[]]$Arguments) {
+          & $git @Arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw ("git command failed with exit code " + $LASTEXITCODE + ": git " + ($Arguments -join ' '))
+          }
+        }
+
+        function Get-SafeDirectoryEntries() {
+          $output = & $git config --global --get-all safe.directory 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            return @()
+          }
+          return @($output | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        }
+
+        if ([string]::IsNullOrWhiteSpace($dest)) {
+          exit 0
+        }
+        $safePath = Convert-ToGitSafeDirectory $dest
+        $entries = Get-SafeDirectoryEntries
+        if ($entries -notcontains $safePath) {
+          Invoke-Git @('config', '--global', '--add', 'safe.directory', $safePath)
+        }
+
   - name: Sync Git repository
     powershell:
       env:
@@ -146,10 +217,15 @@ tasks:
           }
         }
 
-        $gitGlobalArgs = @()
+        $gitGlobalArgs = New-Object System.Collections.Generic.List[string]
+
+        function Add-GitGlobalConfig([string]$Key, [string]$Value) {
+          $gitGlobalArgs.Add('-c') | Out-Null
+          $gitGlobalArgs.Add("$Key=$Value") | Out-Null
+        }
 
         function Invoke-GitOutput([string[]]$Arguments) {
-          $full = @() + $gitGlobalArgs + $Arguments
+          $full = @($gitGlobalArgs.ToArray()) + $Arguments
           $output = & $git @full 2>$null
           if ($LASTEXITCODE -ne 0) {
             return $null
@@ -174,7 +250,7 @@ tasks:
           $env:GIT_ASKPASS = $cmd
           $env:GIT_TERMINAL_PROMPT = '0'
           $env:GCM_INTERACTIVE = 'Never'
-          Set-Variable -Name gitGlobalArgs -Value @('-c', 'credential.helper=') -Scope 1
+          Add-GitGlobalConfig 'credential.helper' ''
         }
 
         function Enable-SshKey() {
@@ -339,7 +415,7 @@ tasks:
         }
 
         $tempPaths = New-Object System.Collections.Generic.List[string]
-        $gitGlobalArgs = @()
+        $gitGlobalArgs = New-Object System.Collections.Generic.List[string]
         $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
 
         function New-TempTextFile([string]$Extension, [string]$Content) {
@@ -357,8 +433,13 @@ tasks:
           return ($redacted -join ' ')
         }
 
+        function Add-GitGlobalConfig([string]$Key, [string]$Value) {
+          $gitGlobalArgs.Add('-c') | Out-Null
+          $gitGlobalArgs.Add("$Key=$Value") | Out-Null
+        }
+
         function Invoke-Git([string[]]$Arguments) {
-          $full = @() + $gitGlobalArgs + $Arguments
+          $full = @($gitGlobalArgs.ToArray()) + $Arguments
           Write-Output ("git " + (Format-GitArguments $full))
           & $git @full
           if ($LASTEXITCODE -ne 0) {
@@ -367,7 +448,7 @@ tasks:
         }
 
         function Invoke-GitOutput([string[]]$Arguments) {
-          $full = @() + $gitGlobalArgs + $Arguments
+          $full = @($gitGlobalArgs.ToArray()) + $Arguments
           $output = & $git @full 2>$null
           if ($LASTEXITCODE -ne 0) {
             return $null
@@ -379,6 +460,27 @@ tasks:
           $path = "Env:\$Name"
           if (Test-Path -LiteralPath $path) {
             Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        function Convert-ToGitSafeDirectory([string]$Path) {
+          return ([System.IO.Path]::GetFullPath($Path)).Replace('\', '/')
+        }
+
+        function Ensure-SafeDirectory() {
+          if (-not $safeDirectory) {
+            return
+          }
+
+          $safePath = Convert-ToGitSafeDirectory $dest
+
+          $existing = Invoke-GitOutput @('config', '--global', '--get-all', 'safe.directory')
+          $entries = @()
+          if (-not [string]::IsNullOrWhiteSpace($existing)) {
+            $entries = $existing -split "[`r`n]+" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+          }
+          if ($entries -notcontains $safePath) {
+            Invoke-Git @('config', '--global', '--add', 'safe.directory', $safePath)
           }
         }
 
@@ -422,7 +524,7 @@ tasks:
           $env:GIT_TERMINAL_PROMPT = '0'
           $env:GCM_INTERACTIVE = 'Never'
           # Clear configured helpers so GCM cannot intercept, but keep Git's askpass path available for the token above.
-          Set-Variable -Name gitGlobalArgs -Value @('-c', 'credential.helper=') -Scope 1
+          Add-GitGlobalConfig 'credential.helper' ''
         }
 
         function Enable-SshKey() {
@@ -486,9 +588,7 @@ tasks:
             $repoExists = $true
           }
 
-          if ($safeDirectory) {
-            Invoke-Git @('config', '--global', '--add', 'safe.directory', $dest)
-          }
+          Ensure-SafeDirectory
 
           if ($setRemoteUrl) {
             $currentRemote = Invoke-GitOutput @('-C', $dest, 'remote', 'get-url', $remote)
