@@ -394,6 +394,30 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	}
 }
 
+func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	longMessage := strings.Repeat("failure-message ", 8)
+	longOutput := strings.Repeat("verbose-output ", 8)
+
+	r.Emit(TaskResultEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Status:   "failed",
+		Message:  longMessage,
+		Output:   []string{longOutput},
+	})
+
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+		if len(line) > lineWidth {
+			t.Fatalf("expected wrapped line <= %d chars, got %d: %q\n%s", lineWidth, len(line), line, buf.String())
+		}
+	}
+	if strings.Count(buf.String(), "  │ ") < 2 {
+		t.Fatalf("expected wrapped message/output continuation lines, got %q", buf.String())
+	}
+}
+
 func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 	var buf bytes.Buffer
 	r := newVerboseTextRenderer(&buf)

@@ -101,7 +101,7 @@ func (p *winRMPersistentPS) run(ctx context.Context, script string) (string, err
 	case r := <-resultCh:
 		return r.out, r.err
 	case <-readCtx.Done():
-		slog.Warn("winrm persistent ps: read timed out, declaring session wedged", "id", id, "timeout", winRMPersistentPSReadTimeout)
+		slog.Debug("winrm persistent ps: read timed out, declaring session wedged", "id", id, "timeout", winRMPersistentPSReadTimeout)
 		return "", &psSessionError{fmt.Errorf("read stdout: %w (no DONE/ERR marker within %s)", readCtx.Err(), winRMPersistentPSReadTimeout)}
 	}
 }
@@ -138,10 +138,14 @@ func (t *WinRMTarget) Transport() Transport {
 func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	// User-authored powershell scripts can leave the persistent powershell.exe
 	// in a wedged state (process-level $env, async output formatting state,
-	// in-flight child processes) such that the next stdin command is accepted
-	// but never evaluated. Built-in modules use bounded scripts and keep the
-	// session for performance; the powershell module is the only user-script
-	// vector, so recycle after it.
+	// in-flight child processes) and can legitimately run longer than the
+	// persistent session's completion-marker timeout. Built-in modules use
+	// bounded scripts and keep the session for performance; the powershell
+	// module is the only user-script vector, so bypass and recycle around it.
+	runPS := t.runPS
+	if module == "powershell" {
+		runPS = t.runPSLegacy
+	}
 	defer func() {
 		if module == "powershell" {
 			t.resetPSSession()
@@ -153,7 +157,7 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
 	backend := &windowsTaskBackend{
-		run:       t.runPS,
+		run:       runPS,
 		copyPlain: t.CopyFile,
 		tempDir:   t.RemoteTempDir(),
 		become:    become,
@@ -306,7 +310,7 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) 
 			return out, nil
 		}
 		if isSessionError(psErr) {
-			slog.Warn("winrm runPS: persistent session error, falling back to legacy", "err", psErr)
+			slog.Debug("winrm runPS: persistent session error, falling back to legacy", "err", psErr)
 			t.resetPSSession()
 		} else {
 			return out, psErr

@@ -83,14 +83,14 @@ func tsRenderPath(actionPath, taskName string, maxWidth int) string {
 	return taskName
 }
 
-func tsRenderOutputBlock(message string) string {
+func tsRenderOutputBlock(message string, width int) string {
 	var parts []string
 	for line := range strings.SplitSeq(strings.TrimSpace(message), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		parts = append(parts, tsOutputLine(5, line))
+		parts = append(parts, tsOutputLines(5, line, width)...)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -151,6 +151,37 @@ func tsJoinHorizontal(gap string, elems ...string) string {
 
 func tsOutputLine(depth int, content string) string {
 	return lipgloss.NewStyle().PaddingLeft(depth).Render(tsOutput.Render(content))
+}
+
+func tsOutputLines(depth int, content string, width int) []string {
+	contentWidth := outputContentWidth(depth, width)
+	wrapped := wrapFactValue(strings.TrimSpace(content), contentWidth)
+	lines := make([]string, 0, len(wrapped))
+	for _, line := range wrapped {
+		lines = append(lines, tsOutputLine(depth, line))
+	}
+	return lines
+}
+
+func outputContentWidth(depth int, width int) int {
+	if width <= 0 {
+		width = 80
+	}
+	return max(width-depth-2, 16)
+}
+
+func tsRenderNotice(glyph string, style lipgloss.Style, message string, width int) string {
+	prefix := "  " + style.Render(glyph) + "  "
+	contentWidth := outputContentWidth(lipgloss.Width(prefix), width)
+	lines := wrapFactValue(strings.TrimSpace(message), contentWidth)
+	for i, line := range lines {
+		if i == 0 {
+			lines[i] = prefix + style.Render(line)
+			continue
+		}
+		lines[i] = strings.Repeat(" ", lipgloss.Width(prefix)) + style.Render(line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func activityKey(target, message string) string {

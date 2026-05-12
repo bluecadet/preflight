@@ -155,9 +155,9 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	case EventPlayEnd:
 		return m.handlePlayEnd(PlayEndEvent{Target: p.target, OKCount: p.okCount, ChangedCount: p.changedCount, FailedCount: p.failedCount, SkippedCount: p.skippedCount})
 	case EventWarning:
-		return m, tea.Println("  " + tsChanged.Render("⚠") + "  " + tsMuted.Render(p.message))
+		return m, tea.Println(tsRenderNotice("⚠", tsChanged, p.message, m.width))
 	case EventError:
-		return m, tea.Println("  " + tsFailed.Render("✗") + "  " + tsFailed.Render(p.errorMessage))
+		return m, tea.Println(tsRenderNotice("✗", tsFailed, p.errorMessage, m.width))
 	case EventFacts:
 		return m.handleFacts(FactsEvent{Target: p.target, Facts: p.facts})
 	case EventPlan:
@@ -272,10 +272,10 @@ func (m tuiModel) handleTaskResult(e TaskResultEvent) (tuiModel, tea.Cmd) {
 	cmds = append(cmds, tea.Println(m.renderCommitted(e, elapsed)))
 	if m.verbose {
 		if e.Message != "" {
-			cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message)))
+			cmds = append(cmds, tea.Println(tsRenderOutputBlock(e.Message, m.width)))
 		}
 		if len(e.Output) > 0 {
-			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"))))
+			cmds = append(cmds, tea.Println(tsRenderOutputBlock(strings.Join(e.Output, "\n"), m.width)))
 		}
 	}
 
@@ -487,14 +487,18 @@ func (m tuiModel) renderFinalSummary() string {
 				for line := range strings.SplitSeq(strings.TrimSpace(failed.message), "\n") {
 					line = strings.TrimSpace(line)
 					if line != "" {
-						b.WriteString(tsOutputLine(9, line) + "\n")
+						for _, wrapped := range tsOutputLines(9, line, m.width) {
+							b.WriteString(wrapped + "\n")
+						}
 					}
 				}
 			}
 			for _, line := range failed.output {
 				line = strings.TrimSpace(line)
 				if line != "" {
-					b.WriteString(tsOutputLine(9, line) + "\n")
+					for _, wrapped := range tsOutputLines(9, line, m.width) {
+						b.WriteString(wrapped + "\n")
+					}
 				}
 			}
 		}

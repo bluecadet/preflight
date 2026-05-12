@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 func TestNewTUIRenderer_NoPanel(t *testing.T) {
@@ -217,6 +219,31 @@ func TestTUIModel_VerboseCommitsOutputForSuccessfulTasks(t *testing.T) {
 	})
 	if cmd == nil {
 		t.Fatal("expected verbose TUI to emit a committed output block")
+	}
+}
+
+func TestTUIModel_WrapsLongCommittedFailureOutput(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModel(events)
+	m.width = 48
+	m, _ = m.applyEvent(TaskResultEvent{
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Status:   "failed",
+		Message:  strings.Repeat("failure-message ", 6),
+		Output:   []string{strings.Repeat("verbose-output ", 6)},
+	})
+	m, _ = m.applyEvent(PlayEndEvent{
+		Target:      "host-a",
+		FailedCount: 1,
+	})
+	m.done = true
+
+	for line := range strings.SplitSeq(strings.TrimSpace(m.View()), "\n") {
+		if lipgloss.Width(line) > m.width {
+			t.Fatalf("expected wrapped line <= %d cells, got %d: %q\n%s", m.width, lipgloss.Width(line), line, m.View())
+		}
 	}
 }
 

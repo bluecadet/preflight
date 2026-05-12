@@ -2,9 +2,9 @@ PLAY [gallery rollout] *********************************************************
 
 TASK [Preflight check] ..................................................... ok
 TASK [Install runtime] ................................................ changed
-TASK [Smoke test] ...................................................... failed (timeout)
+TASK [Smoke test] ............................................ failed (timeout)
   │ Ping kiosk app
   │ Timed out waiting for response
-TASK [Cleanup] ........................................................ skipped (dependency-failed)
+TASK [Cleanup] .................................... skipped (dependency-failed)
 PLAY RECAP *********************************************************************
 lobby-pc-01    : ok=1    changed=1    failed=1    skipped=1

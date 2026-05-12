@@ -122,9 +122,12 @@ func (r *TextRenderer) emitTaskOutput(e TaskOutputEvent) {
 
 func (r *TextRenderer) emitTaskResult(e TaskResultEvent) {
 	label := fmt.Sprintf("TASK [%s]", e.TaskName)
-	statusText := r.statusColored(e.Status, e.Message)
-	dotsNeeded := max(lineWidth-len(label)-len(e.Status)-3, 1)
-	r.writeLine(fmt.Sprintf("%s %s %s", label, strings.Repeat(".", dotsNeeded), statusText))
+	statusLines := wrapTextLine(statusLabel(e.Status, e.Message), max(lineWidth-len(label)-4, 16))
+	dotsNeeded := max(lineWidth-len(label)-len(statusLines[0])-3, 1)
+	r.writeLine(fmt.Sprintf("%s %s %s", label, strings.Repeat(".", dotsNeeded), r.statusColored(e.Status, statusLines[0])))
+	if len(statusLines) > 1 {
+		r.writeOutputLines(statusLines[1:])
+	}
 
 	if r.wasTaskOutputStreamed(e) {
 		r.clearTaskOutputState(e)
@@ -152,11 +155,14 @@ func (r *TextRenderer) emitPlayEnd(e PlayEndEvent) {
 	r.writeBlank()
 }
 
-func (r *TextRenderer) statusColored(status, message string) string {
-	label := status
+func statusLabel(status, message string) string {
 	if message != "" {
-		label = fmt.Sprintf("%s (%s)", status, message)
+		return fmt.Sprintf("%s (%s)", status, message)
 	}
+	return status
+}
+
+func (r *TextRenderer) statusColored(status, label string) string {
 	switch status {
 	case "ok":
 		return r.colorize(ansiGreen, label)
@@ -195,8 +201,18 @@ func fillLine(prefix, fill string, width int) string {
 
 func (r *TextRenderer) writeOutputLines(lines []string) {
 	for _, line := range lines {
-		r.writeLine("  │ " + line)
+		for _, wrapped := range wrapTextLine(line, lineWidth-4) {
+			r.writeLine("  │ " + wrapped)
+		}
 	}
+}
+
+func wrapTextLine(line string, width int) []string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return []string{""}
+	}
+	return wrapFactValue(line, width)
 }
 
 func taskBufferKey(taskID, taskName, target string) string {
