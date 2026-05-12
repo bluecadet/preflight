@@ -293,8 +293,9 @@ func (t *WinRMTarget) resetPSSession() {
 
 // Close releases the persistent PS session if one was created. The underlying
 // WinRM connection is managed by the client and is not explicitly closed.
-func (t *WinRMTarget) Close() {
+func (t *WinRMTarget) Close() error {
 	t.resetPSSession()
+	return nil
 }
 
 // runPS executes a PowerShell script on the remote host. It first tries the

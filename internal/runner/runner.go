@@ -67,9 +67,6 @@ func (r *Runner) closeTarget() error {
 	if closer, ok := r.target.(interface{ Close() error }); ok {
 		return closer.Close()
 	}
-	if closer, ok := r.target.(interface{ Close() }); ok {
-		closer.Close()
-	}
 	return nil
 }
 

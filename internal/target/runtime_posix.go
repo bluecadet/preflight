@@ -256,7 +256,7 @@ func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 		return stdout, err
 	}
 	if code != 0 {
-		return stdout, fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return stdout, fmt.Errorf("posix command exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
 	return stdout, nil
 }
@@ -387,7 +387,7 @@ func posixMustRunWithStdin(ctx context.Context, backend posixShellBackend, comma
 		return err
 	}
 	if code != 0 {
-		return fmt.Errorf("ssh command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return fmt.Errorf("posix command exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
 	return nil
 }
