@@ -21,6 +21,19 @@ type Module interface {
 	Apply(ctx context.Context, params map[string]any) error
 }
 
+// PluggableModule is implemented by modules that delegate to an out-of-process
+// adapter (typically a preflight plugin executable). Targets clone these
+// per-instance so each target gets its own adapter client state, and transports
+// that cannot delegate to an external process consult this interface for
+// clearer "not supported on this transport" diagnostics.
+type PluggableModule interface {
+	Module
+	// PluginPath is the path to the backing plugin executable.
+	PluginPath() string
+	// CloneModule returns a fresh adapter that owns no shared client state.
+	CloneModule() Module
+}
+
 // CheckStreamingModule is an optional extension of Module for implementations
 // that can emit output line-by-line during Check.
 type CheckStreamingModule interface {

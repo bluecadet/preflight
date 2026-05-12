@@ -337,7 +337,7 @@ func (t *SSHTarget) unsupportedModuleError(module string, runtimeKind RuntimeKin
 		if !ok {
 			return fmt.Errorf("ssh: unknown module %q", module)
 		}
-		if _, isPlugin := mod.(*pluginModule); isPlugin {
+		if _, isPlugin := mod.(PluggableModule); isPlugin {
 			return fmt.Errorf("ssh: plugin module %q is not supported yet; use local execution or a staged bundle", module)
 		}
 	}

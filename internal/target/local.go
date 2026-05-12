@@ -24,8 +24,8 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 	}
 	cloned := make(ModuleRegistry, len(registry))
 	for name, mod := range registry {
-		if plugin, ok := mod.(*pluginModule); ok {
-			cloned[name] = plugin.clone()
+		if pluggable, ok := mod.(PluggableModule); ok {
+			cloned[name] = pluggable.CloneModule()
 			continue
 		}
 		cloned[name] = mod
@@ -179,9 +179,12 @@ func (t *LocalTarget) RunPowerShell(ctx context.Context, script string) (string,
 }
 
 // Close releases any module-level resources owned by this target instance.
+// Idempotent: subsequent calls are no-ops once the registry has been drained.
 func (t *LocalTarget) Close() error {
+	registry := t.registry
+	t.registry = nil
 	var err error
-	for _, mod := range t.registry {
+	for _, mod := range registry {
 		closer, ok := mod.(interface{ Close() error })
 		if !ok {
 			continue

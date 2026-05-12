@@ -54,7 +54,7 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 			return nil, nil, fmt.Errorf("plugin %q discovered more than once (%s, %s)", plugin.Name, existingPath, plugin.Path)
 		}
 		seenPlugins[plugin.Name] = plugin.Path
-		registry[plugin.Name] = target.NewPluginModule(plugin.Name, plugin.Path)
+		registry[plugin.Name] = NewModule(plugin.Name, plugin.Path)
 		loaded = append(loaded, LoadedPlugin{
 			Name:   plugin.Name,
 			Path:   plugin.Path,

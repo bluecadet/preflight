@@ -13,6 +13,18 @@ import (
 	"unicode/utf16"
 )
 
+// fakePluggableModule lets ssh_test exercise the PluggableModule branch in
+// SSHTarget.unsupportedModuleError without depending on the plugins package
+// (which would create a target → plugins → target import cycle).
+type fakePluggableModule struct{ path string }
+
+func (fakePluggableModule) Check(context.Context, map[string]any) (bool, error) {
+	return false, nil
+}
+func (fakePluggableModule) Apply(context.Context, map[string]any) error { return nil }
+func (m fakePluggableModule) PluginPath() string                        { return m.path }
+func (m fakePluggableModule) CloneModule() Module                       { return m }
+
 type fakeSSHRunner struct {
 	run func(context.Context, string, []byte) (string, string, int, error)
 }
@@ -545,7 +557,7 @@ func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
 
 func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, ModuleRegistry{
-		"custom": &pluginModule{name: "custom", path: "/tmp/custom-plugin"},
+		"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
 	})
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {

@@ -1,4 +1,4 @@
-package target
+package plugins
 
 import (
 	"context"
@@ -32,13 +32,13 @@ func (c *fakePluginClient) Close() error {
 
 func (c *fakePluginClient) Name() string { return c.name }
 
-func TestPluginModuleReusesClientAcrossCalls(t *testing.T) {
+func TestPluginReusesClientAcrossCalls(t *testing.T) {
 	var (
 		created int
 		client  = &fakePluginClient{needsChange: true}
 	)
 
-	mod := &pluginModule{
+	mod := &Plugin{
 		name: "custom",
 		path: "/tmp/plugin",
 		newClient: func(context.Context, string) (pluginClient, error) {
@@ -94,9 +94,9 @@ func TestPluginModuleReusesClientAcrossCalls(t *testing.T) {
 	}
 }
 
-func TestPluginModuleRejectsNameMismatch(t *testing.T) {
+func TestPluginRejectsNameMismatch(t *testing.T) {
 	client := &fakePluginClient{name: "wrong"}
-	mod := &pluginModule{
+	mod := &Plugin{
 		name: "custom",
 		path: "/tmp/plugin",
 		newClient: func(context.Context, string) (pluginClient, error) {
@@ -112,14 +112,14 @@ func TestPluginModuleRejectsNameMismatch(t *testing.T) {
 	}
 }
 
-func TestPluginModuleCloseDropsCachedClient(t *testing.T) {
+func TestPluginCloseDropsCachedClient(t *testing.T) {
 	clients := []*fakePluginClient{
 		{needsChange: true},
 		{needsChange: false},
 	}
 	created := 0
 
-	mod := &pluginModule{
+	mod := &Plugin{
 		name: "custom",
 		path: "/tmp/plugin",
 		newClient: func(context.Context, string) (pluginClient, error) {
@@ -157,38 +157,5 @@ func TestPluginModuleCloseDropsCachedClient(t *testing.T) {
 	}
 	if clients[1].closeCalls != 0 {
 		t.Fatalf("second client Close called %d times before shutdown, want 0", clients[1].closeCalls)
-	}
-}
-
-func TestLocalTargetCloseClosesModuleResources(t *testing.T) {
-	client := &fakePluginClient{needsChange: true}
-	mod := &pluginModule{
-		name: "custom",
-		path: "/tmp/plugin",
-		newClient: func(context.Context, string) (pluginClient, error) {
-			return client, nil
-		},
-	}
-	tgt := NewLocalTarget(ModuleRegistry{"custom": mod})
-
-	if _, err := tgt.Execute(context.Background(), "task-1", "custom", nil, ExecutionOptions{}, false, nil); err != nil {
-		t.Fatalf("Execute() error = %v", err)
-	}
-	if client.closeCalls != 0 {
-		t.Fatalf("Close called %d times before target shutdown, want 0", client.closeCalls)
-	}
-
-	if err := tgt.Close(); err != nil {
-		t.Fatalf("target Close() error = %v", err)
-	}
-	if client.closeCalls != 1 {
-		t.Fatalf("Close called %d times after target shutdown, want 1", client.closeCalls)
-	}
-
-	if err := tgt.Close(); err != nil {
-		t.Fatalf("second target Close() error = %v", err)
-	}
-	if client.closeCalls != 1 {
-		t.Fatalf("Close called %d times after second target shutdown, want 1", client.closeCalls)
 	}
 }

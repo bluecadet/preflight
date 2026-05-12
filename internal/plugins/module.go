@@ -1,13 +1,17 @@
-package target
+package plugins
 
 import (
 	"context"
 	"fmt"
 	"sync"
 
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
+// pluginClient is the subset of sdk.Client behaviour exercised by Plugin.
+// Defined as an interface so tests can substitute a fake without spawning a
+// real plugin subprocess.
 type pluginClient interface {
 	Name() string
 	Check(args map[string]any) (sdk.CheckResult, error)
@@ -15,7 +19,15 @@ type pluginClient interface {
 	Close() error
 }
 
-type pluginModule struct {
+// Plugin adapts an executable plugin into target.Module. Each Plugin owns at
+// most one live client at a time; the client is lazily created on first Check
+// or Apply and reused across calls until reset or Close.
+//
+// Plugin satisfies target.PluggableModule: LocalTarget clones it per-instance
+// so each target keeps its own plugin client, and other transports use the
+// interface to report a friendlier "use local or a staged bundle" error when
+// a plugin is invoked over a transport that cannot delegate.
+type Plugin struct {
 	name          string
 	path          string
 	newClient     func(context.Context, string) (pluginClient, error)
@@ -24,8 +36,20 @@ type pluginModule struct {
 	closeClientFn func(pluginClient) error
 }
 
-func (m *pluginModule) clone() *pluginModule {
-	return &pluginModule{
+// NewModule adapts an executable plugin into target.Module.
+func NewModule(name, path string) target.Module {
+	return &Plugin{
+		name:      name,
+		path:      path,
+		newClient: func(ctx context.Context, path string) (pluginClient, error) { return sdk.NewClientContext(ctx, path) },
+	}
+}
+
+// CloneModule returns a fresh Plugin sharing the same name, path, and factory
+// but no live client. Used by LocalTarget so each target instance gets its
+// own plugin subprocess state.
+func (m *Plugin) CloneModule() target.Module {
+	return &Plugin{
 		name:          m.name,
 		path:          m.path,
 		newClient:     m.newClient,
@@ -33,17 +57,12 @@ func (m *pluginModule) clone() *pluginModule {
 	}
 }
 
-// NewPluginModule adapts an executable plugin into the Module contract used by
-// targets and the runner.
-func NewPluginModule(name, path string) Module {
-	return &pluginModule{
-		name:      name,
-		path:      path,
-		newClient: func(ctx context.Context, path string) (pluginClient, error) { return sdk.NewClientContext(ctx, path) },
-	}
+// PluginPath returns the filesystem path to the backing plugin executable.
+func (m *Plugin) PluginPath() string {
+	return m.path
 }
 
-func (m *pluginModule) Check(ctx context.Context, params map[string]any) (bool, error) {
+func (m *Plugin) Check(ctx context.Context, params map[string]any) (bool, error) {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
 		return false, fmt.Errorf("plugin %q: %w", m.name, err)
@@ -61,7 +80,7 @@ func (m *pluginModule) Check(ctx context.Context, params map[string]any) (bool, 
 	return result.NeedsChange, nil
 }
 
-func (m *pluginModule) Apply(ctx context.Context, params map[string]any) error {
+func (m *Plugin) Apply(ctx context.Context, params map[string]any) error {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
 		return fmt.Errorf("plugin %q: %w", m.name, err)
@@ -78,7 +97,7 @@ func (m *pluginModule) Apply(ctx context.Context, params map[string]any) error {
 	return nil
 }
 
-func (m *pluginModule) Close() error {
+func (m *Plugin) Close() error {
 	m.mu.Lock()
 	client := m.client
 	m.client = nil
@@ -94,7 +113,7 @@ func (m *pluginModule) Close() error {
 	return client.Close()
 }
 
-func (m *pluginModule) getOrCreateClient(ctx context.Context) (pluginClient, error) {
+func (m *Plugin) getOrCreateClient(ctx context.Context) (pluginClient, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -115,7 +134,7 @@ func (m *pluginModule) getOrCreateClient(ctx context.Context) (pluginClient, err
 	return client, nil
 }
 
-func (m *pluginModule) resetClient(client pluginClient) {
+func (m *Plugin) resetClient(client pluginClient) {
 	m.mu.Lock()
 	if m.client != client {
 		m.mu.Unlock()
