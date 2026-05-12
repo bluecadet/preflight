@@ -6,20 +6,58 @@ package pscript
 const RemoveAppxHelperFunctions = `
 $pkgs = @($params.packages)
 $needsProvisioned = @($pkgs | Where-Object { -not $_.scope -or [string]$_.scope -eq 'both' -or [string]$_.scope -eq 'provisioned' })
-$allProvisioned = if ($needsProvisioned.Count -gt 0) {
-  @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue)
-} else { @() }
+$allProvisioned = @()
+if ($needsProvisioned.Count -gt 0) {
+  try {
+    $allProvisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop)
+  } catch {
+    $allProvisioned = @()
+  }
+}
 
 function Get-InstalledAppxMatches([string]$scope, [string]$name) {
   $installed = @()
-  switch ($scope) {
-    'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
-    'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-    'provisioned'  { $installed = @() }
-    'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-    default { throw "remove_appx_packages: unsupported scope $scope" }
+  try {
+    switch ($scope) {
+      'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
+      'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+      'provisioned'  { $installed = @() }
+      'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+      default { throw "remove_appx_packages: unsupported scope $scope" }
+    }
+  } catch {
+    if ($scope -ne 'current_user' -and $scope -ne 'all_users' -and $scope -ne 'provisioned' -and $scope -ne 'both') {
+      throw
+    }
+    $installed = @()
   }
   return @($installed | Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName) })
+}
+
+function Remove-AppxProvisionedSafe([string]$packageName) {
+  if ([string]::IsNullOrWhiteSpace($packageName)) { return }
+  try {
+    Remove-AppxProvisionedPackage -Online -PackageName $packageName -ErrorAction Stop | Out-Null
+  } catch {
+    Write-Output ("warn: Remove-AppxProvisionedPackage failed for " + $packageName + ": " + $_.Exception.Message)
+  }
+}
+
+function Remove-AppxInstalledSafe([string]$packageFullName, [string]$scope) {
+  if ([string]::IsNullOrWhiteSpace($packageFullName)) { return }
+  try {
+    if ($scope -eq 'current_user') {
+      Remove-AppxPackage -Package $packageFullName -ErrorAction Stop
+    } else {
+      try {
+        Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
+      } catch {
+        Remove-AppxPackage -Package $packageFullName -ErrorAction Stop
+      }
+    }
+  } catch {
+    Write-Output ("warn: Remove-AppxPackage failed for " + $packageFullName + ": " + $_.Exception.Message)
+  }
 }
 
 function Get-ProvisionedAppxMatches([string]$scope, [string]$name, [bool]$hasWildcard) {
@@ -66,9 +104,15 @@ Write-Output 'false'
 const ModuleRemoveAppxApplyScript = `
 $pkgs = @($params.packages)
 $needsProvisioned = @($pkgs | Where-Object { -not $_.scope -or [string]$_.scope -eq 'both' -or [string]$_.scope -eq 'provisioned' })
-$allProvisioned = if ($needsProvisioned.Count -gt 0) {
-  @(Get-AppxProvisionedPackage -Online -ErrorAction SilentlyContinue)
-} else { @() }
+$allProvisioned = @()
+if ($needsProvisioned.Count -gt 0) {
+  try {
+    $allProvisioned = @(Get-AppxProvisionedPackage -Online -ErrorAction Stop)
+  } catch {
+    Write-Output ("warn: Get-AppxProvisionedPackage failed: " + $_.Exception.Message)
+    $allProvisioned = @()
+  }
+}
 
 foreach ($spec in $pkgs) {
   $name = [string]$spec.name
@@ -78,11 +122,19 @@ foreach ($spec in $pkgs) {
 
   if ($scope -ne 'provisioned') {
     $installed = @()
-    switch ($scope) {
-      'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
-      'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-      'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
-      default { throw "remove_appx_packages: unsupported scope $scope" }
+    try {
+      switch ($scope) {
+        'current_user' { $installed = @(Get-AppxPackage -Name $name -ErrorAction SilentlyContinue) }
+        'all_users'    { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+        'both'         { $installed = @(Get-AppxPackage -AllUsers -Name $name -ErrorAction SilentlyContinue) }
+        default { throw "remove_appx_packages: unsupported scope $scope" }
+      }
+    } catch {
+      if ($scope -ne 'current_user' -and $scope -ne 'all_users' -and $scope -ne 'both') {
+        throw
+      }
+      Write-Output ("warn: Get-AppxPackage failed for " + $name + ": " + $_.Exception.Message)
+      $installed = @()
     }
     foreach ($pkg in $installed) {
       if ($null -eq $pkg) { continue }
@@ -91,14 +143,18 @@ foreach ($spec in $pkgs) {
         Write-Output ("skipping appx package " + $name + " because PackageFullName is empty")
         continue
       }
-      if ($scope -eq 'current_user') {
-        Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
-      } else {
-        try {
-          Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
-        } catch {
-          Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
+      try {
+        if ($scope -eq 'current_user') {
+          Remove-AppxPackage -Package $packageFullName -ErrorAction Stop
+        } else {
+          try {
+            Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
+          } catch {
+            Remove-AppxPackage -Package $packageFullName -ErrorAction Stop
+          }
         }
+      } catch {
+        Write-Output ("warn: Remove-AppxPackage failed for " + $packageFullName + ": " + $_.Exception.Message)
       }
     }
   }
@@ -112,7 +168,11 @@ foreach ($spec in $pkgs) {
         (-not $hasWildcard -and $displayName -eq $name)
       )
     }) | ForEach-Object {
-      Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
+      try {
+        Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction Stop | Out-Null
+      } catch {
+        Write-Output ("warn: Remove-AppxProvisionedPackage failed for " + $_.PackageName + ": " + $_.Exception.Message)
+      }
     }
   }
 }
@@ -136,20 +196,12 @@ foreach ($spec in $pkgs) {
         Write-Output ("skipping appx package " + $name + " because PackageFullName is empty")
         continue
       }
-      if ($scope -eq 'current_user') {
-        Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
-      } else {
-        try {
-          Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
-        } catch {
-          Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
-        }
-      }
+      Remove-AppxInstalledSafe $packageFullName $scope
     }
   }
   if ($scope -eq 'provisioned' -or $scope -eq 'both') {
     @(Get-ProvisionedAppxMatches $scope $name $hasWildcard) | ForEach-Object {
-      Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
+      Remove-AppxProvisionedSafe $_.PackageName
     }
   }
 }
@@ -179,20 +231,12 @@ foreach ($spec in $pkgs) {
       if ($null -eq $pkg) { continue }
       $packageFullName = [string]$pkg.PackageFullName
       if ([string]::IsNullOrWhiteSpace($packageFullName)) { continue }
-      if ($scope -eq 'current_user') {
-        Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
-      } else {
-        try {
-          Remove-AppxPackage -Package $packageFullName -AllUsers -ErrorAction Stop
-        } catch {
-          Remove-AppxPackage -Package $packageFullName -ErrorAction SilentlyContinue
-        }
-      }
+      Remove-AppxInstalledSafe $packageFullName $scope
     }
   }
   if ($scope -eq 'provisioned' -or $scope -eq 'both') {
     @(Get-ProvisionedAppxMatches $scope $name $hasWildcard) | ForEach-Object {
-      Remove-AppxProvisionedPackage -Online -PackageName $_.PackageName -ErrorAction SilentlyContinue | Out-Null
+      Remove-AppxProvisionedSafe $_.PackageName
     }
   }
 }
