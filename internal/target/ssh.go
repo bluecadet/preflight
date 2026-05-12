@@ -145,16 +145,7 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 		switch rt := runtime.(type) {
 		case *sshWindowsPowerShellRuntime:
 			backend := &windowsTaskBackend{
-				run: func(ctx context.Context, script string) (string, error) {
-					stdout, stderr, code, err := t.run(ctx, buildEncodedPowerShellCommand(rt.binary, script), nil)
-					if err != nil {
-						return "", err
-					}
-					if code != 0 {
-						return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
-					}
-					return stdout, nil
-				},
+				run:       rt.RunPowerShellScript,
 				copyPlain: rt.CopyFile,
 				tempDir:   rt.RemoteTempDir(),
 				become:    become,
