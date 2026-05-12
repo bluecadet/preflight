@@ -84,6 +84,8 @@ Add a `become` block to any task that must execute under the exhibit account's i
 
 This is also the recommended way to apply current-user stdlib actions such as `preflight/windows-shell`, `preflight/windows-input`, and the screensaver portion of `preflight/windows-power` to a kiosk or exhibit account. Those actions now persist settings for the current execution identity rather than seeding future profiles.
 
+For `preflight/windows-shell`, you can also set `profile_user` when you only need the action's supported profile-scoped shell settings and do not want to switch the task process identity.
+
 ```yaml
   - name: Configure shell defaults for exhibit user
     become:

@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "3.2.0"
+version: "3.3.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -11,15 +11,15 @@ inputs:
   clear_desktop_background:
     type: bool
     default: true
-    description: Clear the desktop wallpaper for the current user
+    description: Clear the desktop wallpaper for the selected user profile
   clear_desktop_shortcuts:
     type: bool
     default: true
-    description: Remove .lnk and .url shortcuts from the current user's desktop
+    description: Remove .lnk and .url shortcuts from the selected user profile's desktop
   taskbar_auto_hide:
     type: bool
     default: false
-    description: Enable or disable taskbar auto-hide for the current user
+    description: Enable or disable taskbar auto-hide for the selected user profile
   theme_mode:
     type: string
     default: unchanged
@@ -27,23 +27,23 @@ inputs:
   transparency_effects:
     type: bool
     default: true
-    description: Enable or disable transparency effects for the current user
+    description: Enable or disable transparency effects for the selected user profile
   hide_recycle_bin:
     type: bool
     default: true
-    description: Hide the Recycle Bin icon for the current user
+    description: Hide the Recycle Bin icon for the selected user profile
   show_hidden_files:
     type: bool
     default: true
-    description: Show hidden files in File Explorer for the current user
+    description: Show hidden files in File Explorer for the selected user profile
   show_file_extensions:
     type: bool
     default: true
-    description: Show file extensions in File Explorer for the current user
+    description: Show file extensions in File Explorer for the selected user profile
   clear_start_pins:
     type: bool
     default: false
-    description: Replace the current user's Start pins with an empty pinned list
+    description: Replace the selected user profile's Start pins with an empty pinned list
 
 tasks:
   - name: Clear desktop background
@@ -116,23 +116,55 @@ tasks:
           data: "{{ vars.hide_recycle_bin }}"
 
   - name: Configure taskbar auto-hide
-    when: "{{ vars.profile_user == '' }}"
     powershell:
+      env:
+        PREFLIGHT_PROFILE_USER: "{{ vars.profile_user }}"
+        PREFLIGHT_TASKBAR_AUTO_HIDE: "{{ vars.taskbar_auto_hide }}"
       check_script: |
-        $desiredStateByte = if ([System.Convert]::ToBoolean('{{ vars.taskbar_auto_hide }}')) { 3 } else { 2 }
-        function Get-TaskbarSettingsPath() {
+        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
+        $desiredStateByte = if ([System.Convert]::ToBoolean($env:PREFLIGHT_TASKBAR_AUTO_HIDE)) { 3 } else { 2 }
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+            throw 'windows-shell: profile_user can only be used with HKCU/HKEY_CURRENT_USER paths'
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
+          }
+          $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
+        function Get-TaskbarSettingsPath([string]$user) {
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
           )) {
-            if (Test-Path -LiteralPath $candidate) {
-              return $candidate
+            $resolved = Resolve-UserRegistryPath $candidate $user
+            if (Test-Path -LiteralPath $resolved) {
+              return $resolved
             }
           }
-          return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+          return (Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user)
         }
 
-        $path = Get-TaskbarSettingsPath
+        $path = Get-TaskbarSettingsPath $profileUser
         $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
         if ($null -eq $settings -or $settings.Length -lt 9) {
           return $true
@@ -140,21 +172,51 @@ tasks:
 
         return ([int]$settings[8] -ne $desiredStateByte)
       script: |
-        $enabled = [System.Convert]::ToBoolean('{{ vars.taskbar_auto_hide }}')
+        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
+        $enabled = [System.Convert]::ToBoolean($env:PREFLIGHT_TASKBAR_AUTO_HIDE)
         $desiredStateByte = if ($enabled) { 3 } else { 2 }
-        function Get-TaskbarSettingsPath() {
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+            throw 'windows-shell: profile_user can only be used with HKCU/HKEY_CURRENT_USER paths'
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
+          }
+          $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
+        function Get-TaskbarSettingsPath([string]$user) {
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
           )) {
-            if (Test-Path -LiteralPath $candidate) {
-              return $candidate
+            $resolved = Resolve-UserRegistryPath $candidate $user
+            if (Test-Path -LiteralPath $resolved) {
+              return $resolved
             }
           }
-          return 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+          return (Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user)
         }
 
-        $path = Get-TaskbarSettingsPath
+        $path = Get-TaskbarSettingsPath $profileUser
         $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
         if ($null -eq $settings -or $settings.Length -lt 9) {
           throw ("taskbar_auto_hide requires an existing Explorer Settings value at " + $path)
@@ -163,27 +225,75 @@ tasks:
         $updated[8] = [byte]$desiredStateByte
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
-        Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $enabled)
+        if ([string]::IsNullOrWhiteSpace($profileUser)) {
+          Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $enabled)
+        } else {
+          Write-Output ("Persisting taskbar auto-hide for profile_user " + $profileUser + ": " + $enabled)
+        }
         Write-Output 'Restart Explorer or sign out to see the updated taskbar behavior'
 
   - name: Clear desktop shortcuts
     when: "{{ vars.clear_desktop_shortcuts }}"
     powershell:
+      env:
+        PREFLIGHT_PROFILE_USER: "{{ vars.profile_user }}"
       check_script: |
-        if ('{{ vars.profile_user }}' -ne '') {
-          return $false
+        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
         }
-        $path = Join-Path $env:USERPROFILE 'Desktop'
+
+        function Resolve-ProfileDirectory([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $env:USERPROFILE
+          }
+          $sid = Resolve-ProfileSid $user
+          $profileKey = Join-Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' $sid
+          $profilePath = (Get-ItemProperty -LiteralPath $profileKey -Name ProfileImagePath -ErrorAction SilentlyContinue).ProfileImagePath
+          if ([string]::IsNullOrWhiteSpace($profilePath)) {
+            throw ("windows-shell: profile directory was not found for user " + $user)
+          }
+          return [System.Environment]::ExpandEnvironmentVariables([string]$profilePath)
+        }
+
+        $profileDir = Resolve-ProfileDirectory $profileUser
+        $path = Join-Path $profileDir 'Desktop'
         if (-not (Test-Path -LiteralPath $path)) {
           return $false
         }
-        $items = Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' }
-        return [bool]$items
+        $items = @(Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' })
+        return ($items.Count -gt 0)
       script: |
-        if ('{{ vars.profile_user }}' -ne '') {
-          exit 0
+        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
         }
-        $path = Join-Path $env:USERPROFILE 'Desktop'
+
+        function Resolve-ProfileDirectory([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $env:USERPROFILE
+          }
+          $sid = Resolve-ProfileSid $user
+          $profileKey = Join-Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList' $sid
+          $profilePath = (Get-ItemProperty -LiteralPath $profileKey -Name ProfileImagePath -ErrorAction SilentlyContinue).ProfileImagePath
+          if ([string]::IsNullOrWhiteSpace($profilePath)) {
+            throw ("windows-shell: profile directory was not found for user " + $user)
+          }
+          return [System.Environment]::ExpandEnvironmentVariables([string]$profilePath)
+        }
+
+        $profileDir = Resolve-ProfileDirectory $profileUser
+        $path = Join-Path $profileDir 'Desktop'
         if (-not (Test-Path -LiteralPath $path)) {
           exit 0
         }

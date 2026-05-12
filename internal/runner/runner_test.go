@@ -509,6 +509,102 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	}
 }
 
+func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T) {
+	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
+	r := New(&mockTarget{}, resolver, Config{
+		ProjectVars: map[string]any{"kiosk_user": "kiosk"},
+	})
+	pb := &action.Playbook{
+		Name: "windows-shell",
+		Tasks: []action.Task{
+			{
+				Name: "shell defaults",
+				Uses: "preflight/windows-shell",
+				With: map[string]any{
+					"profile_user":             "{{ vars.kiosk_user }}",
+					"theme_mode":               "dark",
+					"transparency_effects":     false,
+					"taskbar_auto_hide":        true,
+					"clear_desktop_background": true,
+					"clear_desktop_shortcuts":  true,
+					"hide_recycle_bin":         true,
+					"show_hidden_files":        true,
+					"show_file_extensions":     true,
+				},
+			},
+		},
+	}
+
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+
+	byName := make(map[string]*PlanTask, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		preview, err := PreviewTask(task, nil)
+		if err != nil {
+			t.Fatalf("PreviewTask(%s) returned error: %v", task.Name, err)
+		}
+		byName[preview.Name] = preview
+	}
+
+	registryTaskNames := []string{
+		"Clear desktop background",
+		"Configure theme mode",
+		"Configure transparency effects",
+		"Configure hidden files visibility",
+		"Configure file extensions visibility",
+		"Configure Recycle Bin desktop icon visibility (NewStartPanel)",
+		"Configure Recycle Bin desktop icon visibility (ClassicStartMenu)",
+	}
+	for _, name := range registryTaskNames {
+		task := byName[name]
+		if task == nil {
+			t.Fatalf("missing expanded task %q", name)
+		}
+		if task.Module != "registry" {
+			t.Fatalf("%s: expected registry module, got %q", name, task.Module)
+		}
+		if task.Params["user"] != "kiosk" {
+			t.Fatalf("%s: expected registry user kiosk, got %#v", name, task.Params["user"])
+		}
+	}
+
+	taskbar := byName["Configure taskbar auto-hide"]
+	if taskbar == nil {
+		t.Fatal("missing taskbar auto-hide task")
+	}
+	if taskbar.When != "" {
+		t.Fatalf("taskbar auto-hide should not be skipped for profile_user, got when %q", taskbar.When)
+	}
+	taskbarEnv, ok := taskbar.Params["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected taskbar env map, got %T", taskbar.Params["env"])
+	}
+	if taskbarEnv["PREFLIGHT_PROFILE_USER"] != "kiosk" {
+		t.Fatalf("expected taskbar profile env kiosk, got %#v", taskbarEnv["PREFLIGHT_PROFILE_USER"])
+	}
+	if !strings.Contains(taskbar.Params["script"].(string), "Resolve-UserRegistryPath") {
+		t.Fatal("expected taskbar script to resolve the profile user's registry path")
+	}
+
+	shortcuts := byName["Clear desktop shortcuts"]
+	if shortcuts == nil {
+		t.Fatal("missing clear desktop shortcuts task")
+	}
+	shortcutEnv, ok := shortcuts.Params["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected shortcuts env map, got %T", shortcuts.Params["env"])
+	}
+	if shortcutEnv["PREFLIGHT_PROFILE_USER"] != "kiosk" {
+		t.Fatalf("expected shortcuts profile env kiosk, got %#v", shortcutEnv["PREFLIGHT_PROFILE_USER"])
+	}
+	if !strings.Contains(shortcuts.Params["script"].(string), "ProfileList") {
+		t.Fatal("expected shortcuts script to resolve the profile user's desktop path")
+	}
+}
+
 func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
 	r := New(&mockTarget{}, resolver, Config{

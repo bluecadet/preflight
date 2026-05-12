@@ -70,20 +70,20 @@ Configure machine-level baseline settings.
 
 ### `preflight/windows-shell`
 
-Configure desktop and Explorer defaults for the current execution identity. Set `profile_user` to write registry-backed settings for a named Windows profile without switching process identity.
+Configure desktop and Explorer defaults for the current execution identity, or set `profile_user` to write supported settings for a named Windows profile without switching process identity.
 
-`profile_user` affects registry-backed settings only. `taskbar_auto_hide` and `clear_desktop_shortcuts` still apply only to the current execution identity.
+When `profile_user` is set, registry-backed settings and taskbar auto-hide are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's profile directory and removes `.lnk` and `.url` files from that profile's Desktop folder.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `profile_user` | string | Optional Windows user profile for registry-backed shell settings |
+| `profile_user` | string | Optional Windows user profile for user-scoped shell settings |
 | `clear_desktop_background` | bool | Clear the wallpaper |
 | `clear_desktop_shortcuts` | bool | Remove `.lnk` and `.url` files from desktop locations |
-| `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide for the current user (default: `false`) |
+| `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide (default: `false`) |
 | `theme_mode` | string | Keep the current theme or set both app and system surfaces to `light` or `dark` |
-| `transparency_effects` | bool | Enable or disable transparency effects for the current user (default: `true`) |
+| `transparency_effects` | bool | Enable or disable transparency effects (default: `true`) |
 | `hide_recycle_bin` | bool | Hide the Recycle Bin icon |
 | `show_hidden_files` | bool | Show hidden files in Explorer |
 | `show_file_extensions` | bool | Show file extensions in Explorer |
