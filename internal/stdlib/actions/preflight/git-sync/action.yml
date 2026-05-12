@@ -127,47 +127,162 @@ tasks:
         '@
         $remote = $remote.Trim()
         $fetch = [System.Convert]::ToBoolean('{{ vars.fetch }}')
+        $sshStrictHostKeyChecking = [System.Convert]::ToBoolean('{{ vars.ssh_strict_host_key_checking }}')
+
+        $tempPaths = New-Object System.Collections.Generic.List[string]
+        $utf8NoBom = New-Object System.Text.UTF8Encoding -ArgumentList $false
+
+        function New-TempTextFile([string]$Extension, [string]$Content) {
+          $path = Join-Path ([System.IO.Path]::GetTempPath()) ("preflight-git-check-" + [System.Guid]::NewGuid().ToString('N') + $Extension)
+          [System.IO.File]::WriteAllText($path, $Content, $utf8NoBom)
+          $tempPaths.Add($path) | Out-Null
+          return $path
+        }
+
+        function Clear-EnvVar([string]$Name) {
+          $path = "Env:\$Name"
+          if (Test-Path -LiteralPath $path) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+        }
+
+        $gitGlobalArgs = @()
 
         function Invoke-GitOutput([string[]]$Arguments) {
-          $output = & $git @Arguments 2>$null
+          $full = @() + $gitGlobalArgs + $Arguments
+          $output = & $git @full 2>$null
           if ($LASTEXITCODE -ne 0) {
             return $null
           }
           return (($output | Out-String).Trim())
         }
 
-        if ([string]::IsNullOrWhiteSpace($dest)) {
-          return $true
-        }
-        if (-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
-          return $true
-        }
-        if ($fetch) {
-          return $true
-        }
-        if ([string]::IsNullOrWhiteSpace($ref)) {
-          return $false
-        }
-
-        $head = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', 'HEAD')
-        if ([string]::IsNullOrWhiteSpace($head)) {
-          return $true
-        }
-
-        $candidates = @($ref)
-        if (-not [string]::IsNullOrWhiteSpace($remote)) {
-          $candidates += "$remote/$ref"
-          $candidates += "refs/remotes/$remote/$ref"
-        }
-        $candidates += "refs/tags/$ref"
-
-        foreach ($candidate in $candidates) {
-          $resolved = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', "$candidate^{commit}")
-          if (-not [string]::IsNullOrWhiteSpace($resolved)) {
-            return ($head -ne $resolved)
+        function Enable-HttpAskPass() {
+          if ([string]::IsNullOrEmpty($env:PREFLIGHT_GIT_HTTP_PASSWORD)) {
+            return
           }
+          $askPassScript = @'
+        param([string]$Prompt)
+        if ($Prompt -match 'Username') {
+          [Console]::Out.Write($env:PREFLIGHT_GIT_HTTP_USERNAME)
+          exit 0
         }
-        return $true
+        [Console]::Out.Write($env:PREFLIGHT_GIT_HTTP_PASSWORD)
+        '@
+          $ps1 = New-TempTextFile '.ps1' $askPassScript
+          $cmd = New-TempTextFile '.cmd' ("@echo off`r`npowershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$ps1`" %*`r`n")
+          $env:GIT_ASKPASS = $cmd
+          $env:GIT_TERMINAL_PROMPT = '0'
+          $env:GCM_INTERACTIVE = 'Never'
+          Set-Variable -Name gitGlobalArgs -Value @('-c', 'credential.helper=') -Scope 1
+        }
+
+        function Enable-SshKey() {
+          if ([string]::IsNullOrEmpty($env:PREFLIGHT_GIT_SSH_PRIVATE_KEY)) {
+            return
+          }
+          $keyPath = New-TempTextFile '.key' $env:PREFLIGHT_GIT_SSH_PRIVATE_KEY
+          try {
+            icacls $keyPath /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+          } catch {}
+          $strict = if ($sshStrictHostKeyChecking) { 'yes' } else { 'no' }
+          $sshCommand = "ssh -i `"$keyPath`" -o IdentitiesOnly=yes -o StrictHostKeyChecking=$strict"
+          if (-not [string]::IsNullOrEmpty($env:PREFLIGHT_GIT_SSH_KNOWN_HOSTS)) {
+            $knownHostsPath = New-TempTextFile '.known_hosts' $env:PREFLIGHT_GIT_SSH_KNOWN_HOSTS
+            $sshCommand += " -o UserKnownHostsFile=`"$knownHostsPath`""
+          } elseif (-not $sshStrictHostKeyChecking) {
+            $sshCommand += " -o UserKnownHostsFile=NUL"
+          }
+          $env:GIT_SSH_COMMAND = $sshCommand
+          $env:GIT_TERMINAL_PROMPT = '0'
+        }
+
+        function Get-RemoteSha([string]$Target) {
+          if ([string]::IsNullOrWhiteSpace($Target)) {
+            return $null
+          }
+          $candidates = @($Target, "refs/heads/$Target", "refs/tags/$Target")
+          foreach ($candidate in $candidates) {
+            $out = Invoke-GitOutput @('-C', $dest, 'ls-remote', '--exit-code', $remote, $candidate)
+            if ([string]::IsNullOrWhiteSpace($out)) {
+              continue
+            }
+            $firstLine = ($out -split "[`r`n]+" | Where-Object { $_.Trim() -ne '' } | Select-Object -First 1)
+            if ([string]::IsNullOrWhiteSpace($firstLine)) {
+              continue
+            }
+            $sha = ($firstLine -split "\s+")[0]
+            if (-not [string]::IsNullOrWhiteSpace($sha)) {
+              return $sha
+            }
+          }
+          return $null
+        }
+
+        try {
+          if ([string]::IsNullOrWhiteSpace($dest)) {
+            return $true
+          }
+          if (-not (Test-Path -LiteralPath (Join-Path $dest '.git'))) {
+            return $true
+          }
+
+          $head = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', 'HEAD')
+          if ([string]::IsNullOrWhiteSpace($head)) {
+            return $true
+          }
+
+          if ($fetch) {
+            Enable-HttpAskPass
+            Enable-SshKey
+
+            $lsTarget = $ref
+            if ([string]::IsNullOrWhiteSpace($lsTarget)) {
+              $upstream = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
+              if ([string]::IsNullOrWhiteSpace($upstream)) {
+                return $true
+              }
+              if (-not [string]::IsNullOrWhiteSpace($remote) -and $upstream.StartsWith("$remote/")) {
+                $lsTarget = $upstream.Substring($remote.Length + 1)
+              } else {
+                return $true
+              }
+            }
+
+            $remoteSha = Get-RemoteSha $lsTarget
+            if ([string]::IsNullOrWhiteSpace($remoteSha)) {
+              return $true
+            }
+            return ($head -ne $remoteSha)
+          }
+
+          if ([string]::IsNullOrWhiteSpace($ref)) {
+            return $false
+          }
+
+          $candidates = @($ref)
+          if (-not [string]::IsNullOrWhiteSpace($remote)) {
+            $candidates += "$remote/$ref"
+            $candidates += "refs/remotes/$remote/$ref"
+          }
+          $candidates += "refs/tags/$ref"
+
+          foreach ($candidate in $candidates) {
+            $resolved = Invoke-GitOutput @('-C', $dest, 'rev-parse', '--verify', "$candidate^{commit}")
+            if (-not [string]::IsNullOrWhiteSpace($resolved)) {
+              return ($head -ne $resolved)
+            }
+          }
+          return $true
+        } finally {
+          foreach ($path in $tempPaths) {
+            Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue
+          }
+          Clear-EnvVar 'GIT_ASKPASS'
+          Clear-EnvVar 'GIT_SSH_COMMAND'
+          Clear-EnvVar 'GIT_TERMINAL_PROMPT'
+          Clear-EnvVar 'GCM_INTERACTIVE'
+        }
       script: |
         $ErrorActionPreference = 'Stop'
 
