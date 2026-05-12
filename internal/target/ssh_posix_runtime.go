@@ -163,27 +163,6 @@ func shellQuoteExec(cmd string, args []string) string {
 	return strings.Join(parts, " ")
 }
 
-func sshStringSlice(value any) ([]string, error) {
-	switch typed := value.(type) {
-	case nil:
-		return nil, nil
-	case []string:
-		return typed, nil
-	case []any:
-		result := make([]string, 0, len(typed))
-		for i, item := range typed {
-			text, ok := item.(string)
-			if !ok {
-				return nil, fmt.Errorf("args[%d] must be string, got %T", i, item)
-			}
-			result = append(result, text)
-		}
-		return result, nil
-	default:
-		return nil, fmt.Errorf("args must be []string, got %T", value)
-	}
-}
-
 type sshClientRunner struct {
 	client *ssh.Client
 }

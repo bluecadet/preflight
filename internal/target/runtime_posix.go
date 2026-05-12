@@ -240,7 +240,7 @@ func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 	if !ok || cmd == "" {
 		return "", fmt.Errorf("shell: required param %q is missing", "cmd")
 	}
-	args, err := sshStringSlice(params["args"])
+	args, err := paramStringSlice(params, "args")
 	if err != nil {
 		return "", err
 	}

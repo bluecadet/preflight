@@ -176,6 +176,17 @@ checkApply:
 	return result, nil
 }
 
+// powerShellDryRunPreamble returns a PowerShell snippet that sets
+// $__pf_dry_run to $true or $false. Ensure scripts inspect this variable to
+// short-circuit the apply branch with "would-change" when dryRun is set.
+// Centralised so every ensure script uses the same variable name and form.
+func powerShellDryRunPreamble(dryRun bool) string {
+	if dryRun {
+		return "$__pf_dry_run = $true\n"
+	}
+	return "$__pf_dry_run = $false\n"
+}
+
 func splitOutputLines(output string) []string {
 	trimmed := strings.TrimRight(output, "\n")
 	if trimmed == "" {

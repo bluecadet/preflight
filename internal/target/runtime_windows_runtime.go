@@ -496,11 +496,7 @@ func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBack
 	}
 	value, _ := params["value"].(string)
 
-	dryRunVal := "$false"
-	if dryRun {
-		dryRunVal = "$true"
-	}
-	preamble := "$__pf_dry_run = " + dryRunVal + "\n"
+	preamble := powerShellDryRunPreamble(dryRun)
 	out, err := windowsRunScript(ctx, backend, map[string]any{
 		"name":   name,
 		"value":  value,
@@ -681,11 +677,7 @@ func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerSh
 	if err != nil {
 		return false, "", err
 	}
-	dryRunVal := "$false"
-	if dryRun {
-		dryRunVal = "$true"
-	}
-	preamble := "$__pf_dry_run = " + dryRunVal + "\n" + paramsScript + "\n"
+	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
 	out, err := backend.RunPowerShellScript(ctx, preamble+removeAppxPackagesEnsureScript)
 	if err != nil {
 		return false, "", err
@@ -824,11 +816,7 @@ func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend
 	if err != nil {
 		return false, "", err
 	}
-	dryRunVal := "$false"
-	if dryRun {
-		dryRunVal = "$true"
-	}
-	preamble := "$__pf_dry_run = " + dryRunVal + "\n" + paramsScript + "\n"
+	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
 	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript)
 	if err != nil {
 		return false, "", err

@@ -91,12 +91,7 @@ func ensurePowerShellModule(ctx context.Context, backend powerShellScriptBackend
 	if err != nil {
 		return false, "", err
 	}
-	dryRunVal := "$false"
-	if dryRun {
-		dryRunVal = "$true"
-	}
-	combined := checkScriptVar + "\n" + applyScriptVar + "\n" + `$__pf_dry_run = ` + dryRunVal + `
-$ErrorActionPreference = 'Stop'
+	combined := checkScriptVar + "\n" + applyScriptVar + "\n" + powerShellDryRunPreamble(dryRun) + `$ErrorActionPreference = 'Stop'
 $__pf_block = [ScriptBlock]::Create($__pf_check_script)
 $global:LASTEXITCODE = 0
 $__pf_vals = @(& $__pf_block)
