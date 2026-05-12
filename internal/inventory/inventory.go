@@ -19,92 +19,66 @@ const (
 
 // Host represents a single target machine.
 type Host struct {
-	Name              string
-	Address           string
-	Transport         Transport
-	Port              int
-	Username          string
-	Password          string
-	PrivateKey        string
-	KnownHostsFile    string
-	HostKeyAlgorithms []string
-	HTTPS             bool
-	Vars              map[string]any
+	Name              string         `yaml:"name"`
+	Address           string         `yaml:"address,omitempty"`
+	Transport         Transport      `yaml:"transport,omitempty"`
+	Port              int            `yaml:"port,omitempty"`
+	Username          string         `yaml:"username,omitempty"`
+	Password          string         `yaml:"password,omitempty"`
+	PrivateKey        string         `yaml:"private_key,omitempty"`
+	KnownHostsFile    string         `yaml:"known_hosts_file,omitempty"`
+	HostKeyAlgorithms []string       `yaml:"host_key_algorithms,omitempty"`
+	HTTPS             bool           `yaml:"https,omitempty"`
+	Groups            []string       `yaml:"groups,omitempty"`
+	Vars              map[string]any `yaml:"vars,omitempty"`
 }
 
-// Group is a named set of hosts sharing common variables.
+// Group is optional metadata for hosts that opt into the group by name.
 type Group struct {
-	Name  string
-	Vars  map[string]any
-	Hosts []Host
+	Name string         `yaml:"-"`
+	Vars map[string]any `yaml:"vars,omitempty"`
 }
 
-// Inventory holds all groups and their hosts.
+// Inventory holds host-first project inventory.
 type Inventory struct {
-	Groups     map[string]Group
-	GroupOrder []string
+	Vars   map[string]any   `yaml:"vars,omitempty"`
+	Groups map[string]Group `yaml:"groups,omitempty"`
+	Hosts  []Host           `yaml:"hosts,omitempty"`
 }
 
-// HostsForTarget returns the hosts for the given target, which may be a group
-// name, a host name, or "all". Group vars (and "all" group vars) are merged
-// into each host's Vars map (host vars take precedence).
-func (inv *Inventory) HostsForTarget(target string) ([]Host, error) {
-	if target == "all" {
+// HostsForTarget returns the hosts for the given target, which may be "all", a
+// group name, or a host name. Inventory vars, group vars in each host's group
+// order, and host vars are merged into each returned host's Vars map.
+func (inv *Inventory) HostsForTarget(selector string) ([]Host, error) {
+	if selector == "" || selector == "all" {
 		return inv.AllHosts(), nil
 	}
 
-	// Check if it's a group name.
-	if g, ok := inv.Groups[target]; ok {
-		result := make([]Host, len(g.Hosts))
-		for i, h := range g.Hosts {
-			result[i] = inv.mergedHost(h, g.Vars)
+	if _, ok := inv.Groups[selector]; ok {
+		var result []Host
+		for _, h := range inv.Hosts {
+			if slices.Contains(h.Groups, selector) {
+				result = append(result, inv.mergedHost(h))
+			}
 		}
 		return result, nil
 	}
 
-	// Check if it's a host name — collect vars from every group the host belongs to.
-	var found *Host
-	accumulatedGroupVars := make(map[string]any)
-	for _, groupName := range inv.orderedGroups() {
-		g := inv.Groups[groupName]
-		if groupName == "all" {
-			continue
+	for _, h := range inv.Hosts {
+		if h.Name == selector {
+			return []Host{inv.mergedHost(h)}, nil
 		}
-		for _, h := range g.Hosts {
-			if h.Name == target {
-				if found == nil {
-					hCopy := h
-					found = &hCopy
-				}
-				maputil.DeepMerge(accumulatedGroupVars, g.Vars)
-			}
-		}
-	}
-	if found != nil {
-		return []Host{inv.mergedHost(*found, accumulatedGroupVars)}, nil
 	}
 
-	return nil, fmt.Errorf("inventory: target %q not found (no group or host with that name)", target)
+	return nil, fmt.Errorf("inventory: target %q not found (no group or host with that name)", selector)
 }
 
-// AllHosts returns every host across all groups (deduplicated by name).
-// Group vars are merged into each host's Vars.
+// AllHosts returns every configured host with inventory, group, and host vars
+// merged.
 func (inv *Inventory) AllHosts() []Host {
-	seen := map[string]bool{}
-	var hosts []Host
-
-	for _, name := range inv.orderedGroups() {
-		g := inv.Groups[name]
-		if name == "all" {
-			continue
-		}
-		for _, h := range g.Hosts {
-			if seen[h.Name] {
-				continue
-			}
-			seen[h.Name] = true
-			hosts = append(hosts, inv.mergedHost(h, g.Vars))
-		}
+	hosts := make([]Host, 0, len(inv.Hosts))
+	for _, h := range inv.Hosts {
+		hosts = append(hosts, inv.mergedHost(h))
 	}
 	return hosts
 }
@@ -114,7 +88,7 @@ func (inv *Inventory) AllHosts() []Host {
 // wins.
 func (inv *Inventory) SelectTargets(selectors []string) ([]Host, error) {
 	if len(selectors) == 0 {
-		return nil, nil
+		return inv.AllHosts(), nil
 	}
 
 	seen := make(map[string]bool)
@@ -136,38 +110,21 @@ func (inv *Inventory) SelectTargets(selectors []string) ([]Host, error) {
 	return result, nil
 }
 
-// mergedHost returns a copy of h with allVars, groupVars, and host vars merged
-// (later wins). The "all" group vars are applied first, then groupVars, then
-// the host's own Vars. All merges are deep so nested maps are merged
-// key-by-key rather than replaced wholesale.
-func (inv *Inventory) mergedHost(h Host, groupVars map[string]any) Host {
+// mergedHost returns a copy of h with inventory vars, group vars in the order
+// listed by the host, and host vars merged (later wins). Merges are deep so
+// nested maps are merged key-by-key rather than replaced wholesale.
+func (inv *Inventory) mergedHost(h Host) Host {
 	merged := make(map[string]any)
 
-	// Apply "all" group vars first.
-	if all, ok := inv.Groups["all"]; ok {
-		maputil.DeepMerge(merged, all.Vars)
+	maputil.DeepMerge(merged, inv.Vars)
+	for _, groupName := range h.Groups {
+		if g, ok := inv.Groups[groupName]; ok {
+			maputil.DeepMerge(merged, g.Vars)
+		}
 	}
-
-	// Apply group vars.
-	maputil.DeepMerge(merged, groupVars)
-
-	// Apply host-level vars last (highest precedence).
 	maputil.DeepMerge(merged, h.Vars)
 
 	copy := h
 	copy.Vars = merged
 	return copy
-}
-
-func (inv *Inventory) orderedGroups() []string {
-	if len(inv.GroupOrder) > 0 {
-		return inv.GroupOrder
-	}
-
-	names := make([]string, 0, len(inv.Groups))
-	for name := range inv.Groups {
-		names = append(names, name)
-	}
-	slices.Sort(names)
-	return names
 }

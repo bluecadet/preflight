@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/spf13/cobra"
 
@@ -55,30 +56,39 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
-	var hosts []targeting.ResolvedHost
-	invPath, err := inventoryFilePath(cmd, "")
+	projectDir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("facts: get working directory: %w", err)
+	}
+	projectCfg, err := loadProjectConfig(projectDir)
 	if err != nil {
 		return fmt.Errorf("facts: %w", err)
 	}
-	if selectorsAreLocal(selectors) || !shouldUseInventory(cmd, invPath, selectors) {
-		registry, _, err := buildModuleRegistry("")
-		if err != nil {
-			return err
+	registry, _, err := buildModuleRegistry(projectDir)
+	if err != nil {
+		return err
+	}
+
+	var hosts []targeting.ResolvedHost
+	switch {
+	case selectorsAreLocal(selectors):
+		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}
+	case projectCfg.Inventory == nil:
+		if len(selectors) > 0 {
+			return fmt.Errorf("facts: no inventory configured in preflight.yml")
 		}
 		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}
-	} else {
-		inv, projectDir, _, secretsResolver, err := loadInventoryRunContext(invPath)
-		if err != nil {
-			return fmt.Errorf("facts: load inventory %q: %w", invPath, err)
-		}
-		registry, _, err := buildModuleRegistry(projectDir)
-		if err != nil {
-			return err
-		}
-		hosts, err = resolveInventoryHosts(ctx, inv, defaultInventorySelectors(selectors), registry, secretsResolver, statePath)
+	default:
+		hosts, err = resolveInventoryHosts(ctx, projectCfg.Inventory, selectors, registry, buildSecretsResolver(projectDir, projectCfg), statePath)
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
+	}
+	if len(hosts) == 0 {
+		if len(selectors) == 0 {
+			return fmt.Errorf("facts: no hosts found in inventory")
+		}
+		return fmt.Errorf("facts: no hosts resolved from --target")
 	}
 
 	if len(hosts) == 1 {

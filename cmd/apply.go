@@ -95,7 +95,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	if err != nil {
 		return err
 	}
-	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectDir, session.Registry, session.Secrets)
+	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectCfg, session.Registry, session.Secrets)
 	if err != nil {
 		return err
 	}

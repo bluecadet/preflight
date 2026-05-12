@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 )
 
@@ -19,48 +19,34 @@ var inventoryCmd = &cobra.Command{
 
 var inventoryListCmd = &cobra.Command{
 	Use:   "list",
-	Short: "List all hosts from the inventory file",
+	Short: "List all hosts from the project inventory",
 	RunE:  runInventoryList,
 }
 
 func init() {
-	addInventoryFlag(inventoryListCmd)
 	addOutputFlags(inventoryListCmd)
 	inventoryCmd.AddCommand(inventoryListCmd)
 	rootCmd.AddCommand(inventoryCmd)
 }
 
 func runInventoryList(cmd *cobra.Command, _ []string) error {
-	invPath, _ := cmd.Flags().GetString("inventory")
-	if invPath == "" {
-		cwd, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("inventory list: get working directory: %w", err)
-		}
-		invPath = filepath.Join(cwd, "inventory.yml")
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("inventory list: get working directory: %w", err)
 	}
-
-	inv, err := inventory.ParseFile(invPath)
+	cfg, err := config.ParseFile(filepath.Join(cwd, config.FileName))
 	if err != nil {
 		return fmt.Errorf("inventory list: %w", err)
 	}
-
-	hosts := inv.AllHosts()
-
-	// Collect group membership for display.
-	hostGroups := make(map[string][]string)
-	for groupName, g := range inv.Groups {
-		if groupName == "all" {
-			continue
-		}
-		for _, h := range g.Hosts {
-			hostGroups[h.Name] = append(hostGroups[h.Name], groupName)
-		}
+	if cfg.Inventory == nil {
+		return fmt.Errorf("inventory list: no inventory configured in %s", config.FileName)
 	}
+
+	hosts := cfg.Inventory.AllHosts()
 
 	entries := make([]output.InventoryHostEntry, 0, len(hosts))
 	for _, h := range hosts {
-		groups := append([]string(nil), hostGroups[h.Name]...)
+		groups := append([]string(nil), h.Groups...)
 		sort.Strings(groups)
 		entries = append(entries, output.InventoryHostEntry{
 			Name:      h.Name,

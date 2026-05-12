@@ -2,33 +2,40 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://preflight.dev/schema/inventory.schema.json",
   "title": "Inventory",
-  "description": "Schema for preflight inventory.yml files",
-  "type": "object",
-  "additionalProperties": false,
-  "properties": {
-    "groups": {
-      "type": "object",
-      "description": "Map of group name to group definition",
-      "additionalProperties": {
-        "$ref": "#/$defs/group"
-      }
-    }
-  },
+  "description": "Schema for embedded preflight inventory blocks",
+  "$ref": "#/$defs/inventory",
   "$defs": {
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vars": {
+          "type": "object",
+          "description": "Inventory-wide variables applied before group and host variables"
+        },
+        "groups": {
+          "type": "object",
+          "description": "Optional group metadata referenced by host group labels",
+          "additionalProperties": {
+            "$ref": "#/$defs/group"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "description": "Primary host list",
+          "items": {
+            "$ref": "#/$defs/host"
+          }
+        }
+      }
+    },
     "group": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
         "vars": {
           "type": "object",
-          "description": "Variables applied to all hosts in this group"
-        },
-        "hosts": {
-          "type": "array",
-          "description": "List of hosts in this group",
-          "items": {
-            "$ref": "#/$defs/host"
-          }
+          "description": "Variables applied to hosts that reference this group"
         }
       }
     },
@@ -70,6 +77,11 @@
           "type": "boolean",
           "description": "Use HTTPS/TLS for WinRM connection",
           "default": false
+        },
+        "groups": {
+          "type": "array",
+          "description": "Group labels this host belongs to, applied in order for variable precedence",
+          "items": { "type": "string" }
         },
         "vars": {
           "type": "object",

@@ -51,6 +51,10 @@
           }
         }
       }
+    },
+    "inventory": {
+      "$ref": "https://preflight.dev/schema/inventory.schema.json#/$defs/inventory",
+      "description": "Embedded project inventory"
     }
   }
 }

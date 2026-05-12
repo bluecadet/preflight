@@ -11,7 +11,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
-	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
@@ -175,25 +174,6 @@ func wrapLabelError(label string, err error) error {
 
 func wrapHostLabelError(label, action, host string, err error) error {
 	return fmt.Errorf("%s: %s for %s: %w", label, action, host, err)
-}
-
-func loadInventoryRunContext(inventoryPath string) (*inventory.Inventory, string, *config.Config, *secrets.Resolver, error) {
-	projectDir, err := projectDirForPath(inventoryPath)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-
-	projectCfg, err := loadProjectConfig(projectDir)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-
-	inv, err := inventory.ParseFile(inventoryPath)
-	if err != nil {
-		return nil, "", nil, nil, err
-	}
-
-	return inv, projectDir, projectCfg, buildSecretsResolver(projectDir, projectCfg), nil
 }
 
 func fetchPlaybookActionRefs(ctx context.Context, pb *action.Playbook, chain action.Chain) error {

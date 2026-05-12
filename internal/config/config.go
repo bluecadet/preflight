@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/bluecadet/preflight/internal/inventory"
 )
 
 // FileName is the default project configuration filename.
@@ -14,10 +16,11 @@ const FileName = "preflight.yml"
 
 // Config is the parsed representation of a project-level preflight.yml file.
 type Config struct {
-	Project     string         `yaml:"project"`
-	Environment string         `yaml:"environment"`
-	Vars        map[string]any `yaml:"vars"`
-	Secrets     SecretsConfig  `yaml:"secrets"`
+	Project     string               `yaml:"project"`
+	Environment string               `yaml:"environment"`
+	Vars        map[string]any       `yaml:"vars"`
+	Secrets     SecretsConfig        `yaml:"secrets"`
+	Inventory   *inventory.Inventory `yaml:"inventory,omitempty"`
 }
 
 // SecretsConfig configures the repo-backed age secrets provider.
@@ -39,9 +42,23 @@ func Parse(data []byte) (*Config, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	var root yaml.Node
+	if err := yaml.Unmarshal(data, &root); err != nil {
 		return nil, fmt.Errorf("config: parse error: %w", err)
+	}
+
+	var cfg Config
+	if len(root.Content) > 0 {
+		if err := root.Content[0].Decode(&cfg); err != nil {
+			return nil, fmt.Errorf("config: parse error: %w", err)
+		}
+		if node := childMappingValue(root.Content[0], "inventory"); node != nil {
+			inv, err := inventory.ParseNode(node)
+			if err != nil {
+				return nil, err
+			}
+			cfg.Inventory = inv
+		}
 	}
 	if cfg.Vars == nil {
 		cfg.Vars = make(map[string]any)
@@ -50,6 +67,18 @@ func Parse(data []byte) (*Config, error) {
 		cfg.Secrets.Entries = make(map[string]SecretEntry)
 	}
 	return &cfg, nil
+}
+
+func childMappingValue(node *yaml.Node, key string) *yaml.Node {
+	if node == nil || node.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(node.Content); i += 2 {
+		if node.Content[i].Value == key {
+			return node.Content[i+1]
+		}
+	}
+	return nil
 }
 
 // ParseFile reads and parses a project config file.

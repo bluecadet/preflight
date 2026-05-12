@@ -123,7 +123,7 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return wrapLabelError(label, err)
 	}
-	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectDir, session.Registry, session.Secrets)
+	hosts, err := resolveRunHosts(ctx, cmd, session.ProjectCfg, session.Registry, session.Secrets)
 	if err != nil {
 		return wrapLabelError(label, err)
 	}
