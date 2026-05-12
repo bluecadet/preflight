@@ -6,8 +6,7 @@ Use this guide when you already have a playbook and want to validate it, inspect
 
 - An installed `preflight` binary
 - A playbook file
-- A `preflight.yml` file if you rely on shared vars or secrets
-- An `inventory.yml` file if you want to select remote hosts or groups
+- A `preflight.yml` file if you rely on shared vars, secrets, or inventory-backed hosts
 
 If you need an end-to-end onboarding path first, use [Quickstart](../tutorials/quickstart.md).
 
@@ -72,10 +71,11 @@ Later variable layers win. For a normal inventory-backed run the precedence is:
 
 ```text
 preflight.yml vars
-  -> inventory group vars
-    -> inventory host vars
-      -> playbook vars
-        -> --var flags
+  -> inventory.vars
+    -> group vars in each host's group order
+      -> host vars
+        -> playbook vars
+          -> --var flags
 ```
 
 ## Filter By Tags
@@ -99,10 +99,10 @@ Tag filtering happens in the runner after the plan has been built, so skipped ta
 Pick one host, one group, or several selectors:
 
 ```bash
-preflight check playbooks/lobby.yml --inventory inventory.yml
-preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
-preflight check playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
-preflight apply playbooks/lobby.yml --target lobby --target gallery --inventory inventory.yml
+preflight check playbooks/lobby.yml
+preflight apply playbooks/lobby.yml --target lobby
+preflight check playbooks/lobby.yml --target lobby-pc-01
+preflight apply playbooks/lobby.yml --target lobby --target gallery
 ```
 
 Selector rules:
@@ -110,7 +110,7 @@ Selector rules:
 - A selector may be a host name, a group name, or `all`.
 - Repeating `--target` builds a union.
 - Hosts are deduplicated by name.
-- With inventory available, no `--target` means all inventory hosts.
+- With `preflight.yml` inventory available, no `--target` means all inventory hosts.
 - Without inventory, no `--target` means the local target.
 - Use `--target local` to force a local run when inventory is present.
 
@@ -160,7 +160,7 @@ When a module supports streamed output, Preflight forwards each line while the t
 Cap concurrent host execution:
 
 ```bash
-preflight apply playbooks/lobby.yml --target all --inventory inventory.yml --concurrency 5
+preflight apply playbooks/lobby.yml --target all --concurrency 5
 ```
 
 `0` means unlimited host concurrency.
@@ -185,7 +185,7 @@ For per-host inventory-backed state:
 
 ```bash
 preflight state show --state-file state/targets/lobby-pc-01.json
-preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml --state-file state/targets/lobby-pc-01.json
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --state-file state/targets/lobby-pc-01.json
 ```
 
 See [Inspect state and diffs](./inspect-state-and-diff.md) for a task-focused workflow.

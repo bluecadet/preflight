@@ -66,7 +66,7 @@ State files do not persist decrypted secret values.
 
 ## Host Context Matters
 
-State comparison uses the selected host context to render task names and params before hashing them. For inventory-backed diffs, pass the relevant `--target` and `--inventory` values so `vars.*`, `target.*`, `facts.*`, and `env.*` expressions are evaluated for the correct machine.
+State comparison uses the selected host context to render task names and params before hashing them. For inventory-backed diffs, pass the relevant `--target` value so `vars.*`, `target.*`, `facts.*`, and `env.*` expressions are evaluated for the correct machine.
 
 ## Why Stable Task Keys Matter
 

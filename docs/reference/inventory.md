@@ -1,36 +1,58 @@
 # Inventory Reference
 
-This page describes `inventory.yml`, parsed by [`internal/inventory/`](/Users/clay/repos/preflight/internal/inventory).
+This page describes the `inventory:` block inside `preflight.yml`, parsed by [`internal/inventory/`](/Users/clay/repos/preflight/internal/inventory).
 
 ## Purpose
 
-Inventory groups hosts, assigns transports, carries host and group variables, and supports selector-based fan-out from CLI commands such as `plan`, `check`, `apply`, and `facts`.
+Inventory defines target hosts, assigns transports, carries inventory, group, and host variables, and supports selector-based fan-out from CLI commands such as `plan`, `check`, `apply`, and `facts`.
 
 ## Top-Level Shape
 
 ```yaml
-groups:
-  all:
-    vars:
-      timezone: "America/New_York"
+project: museum
+environment: production
 
-  lobby:
-    vars:
-      resolution: "3840x2160"
-    hosts:
-      - name: lobby-pc-01
-        address: 192.168.1.10
-        transport: winrm
-        username: exhibit-admin
-        password: secret:winrm-password
+vars:
+  site: main-gallery
+
+inventory:
+  vars:
+    timezone: America/New_York
+
+  groups:
+    lobby:
+      vars:
+        area: lobby
+    windows:
+      vars:
+        shell: powershell
+
+  hosts:
+    - name: lobby-pc-01
+      address: 192.168.1.10
+      transport: winrm
+      username: exhibit-admin
+      password: secret:winrm-password
+      groups: [lobby, windows]
+      vars:
+        display: primary
 ```
+
+`hosts` is the primary inventory list. `groups` is optional metadata referenced by each host's `groups` list.
+
+## Inventory Fields
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `vars` | object | Variables applied to every host before group and host variables |
+| `groups` | object | Optional map of group names to shared metadata |
+| `hosts` | host[] | Host entries |
 
 ## Group Fields
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `vars` | object | Variables applied to every host in the group |
-| `hosts` | host[] | Host entries in the group |
+| `vars` | object | Variables applied to hosts that list this group |
 
 ## Host Fields
 
@@ -43,22 +65,28 @@ groups:
 | `username` | string | Username for transport authentication |
 | `password` | string | Password or secret reference such as `secret:winrm-password` |
 | `private_key` | string | SSH private key value, path, or secret reference |
-| `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped (insecure; acceptable only on isolated networks). |
-| `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms (e.g. `[ssh-ed25519, ssh-rsa]`). When omitted, the SSH library's built-in default host-key algorithm list is used. This setting still applies even when `known_hosts_file` is omitted, in which case host-key verification is skipped but the negotiated host-key algorithm is still constrained if you set this field explicitly. |
+| `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped. |
+| `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms, such as `[ssh-ed25519, ssh-rsa]`. |
 | `https` | bool | Use HTTPS for WinRM |
+| `groups` | string[] | Group names applied in order for selector membership and variable precedence |
 | `vars` | object | Host-specific variable overrides |
+
+Hosts must not reference undefined groups. Preflight fails early when a host lists a missing group so group variables cannot be skipped silently.
 
 ## Variable Merge Order
 
 When a host is resolved:
 
 ```text
-all group vars
-  -> selected group vars
-    -> host vars
+preflight.yml vars
+  -> inventory.vars
+    -> group vars in each host's group order
+      -> host vars
+        -> playbook vars
+          -> --var CLI flags
 ```
 
-That merged host var map then feeds into the broader runtime precedence stack together with project vars, playbook vars, and CLI `--var` flags.
+All variable merges are deep merges, so nested maps keep keys from earlier layers unless a later layer overwrites the same key.
 
 ## Selector Resolution
 
@@ -69,7 +97,7 @@ Selectors passed through `--target` follow these rules:
 - Hosts are deduplicated by name.
 - The first occurrence wins when the same host is selected more than once.
 
-When a command runs with inventory available and no `--target`, it resolves `all`. Use `--target local` to stay on the initiating machine instead.
+When `preflight.yml` contains inventory and a command runs with no `--target`, Preflight selects all `inventory.hosts`. Use `--target local` to stay on the initiating machine instead.
 
 ## Derived Runtime Data
 
@@ -85,7 +113,7 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 ## Transport Notes
 
 - `winrm` is the full Windows-native transport and supports all built-in modules.
-- For new WinRM hosts, validate the connection with a scratch inventory and `preflight facts` before you commit the entry to your real inventory. See [Validate a WinRM connection from macOS](../how-to/validate-winrm-from-macos.md) for a concrete validation flow from a Mac controller.
+- For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Validate a WinRM connection from macOS](../how-to/validate-winrm-from-macos.md) for a concrete validation flow from a Mac controller.
 - The current WinRM path is easiest to use with a local Windows account. If an endpoint answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
 - `ssh` auto-detects either a Windows PowerShell runtime or a POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed.
 - `local` still participates in inventory selection, but execution happens on the initiating machine.

@@ -272,7 +272,6 @@ name: myorg/my-action
   "yaml.schemas": {
     "https://preflight.dev/schema/action.schema.json": "**/actions/**/action.yml",
     "https://preflight.dev/schema/playbook.schema.json": "**/playbooks/*.yml",
-    "https://preflight.dev/schema/inventory.schema.json": "**/inventory.yml",
     "https://preflight.dev/schema/config.schema.json": "**/preflight.yml"
   }
 }

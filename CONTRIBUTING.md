@@ -75,7 +75,7 @@ go test ./internal/module/...
 go test ./pkg/plugin/sdk/...
 ```
 
-When you change host-selection behavior, cover both explicit `--inventory` runs and discovered `./inventory.yml` runs, and verify that `--target local` still forces a local target.
+When you change host-selection behavior, cover embedded `preflight.yml` inventory, no-inventory local fallback, group selectors, host selectors, and verify that `--target local` still forces a local target.
 
 For output and renderer changes, also exercise the simulator so text, TUI, and JSON output stay aligned:
 

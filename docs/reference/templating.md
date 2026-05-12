@@ -41,10 +41,11 @@ The merge layers are implemented by the variable store in this order:
 ```text
 defaults
   -> project vars
-    -> inventory group vars
-      -> inventory host vars
-        -> playbook vars
-          -> CLI --var flags
+    -> inventory.vars
+      -> group vars in each host's group order
+        -> host vars
+          -> playbook vars
+            -> CLI --var flags
 ```
 
 At runtime, the effective merged variable map is exposed through `vars.*`.

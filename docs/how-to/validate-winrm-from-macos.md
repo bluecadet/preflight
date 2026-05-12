@@ -1,6 +1,6 @@
 # Validate A WinRM Connection From macOS
 
-Use this guide when you are on a Mac and want to confirm that a Windows host is reachable over WinRM before you commit it to your real `inventory.yml`.
+Use this guide when you are on a Mac and want to confirm that a Windows host is reachable over WinRM before you commit it to your project `preflight.yml`.
 
 This flow answers three separate questions:
 
@@ -14,7 +14,7 @@ This flow answers three separate questions:
 - A username and password for the Windows host
 - A local `preflight` binary on your Mac
 
-If you already know you will store the password as a secret reference, you can still use a temporary inline password in a scratch inventory file for this validation flow.
+If you already know you will store the password as a secret reference, you can still use a temporary inline password in a scratch `preflight.yml` file for this validation flow.
 
 ## 1. Check That The Port Is Reachable
 
@@ -60,30 +60,32 @@ If you get an HTML page, a proxy page, or some other non-WSMan response, you hav
 
 Network reachability is not enough. The first Preflight command that proves both authentication and remote PowerShell execution is `preflight facts`.
 
-Create a temporary inventory file such as `/tmp/winrm-test.yml`:
+Create a temporary directory with a `preflight.yml` file:
 
 ```yaml
-groups:
-  test:
-    hosts:
-      - name: exhibit-pc
-        address: 192.168.1.50
-        transport: winrm
-        username: preflight-test
-        password: "TempPreflight123!"
+inventory:
+  groups:
+    test: {}
+  hosts:
+    - name: exhibit-pc
+      address: 192.168.1.50
+      transport: winrm
+      username: preflight-test
+      password: "TempPreflight123!"
+      groups: [test]
 ```
 
-Then run:
+From that temporary directory, run:
 
 ```bash
-preflight facts exhibit-pc --inventory /tmp/winrm-test.yml --output json
+preflight facts exhibit-pc --output json
 ```
 
 If the target uses WinRM over HTTPS, add these fields:
 
 ```yaml
-        https: true
-        port: 5986
+      https: true
+      port: 5986
 ```
 
 Why use `facts` here:
@@ -144,21 +146,23 @@ $env:COMPUTERNAME
 Get-LocalUser | Select-Object Name, Enabled
 ```
 
-## 6. Move The Working Settings Into Your Real Inventory
+## 6. Move The Working Settings Into Your Project Config
 
-Once the scratch inventory succeeds, copy the same working values into your project `inventory.yml` and replace the inline password with a secret reference if appropriate.
+Once the scratch inventory succeeds, copy the same working values into your project `preflight.yml` and replace the inline password with a secret reference if appropriate.
 
 Example:
 
 ```yaml
-groups:
-  lobby:
-    hosts:
-      - name: lobby-pc-01
-        address: 192.168.1.50
-        transport: winrm
-        username: preflight-test
-        password: secret:winrm-password
+inventory:
+  groups:
+    lobby: {}
+  hosts:
+    - name: lobby-pc-01
+      address: 192.168.1.50
+      transport: winrm
+      username: preflight-test
+      password: secret:winrm-password
+      groups: [lobby]
 ```
 
 ## Troubleshooting

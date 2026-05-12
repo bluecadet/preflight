@@ -8,6 +8,7 @@ This page describes `preflight.yml`, the project-level configuration file parsed
 
 - project metadata
 - shared variables
+- embedded inventory
 - repo-backed secret configuration
 
 It is optional. If the file is missing, Preflight loads an empty config with empty `vars` and `secrets.entries`.
@@ -19,6 +20,7 @@ It is optional. If the file is missing, Preflight loads an empty config with emp
 | `project` | string | Project identifier, available as `vars.preflight.project` in templates |
 | `environment` | string | Environment label such as `production` or `staging`, available as `vars.preflight.environment` in templates |
 | `vars` | object | Project-level variables available to playbooks |
+| `inventory` | object | Host-first inventory for remote or multi-host runs |
 | `secrets` | object | Repo-backed `age` secret configuration |
 
 ## `secrets`
@@ -45,6 +47,19 @@ environment: production
 vars:
   content_root: "C:\\Exhibits\\content"
   fileserver: "\\\\nas01\\exhibits"
+
+inventory:
+  groups:
+    lobby:
+      vars:
+        area: lobby
+  hosts:
+    - name: lobby-pc-01
+      address: 192.168.1.10
+      transport: winrm
+      username: exhibit-admin
+      password: secret:winrm-password
+      groups: [lobby]
 
 secrets:
   identity: ".age/keys.txt"

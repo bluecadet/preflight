@@ -81,16 +81,17 @@ Unsupported module usage is caught at first task execution and returns a clear e
 
 By default, when no `known_hosts_file` is configured in inventory, host-key checking is skipped. This is insecure and should only be used on isolated networks where host identity is established by other means.
 
-To enable host-key verification, set `known_hosts_file` on the host entry in inventory:
+To enable host-key verification, set `known_hosts_file` on the host entry in `preflight.yml`:
 
 ```yaml
-hosts:
-  - name: kiosk-01
-    address: 10.0.0.5
-    transport: ssh
-    known_hosts_file: /home/operator/.ssh/known_hosts
-    host_key_algorithms:
-      - ssh-ed25519
+inventory:
+  hosts:
+    - name: kiosk-01
+      address: 10.0.0.5
+      transport: ssh
+      known_hosts_file: /home/operator/.ssh/known_hosts
+      host_key_algorithms:
+        - ssh-ed25519
 ```
 
 `host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.

@@ -1,13 +1,12 @@
 # Run A Playbook Against Remote Hosts
 
-Use this guide when you want to select hosts from `inventory.yml` and run Preflight over WinRM or SSH.
+Use this guide when you want to select hosts from the `inventory:` block in `preflight.yml` and run Preflight over WinRM or SSH.
 
 ## Prerequisites
 
 - An installed `preflight` binary on the machine initiating the run
 - A playbook
-- An inventory file
-- A `preflight.yml` file if the inventory uses secret references such as `password: secret:...` or `private_key: secret:...`
+- A `preflight.yml` file with an `inventory:` block
 
 If you want the local flow first, use [Run a playbook](./run-a-playbook.md).
 
@@ -17,33 +16,36 @@ If you are on macOS and want to validate WinRM before you commit a host to your 
 
 ## 1. Define Inventory Entries
 
-Example `inventory.yml`:
+Example `preflight.yml`:
 
 ```yaml
-groups:
-  lobby:
-    vars:
-      content_root: "C:\\Exhibits\\Lobby"
-    hosts:
-      - name: lobby-pc-01
-        address: 192.168.1.10
-        transport: winrm
-        username: exhibit-admin
-        password: secret:winrm-password
+inventory:
+  groups:
+    lobby:
+      vars:
+        content_root: "C:\\Exhibits\\Lobby"
+    signage-lab: {}
+  hosts:
+    - name: lobby-pc-01
+      address: 192.168.1.10
+      transport: winrm
+      username: exhibit-admin
+      password: secret:winrm-password
+      groups: [lobby]
 
-      - name: lobby-pc-02
-        address: 192.168.1.11
-        transport: winrm
-        username: exhibit-admin
-        password: secret:winrm-password
+    - name: lobby-pc-02
+      address: 192.168.1.11
+      transport: winrm
+      username: exhibit-admin
+      password: secret:winrm-password
+      groups: [lobby]
 
-  signage-lab:
-    hosts:
-      - name: signage-host-01
-        address: 192.168.1.50
-        transport: ssh
-        username: exhibit
-        private_key: secret:signage-key
+    - name: signage-host-01
+      address: 192.168.1.50
+      transport: ssh
+      username: exhibit
+      private_key: secret:signage-key
+      groups: [signage-lab]
 ```
 
 Transport guidance:
@@ -51,14 +53,14 @@ Transport guidance:
 - Use `winrm` for Windows-native configuration work.
 - Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules.
 - Use `local` if you want inventory-driven selection but execution should still happen on the initiating machine.
-- For a brand-new WinRM target, validate the endpoint and credentials with a scratch inventory plus `preflight facts` before you wire the host into your project inventory.
+- For a brand-new WinRM target, validate the endpoint and credentials with a temporary `preflight.yml` plus `preflight facts` before you wire the host into your project inventory.
 
 ## 2. Verify Host Resolution
 
 List the hosts before running a playbook:
 
 ```bash
-preflight inventory list --inventory inventory.yml
+preflight inventory list
 ```
 
 This catches misspelled selectors and inventory shape problems early.
@@ -68,8 +70,8 @@ This catches misspelled selectors and inventory shape problems early.
 Inspect the plan for a group:
 
 ```bash
-preflight plan playbooks/lobby.yml --inventory inventory.yml
-preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight plan playbooks/lobby.yml
+preflight plan playbooks/lobby.yml --target lobby
 ```
 
 Omitting `--target` resolves the full inventory. For multiple resolved hosts, `plan` prints one section per host. It still stays pure, so target facts are not gathered yet.
@@ -79,8 +81,8 @@ Omitting `--target` resolves the full inventory. For multiple resolved hosts, `p
 Use `check` before you apply:
 
 ```bash
-preflight check playbooks/lobby.yml --inventory inventory.yml
-preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight check playbooks/lobby.yml
+preflight check playbooks/lobby.yml --target lobby
 ```
 
 This is the safest place to verify:
@@ -95,19 +97,19 @@ This is the safest place to verify:
 Run every host in the inventory:
 
 ```bash
-preflight apply playbooks/lobby.yml --inventory inventory.yml
+preflight apply playbooks/lobby.yml
 ```
 
 Run one group:
 
 ```bash
-preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight apply playbooks/lobby.yml --target lobby
 ```
 
 Run one host:
 
 ```bash
-preflight apply playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+preflight apply playbooks/lobby.yml --target lobby-pc-01
 ```
 
 Combine selectors:
@@ -115,8 +117,7 @@ Combine selectors:
 ```bash
 preflight apply playbooks/lobby.yml \
   --target lobby \
-  --target signage-lab \
-  --inventory inventory.yml
+  --target signage-lab
 ```
 
 Selectors are resolved in order, merged into a union, then deduplicated by host name.
@@ -128,7 +129,6 @@ Control how many hosts execute at once:
 ```bash
 preflight apply playbooks/lobby.yml \
   --target all \
-  --inventory inventory.yml \
   --concurrency 5
 ```
 
@@ -141,19 +141,19 @@ This is useful when you want to avoid rebooting or updating an entire fleet at t
 Facts for one host:
 
 ```bash
-preflight facts lobby-pc-01 --inventory inventory.yml
+preflight facts lobby-pc-01
 ```
 
 Facts for the full inventory:
 
 ```bash
-preflight facts --inventory inventory.yml
+preflight facts
 ```
 
 Facts for a group:
 
 ```bash
-preflight facts --target lobby --inventory inventory.yml
+preflight facts --target lobby
 ```
 
 For several hosts, the command prints a JSON object keyed by host name.
@@ -164,7 +164,7 @@ Inventory-backed applies write a separate state file per host:
 
 ```bash
 preflight state show --state-file state/targets/lobby-pc-01.json
-preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml --state-file state/targets/lobby-pc-01.json
+preflight state diff playbooks/lobby.yml --target lobby-pc-01 --state-file state/targets/lobby-pc-01.json
 ```
 
 That split is deliberate. It keeps state comparisons meaningful even when one playbook is applied to many machines with different facts or variable layers.
@@ -187,7 +187,7 @@ If you are validating from a Mac, work through [Validate a WinRM connection from
 
 - `nc` only proves that something is listening on the port
 - `curl http://<host>:5985/wsman` returning `405` with `Allow: POST` is a good sign that the endpoint is really WinRM
-- `preflight facts <host> --inventory ... --output json` is the first command that proves authentication plus remote PowerShell execution
+- `preflight facts <host> --output json` is the first command that proves authentication plus remote PowerShell execution
 - the current Preflight WinRM path is easiest to validate with a dedicated local Windows account
 
 ### SSH connects but a task still fails

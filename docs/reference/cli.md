@@ -8,8 +8,7 @@ These flags are defined on the individual commands that use them.
 
 | Flag | Short | Meaning |
 | --- | --- | --- |
-| `--target` | `-t` | Host or group selector from inventory. Repeat to build a union. When inventory is available and this flag is omitted, commands target all inventory hosts. |
-| `--inventory` |  | Inventory file path. Defaults to `./inventory.yml` when present. |
+| `--target` | `-t` | Host or group selector from the `preflight.yml` inventory. Repeat to build a union. When inventory is available and this flag is omitted, commands target all inventory hosts. |
 | `--var key=value` | `-e` | Set a variable override. Later values win. |
 | `--tags` |  | Run only tasks that have any of the listed tags. |
 | `--skip-tags` |  | Skip tasks that have any of the listed tags. |
@@ -25,8 +24,8 @@ When a command supports inventory-backed execution:
 - A selector may be a host name, a group name, or `all`.
 - Repeating `--target` builds a union of matches.
 - Hosts are deduplicated by name.
-- Omitting `--target` resolves all hosts from the selected inventory when `--inventory` is set or `./inventory.yml` is discovered.
-- Without an inventory file, omitting `--target` resolves a local target.
+- Omitting `--target` resolves all hosts when `preflight.yml` contains an `inventory:` block.
+- Without embedded inventory, omitting `--target` resolves a local target.
 - Using only `local` or `localhost` forces a local target even when inventory is available.
 
 ## Top-Level Commands
@@ -39,8 +38,7 @@ Examples:
 
 ```bash
 preflight apply playbooks/lobby.yml
-preflight apply playbooks/lobby.yml --inventory inventory.yml
-preflight apply playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight apply playbooks/lobby.yml --target lobby
 ```
 
 Apply a staged bundle instead of resolving a playbook:
@@ -61,8 +59,7 @@ Run the same execution pipeline as `apply`, but stop after `Check()` paths and r
 
 ```bash
 preflight check playbooks/lobby.yml
-preflight check playbooks/lobby.yml --inventory inventory.yml
-preflight check playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight check playbooks/lobby.yml --target lobby
 ```
 
 ### `preflight plan <playbook>`
@@ -71,8 +68,7 @@ Resolve and print the target-specific execution plan without running tasks.
 
 ```bash
 preflight plan playbooks/lobby.yml
-preflight plan playbooks/lobby.yml --inventory inventory.yml
-preflight plan playbooks/lobby.yml --target lobby --inventory inventory.yml
+preflight plan playbooks/lobby.yml --target lobby
 ```
 
 Behavior notes:
@@ -96,10 +92,9 @@ Gather facts for one or more targets through the selected output renderer.
 
 ```bash
 preflight facts
-preflight facts --inventory inventory.yml
 preflight facts local
-preflight facts --target lobby --inventory inventory.yml
-preflight facts lobby-pc-01 --inventory inventory.yml
+preflight facts --target lobby
+preflight facts lobby-pc-01
 ```
 
 Behavior:
@@ -150,10 +145,10 @@ preflight action fetch github.com/myorg/actions/signage@v2.1
 
 ### `preflight inventory list`
 
-List all hosts from the selected inventory file.
+List all hosts from the `preflight.yml` inventory.
 
 ```bash
-preflight inventory list --inventory inventory.yml
+preflight inventory list
 ```
 
 ## `plugin` Commands
@@ -240,7 +235,7 @@ Compare the current plan to the selected state file.
 
 ```bash
 preflight state diff playbooks/lobby.yml
-preflight state diff playbooks/lobby.yml --target lobby-pc-01 --inventory inventory.yml
+preflight state diff playbooks/lobby.yml --target lobby-pc-01
 ```
 
 Command-specific flags:
@@ -253,7 +248,7 @@ Behavior notes:
 
 - Local applies default to `state/provision.json`.
 - Inventory-backed applies write `state/targets/<host>.json`.
-- Inventory-backed diffs should pass the same `--target` and `--inventory` context used for the host being compared.
+- Inventory-backed diffs should pass the same `--target` context used for the host being compared.
 - When multiple hosts resolve and `--state-file` is not set, the command prints one section per host and reads each host's default state file.
 
 ## Output Formats
