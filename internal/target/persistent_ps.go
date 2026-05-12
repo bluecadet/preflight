@@ -2,6 +2,7 @@ package target
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -10,6 +11,46 @@ import (
 	"io"
 	"strings"
 )
+
+// psSessionRunner is the run side of a persistent PowerShell session, regardless
+// of transport. Both WinRM and SSH Windows-PS sessions implement it through the
+// same stdin/stdout marker protocol (buildPSStdinLine + readPSOutput); only
+// session setup and teardown differ between transports.
+type psSessionRunner interface {
+	run(ctx context.Context, script string) (string, error)
+}
+
+// runPSWithFallback executes script through the persistent PS session when one
+// is available, falling back to legacy per-invocation execution on session
+// errors. The acquireSession callback returns (nil, nil) when no session can be
+// created (e.g. test fakes that don't implement the creator interface). On a
+// *psSessionError the session is reset (the underlying error is passed to the
+// callback for logging) before falling back; on a script-level error the
+// result is returned as-is without falling back.
+//
+// This pattern was previously copy-pasted between WinRMTarget.runPS and
+// sshWindowsPowerShellRuntime.RunPowerShellScript.
+func runPSWithFallback(
+	ctx context.Context,
+	script string,
+	acquireSession func(context.Context) (psSessionRunner, error),
+	resetSession func(cause error),
+	legacy func(context.Context, string) (string, error),
+) (string, error) {
+	ps, err := acquireSession(ctx)
+	if err == nil && ps != nil {
+		out, psErr := ps.run(ctx, script)
+		if psErr == nil {
+			return out, nil
+		}
+		if isSessionError(psErr) {
+			resetSession(psErr)
+		} else {
+			return out, psErr
+		}
+	}
+	return legacy(ctx, script)
+}
 
 // psMarkerBase is the unique prefix used to delimit script output from control
 // lines in a persistent PowerShell stdin/stdout session. The marker is combined

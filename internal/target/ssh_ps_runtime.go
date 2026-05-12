@@ -133,19 +133,17 @@ func (r *sshWindowsPowerShellRuntime) Close() error {
 // cannot be created or signals a transport failure, it falls back to
 // runPSLegacy which spawns a fresh PowerShell process per invocation.
 func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, script string) (string, error) {
-	ps, err := r.getOrCreatePSSession(ctx)
-	if err == nil && ps != nil {
-		out, psErr := ps.run(ctx, script)
-		if psErr == nil {
-			return out, nil
-		}
-		if isSessionError(psErr) {
-			r.resetPSSession()
-		} else {
-			return out, psErr
-		}
-	}
-	return r.runPSLegacy(ctx, script)
+	return runPSWithFallback(ctx, script,
+		func(ctx context.Context) (psSessionRunner, error) {
+			ps, err := r.getOrCreatePSSession(ctx)
+			if ps == nil {
+				return nil, err
+			}
+			return ps, err
+		},
+		func(error) { r.resetPSSession() },
+		r.runPSLegacy,
+	)
 }
 
 func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string) (string, error) {

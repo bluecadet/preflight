@@ -304,20 +304,20 @@ func (t *WinRMTarget) Close() error {
 // does not exist, cannot be created, or signals a transport failure, it falls
 // back to runPSLegacy which opens a fresh shell per invocation.
 func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) {
-	ps, err := t.getOrCreatePSSession(ctx)
-	if err == nil && ps != nil {
-		out, psErr := ps.run(ctx, script)
-		if psErr == nil {
-			return out, nil
-		}
-		if isSessionError(psErr) {
-			slog.Debug("winrm runPS: persistent session error, falling back to legacy", "err", psErr)
+	return runPSWithFallback(ctx, script,
+		func(ctx context.Context) (psSessionRunner, error) {
+			ps, err := t.getOrCreatePSSession(ctx)
+			if ps == nil {
+				return nil, err
+			}
+			return ps, err
+		},
+		func(cause error) {
+			slog.Debug("winrm runPS: persistent session error, falling back to legacy", "err", cause)
 			t.resetPSSession()
-		} else {
-			return out, psErr
-		}
-	}
-	return t.runPSLegacy(ctx, script)
+		},
+		t.runPSLegacy,
+	)
 }
 
 // runPSLegacy executes a PowerShell script by creating a new WinRM shell per
