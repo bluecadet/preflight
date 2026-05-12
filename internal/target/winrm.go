@@ -445,73 +445,38 @@ const copyBytesChunkSize = 1536
 const copyBytesSessionChunkSize = 32 * 1024
 
 func (t *WinRMTarget) copyBytes(ctx context.Context, data []byte, dst string) error {
-	pathVar, err := powershellJSONVar("path", dst)
-	if err != nil {
-		return err
-	}
-
-	if len(data) <= copyBytesChunkSize {
-		// Single round trip: create parent directory and write all bytes at once.
-		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
-		encoded := base64.StdEncoding.EncodeToString(data)
-		_, err = t.runPSDirect(ctx, pathVar+fmt.Sprintf(`
-$dir = Split-Path -Parent $path
-if ($dir) {
-  New-Item -ItemType Directory -Path $dir -Force | Out-Null
-}
-[IO.File]::WriteAllBytes($path, [Convert]::FromBase64String('%s'))
-`, encoded))
-		return err
-	}
-
-	if _, err := t.runPSDirect(ctx, pathVar+`
-$dir = Split-Path -Parent $path
-if ($dir) {
-  New-Item -ItemType Directory -Path $dir -Force | Out-Null
-}
-[IO.File]::WriteAllBytes($path, @())
-`); err != nil {
-		return err
-	}
-
-	for start := 0; start < len(data); start += copyBytesChunkSize {
-		end := min(start+copyBytesChunkSize, len(data))
-		encoded := base64.StdEncoding.EncodeToString(data[start:end])
-		appendScript, err := powershellJSONVar("path", dst)
-		if err != nil {
-			return err
-		}
-		// encoded is safe to interpolate directly into a single-quoted PS string:
-		// base64 uses only A-Za-z0-9+/= which cannot contain the ' delimiter.
-		// All other parameters use powershellJSONVar for injection safety.
-		if _, err := t.runPSDirect(ctx, appendScript+fmt.Sprintf(`
-$bytes = [Convert]::FromBase64String('%s')
-$stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
-try {
-  $stream.Write($bytes, 0, $bytes.Length)
-} finally {
-  $stream.Dispose()
-}
-`, encoded)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return uploadBytesChunked(ctx, data, dst, copyBytesChunkSize, t.runPSDirect)
 }
 
-// copyBytesViaSession uploads data to dst using the persistent PS session.
-// Scripts go through stdin, so chunks can be much larger than the cmd.exe
-// command-line limit allows in copyBytes. Falls back gracefully: the caller
-// (CopyFile) retries via copyBytes when a *psSessionError is returned.
 func (t *WinRMTarget) copyBytesViaSession(ctx context.Context, ps *winRMPersistentPS, data []byte, dst string) error {
+	return uploadBytesChunked(ctx, data, dst, copyBytesSessionChunkSize, ps.run)
+}
+
+// uploadBytesChunked writes data to dst on a remote Windows host by base64-
+// encoding and inlining each chunk into a PowerShell script. The submit
+// callback delivers the script via whichever transport path the caller chose
+// (legacy per-command runPSDirect with its small cmd.exe ceiling, or the
+// persistent stdin-driven PS session with a much larger envelope). Both paths
+// previously had near-identical create-then-append loops; this is that loop.
+//
+// encoded chunk strings are safe to interpolate directly into a single-quoted
+// PS literal: base64 uses only A-Za-z0-9+/= which cannot contain the '
+// delimiter. All other parameters go through powershellJSONVar.
+func uploadBytesChunked(
+	ctx context.Context,
+	data []byte,
+	dst string,
+	chunkSize int,
+	submit func(ctx context.Context, script string) (string, error),
+) error {
 	pathVar, err := powershellJSONVar("path", dst)
 	if err != nil {
 		return err
 	}
 
-	if len(data) <= copyBytesSessionChunkSize {
+	if len(data) <= chunkSize {
 		encoded := base64.StdEncoding.EncodeToString(data)
-		_, err = ps.run(ctx, pathVar+fmt.Sprintf(`
+		_, err = submit(ctx, pathVar+fmt.Sprintf(`
 $dir = Split-Path -Parent $path
 if ($dir) {
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -521,7 +486,7 @@ if ($dir) {
 		return err
 	}
 
-	if _, err := ps.run(ctx, pathVar+`
+	if _, err := submit(ctx, pathVar+`
 $dir = Split-Path -Parent $path
 if ($dir) {
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
@@ -531,14 +496,10 @@ if ($dir) {
 		return err
 	}
 
-	appendPathVar, err := powershellJSONVar("path", dst)
-	if err != nil {
-		return err
-	}
-	for start := 0; start < len(data); start += copyBytesSessionChunkSize {
-		end := min(start+copyBytesSessionChunkSize, len(data))
+	for start := 0; start < len(data); start += chunkSize {
+		end := min(start+chunkSize, len(data))
 		encoded := base64.StdEncoding.EncodeToString(data[start:end])
-		if _, err := ps.run(ctx, appendPathVar+fmt.Sprintf(`
+		if _, err := submit(ctx, pathVar+fmt.Sprintf(`
 $bytes = [Convert]::FromBase64String('%s')
 $stream = [IO.File]::Open($path, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::Read)
 try {
