@@ -156,8 +156,8 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModule
 			apply: func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsRemoveAppxPackages(ctx, backend, params)
 			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
-				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun)
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
+				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun, onOutput)
 			},
 		},
 		"power_plan": remoteModuleFuncs{
@@ -672,7 +672,7 @@ func applyWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShe
 	return windowsRunScript(ctx, backend, normalized, removeAppxPackagesApplyScript)
 }
 
-func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (bool, string, error) {
+func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
 	normalized, err := winutil.NormalizeRemoveAppxParams(params)
 	if err != nil {
 		return false, "", err
@@ -690,7 +690,17 @@ func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerSh
 	if err != nil {
 		return false, "", err
 	}
-	return parseEnsureMarkerOutput("remove_appx_packages", out)
+	lines := splitOutputLines(out)
+	if len(lines) == 0 {
+		return false, "", fmt.Errorf("remove_appx_packages ensure: empty output")
+	}
+	marker := lines[len(lines)-1]
+	if onOutput != nil {
+		for _, line := range lines[:len(lines)-1] {
+			onOutput(line)
+		}
+	}
+	return parseEnsureMarkerOutput("remove_appx_packages", marker)
 }
 
 func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
