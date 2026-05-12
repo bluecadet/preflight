@@ -51,51 +51,47 @@ func (r *TextRenderer) colorize(code, text string) string {
 }
 
 func (r *TextRenderer) Emit(event Event) {
-	p, ok := projectEvent(event)
-	if !ok {
-		return
-	}
-	switch p.kind {
-	case EventPlayStart:
-		r.emitPlayStart(PlayStartEvent{PlayName: p.playName})
-	case EventTaskStart:
-		r.emitTaskStart(TaskStartEvent{TaskName: p.task, TaskID: p.taskID, ActionPath: p.actionPath, Target: p.target})
-	case EventTaskOutput:
-		r.emitTaskOutput(TaskOutputEvent{TaskName: p.task, TaskID: p.taskID, Target: p.target, Lines: p.lines})
-	case EventTaskResult:
-		r.emitTaskResult(TaskResultEvent{TaskName: p.task, TaskID: p.taskID, ActionPath: p.actionPath, Target: p.target, Status: p.status, Message: p.message, Output: p.output})
-	case EventPlayEnd:
-		r.emitPlayEnd(PlayEndEvent{Target: p.target, OKCount: p.okCount, ChangedCount: p.changedCount, FailedCount: p.failedCount, SkippedCount: p.skippedCount})
-	case EventError:
-		r.writeLine(r.colorize(ansiRed, "ERROR: "+p.errorMessage))
-	case EventWarning:
-		r.writeLine(r.colorize(ansiYellow, "WARNING: "+p.message))
-	case EventActivityStart:
-		r.writeLine(formatActivityLine(p.target, p.message))
-	case EventActivityResult:
-		if p.status == "failed" {
-			r.writeLine(r.colorize(ansiRed, formatActivityLine(p.target, p.message)))
+	switch e := event.(type) {
+	case PlayStartEvent:
+		r.emitPlayStart(e)
+	case TaskStartEvent:
+		r.emitTaskStart(e)
+	case TaskOutputEvent:
+		r.emitTaskOutput(e)
+	case TaskResultEvent:
+		r.emitTaskResult(e)
+	case PlayEndEvent:
+		r.emitPlayEnd(e)
+	case ErrorEvent:
+		r.writeLine(r.colorize(ansiRed, "ERROR: "+e.Message))
+	case WarningEvent:
+		r.writeLine(r.colorize(ansiYellow, "WARNING: "+e.Message))
+	case ActivityStartEvent:
+		r.writeLine(formatActivityLine(e.Target, e.Message))
+	case ActivityResultEvent:
+		if e.Status == "failed" {
+			r.writeLine(r.colorize(ansiRed, formatActivityLine(e.Target, e.Message)))
 		}
-	case EventFacts:
-		r.writeLines(renderTextFacts(FactsEvent{Target: p.target, Facts: p.facts}))
-	case EventPlan:
-		r.writeLines(renderTextPlan(PlanEvent{Target: p.target, PlaybookName: p.playName, Tasks: p.tasks}))
-	case EventState:
-		r.writeLines(renderTextState(StateEvent{Target: p.target, PlaybookName: p.playName, StatePath: p.statePath, LastApplied: p.lastApplied, Comparisons: p.comparisons}))
-	case EventValidate:
-		r.writeLines(renderTextValidation(ValidationEvent{PlaybookPath: p.playbookPath, PlaybookName: p.playName, TaskCount: p.taskCount, VisitedRefCount: p.visitedRefs, ResolvedRefs: p.resolvedRefs, ErrorCount: p.errorCount}))
-	case EventActionList:
-		r.writeLines(renderTextActionCatalog(ActionCatalogEvent{EmbeddedNamespace: p.namespace, EmbeddedRefs: p.embeddedRefs, LocalDir: p.localDir, LocalRefs: p.localRefs}))
-	case EventActionInfo:
-		r.writeLines(renderTextActionInfo(ActionInfoEvent{Ref: p.ref, Name: p.name, Version: p.version, Description: p.description, Author: p.author, Inputs: p.inputs, TaskNames: p.taskNames}))
-	case EventActionFetch:
-		r.writeLines(renderTextActionFetch(ActionFetchEvent{Entries: p.entries}))
-	case EventPluginList:
-		r.writeLines(renderTextPluginList(PluginListEvent{Entries: p.plugins}))
-	case EventInventoryList:
-		r.writeLines(renderTextInventoryList(InventoryListEvent{Hosts: p.hosts}))
-	case EventSecretList:
-		r.writeLines(renderTextSecretList(SecretListEvent{Entries: p.secrets}))
+	case FactsEvent:
+		r.writeLines(renderTextFacts(e))
+	case PlanEvent:
+		r.writeLines(renderTextPlan(e))
+	case StateEvent:
+		r.writeLines(renderTextState(e))
+	case ValidationEvent:
+		r.writeLines(renderTextValidation(e))
+	case ActionCatalogEvent:
+		r.writeLines(renderTextActionCatalog(e))
+	case ActionInfoEvent:
+		r.writeLines(renderTextActionInfo(e))
+	case ActionFetchEvent:
+		r.writeLines(renderTextActionFetch(e))
+	case PluginListEvent:
+		r.writeLines(renderTextPluginList(e))
+	case InventoryListEvent:
+		r.writeLines(renderTextInventoryList(e))
+	case SecretListEvent:
+		r.writeLines(renderTextSecretList(e))
 	}
 }
 
