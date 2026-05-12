@@ -230,8 +230,8 @@ tasks:
         function New-TempTextFile([string]$Extension, [string]$Content) {
           $path = Join-Path ([System.IO.Path]::GetTempPath()) ("preflight-git-" + [System.Guid]::NewGuid().ToString('N') + $Extension)
           # Windows PowerShell 5.1 writes a BOM for -Encoding UTF8, which makes cmd.exe read "@echo" as an invalid command.
-          [System.IO.File]::WriteAllText($path, $Content, $script:utf8NoBom)
-          $script:tempPaths.Add($path) | Out-Null
+          [System.IO.File]::WriteAllText($path, $Content, $utf8NoBom)
+          $tempPaths.Add($path) | Out-Null
           return $path
         }
 
@@ -243,7 +243,7 @@ tasks:
         }
 
         function Invoke-Git([string[]]$Arguments) {
-          $full = @() + $script:gitGlobalArgs + $Arguments
+          $full = @() + $gitGlobalArgs + $Arguments
           Write-Output ("git " + (Format-GitArguments $full))
           & $git @full
           if ($LASTEXITCODE -ne 0) {
@@ -252,7 +252,7 @@ tasks:
         }
 
         function Invoke-GitOutput([string[]]$Arguments) {
-          $full = @() + $script:gitGlobalArgs + $Arguments
+          $full = @() + $gitGlobalArgs + $Arguments
           $output = & $git @full 2>$null
           if ($LASTEXITCODE -ne 0) {
             return $null
@@ -307,7 +307,7 @@ tasks:
           $env:GIT_TERMINAL_PROMPT = '0'
           $env:GCM_INTERACTIVE = 'Never'
           # Clear configured helpers so GCM cannot intercept, but keep Git's askpass path available for the token above.
-          $script:gitGlobalArgs = @('-c', 'credential.helper=')
+          Set-Variable -Name gitGlobalArgs -Value @('-c', 'credential.helper=') -Scope 1
         }
 
         function Enable-SshKey() {

@@ -594,6 +594,7 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 		"--no-tags",
 		"credential.helper=",
 		"UTF8Encoding",
+		"Set-Variable -Name gitGlobalArgs",
 		"function Clear-EnvVar",
 		"Clear-EnvVar 'GCM_INTERACTIVE'",
 	} {
@@ -612,6 +613,9 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 	}
 	if strings.Contains(script, "Remove-Item Env:\\GCM_INTERACTIVE") {
 		t.Fatalf("expected git-sync cleanup to avoid unguarded env removal, got:\n%s", script)
+	}
+	if strings.Contains(script, "$script:") {
+		t.Fatalf("expected git-sync script to avoid script-scope variables under persistent PowerShell, got:\n%s", script)
 	}
 }
 
