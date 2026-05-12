@@ -23,6 +23,10 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 		if err != nil {
 			return false, "", err
 		}
+		script, err = wrapPowerShellEnv(params, script)
+		if err != nil {
+			return false, "", err
+		}
 		out, err := backend.RunPowerShellScript(ctx, script)
 		if err != nil {
 			return false, "", err
@@ -47,9 +51,13 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 	if err != nil {
 		return false, "", err
 	}
-	out, err := backend.RunPowerShellScript(ctx, script+`
+	script, err = wrapPowerShellEnv(params, script+`
 Write-Output ([bool](Test-Path -LiteralPath $creates))
 `)
+	if err != nil {
+		return false, "", err
+	}
+	out, err := backend.RunPowerShellScript(ctx, script)
 	if err != nil {
 		return false, "", err
 	}
@@ -99,6 +107,10 @@ $__pf_apply_block = [ScriptBlock]::Create($__pf_apply_script)
 & $__pf_apply_block
 Write-Output 'changed'
 `
+	combined, err = wrapPowerShellEnv(params, combined)
+	if err != nil {
+		return false, "", err
+	}
 	out, err := backend.RunPowerShellScript(ctx, combined)
 	if err != nil {
 		return false, "", err
@@ -119,7 +131,11 @@ Write-Output 'changed'
 
 func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (string, error) {
 	if script, _ := params["script"].(string); script != "" {
-		return backend.RunPowerShellScript(ctx, script)
+		wrapped, err := wrapPowerShellEnv(params, script)
+		if err != nil {
+			return "", err
+		}
+		return backend.RunPowerShellScript(ctx, wrapped)
 	}
 
 	file, _ := params["file"].(string)
@@ -142,9 +158,83 @@ func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend,
 	if err != nil {
 		return "", err
 	}
-	return backend.RunPowerShellScript(ctx, scriptVar+`
-`+scriptArgsVar+`
+	script, err := wrapPowerShellEnv(params, scriptVar+`
+	`+scriptArgsVar+`
 $block = [ScriptBlock]::Create($script)
 & $block @scriptArgs
 `)
+	if err != nil {
+		return "", err
+	}
+	return backend.RunPowerShellScript(ctx, script)
+}
+
+func wrapPowerShellEnv(params map[string]any, script string) (string, error) {
+	env, err := powerShellEnv(params)
+	if err != nil {
+		return "", err
+	}
+	if len(env) == 0 {
+		return script, nil
+	}
+	envVar, err := powershellJSONVar("__pf_env", env)
+	if err != nil {
+		return "", err
+	}
+	return envVar + `
+$__pf_env_previous = @{}
+foreach ($__pf_env_entry in $__pf_env.PSObject.Properties) {
+  $__pf_env_name = [string]$__pf_env_entry.Name
+  $__pf_env_previous[$__pf_env_name] = [pscustomobject]@{
+    Exists = $null -ne [System.Environment]::GetEnvironmentVariable($__pf_env_name, 'Process')
+    Value = [System.Environment]::GetEnvironmentVariable($__pf_env_name, 'Process')
+  }
+  [System.Environment]::SetEnvironmentVariable($__pf_env_name, [string]$__pf_env_entry.Value, 'Process')
+}
+try {
+` + script + `
+} finally {
+  foreach ($__pf_env_entry in $__pf_env_previous.GetEnumerator()) {
+    if ($__pf_env_entry.Value.Exists) {
+      [System.Environment]::SetEnvironmentVariable([string]$__pf_env_entry.Key, [string]$__pf_env_entry.Value.Value, 'Process')
+    } else {
+      [System.Environment]::SetEnvironmentVariable([string]$__pf_env_entry.Key, $null, 'Process')
+    }
+  }
+}
+`, nil
+}
+
+func powerShellEnv(params map[string]any) (map[string]string, error) {
+	value, ok := params["env"]
+	if !ok || value == nil {
+		return nil, nil
+	}
+
+	var env map[string]string
+	switch typed := value.(type) {
+	case map[string]string:
+		env = typed
+	case map[string]any:
+		env = make(map[string]string, len(typed))
+		for name, raw := range typed {
+			text, ok := raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("powershell env %q must be a string, got %T", name, raw)
+			}
+			env[name] = text
+		}
+	default:
+		return nil, fmt.Errorf("powershell env must be a map, got %T", value)
+	}
+
+	for name := range env {
+		if strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("powershell env names must not be empty")
+		}
+		if strings.Contains(name, "=") {
+			return nil, fmt.Errorf("powershell env name %q must not contain '='", name)
+		}
+	}
+	return env, nil
 }
