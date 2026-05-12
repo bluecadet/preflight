@@ -388,7 +388,7 @@ func detectLocalPowerShellBinary() string {
 }
 
 func localWindowsTempDir() string {
-	return `C:\Windows\Temp\preflight`
+	return windowsRemoteTempDir
 }
 
 func runLocalWindowsPowerShell(ctx context.Context, script string) (string, error) {

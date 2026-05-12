@@ -227,7 +227,7 @@ func (t *WinRMTarget) RunPowerShellScript(ctx context.Context, script string) (s
 }
 
 func (t *WinRMTarget) RemoteTempDir() string {
-	return `C:\Windows\Temp\preflight`
+	return windowsRemoteTempDir
 }
 
 func (t *WinRMTarget) clientForUse() (winRMClient, error) {
@@ -585,5 +585,5 @@ func hashBytes(data []byte) string {
 }
 
 func winRMPackageRemotePath(index int, source string) string {
-	return fmt.Sprintf(`C:\Windows\Temp\preflight\%03d-%s`, index, filepath.Base(source))
+	return fmt.Sprintf(`%s\%03d-%s`, windowsRemoteTempDir, index, filepath.Base(source))
 }

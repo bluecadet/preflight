@@ -207,5 +207,5 @@ func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, err
 }
 
 func (r *sshWindowsPowerShellRuntime) RemoteTempDir() string {
-	return `C:\Windows\Temp\preflight`
+	return windowsRemoteTempDir
 }
