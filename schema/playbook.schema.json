@@ -134,6 +134,7 @@
       "additionalProperties": false,
       "properties": {
         "path": { "type": "string" },
+        "user": { "type": "string" },
         "values": {
           "oneOf": [
             { "type": "object" },

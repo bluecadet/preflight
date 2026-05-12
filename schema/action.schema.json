@@ -172,6 +172,10 @@
           "type": "string",
           "description": "Registry key path, e.g. HKLM:\\SOFTWARE\\MyApp"
         },
+        "user": {
+          "type": "string",
+          "description": "Optional Windows user for HKCU/HKEY_CURRENT_USER paths"
+        },
         "values": {
           "description": "Registry values in legacy map or typed spec-list form",
           "oneOf": [

@@ -146,6 +146,32 @@ func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
 	}
 }
 
+func TestNormalizeRegistryParams_TrimsUser(t *testing.T) {
+	params, err := NormalizeRegistryParams(map[string]any{
+		"path": `HKCU:\Software\Example`,
+		"user": " kiosk ",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if params["user"] != "kiosk" {
+		t.Fatalf("expected trimmed user, got %#v", params["user"])
+	}
+}
+
+func TestNormalizeRegistryParams_UserMustBeString(t *testing.T) {
+	_, err := NormalizeRegistryParams(map[string]any{
+		"path": `HKCU:\Software\Example`,
+		"user": 123,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "registry user must be a string") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestNormalizeScheduledTaskParams_AliasesAndDefaults(t *testing.T) {
 	params, err := NormalizeScheduledTaskParams(map[string]any{
 		"name":     "Preflight Reboot",

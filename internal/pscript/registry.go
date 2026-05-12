@@ -2,7 +2,24 @@ package pscript
 
 const RegistryModuleCheckScript = `
 $path = [string]$params.path
+$user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+function Resolve-RegistryPath([string]$path, [string]$user) {
+  if (-not $user) { return $path }
+  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+    throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
+  }
+  $account = New-Object System.Security.Principal.NTAccount($user)
+  $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+  $root = 'Registry::HKEY_USERS\' + $sid
+  if (-not (Test-Path -LiteralPath $root)) {
+    throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
+  }
+  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  if ($subPath) { return (Join-Path $root $subPath) }
+  return $root
+}
+$path = Resolve-RegistryPath $path $user
 function Normalize-RegistryKind([string]$kind) {
   switch ($kind.ToLowerInvariant()) {
     'expandstring' { return 'expand_string' }
@@ -96,7 +113,24 @@ Write-Output $needs
 
 const RegistryCheckScript = `
 $path = [string]$params.path
+$user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+function Resolve-RegistryPath([string]$path, [string]$user) {
+  if (-not $user) { return $path }
+  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+    throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
+  }
+  $account = New-Object System.Security.Principal.NTAccount($user)
+  $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+  $root = 'Registry::HKEY_USERS\' + $sid
+  if (-not (Test-Path -LiteralPath $root)) {
+    throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
+  }
+  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  if ($subPath) { return (Join-Path $root $subPath) }
+  return $root
+}
+$path = Resolve-RegistryPath $path $user
 function Normalize-RegistryKind([string]$kind) {
   switch ($kind.ToLowerInvariant()) {
     'expandstring' { return 'expand_string' }
@@ -187,7 +221,24 @@ Write-Output $needs
 
 const RegistryApplyScript = `
 $path = [string]$params.path
+$user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+function Resolve-RegistryPath([string]$path, [string]$user) {
+  if (-not $user) { return $path }
+  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+    throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
+  }
+  $account = New-Object System.Security.Principal.NTAccount($user)
+  $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+  $root = 'Registry::HKEY_USERS\' + $sid
+  if (-not (Test-Path -LiteralPath $root)) {
+    throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
+  }
+  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  if ($subPath) { return (Join-Path $root $subPath) }
+  return $root
+}
+$path = Resolve-RegistryPath $path $user
 if ($ensure -eq 'absent') {
   Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
   exit 0
@@ -229,7 +280,24 @@ if ($params.values) {
 // be injected by the caller before $params.
 const RegistryEnsureScript = `
 $path = [string]$params.path
+$user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
+function Resolve-RegistryPath([string]$path, [string]$user) {
+  if (-not $user) { return $path }
+  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+    throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
+  }
+  $account = New-Object System.Security.Principal.NTAccount($user)
+  $sid = $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+  $root = 'Registry::HKEY_USERS\' + $sid
+  if (-not (Test-Path -LiteralPath $root)) {
+    throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
+  }
+  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  if ($subPath) { return (Join-Path $root $subPath) }
+  return $root
+}
+$path = Resolve-RegistryPath $path $user
 function Normalize-RegistryKind([string]$kind) {
   switch ($kind.ToLowerInvariant()) {
     'expandstring' { return 'expand_string' }

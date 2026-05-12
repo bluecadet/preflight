@@ -68,12 +68,15 @@ Configure machine-level baseline settings.
 
 ### `preflight/windows-shell`
 
-Configure desktop and Explorer defaults for the current execution identity.
+Configure desktop and Explorer defaults for the current execution identity. Set `profile_user` to write registry-backed settings for a named Windows profile without switching process identity.
+
+`profile_user` affects registry-backed settings only. `taskbar_auto_hide` and `clear_desktop_shortcuts` still apply only to the current execution identity.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
+| `profile_user` | string | Optional Windows user profile for registry-backed shell settings |
 | `clear_desktop_background` | bool | Clear the wallpaper |
 | `clear_desktop_shortcuts` | bool | Remove `.lnk` and `.url` files from desktop locations |
 | `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide for the current user (default: `false`) |

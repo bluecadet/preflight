@@ -11,6 +11,13 @@ import (
 // that is easy for PowerShell scripts to consume.
 func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
 	cloned := CloneParams(params)
+	if rawUser, ok := cloned["user"]; ok && rawUser != nil {
+		user, ok := rawUser.(string)
+		if !ok {
+			return nil, fmt.Errorf("registry user must be a string, got %T", rawUser)
+		}
+		cloned["user"] = strings.TrimSpace(user)
+	}
 	values, err := normalizeRegistryValues(cloned["values"])
 	if err != nil {
 		return nil, err

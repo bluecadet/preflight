@@ -1,9 +1,13 @@
 name: preflight/windows-shell
-version: "3.1.0"
+version: "3.2.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
 inputs:
+  profile_user:
+    type: string
+    default: ""
+    description: Optional Windows user profile to configure without switching process identity
   clear_desktop_background:
     type: bool
     default: true
@@ -46,6 +50,7 @@ tasks:
     when: "{{ vars.clear_desktop_background }}"
     registry:
       path: 'HKCU:\Control Panel\Desktop'
+      user: "{{ vars.profile_user }}"
       values:
         Wallpaper: ""
         WallpaperStyle: "0"
@@ -56,6 +61,7 @@ tasks:
     when: "{{ vars.theme_mode != 'unchanged' }}"
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+      user: "{{ vars.profile_user }}"
       values:
         - name: AppsUseLightTheme
           type: dword
@@ -67,6 +73,7 @@ tasks:
   - name: Configure transparency effects
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
+      user: "{{ vars.profile_user }}"
       values:
         - name: EnableTransparency
           type: dword
@@ -75,6 +82,7 @@ tasks:
   - name: Configure hidden files visibility
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+      user: "{{ vars.profile_user }}"
       values:
         - name: Hidden
           type: dword
@@ -83,6 +91,7 @@ tasks:
   - name: Configure file extensions visibility
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+      user: "{{ vars.profile_user }}"
       values:
         - name: HideFileExt
           type: dword
@@ -91,6 +100,7 @@ tasks:
   - name: Configure Recycle Bin desktop icon visibility (NewStartPanel)
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
+      user: "{{ vars.profile_user }}"
       values:
         - name: '{645FF040-5081-101B-9F08-00AA002F954E}'
           type: dword
@@ -99,12 +109,14 @@ tasks:
   - name: Configure Recycle Bin desktop icon visibility (ClassicStartMenu)
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
+      user: "{{ vars.profile_user }}"
       values:
         - name: '{645FF040-5081-101B-9F08-00AA002F954E}'
           type: dword
           data: "{{ vars.hide_recycle_bin }}"
 
   - name: Configure taskbar auto-hide
+    when: "{{ vars.profile_user == '' }}"
     powershell:
       check_script: |
         $desiredStateByte = if ([System.Convert]::ToBoolean('{{ vars.taskbar_auto_hide }}')) { 3 } else { 2 }
@@ -158,6 +170,9 @@ tasks:
     when: "{{ vars.clear_desktop_shortcuts }}"
     powershell:
       check_script: |
+        if ('{{ vars.profile_user }}' -ne '') {
+          return $false
+        }
         $path = Join-Path $env:USERPROFILE 'Desktop'
         if (-not (Test-Path -LiteralPath $path)) {
           return $false
@@ -165,6 +180,9 @@ tasks:
         $items = Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' }
         return [bool]$items
       script: |
+        if ('{{ vars.profile_user }}' -ne '') {
+          exit 0
+        }
         $path = Join-Path $env:USERPROFILE 'Desktop'
         if (-not (Test-Path -LiteralPath $path)) {
           exit 0
@@ -178,5 +196,6 @@ tasks:
     when: "{{ vars.clear_start_pins }}"
     registry:
       path: 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
+      user: "{{ vars.profile_user }}"
       values:
         ConfigureStartPins: '{"pinnedList":[]}'

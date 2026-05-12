@@ -49,6 +49,7 @@ type FirewallRuleParams struct {
 // RegistryParams are the typed parameters for the registry module (Go-side validation only).
 type RegistryParams struct {
 	Path   string `param:"path,required"`
+	User   string `param:"user"`
 	Ensure string `param:"ensure" default:"present"`
 }
 
