@@ -29,6 +29,7 @@ const (
 // exprRe matches {{ ... }} expressions, capturing the inner expression.
 // It tolerates optional whitespace inside the delimiters.
 var exprRe = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
+var secretCallExprRe = regexp.MustCompile(`^secret\((.+)\)$`)
 
 // Engine evaluates {{ expression }} placeholders in strings using an
 // expression engine with custom lookup semantics for vars/env/target/facts.
@@ -42,7 +43,9 @@ type Engine struct {
 	target map[string]any
 	facts  map[string]any
 
-	preserveUnknown bool
+	preserveUnknown    bool
+	preserveSecretRefs bool
+	secretLookup       func(string) (string, error)
 }
 
 type unresolvedValue struct{}
@@ -98,6 +101,20 @@ func (e *Engine) WithPreserveUnknown() *Engine {
 	return e
 }
 
+// WithPreserveSecretRefs keeps recognized secret placeholders intact when no
+// secret lookup is configured. This lets callers render ordinary vars first and
+// defer secret materialization until the execution path can redact the result.
+func (e *Engine) WithPreserveSecretRefs() *Engine {
+	e.preserveSecretRefs = true
+	return e
+}
+
+// WithSecretLookup attaches a resolver for {{ secret("name") }} placeholders.
+func (e *Engine) WithSecretLookup(lookup func(string) (string, error)) *Engine {
+	e.secretLookup = lookup
+	return e
+}
+
 // Render evaluates all {{ expression }} placeholders in s and returns the
 // resulting string. Undefined vars.* references return an error.
 func (e *Engine) Render(s string) (string, error) {
@@ -137,6 +154,13 @@ func (e *Engine) renderOnce(s string) (string, error) {
 			return match
 		}
 		if !resolved {
+			if isSecretExpression(expression) {
+				if e.preserveSecretRefs || e.preserveUnknown {
+					return match
+				}
+				renderErr = fmt.Errorf("secret lookup is not configured")
+				return match
+			}
 			if e.preserveUnknown {
 				return match
 			}
@@ -204,6 +228,12 @@ func (e *Engine) renderValue(v any) (any, error) {
 					return fmt.Sprintf("%v", raw), nil
 				}
 			}
+			if isSecretExpression(inner) {
+				if e.preserveSecretRefs || e.preserveUnknown {
+					return val, nil
+				}
+				return nil, fmt.Errorf("secret lookup is not configured")
+			}
 			if e.preserveUnknown {
 				return val, nil
 			}
@@ -229,6 +259,17 @@ func (e *Engine) renderValue(v any) (any, error) {
 
 // evalExprValue returns the raw typed value for an expression.
 func (e *Engine) evalExprValue(expression string) (any, bool, error) {
+	if name, ok := parseSecretExpression(expression); ok {
+		if e.secretLookup == nil {
+			return unresolvedValue{}, false, nil
+		}
+		value, err := e.secretLookup(name)
+		if err != nil {
+			return nil, false, err
+		}
+		return value, true, nil
+	}
+
 	program, err := expr.Compile(expression, e.compileOptions()...)
 	if err != nil {
 		return nil, false, err
@@ -242,6 +283,44 @@ func (e *Engine) evalExprValue(expression string) (any, bool, error) {
 		return nil, false, nil
 	}
 	return value, true, nil
+}
+
+// SecretRefNames returns secret names referenced in template placeholders.
+func SecretRefNames(s string) []string {
+	seen := make(map[string]struct{})
+	var names []string
+	for _, match := range exprRe.FindAllStringSubmatch(s, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		name, ok := parseSecretExpression(strings.TrimSpace(match[1]))
+		if !ok {
+			continue
+		}
+		if _, exists := seen[name]; exists {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func isSecretExpression(expression string) bool {
+	_, ok := parseSecretExpression(expression)
+	return ok
+}
+
+func parseSecretExpression(expression string) (string, bool) {
+	if match := secretCallExprRe.FindStringSubmatch(expression); len(match) == 2 {
+		arg := strings.TrimSpace(match[1])
+		name, err := strconv.Unquote(arg)
+		if err != nil || name == "" {
+			return "", false
+		}
+		return name, true
+	}
+	return "", false
 }
 
 func (e *Engine) compileOptions() []expr.Option {

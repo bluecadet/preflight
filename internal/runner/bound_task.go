@@ -28,6 +28,9 @@ func bindTask(task *PlanTask, execCtx *executionContext, preserveUnknown bool) (
 	if preserveUnknown {
 		eng = template.New(task.TemplateVars).WithTarget(execCtx.target).WithPreserveUnknown()
 	}
+	if task.Module == "file" {
+		eng = eng.WithPreserveSecretRefs()
+	}
 
 	params, err := eng.RenderMap(task.Params)
 	if err != nil {
@@ -72,6 +75,40 @@ func (b *BoundTask) resolveSecrets(ctx context.Context, resolver *secrets.Resolv
 	}
 	return nil
 }
+
+func (b *BoundTask) renderFileContentTemplate(ctx context.Context, resolver *secrets.Resolver) error {
+	if b.Params == nil {
+		return nil
+	}
+	value, ok := b.Params["content_template"]
+	if !ok {
+		return nil
+	}
+	if _, hasSrc := b.Params["src"]; hasSrc {
+		return fmt.Errorf("file: src and content_template are mutually exclusive")
+	}
+	if _, hasContent := b.Params["content"]; hasContent {
+		return fmt.Errorf("file: content and content_template are mutually exclusive")
+	}
+	source, ok := value.(string)
+	if !ok {
+		return fmt.Errorf("file: content_template must be a string, got %T", value)
+	}
+	eng := template.New(nil).WithSecretLookup(func(name string) (string, error) {
+		if resolver == nil || !resolver.HasProviders() {
+			return "", fmt.Errorf("secret provider %q is not configured", secrets.DefaultProviderName)
+		}
+		return resolver.ResolveRef(ctx, secrets.DefaultProviderName+":"+name)
+	})
+	rendered, err := eng.Render(source)
+	if err != nil {
+		return fmt.Errorf("render file content_template: %w", err)
+	}
+	delete(b.Params, "content_template")
+	b.Params["content"] = rendered
+	return nil
+}
+
 func (b *BoundTask) executionOptions() (map[string]any, target.ExecutionOptions, error) {
 	if len(b.Become) == 0 {
 		return nil, target.ExecutionOptions{}, nil

@@ -88,6 +88,54 @@ func TestRender_MultipleExpressions(t *testing.T) {
 	}
 }
 
+func TestRender_SecretFunction(t *testing.T) {
+	e := New(nil).WithSecretLookup(func(name string) (string, error) {
+		if name != "app-password" {
+			t.Fatalf("unexpected secret name %q", name)
+		}
+		return "top-secret", nil
+	})
+
+	got, err := e.Render(`password={{ secret("app-password") }}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "password=top-secret" {
+		t.Errorf("got %q, want %q", got, "password=top-secret")
+	}
+}
+
+func TestRender_PreserveSecretFunction(t *testing.T) {
+	e := New(map[string]any{"prefix": "password"}).WithPreserveSecretRefs()
+
+	got, err := e.Render(`{{ vars.prefix }}={{ secret("app-password") }}`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != `password={{ secret("app-password") }}` {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestSecretRefNames(t *testing.T) {
+	got := SecretRefNames(`a {{ secret("app-password") }} b {{ secret("api_key") }} c {{ secret("app-password") }}`)
+	want := []string{"app-password", "api_key"}
+	if len(got) != len(want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestSecretRefNamesIgnoresDotNotation(t *testing.T) {
+	if got := SecretRefNames(`{{ secret.app-password }}`); len(got) != 0 {
+		t.Fatalf("expected dot notation to be ignored, got %#v", got)
+	}
+}
+
 func TestRender_RecursiveVarResolution(t *testing.T) {
 	e := New(map[string]any{
 		"name":        "{{ vars.device_name }}",

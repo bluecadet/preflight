@@ -193,6 +193,9 @@ func unsupportedRuntimeModuleDetailError(kind RuntimeKind, module, detail string
 }
 
 func fileContentParam(params map[string]any, label, src string) (string, bool, error) {
+	if _, ok := params["content_template"]; ok {
+		return "", false, fmt.Errorf("%s: content_template must be rendered before module execution", label)
+	}
 	value, ok := params["content"]
 	if !ok {
 		return "", false, nil

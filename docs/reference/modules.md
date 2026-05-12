@@ -107,10 +107,11 @@ Manage files.
 | --- | --- | --- |
 | `src` | string | Local source path to copy from |
 | `content` | string | Inline file content to write; may be a `secret:<name>` reference |
+| `content_template` | string | Inline file content template to render before writing; supports `secret("name")` placeholders |
 | `dest` | string | Destination path |
 | `ensure` | `present` or `absent` | Desired state |
 
-Use either `src` or `content`, not both. `content` is useful for writing
+Use `src`, `content`, or `content_template`; do not combine them. `content` is useful for writing
 secret-backed files without creating a temporary plaintext source file:
 
 ```yaml
@@ -119,6 +120,21 @@ secret-backed files without creating a temporary plaintext source file:
     dest: "C:\\Exhibits\\license.txt"
     content: secret:license-file
 ```
+
+Use `content_template` when only part of the file is secret:
+
+```yaml
+- name: Write app config
+  file:
+    dest: "C:\\Exhibits\\app.ini"
+    content_template: |
+      username={{ vars.app_user }}
+      password={{ secret("app-password") }}
+```
+
+`secret:<name>` is still the syntax for whole-field secret references. Inside
+`content_template`, use `secret("name")` so the secret can be interpolated into
+the rendered file body.
 
 ### `directory`
 

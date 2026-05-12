@@ -245,6 +245,14 @@
           "type": "string",
           "description": "Destination path"
         },
+        "content": {
+          "type": "string",
+          "description": "Inline file content to write"
+        },
+        "content_template": {
+          "type": "string",
+          "description": "Inline file content template to render before writing; supports secret(\"name\") placeholders"
+        },
         "ensure": {
           "type": "string",
           "enum": ["present", "absent"],

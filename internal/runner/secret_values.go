@@ -7,6 +7,7 @@ import (
 
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
+	pftemplate "github.com/bluecadet/preflight/internal/template"
 )
 
 type SecretValueAnalysis struct {
@@ -32,6 +33,9 @@ func analyzeSecretValue(key string, value any, refs map[string]struct{}, forceSe
 	secretContext := forceSecret || secretishKey(key)
 	switch t := value.(type) {
 	case string:
+		for _, name := range pftemplate.SecretRefNames(t) {
+			refs[name] = struct{}{}
+		}
 		if name, ok := secretRefName(t); ok {
 			refs[name] = struct{}{}
 			return false
@@ -124,6 +128,9 @@ func normalizeStateValue(key string, source, resolved any) any {
 
 	switch src := source.(type) {
 	case string:
+		if len(pftemplate.SecretRefNames(src)) > 0 {
+			return secrets.RedactString(src)
+		}
 		if secrets.IsRef(src) {
 			return secrets.RedactString(src)
 		}
@@ -173,6 +180,11 @@ func lookupSourceValue(source map[string]any, key string) (any, bool) {
 	}
 	if value, ok := source[key]; ok {
 		return value, true
+	}
+	if key == "content" {
+		if value, ok := source["content_template"]; ok {
+			return value, true
+		}
 	}
 	if fromValue, ok := source[key+"_from"]; ok {
 		return fromValue, true

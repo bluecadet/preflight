@@ -160,7 +160,23 @@ tasks:
       content: secret:license-file
 ```
 
+When only part of a file is secret, use `content_template` and reference
+secrets with `secret("name")`:
+
+```yaml
+tasks:
+  - name: Write app config
+    file:
+      dest: "C:\\Exhibits\\app.ini"
+      content_template: |
+        username={{ vars.app_user }}
+        password={{ secret("app-password") }}
+```
+
 The built-in provider name is `secret`, so repo-backed references use `secret:<name>`.
+Use `secret:<name>` when a whole string field should resolve to one secret.
+Use `secret("name")` only inside `content_template`, where the secret is
+interpolated into a larger file body.
 
 ## 6. Rekey Secrets After Recipient Changes
 

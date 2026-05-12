@@ -211,6 +211,13 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
 			}
 		}
+		if task.Module == "file" {
+			bound := &BoundTask{Params: params}
+			if err := bound.renderFileContentTemplate(ctx, resolver); err != nil {
+				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
+			}
+			params = bound.Params
+		}
 
 		dependsOn, err := dag.DependencyIDs(task)
 		if err != nil {

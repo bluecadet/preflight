@@ -172,6 +172,11 @@
         "properties": {
           "src": { "type": "string" },
           "dest": { "type": "string" },
+          "content": { "type": "string" },
+          "content_template": {
+            "type": "string",
+            "description": "Inline file content template to render before writing; supports secret(\"name\") placeholders"
+          },
           "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
         }
       },

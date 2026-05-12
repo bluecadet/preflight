@@ -117,6 +117,9 @@ func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
 
 func validateFileContentParams(module string, params map[string]any, src string) (bool, error) {
 	_, hasContent := params["content"]
+	if _, hasContentTemplate := params["content_template"]; hasContentTemplate {
+		return false, fmt.Errorf("%s: content_template must be rendered before module execution", module)
+	}
 	if src != "" && hasContent {
 		return false, fmt.Errorf("%s: src and content are mutually exclusive", module)
 	}

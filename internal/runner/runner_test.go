@@ -1367,6 +1367,76 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 	}
 }
 
+func TestStageBundlesSecretsReferencedByFileContentTemplate(t *testing.T) {
+	dir := t.TempDir()
+	identity, err := ageGenerateIdentity(dir)
+	if err != nil {
+		t.Fatalf("ageGenerateIdentity: %v", err)
+	}
+	cfg := config.SecretsConfig{
+		Identity:   filepath.Join(dir, "keys.txt"),
+		Recipients: []string{identity.Recipient().String()},
+		Entries: map[string]config.SecretEntry{
+			"app-password": {File: "secrets/app-password.age"},
+		},
+	}
+	provider := secrets.NewRepoProvider(dir, cfg)
+	if err := provider.Encrypt("app-password", []byte("top-secret")); err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+
+	r := New(&mockTarget{}, emptyResolver(), Config{
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"file": noopModule{}},
+		ProjectDir:      dir,
+		SecretsConfig:   cfg,
+		Secrets: secrets.NewResolver(map[string]secrets.Provider{
+			secrets.DefaultProviderName: provider,
+		}),
+	})
+	plan := &ExecutionPlan{
+		PlaybookName: "bundle-file-template-secret",
+		Vars:         map[string]any{},
+		Tasks: []*PlanTask{{
+			ID:     "task-0",
+			Name:   "write config",
+			Module: "file",
+			Params: map[string]any{
+				"dest":             "C:\\Exhibits\\app.ini",
+				"content_template": "password={{ secret(\"app-password\") }}\n",
+			},
+		}},
+	}
+
+	if err := r.Stage(context.Background(), plan); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	extracted, err := bundle.Extract(mustOneBundlePath(t, dir))
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	defer func() {
+		if err := extracted.Cleanup(); err != nil {
+			t.Fatalf("Cleanup: %v", err)
+		}
+	}()
+
+	if extracted.Manifest.SecretMode != bundle.SecretModeEncrypted {
+		t.Fatalf("expected encrypted secret mode, got %q", extracted.Manifest.SecretMode)
+	}
+	if len(extracted.Manifest.SecretEntries) != 1 || extracted.Manifest.SecretEntries[0].Name != "app-password" {
+		t.Fatalf("unexpected secret entries: %#v", extracted.Manifest.SecretEntries)
+	}
+	planBytes, err := os.ReadFile(extracted.PlanPath)
+	if err != nil {
+		t.Fatalf("ReadFile(plan): %v", err)
+	}
+	if strings.Contains(string(planBytes), "top-secret") {
+		t.Fatalf("expected staged plan to avoid plaintext secret, got %q", string(planBytes))
+	}
+}
+
 func TestStageStdlibGitSyncBundlesCredentialSecrets(t *testing.T) {
 	dir := t.TempDir()
 	identity, err := ageGenerateIdentity(dir)

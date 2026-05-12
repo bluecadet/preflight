@@ -42,6 +42,28 @@ func TestStateParamSummaryRedactsSecretRefUnderNeutralKey(t *testing.T) {
 	}
 }
 
+func TestStateParamSummaryRedactsSecretContentTemplate(t *testing.T) {
+	source := map[string]any{
+		"dest":             "/tmp/app.ini",
+		"content_template": "password={{ secret(\"db-password\") }}",
+	}
+	resolved := map[string]any{
+		"dest":    "/tmp/app.ini",
+		"content": "password=hunter2",
+	}
+
+	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
+	if !ok {
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
+	}
+	if summary["content"] != "[redacted]" {
+		t.Fatalf("expected rendered content template to be redacted, got %#v", summary["content"])
+	}
+	if _, ok := summary["content_template"]; ok {
+		t.Fatalf("expected content_template to be omitted after render, got %#v", summary)
+	}
+}
+
 func TestStateParamHashIgnoresSecretContentChanges(t *testing.T) {
 	source := map[string]any{
 		"cmd": "secret:db-password",

@@ -118,6 +118,11 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		if err := bound.resolveSecrets(ctx, r.config.Secrets); err != nil {
 			return fmt.Errorf("apply: task %q: %w", pt.Name, err)
 		}
+		if pt.Module == "file" {
+			if err := bound.renderFileContentTemplate(ctx, r.config.Secrets); err != nil {
+				return fmt.Errorf("apply: task %q: %w", pt.Name, err)
+			}
+		}
 		resolvedBecome := cloneMap(bound.Become)
 		_, execOpts, err := bound.executionOptions()
 		if err != nil {
