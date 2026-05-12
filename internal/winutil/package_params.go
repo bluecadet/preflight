@@ -77,6 +77,9 @@ func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
 			for _, key := range []string{"version", "source", "scope", "ensure"} {
 				copyOptionalString(spec, params, key)
 			}
+			if args, ok := params["args"]; ok && args != nil {
+				spec["args"] = args
+			}
 			return spec, nil
 		},
 	})

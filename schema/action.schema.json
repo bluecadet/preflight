@@ -447,6 +447,11 @@
               "id": { "type": "string" },
               "version": { "type": "string" },
               "source": { "type": "string" },
+              "args": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Additional winget command arguments"
+              },
               "scope": {
                 "type": "string",
                 "enum": ["machine", "user"],
@@ -466,6 +471,11 @@
         },
         "version": { "type": "string" },
         "source": { "type": "string" },
+        "args": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional winget command arguments"
+        },
         "scope": {
           "type": "string",
           "enum": ["machine", "user"],

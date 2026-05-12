@@ -22,6 +22,35 @@ tasks:
 	}
 }
 
+func TestValidatePlaybookYAML_WingetArgsAllowed(t *testing.T) {
+	err := ValidatePlaybookYAML([]byte(`
+name: winget-args
+tasks:
+  - name: Install Visual Studio
+    winget_package:
+      packages:
+        - id: Microsoft.VisualStudio.2022.Community
+          args: ["--override", "--quiet --wait --norestart"]
+`))
+	if err != nil {
+		t.Fatalf("expected winget args to validate, got %v", err)
+	}
+}
+
+func TestValidateActionYAML_WingetArgsAllowed(t *testing.T) {
+	err := ValidateActionYAML([]byte(`
+name: winget-args
+tasks:
+  - name: Install Visual Studio
+    winget_package:
+      id: Microsoft.VisualStudio.2022.Community
+      args: ["--override", "--quiet --wait --norestart"]
+`))
+	if err != nil {
+		t.Fatalf("expected winget args to validate, got %v", err)
+	}
+}
+
 func TestEmbeddedSchemasAvailable(t *testing.T) {
 	t.Parallel()
 

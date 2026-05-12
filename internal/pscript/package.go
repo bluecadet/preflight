@@ -152,6 +152,10 @@ foreach ($spec in $pkgs) {
   $version = if ($spec.version) { [string]$spec.version } else { '' }
   $source = if ($spec.source) { [string]$spec.source } else { '' }
   $scope = if ($spec.scope) { [string]$spec.scope } else { 'machine' }
+  $wingetArgs = @()
+  if ($spec.args) {
+    foreach ($arg in $spec.args) { $wingetArgs += [string]$arg }
+  }
   $match = $installedMap[$id]
   $isInstalled = $null -ne $match
   if ($ensure -eq 'absent' -and -not $isInstalled) { continue }
@@ -164,6 +168,7 @@ foreach ($spec in $pkgs) {
   }
   if ($version) { $args += @('--version', $version) }
   if ($source) { $args += @('--source', $source) }
+  $args += $wingetArgs
   $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
   if ($process.ExitCode -ne 0) {
     throw "winget command failed for '$id' with exit code $($process.ExitCode)"

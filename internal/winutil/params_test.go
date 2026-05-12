@@ -76,6 +76,31 @@ func TestNormalizeRegistryParams_BoolStringValues(t *testing.T) {
 	}
 }
 
+func TestNormalizeWingetParams_LegacyArgs(t *testing.T) {
+	params, err := NormalizeWingetParams(map[string]any{
+		"id":   "Microsoft.VisualStudio.2022.Community",
+		"args": []any{"--override", "--quiet --wait --norestart"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	packages, ok := params["packages"].([]any)
+	if !ok || len(packages) != 1 {
+		t.Fatalf("expected one normalized winget package, got %#v", params["packages"])
+	}
+	spec, ok := packages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected normalized package object, got %#v", packages[0])
+	}
+	args, ok := spec["args"].([]any)
+	if !ok || len(args) != 2 {
+		t.Fatalf("expected normalized args, got %#v", spec["args"])
+	}
+	if args[0] != "--override" || args[1] != "--quiet --wait --norestart" {
+		t.Fatalf("unexpected normalized args: %#v", args)
+	}
+}
+
 func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
 	legacy, err := NormalizeRegistryParams(map[string]any{
 		"values": map[string]any{
