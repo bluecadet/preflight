@@ -16,6 +16,29 @@ type windowsPowerShellBackend interface {
 	RemoteTempDir() string
 }
 
+// windowsPowerShellModuleRequiresFreshSession reports whether a Windows
+// PowerShell module runs unbounded user-authored scripts and must therefore
+// bypass any long-lived powershell.exe session a transport keeps for
+// performance.
+//
+// Only WinRM currently consults this; LocalTarget has no persistent session
+// to bypass, and SSH's persistent session is used by user-script invocations
+// without an equivalent guard. If SSH ever needs the same recycle behaviour,
+// it should call this function rather than maintain its own list.
+func windowsPowerShellModuleRequiresFreshSession(module string) bool {
+	mod, ok := windowsPowerShellModuleCatalog[module]
+	return ok && mod.freshSession
+}
+
+// windowsPowerShellModuleCatalog records per-module capability flags
+// independent of any backend. It is the source of truth for properties like
+// freshSession that callers may need to consult before constructing a backend.
+var windowsPowerShellModuleCatalog = map[string]struct {
+	freshSession bool
+}{
+	"powershell": {freshSession: true},
+}
+
 func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModuleRegistry {
 	supported := remoteModuleRegistry{
 		"directory": remoteModuleFuncs{

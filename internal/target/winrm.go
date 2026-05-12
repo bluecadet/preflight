@@ -136,26 +136,22 @@ func (t *WinRMTarget) Transport() Transport {
 }
 
 func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
-	// User-authored powershell scripts can leave the persistent powershell.exe
-	// in a wedged state (process-level $env, async output formatting state,
-	// in-flight child processes) and can legitimately run longer than the
-	// persistent session's completion-marker timeout. Built-in modules use
-	// bounded scripts and keep the session for performance; the powershell
-	// module is the only user-script vector, so bypass and recycle around it.
-	runPS := t.runPS
-	if module == "powershell" {
-		runPS = t.runPSLegacy
-	}
-	defer func() {
-		if module == "powershell" {
-			t.resetPSSession()
-		}
-	}()
-
 	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
+
+	// Modules tagged freshSession (e.g. powershell) run unbounded user-authored
+	// scripts that can leave a long-lived powershell.exe wedged. Route them
+	// through the per-invocation legacy path and recycle the persistent
+	// session afterwards. Built-in modules use bounded scripts and stay on the
+	// persistent session for performance.
+	runPS := t.runPS
+	if windowsPowerShellModuleRequiresFreshSession(module) {
+		runPS = t.runPSLegacy
+		defer t.resetPSSession()
+	}
+
 	backend := &windowsTaskBackend{
 		run:       runPS,
 		copyPlain: t.CopyFile,
