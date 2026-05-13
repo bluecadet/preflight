@@ -36,6 +36,13 @@ type initializeResult struct {
 	Version string `json:"version"`
 }
 
+// rpcNotification is a JSON-RPC 2.0 notification (no id field) sent mid-request.
+type rpcNotification struct {
+	JSONRPC string         `json:"jsonrpc"`
+	Method  string         `json:"method"`
+	Params  map[string]any `json:"params"`
+}
+
 // serve reads newline-delimited JSON-RPC requests from r and writes responses to w.
 // It is the internal implementation used by Serve and tests.
 func serveIO(m Module, r io.Reader, w io.Writer) {
@@ -57,7 +64,7 @@ func serveIO(m Module, r io.Reader, w io.Writer) {
 			continue
 		}
 
-		resp := dispatch(m, req)
+		resp := dispatch(m, req, enc)
 		_ = enc.Encode(resp)
 	}
 }
@@ -68,7 +75,16 @@ func serve(m Module) {
 }
 
 // dispatch routes a single request to the appropriate module method.
-func dispatch(m Module, req rpcRequest) rpcResponse {
+// enc is used to emit output notification frames before the final response.
+func dispatch(m Module, req rpcRequest, enc *json.Encoder) rpcResponse {
+	emit := func(line string) {
+		_ = enc.Encode(rpcNotification{
+			JSONRPC: "2.0",
+			Method:  "output",
+			Params:  map[string]any{"line": line},
+		})
+	}
+
 	switch req.Method {
 	case "initialize":
 		return rpcResponse{
@@ -79,6 +95,13 @@ func dispatch(m Module, req rpcRequest) rpcResponse {
 
 	case "check":
 		args := argsFromParams(req.Params)
+		if sm, ok := m.(StreamingModule); ok {
+			result, err := sm.CheckStreaming(args, emit)
+			if err != nil {
+				result.Error = err.Error()
+			}
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}
+		}
 		result, err := m.Check(args)
 		if err != nil {
 			result.Error = err.Error()
@@ -87,6 +110,13 @@ func dispatch(m Module, req rpcRequest) rpcResponse {
 
 	case "apply":
 		args := argsFromParams(req.Params)
+		if sm, ok := m.(StreamingModule); ok {
+			result, err := sm.ApplyStreaming(args, emit)
+			if err != nil {
+				result.Error = err.Error()
+			}
+			return rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: result}
+		}
 		result, err := m.Apply(args)
 		if err != nil {
 			result.Error = err.Error()

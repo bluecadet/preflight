@@ -141,3 +141,106 @@ func TestServe_Initialize(t *testing.T) {
 		t.Errorf("expected version=2.3.4, got %q", init.Version)
 	}
 }
+
+type streamingMockModule struct{}
+
+func (streamingMockModule) Name() string    { return "streaming-mock" }
+func (streamingMockModule) Version() string { return "1.0.0" }
+
+func (streamingMockModule) Check(_ map[string]any) (CheckResult, error) {
+	return CheckResult{NeedsChange: true}, nil
+}
+
+func (streamingMockModule) Apply(_ map[string]any) (ApplyResult, error) {
+	return ApplyResult{}, nil
+}
+
+func (streamingMockModule) CheckStreaming(_ map[string]any, out OutputFunc) (CheckResult, error) {
+	out("check line 1")
+	out("check line 2")
+	return CheckResult{NeedsChange: true, Message: "needs update"}, nil
+}
+
+func (streamingMockModule) ApplyStreaming(_ map[string]any, out OutputFunc) (ApplyResult, error) {
+	out("apply line 1")
+	out("apply line 2")
+	out("apply line 3")
+	return ApplyResult{Message: "applied"}, nil
+}
+
+func runServeMulti(t *testing.T, m Module, reqs []string) []string {
+	t.Helper()
+
+	pr, pw := io.Pipe()
+	var outBuf strings.Builder
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		serveIO(m, pr, &outBuf)
+	}()
+
+	for _, req := range reqs {
+		if _, err := io.WriteString(pw, req+"\n"); err != nil {
+			t.Fatalf("write request: %v", err)
+		}
+	}
+	_ = pw.Close()
+
+	<-done
+
+	lines := strings.Split(strings.TrimSpace(outBuf.String()), "\n")
+	return lines
+}
+
+func TestServe_StreamingCheck(t *testing.T) {
+	req := `{"jsonrpc":"2.0","id":"10","method":"check","params":{"args":{}}}`
+	lines := runServeMulti(t, streamingMockModule{}, []string{req})
+
+	// Should have 2 notification frames + 1 response frame
+	if len(lines) != 3 {
+		t.Fatalf("expected 3 output lines, got %d: %v", len(lines), lines)
+	}
+
+	var notif1 struct {
+		Method string         `json:"method"`
+		Params map[string]any `json:"params"`
+	}
+	if err := json.Unmarshal([]byte(lines[0]), &notif1); err != nil {
+		t.Fatalf("unmarshal notif1: %v", err)
+	}
+	if notif1.Method != "output" {
+		t.Errorf("expected method=output, got %q", notif1.Method)
+	}
+	if notif1.Params["line"] != "check line 1" {
+		t.Errorf("expected line 'check line 1', got %v", notif1.Params["line"])
+	}
+
+	var resp rpcResponse
+	if err := json.Unmarshal([]byte(lines[2]), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("unexpected rpc error: %v", resp.Error)
+	}
+}
+
+func TestServe_StreamingApply(t *testing.T) {
+	req := `{"jsonrpc":"2.0","id":"11","method":"apply","params":{"args":{}}}`
+	lines := runServeMulti(t, streamingMockModule{}, []string{req})
+
+	// Should have 3 notification frames + 1 response frame
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 output lines, got %d: %v", len(lines), lines)
+	}
+}
+
+func TestServe_NonStreamingBackwardsCompat(t *testing.T) {
+	// Non-streaming module gets no notification frames
+	req := `{"jsonrpc":"2.0","id":"12","method":"check","params":{"args":{}}}`
+	lines := runServeMulti(t, mockModule{}, []string{req})
+
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 output line for non-streaming module, got %d: %v", len(lines), lines)
+	}
+}

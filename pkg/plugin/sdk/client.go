@@ -104,8 +104,9 @@ func (c *Client) Close() error {
 	return c.cmd.Wait()
 }
 
-// call sends a single JSON-RPC request and decodes the result into out.
-func (c *Client) call(method string, params any, out any) error {
+// callStreaming sends a single JSON-RPC request, dispatching any output
+// notification frames to out, and decodes the final response into result.
+func (c *Client) callStreaming(method string, params any, out OutputFunc, result any) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -126,28 +127,72 @@ func (c *Client) call(method string, params any, out any) error {
 		return fmt.Errorf("encode request: %w", err)
 	}
 
-	var resp struct {
-		JSONRPC string          `json:"jsonrpc"`
-		ID      any             `json:"id"`
-		Result  json.RawMessage `json:"result"`
-		Error   *rpcError       `json:"error"`
-	}
-	if err := c.dec.Decode(&resp); err != nil {
-		if err == io.EOF {
-			return fmt.Errorf("plugin closed connection unexpectedly")
+	for {
+		var raw struct {
+			JSONRPC string          `json:"jsonrpc"`
+			ID      any             `json:"id"`
+			Method  string          `json:"method"`
+			Params  map[string]any  `json:"params"`
+			Result  json.RawMessage `json:"result"`
+			Error   *rpcError       `json:"error"`
 		}
-		return fmt.Errorf("decode response: %w", err)
-	}
-
-	if resp.Error != nil {
-		return fmt.Errorf("rpc error %d: %s", resp.Error.Code, resp.Error.Message)
-	}
-
-	if out != nil && resp.Result != nil {
-		if err := json.Unmarshal(resp.Result, out); err != nil {
-			return fmt.Errorf("unmarshal result: %w", err)
+		if err := c.dec.Decode(&raw); err != nil {
+			if err == io.EOF {
+				return fmt.Errorf("plugin closed connection unexpectedly")
+			}
+			return fmt.Errorf("decode response: %w", err)
 		}
-	}
 
-	return nil
+		// Notification frame: no id, has method == "output"
+		if raw.ID == nil && raw.Method == "output" {
+			if out != nil {
+				if line, ok := raw.Params["line"].(string); ok {
+					out(line)
+				}
+			}
+			continue
+		}
+
+		// Response frame
+		if raw.Error != nil {
+			return fmt.Errorf("rpc error %d: %s", raw.Error.Code, raw.Error.Message)
+		}
+		if result != nil && raw.Result != nil {
+			if err := json.Unmarshal(raw.Result, result); err != nil {
+				return fmt.Errorf("unmarshal result: %w", err)
+			}
+		}
+		return nil
+	}
+}
+
+// call sends a single JSON-RPC request and decodes the result into out.
+func (c *Client) call(method string, params any, out any) error {
+	return c.callStreaming(method, params, nil, out)
+}
+
+// CheckStreaming calls the plugin's check method and dispatches output lines to out.
+func (c *Client) CheckStreaming(args map[string]any, out OutputFunc) (CheckResult, error) {
+	var result CheckResult
+	params := map[string]any{"args": args}
+	if err := c.callStreaming("check", params, out, &result); err != nil {
+		return CheckResult{}, err
+	}
+	if result.Error != "" {
+		return result, fmt.Errorf("plugin check: %s", result.Error)
+	}
+	return result, nil
+}
+
+// ApplyStreaming calls the plugin's apply method and dispatches output lines to out.
+func (c *Client) ApplyStreaming(args map[string]any, out OutputFunc) (ApplyResult, error) {
+	var result ApplyResult
+	params := map[string]any{"args": args}
+	if err := c.callStreaming("apply", params, out, &result); err != nil {
+		return ApplyResult{}, err
+	}
+	if result.Error != "" {
+		return result, fmt.Errorf("plugin apply: %s", result.Error)
+	}
+	return result, nil
 }
