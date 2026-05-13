@@ -484,13 +484,19 @@ tasks:
           }
         }
 
-        function Resolve-GitCommit([string]$Name) {
+        function Resolve-GitCommit([string]$Name, [bool]$PreferRemoteBranch) {
           if ([string]::IsNullOrWhiteSpace($Name)) {
             return ''
           }
 
-          $candidates = @($Name)
-          if (-not [string]::IsNullOrWhiteSpace($remote)) {
+          $candidates = @()
+          if ($PreferRemoteBranch -and -not [string]::IsNullOrWhiteSpace($remote)) {
+            # After fetch, a branch name should resolve to the fetched remote branch before the stale local branch.
+            $candidates += "refs/remotes/$remote/$Name"
+            $candidates += "$remote/$Name"
+          }
+          $candidates += $Name
+          if (-not $PreferRemoteBranch -and -not [string]::IsNullOrWhiteSpace($remote)) {
             $candidates += "$remote/$Name"
             $candidates += "refs/remotes/$remote/$Name"
           }
@@ -616,7 +622,7 @@ tasks:
           }
 
           if (-not [string]::IsNullOrWhiteSpace($ref)) {
-            $targetRef = Resolve-GitCommit $ref
+            $targetRef = Resolve-GitCommit $ref $fetch
 
             if (-not [string]::IsNullOrWhiteSpace($localBranch)) {
               Invoke-Git @('-C', $dest, 'checkout', '-B', $localBranch, $targetRef)
@@ -634,8 +640,7 @@ tasks:
             }
 
             if ($reset) {
-              $resetRef = Resolve-GitCommit $ref
-              Invoke-Git @('-C', $dest, 'reset', '--hard', $resetRef)
+              Invoke-Git @('-C', $dest, 'reset', '--hard', $targetRef)
             }
           }
 

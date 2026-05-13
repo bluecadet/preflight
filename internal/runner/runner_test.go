@@ -41,6 +41,18 @@ type mockCall struct {
 	Params map[string]any
 }
 
+func assertContainsInOrder(t *testing.T, text string, fragments ...string) {
+	t.Helper()
+	offset := 0
+	for _, fragment := range fragments {
+		idx := strings.Index(text[offset:], fragment)
+		if idx < 0 {
+			t.Fatalf("expected text to contain %q after offset %d, got:\n%s", fragment, offset, text)
+		}
+		offset += idx + len(fragment)
+	}
+}
+
 func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, _ target.ExecutionOptions, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
 	var copied map[string]any
 	if params != nil {
@@ -725,6 +737,8 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 		"System.Collections.Generic.List[string]",
 		"$gitGlobalArgs.Add('-c')",
 		"$gitGlobalArgs.Add(\"$Key=$Value\")",
+		"Resolve-GitCommit $ref $fetch",
+		"reset', '--hard', $targetRef",
 		"function Clear-EnvVar",
 		"Clear-EnvVar 'GCM_INTERACTIVE'",
 	} {
@@ -732,8 +746,17 @@ func TestPlanStdlibGitSyncRendersComprehensiveInputs(t *testing.T) {
 			t.Fatalf("expected git-sync script to contain %q, got:\n%s", want, script)
 		}
 	}
+	assertContainsInOrder(t, script,
+		"$candidates = @()",
+		"$candidates += \"refs/remotes/$remote/$Name\"",
+		"$candidates += \"$remote/$Name\"",
+		"$candidates += $Name",
+	)
 	if strings.Contains(script, "Set-Content -LiteralPath $path -Value $Content -NoNewline -Encoding UTF8") {
 		t.Fatalf("expected git-sync temp files to avoid UTF-8 BOMs, got:\n%s", script)
+	}
+	if strings.Contains(script, "$resetRef = Resolve-GitCommit") {
+		t.Fatalf("expected git-sync reset to use the fetched target ref, got:\n%s", script)
 	}
 	if strings.Contains(script, "credential.interactive=false") {
 		t.Fatalf("expected git-sync script to keep GIT_ASKPASS available, got:\n%s", script)
