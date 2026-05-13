@@ -557,6 +557,8 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 		"Configure file extensions visibility",
 		"Configure Recycle Bin desktop icon visibility (NewStartPanel)",
 		"Configure Recycle Bin desktop icon visibility (ClassicStartMenu)",
+		"Configure common desktop icon visibility (NewStartPanel)",
+		"Configure common desktop icon visibility (ClassicStartMenu)",
 	}
 	for _, name := range registryTaskNames {
 		task := byName[name]
@@ -588,6 +590,9 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 	if !strings.Contains(taskbar.Params["script"].(string), "Resolve-UserRegistryPath") {
 		t.Fatal("expected taskbar script to resolve the profile user's registry path")
 	}
+	if !strings.Contains(taskbar.Params["script"].(string), "MMStuckRects3") {
+		t.Fatal("expected taskbar script to update multi-monitor taskbar settings")
+	}
 
 	shortcuts := byName["Clear desktop shortcuts"]
 	if shortcuts == nil {
@@ -602,6 +607,11 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 	}
 	if !strings.Contains(shortcuts.Params["script"].(string), "ProfileList") {
 		t.Fatal("expected shortcuts script to resolve the profile user's desktop path")
+	}
+	for _, fragment := range []string{"User Shell Folders", "Common Desktop", "OneDrive*", ".website"} {
+		if !strings.Contains(shortcuts.Params["script"].(string), fragment) {
+			t.Fatalf("expected shortcuts script to contain %q", fragment)
+		}
 	}
 }
 

@@ -1,6 +1,7 @@
 package stdlib_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/action"
@@ -77,4 +78,53 @@ func TestDebloatGamingAndAIAppsAvoidsPersistentXboxWildcard(t *testing.T) {
 		return
 	}
 	t.Fatal("missing Remove Microsoft gaming and AI apps task")
+}
+
+func TestDebloatRemovesOneDrive(t *testing.T) {
+	data, err := stdlib.FS.ReadFile("actions/preflight/debloat/action.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := action.ParseAction(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var sawAppx bool
+	var sawDesktopUninstall bool
+	for _, task := range a.Tasks {
+		if params := task.InlineModules["remove_appx_packages"]; params != nil {
+			packages, ok := params["packages"].([]any)
+			if !ok {
+				t.Fatalf("expected remove_appx_packages packages list in task %q", task.Name)
+			}
+			for _, pkg := range packages {
+				spec, ok := pkg.(map[string]any)
+				if !ok {
+					t.Fatalf("expected package spec map, got %T", pkg)
+				}
+				if spec["name"] == "Microsoft.OneDriveSync" {
+					sawAppx = true
+				}
+			}
+		}
+		if task.Name == "Uninstall OneDrive desktop client" {
+			params := task.InlineModules["powershell"]
+			if params == nil {
+				t.Fatalf("expected powershell module for task %q", task.Name)
+			}
+			script, _ := params["script"].(string)
+			checkScript, _ := params["check_script"].(string)
+			if strings.Contains(script, "OneDriveSetup.exe") && strings.Contains(checkScript, `Microsoft\OneDrive`) {
+				sawDesktopUninstall = true
+			}
+		}
+	}
+
+	if !sawAppx {
+		t.Fatal("expected debloat to remove Microsoft.OneDriveSync appx package")
+	}
+	if !sawDesktopUninstall {
+		t.Fatal("expected debloat to uninstall OneDrive desktop client")
+	}
 }

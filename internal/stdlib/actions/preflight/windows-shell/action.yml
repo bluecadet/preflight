@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "3.3.0"
+version: "3.4.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -115,6 +115,38 @@ tasks:
           type: dword
           data: "{{ vars.hide_recycle_bin }}"
 
+  - name: Configure common desktop icon visibility (NewStartPanel)
+    when: "{{ vars.clear_desktop_shortcuts }}"
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
+      user: "{{ vars.profile_user }}"
+      values:
+        - name: '{20D04FE0-3AEA-1069-A2D8-08002B30309D}'
+          type: dword
+          data: true
+        - name: '{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}'
+          type: dword
+          data: true
+        - name: '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'
+          type: dword
+          data: true
+
+  - name: Configure common desktop icon visibility (ClassicStartMenu)
+    when: "{{ vars.clear_desktop_shortcuts }}"
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
+      user: "{{ vars.profile_user }}"
+      values:
+        - name: '{20D04FE0-3AEA-1069-A2D8-08002B30309D}'
+          type: dword
+          data: true
+        - name: '{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}'
+          type: dword
+          data: true
+        - name: '{5399E694-6CE5-4D6C-8FCE-1D8870FDCBA0}'
+          type: dword
+          data: true
+
   - name: Configure taskbar auto-hide
     powershell:
       env:
@@ -151,26 +183,48 @@ tasks:
           return $root
         }
 
-        function Get-TaskbarSettingsPath([string]$user) {
+        function Get-TaskbarSettingsPaths([string]$user) {
+          $paths = New-Object System.Collections.Generic.List[string]
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
           )) {
             $resolved = Resolve-UserRegistryPath $candidate $user
             if (Test-Path -LiteralPath $resolved) {
-              return $resolved
+              $paths.Add($resolved)
             }
           }
-          return (Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user)
+
+          foreach ($candidate in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects3',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects2'
+          )) {
+            $resolved = Resolve-UserRegistryPath $candidate $user
+            if (-not (Test-Path -LiteralPath $resolved)) {
+              continue
+            }
+            Get-ChildItem -LiteralPath $resolved -ErrorAction SilentlyContinue | ForEach-Object {
+              $paths.Add($_.PSPath)
+            }
+          }
+
+          if ($paths.Count -eq 0) {
+            $paths.Add((Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user))
+          }
+          return $paths.ToArray()
         }
 
-        $path = Get-TaskbarSettingsPath $profileUser
-        $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
-        if ($null -eq $settings -or $settings.Length -lt 9) {
-          return $true
+        foreach ($path in (Get-TaskbarSettingsPaths $profileUser)) {
+          $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
+          if ($null -eq $settings -or $settings.Length -lt 9) {
+            return $true
+          }
+          if ([int]$settings[8] -ne $desiredStateByte) {
+            return $true
+          }
         }
 
-        return ([int]$settings[8] -ne $desiredStateByte)
+        return $false
       script: |
         $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
         $enabled = [System.Convert]::ToBoolean($env:PREFLIGHT_TASKBAR_AUTO_HIDE)
@@ -203,28 +257,49 @@ tasks:
           return $root
         }
 
-        function Get-TaskbarSettingsPath([string]$user) {
+        function Get-TaskbarSettingsPaths([string]$user) {
+          $paths = New-Object System.Collections.Generic.List[string]
           foreach ($candidate in @(
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
           )) {
             $resolved = Resolve-UserRegistryPath $candidate $user
             if (Test-Path -LiteralPath $resolved) {
-              return $resolved
+              $paths.Add($resolved)
             }
           }
-          return (Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user)
+
+          foreach ($candidate in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects3',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects2'
+          )) {
+            $resolved = Resolve-UserRegistryPath $candidate $user
+            if (-not (Test-Path -LiteralPath $resolved)) {
+              continue
+            }
+            Get-ChildItem -LiteralPath $resolved -ErrorAction SilentlyContinue | ForEach-Object {
+              $paths.Add($_.PSPath)
+            }
+          }
+
+          if ($paths.Count -eq 0) {
+            $paths.Add((Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user))
+          }
+          return $paths.ToArray()
         }
 
-        $path = Get-TaskbarSettingsPath $profileUser
-        $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
-        if ($null -eq $settings -or $settings.Length -lt 9) {
-          throw ("taskbar_auto_hide requires an existing Explorer Settings value at " + $path)
+        $updatedCount = 0
+        foreach ($path in (Get-TaskbarSettingsPaths $profileUser)) {
+          $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
+          if ($null -eq $settings -or $settings.Length -lt 9) {
+            throw ("taskbar_auto_hide requires an existing Explorer Settings value at " + $path)
+          }
+          $updated = [byte[]]$settings.Clone()
+          $updated[8] = [byte]$desiredStateByte
+          New-Item -Path $path -Force | Out-Null
+          New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
+          $updatedCount++
         }
-        $updated = [byte[]]$settings.Clone()
-        $updated[8] = [byte]$desiredStateByte
-        New-Item -Path $path -Force | Out-Null
-        New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
         if ([string]::IsNullOrWhiteSpace($profileUser)) {
           Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $enabled)
         } else {
@@ -261,13 +336,88 @@ tasks:
           return [System.Environment]::ExpandEnvironmentVariables([string]$profilePath)
         }
 
-        $profileDir = Resolve-ProfileDirectory $profileUser
-        $path = Join-Path $profileDir 'Desktop'
-        if (-not (Test-Path -LiteralPath $path)) {
-          return $false
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
         }
-        $items = @(Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url' })
-        return ($items.Count -gt 0)
+
+        function Expand-ProfilePath([string]$path, [string]$profileDir) {
+          if ([string]::IsNullOrWhiteSpace($path)) {
+            return $null
+          }
+          if (-not [string]::IsNullOrWhiteSpace($profileDir)) {
+            $path = $path.Replace('%USERPROFILE%', $profileDir).Replace('%UserProfile%', $profileDir).Replace('%userprofile%', $profileDir)
+          }
+          return [System.Environment]::ExpandEnvironmentVariables($path)
+        }
+
+        function Add-DesktopPath([System.Collections.Generic.List[string]]$paths, [string]$path) {
+          if ([string]::IsNullOrWhiteSpace($path)) {
+            return
+          }
+          $resolved = [System.IO.Path]::GetFullPath($path)
+          if ((Test-Path -LiteralPath $resolved) -and -not $paths.Contains($resolved)) {
+            $paths.Add($resolved)
+          }
+        }
+
+        function Get-RegistryString([string]$path, [string]$name) {
+          $prop = Get-ItemProperty -LiteralPath $path -Name $name -ErrorAction SilentlyContinue
+          if ($null -eq $prop) {
+            return $null
+          }
+          return [string]$prop.$name
+        }
+
+        function Get-DesktopShortcutPaths([string]$user) {
+          $paths = New-Object System.Collections.Generic.List[string]
+          $profileDir = Resolve-ProfileDirectory $user
+          foreach ($key in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+          )) {
+            $resolvedKey = $null
+            try {
+              $resolvedKey = Resolve-UserRegistryPath $key $user
+            } catch {
+              $resolvedKey = $null
+            }
+            if ([string]::IsNullOrWhiteSpace($resolvedKey)) {
+              continue
+            }
+            foreach ($name in @('Desktop', '{754AC886-DF64-4CBA-86B5-F7FBF4FBCEF5}')) {
+              Add-DesktopPath $paths (Expand-ProfilePath (Get-RegistryString $resolvedKey $name) $profileDir)
+            }
+          }
+          Add-DesktopPath $paths (Join-Path $profileDir 'Desktop')
+
+          Get-ChildItem -LiteralPath $profileDir -Directory -Filter 'OneDrive*' -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-DesktopPath $paths (Join-Path $_.FullName 'Desktop')
+          }
+
+          Add-DesktopPath $paths (Get-RegistryString 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders' 'Common Desktop')
+          Add-DesktopPath $paths (Join-Path $env:PUBLIC 'Desktop')
+          return $paths.ToArray()
+        }
+
+        foreach ($path in (Get-DesktopShortcutPaths $profileUser)) {
+          $items = @(Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue | Where-Object { $_.Extension -in '.lnk', '.url', '.website' })
+          if ($items.Count -gt 0) {
+            return $true
+          }
+        }
+        return $false
       script: |
         $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
 
@@ -292,15 +442,87 @@ tasks:
           return [System.Environment]::ExpandEnvironmentVariables([string]$profilePath)
         }
 
-        $profileDir = Resolve-ProfileDirectory $profileUser
-        $path = Join-Path $profileDir 'Desktop'
-        if (-not (Test-Path -LiteralPath $path)) {
-          exit 0
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
         }
-        Write-Output ("Removing desktop shortcuts from " + $path)
-        Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
-          Where-Object { $_.Extension -in '.lnk', '.url' } |
-          Remove-Item -Force -ErrorAction SilentlyContinue
+
+        function Expand-ProfilePath([string]$path, [string]$profileDir) {
+          if ([string]::IsNullOrWhiteSpace($path)) {
+            return $null
+          }
+          if (-not [string]::IsNullOrWhiteSpace($profileDir)) {
+            $path = $path.Replace('%USERPROFILE%', $profileDir).Replace('%UserProfile%', $profileDir).Replace('%userprofile%', $profileDir)
+          }
+          return [System.Environment]::ExpandEnvironmentVariables($path)
+        }
+
+        function Add-DesktopPath([System.Collections.Generic.List[string]]$paths, [string]$path) {
+          if ([string]::IsNullOrWhiteSpace($path)) {
+            return
+          }
+          $resolved = [System.IO.Path]::GetFullPath($path)
+          if ((Test-Path -LiteralPath $resolved) -and -not $paths.Contains($resolved)) {
+            $paths.Add($resolved)
+          }
+        }
+
+        function Get-RegistryString([string]$path, [string]$name) {
+          $prop = Get-ItemProperty -LiteralPath $path -Name $name -ErrorAction SilentlyContinue
+          if ($null -eq $prop) {
+            return $null
+          }
+          return [string]$prop.$name
+        }
+
+        function Get-DesktopShortcutPaths([string]$user) {
+          $paths = New-Object System.Collections.Generic.List[string]
+          $profileDir = Resolve-ProfileDirectory $user
+          foreach ($key in @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders',
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'
+          )) {
+            $resolvedKey = $null
+            try {
+              $resolvedKey = Resolve-UserRegistryPath $key $user
+            } catch {
+              $resolvedKey = $null
+            }
+            if ([string]::IsNullOrWhiteSpace($resolvedKey)) {
+              continue
+            }
+            foreach ($name in @('Desktop', '{754AC886-DF64-4CBA-86B5-F7FBF4FBCEF5}')) {
+              Add-DesktopPath $paths (Expand-ProfilePath (Get-RegistryString $resolvedKey $name) $profileDir)
+            }
+          }
+          Add-DesktopPath $paths (Join-Path $profileDir 'Desktop')
+
+          Get-ChildItem -LiteralPath $profileDir -Directory -Filter 'OneDrive*' -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-DesktopPath $paths (Join-Path $_.FullName 'Desktop')
+          }
+
+          Add-DesktopPath $paths (Get-RegistryString 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders' 'Common Desktop')
+          Add-DesktopPath $paths (Join-Path $env:PUBLIC 'Desktop')
+          return $paths.ToArray()
+        }
+
+        foreach ($path in (Get-DesktopShortcutPaths $profileUser)) {
+          Write-Output ("Removing desktop shortcuts from " + $path)
+          Get-ChildItem -LiteralPath $path -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -in '.lnk', '.url', '.website' } |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        }
 
   - name: Clear Start pins
     when: "{{ vars.clear_start_pins }}"

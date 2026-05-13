@@ -72,7 +72,7 @@ Configure machine-level baseline settings.
 
 Configure desktop and Explorer defaults for the current execution identity, or set `profile_user` to write supported settings for a named Windows profile without switching process identity.
 
-When `profile_user` is set, registry-backed settings and taskbar auto-hide are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's profile directory and removes `.lnk` and `.url` files from that profile's Desktop folder.
+When `profile_user` is set, registry-backed settings and taskbar auto-hide are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
@@ -80,7 +80,7 @@ Some shell visual changes do not update an already-running Explorer session imme
 | --- | --- | --- |
 | `profile_user` | string | Optional Windows user profile for user-scoped shell settings |
 | `clear_desktop_background` | bool | Clear the wallpaper |
-| `clear_desktop_shortcuts` | bool | Remove `.lnk` and `.url` files from desktop locations |
+| `clear_desktop_shortcuts` | bool | Remove shortcut files from desktop locations and hide common shell desktop icons |
 | `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide (default: `false`) |
 | `theme_mode` | string | Keep the current theme or set both app and system surfaces to `light` or `dark` |
 | `transparency_effects` | bool | Enable or disable transparency effects (default: `true`) |
@@ -146,7 +146,7 @@ Current-user screensaver changes are persisted immediately but may require sign-
 
 ### `preflight/debloat`
 
-Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype). No inputs — use `remove_appx_packages` directly if you need a custom list.
+Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype, OneDrive). No inputs — use `remove_appx_packages` directly if you need a custom list.
 
 ## Related Docs
 
