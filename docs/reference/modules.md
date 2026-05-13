@@ -88,7 +88,22 @@ Typed value specs inside `values` support these fields:
 | `name` | string | Registry value name |
 | `type` | `string`, `expand_string`, `dword`, `qword`, `binary`, or `multi_string` | Registry value type |
 | `data` | any | Registry value data |
+| `patch` | list | Byte patches for an existing `binary` value |
 | `ensure` | `present` or `absent` | Desired value state |
+
+Use `patch` when a Windows setting is stored inside an existing binary registry value and the rest of the value should be preserved:
+
+```yaml
+- name: Enable taskbar auto-hide
+  registry:
+    path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+    values:
+      - name: Settings
+        type: binary
+        patch:
+          - offset: 8
+            data: 3
+```
 
 ### `service`
 

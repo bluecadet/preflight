@@ -209,10 +209,38 @@
           "enum": ["string", "expand_string", "dword", "qword", "binary", "multi_string"]
         },
         "data": {},
+        "patch": {
+          "type": "array",
+          "description": "Binary byte patches for an existing value",
+          "items": { "$ref": "#/$defs/registryBinaryPatchSpec" }
+        },
         "ensure": {
           "type": "string",
           "enum": ["present", "absent"],
           "default": "present"
+        }
+      }
+    },
+    "registryBinaryPatchSpec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["offset", "data"],
+      "properties": {
+        "offset": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "data": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            {
+              "type": "string"
+            }
+          ]
         }
       }
     },

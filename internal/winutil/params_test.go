@@ -146,6 +146,63 @@ func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
 	}
 }
 
+func TestNormalizeRegistryParams_BinaryPatch(t *testing.T) {
+	params, err := NormalizeRegistryParams(map[string]any{
+		"values": []any{
+			map[string]any{
+				"name": "Settings",
+				"type": "binary",
+				"patch": []any{
+					map[string]any{
+						"offset": 8,
+						"data":   "3",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	values := params["values"].([]map[string]any)
+	if values[0]["type"] != "binary" {
+		t.Fatalf("expected binary type, got %#v", values[0]["type"])
+	}
+	patch := values[0]["patch"].([]map[string]any)
+	if patch[0]["offset"] != int64(8) || patch[0]["data"] != int64(3) {
+		t.Fatalf("unexpected normalized patch: %#v", patch[0])
+	}
+}
+
+func TestNormalizeRegistryParams_BinaryPatchValidation(t *testing.T) {
+	_, err := NormalizeRegistryParams(map[string]any{
+		"values": []any{
+			map[string]any{
+				"name":  "Settings",
+				"type":  "dword",
+				"patch": []any{map[string]any{"offset": 8, "data": 3}},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "patch is only supported for binary values") {
+		t.Fatalf("expected binary-only patch error, got %v", err)
+	}
+
+	_, err = NormalizeRegistryParams(map[string]any{
+		"values": []any{
+			map[string]any{
+				"name":  "Settings",
+				"type":  "binary",
+				"data":  []any{1, 2, 3},
+				"patch": []any{map[string]any{"offset": 8, "data": 3}},
+			},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "data cannot be combined with patch") {
+		t.Fatalf("expected data plus patch error, got %v", err)
+	}
+}
+
 func TestNormalizeRegistryParams_TrimsUser(t *testing.T) {
 	params, err := NormalizeRegistryParams(map[string]any{
 		"path": `HKCU:\Software\Example`,

@@ -72,7 +72,7 @@ Configure machine-level baseline settings.
 
 Configure desktop and Explorer defaults for the current execution identity, or set `profile_user` to write supported settings for a named Windows profile without switching process identity.
 
-When `profile_user` is set, registry-backed settings and taskbar auto-hide are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
+When `profile_user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 

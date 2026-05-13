@@ -577,21 +577,33 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 	if taskbar == nil {
 		t.Fatal("missing taskbar auto-hide task")
 	}
-	if taskbar.When != "" {
-		t.Fatalf("taskbar auto-hide should not be skipped for profile_user, got when %q", taskbar.When)
+	if taskbar.Module != "registry" {
+		t.Fatalf("taskbar auto-hide should use registry module, got %q", taskbar.Module)
 	}
-	taskbarEnv, ok := taskbar.Params["env"].(map[string]any)
+	if taskbar.Params["user"] != "kiosk" {
+		t.Fatalf("expected taskbar registry user kiosk, got %#v", taskbar.Params["user"])
+	}
+	values, ok := taskbar.Params["values"].([]any)
+	if !ok || len(values) != 1 {
+		t.Fatalf("expected taskbar registry value list, got %#v", taskbar.Params["values"])
+	}
+	settings, ok := values[0].(map[string]any)
 	if !ok {
-		t.Fatalf("expected taskbar env map, got %T", taskbar.Params["env"])
+		t.Fatalf("expected taskbar value spec, got %T", values[0])
 	}
-	if taskbarEnv["PREFLIGHT_PROFILE_USER"] != "kiosk" {
-		t.Fatalf("expected taskbar profile env kiosk, got %#v", taskbarEnv["PREFLIGHT_PROFILE_USER"])
+	if settings["name"] != "Settings" || settings["type"] != "binary" {
+		t.Fatalf("unexpected taskbar value spec: %#v", settings)
 	}
-	if !strings.Contains(taskbar.Params["script"].(string), "Resolve-UserRegistryPath") {
-		t.Fatal("expected taskbar script to resolve the profile user's registry path")
+	patch, ok := settings["patch"].([]any)
+	if !ok || len(patch) != 1 {
+		t.Fatalf("expected taskbar binary patch, got %#v", settings["patch"])
 	}
-	if !strings.Contains(taskbar.Params["script"].(string), "MMStuckRects3") {
-		t.Fatal("expected taskbar script to update multi-monitor taskbar settings")
+	bytePatch, ok := patch[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected taskbar patch spec, got %T", patch[0])
+	}
+	if bytePatch["offset"] != 8 || bytePatch["data"] != "3" {
+		t.Fatalf("expected taskbar auto-hide patch offset 8 data 3, got %#v", bytePatch)
 	}
 
 	shortcuts := byName["Clear desktop shortcuts"]

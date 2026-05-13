@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "3.4.0"
+version: "3.5.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -148,164 +148,15 @@ tasks:
           data: true
 
   - name: Configure taskbar auto-hide
-    powershell:
-      env:
-        PREFLIGHT_PROFILE_USER: "{{ vars.profile_user }}"
-        PREFLIGHT_TASKBAR_AUTO_HIDE: "{{ vars.taskbar_auto_hide }}"
-      check_script: |
-        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
-        $desiredStateByte = if ([System.Convert]::ToBoolean($env:PREFLIGHT_TASKBAR_AUTO_HIDE)) { 3 } else { 2 }
-
-        function Resolve-ProfileSid([string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $null
-          }
-          $account = New-Object System.Security.Principal.NTAccount($user)
-          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
-        }
-
-        function Resolve-UserRegistryPath([string]$path, [string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $path
-          }
-          if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
-            throw 'windows-shell: profile_user can only be used with HKCU/HKEY_CURRENT_USER paths'
-          }
-          $sid = Resolve-ProfileSid $user
-          $root = 'Registry::HKEY_USERS\' + $sid
-          if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
-          }
-          $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
-          if ($subPath) {
-            return (Join-Path $root $subPath)
-          }
-          return $root
-        }
-
-        function Get-TaskbarSettingsPaths([string]$user) {
-          $paths = New-Object System.Collections.Generic.List[string]
-          foreach ($candidate in @(
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
-          )) {
-            $resolved = Resolve-UserRegistryPath $candidate $user
-            if (Test-Path -LiteralPath $resolved) {
-              $paths.Add($resolved)
-            }
-          }
-
-          foreach ($candidate in @(
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects3',
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects2'
-          )) {
-            $resolved = Resolve-UserRegistryPath $candidate $user
-            if (-not (Test-Path -LiteralPath $resolved)) {
-              continue
-            }
-            Get-ChildItem -LiteralPath $resolved -ErrorAction SilentlyContinue | ForEach-Object {
-              $paths.Add($_.PSPath)
-            }
-          }
-
-          if ($paths.Count -eq 0) {
-            $paths.Add((Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user))
-          }
-          return $paths.ToArray()
-        }
-
-        foreach ($path in (Get-TaskbarSettingsPaths $profileUser)) {
-          $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
-          if ($null -eq $settings -or $settings.Length -lt 9) {
-            return $true
-          }
-          if ([int]$settings[8] -ne $desiredStateByte) {
-            return $true
-          }
-        }
-
-        return $false
-      script: |
-        $profileUser = [string]$env:PREFLIGHT_PROFILE_USER
-        $enabled = [System.Convert]::ToBoolean($env:PREFLIGHT_TASKBAR_AUTO_HIDE)
-        $desiredStateByte = if ($enabled) { 3 } else { 2 }
-
-        function Resolve-ProfileSid([string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $null
-          }
-          $account = New-Object System.Security.Principal.NTAccount($user)
-          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
-        }
-
-        function Resolve-UserRegistryPath([string]$path, [string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $path
-          }
-          if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
-            throw 'windows-shell: profile_user can only be used with HKCU/HKEY_CURRENT_USER paths'
-          }
-          $sid = Resolve-ProfileSid $user
-          $root = 'Registry::HKEY_USERS\' + $sid
-          if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying profile_user shell settings")
-          }
-          $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
-          if ($subPath) {
-            return (Join-Path $root $subPath)
-          }
-          return $root
-        }
-
-        function Get-TaskbarSettingsPaths([string]$user) {
-          $paths = New-Object System.Collections.Generic.List[string]
-          foreach ($candidate in @(
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3',
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects2'
-          )) {
-            $resolved = Resolve-UserRegistryPath $candidate $user
-            if (Test-Path -LiteralPath $resolved) {
-              $paths.Add($resolved)
-            }
-          }
-
-          foreach ($candidate in @(
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects3',
-            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\MMStuckRects2'
-          )) {
-            $resolved = Resolve-UserRegistryPath $candidate $user
-            if (-not (Test-Path -LiteralPath $resolved)) {
-              continue
-            }
-            Get-ChildItem -LiteralPath $resolved -ErrorAction SilentlyContinue | ForEach-Object {
-              $paths.Add($_.PSPath)
-            }
-          }
-
-          if ($paths.Count -eq 0) {
-            $paths.Add((Resolve-UserRegistryPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3' $user))
-          }
-          return $paths.ToArray()
-        }
-
-        $updatedCount = 0
-        foreach ($path in (Get-TaskbarSettingsPaths $profileUser)) {
-          $settings = (Get-ItemProperty -LiteralPath $path -Name Settings -ErrorAction SilentlyContinue).Settings
-          if ($null -eq $settings -or $settings.Length -lt 9) {
-            throw ("taskbar_auto_hide requires an existing Explorer Settings value at " + $path)
-          }
-          $updated = [byte[]]$settings.Clone()
-          $updated[8] = [byte]$desiredStateByte
-          New-Item -Path $path -Force | Out-Null
-          New-ItemProperty -LiteralPath $path -Name Settings -Value $updated -PropertyType Binary -Force | Out-Null
-          $updatedCount++
-        }
-        if ([string]::IsNullOrWhiteSpace($profileUser)) {
-          Write-Output ("Persisting taskbar auto-hide for the current user profile: " + $enabled)
-        } else {
-          Write-Output ("Persisting taskbar auto-hide for profile_user " + $profileUser + ": " + $enabled)
-        }
-        Write-Output 'Restart Explorer or sign out to see the updated taskbar behavior'
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
+      user: "{{ vars.profile_user }}"
+      values:
+        - name: Settings
+          type: binary
+          patch:
+            - offset: 8
+              data: "{{ vars.taskbar_auto_hide ? 3 : 2 }}"
 
   - name: Clear desktop shortcuts
     when: "{{ vars.clear_desktop_shortcuts }}"

@@ -68,6 +68,24 @@ if ($params.values) {
       break
     }
 
+    if ($spec.patch) {
+      if ($desiredKind -ne 'binary') {
+        throw 'registry: patch is only supported for binary values'
+      }
+      $current = @($prop.Value | ForEach-Object { [int]$_ })
+      foreach ($patch in @($spec.patch)) {
+        $offset = [int]$patch.offset
+        if ($current.Count -le $offset -or $current[$offset] -ne [int]$patch.data) {
+          $needs = $true
+          break
+        }
+      }
+      if ($needs) {
+        break
+      }
+      continue
+    }
+
     switch ($desiredKind) {
       'string' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
       'expandstring' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
@@ -176,6 +194,23 @@ if ($params.values) {
       $needs = $true
       break
     }
+    if ($spec.patch) {
+      if ($desiredKind -ne 'binary') {
+        throw 'registry: patch is only supported for binary values'
+      }
+      $current = @($prop.Value | ForEach-Object { [int]$_ })
+      foreach ($patch in @($spec.patch)) {
+        $offset = [int]$patch.offset
+        if ($current.Count -le $offset -or $current[$offset] -ne [int]$patch.data) {
+          $needs = $true
+          break
+        }
+      }
+      if ($needs) {
+        break
+      }
+      continue
+    }
     switch ($desiredKind) {
       'string' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
       'expand_string' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
@@ -254,6 +289,28 @@ if ($params.values) {
       Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
       continue
     }
+    if ($spec.patch) {
+      $item = Get-Item -LiteralPath $path
+      $props = Get-ItemProperty -LiteralPath $path
+      $prop = $props.PSObject.Properties[$name]
+      if ($null -eq $prop) {
+        throw ("registry: cannot patch missing binary value " + $name)
+      }
+      if ($item.GetValueKind($name).ToString().ToLowerInvariant() -ne 'binary') {
+        throw ("registry: cannot patch non-binary value " + $name)
+      }
+      $value = [byte[]]@($prop.Value | ForEach-Object { [byte][int]$_ })
+      foreach ($patch in @($spec.patch)) {
+        $offset = [int]$patch.offset
+        if ($value.Length -le $offset) {
+          throw ("registry: binary patch offset " + $offset + " is outside value " + $name)
+        }
+        $value[$offset] = [byte][int]$patch.data
+      }
+      Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
+      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force | Out-Null
+      continue
+    }
     $kindMap = @{
       string = 'String'
       expand_string = 'ExpandString'
@@ -328,6 +385,21 @@ if ($ensure -eq 'absent') {
     $currentKind = Normalize-RegistryKind($item.GetValueKind($name).ToString())
     $desiredKind = [string]$spec.type
     if ($currentKind -ne $desiredKind) { $needs = $true; break }
+    if ($spec.patch) {
+      if ($desiredKind -ne 'binary') {
+        throw 'registry: patch is only supported for binary values'
+      }
+      $current = @($prop.Value | ForEach-Object { [int]$_ })
+      foreach ($patch in @($spec.patch)) {
+        $offset = [int]$patch.offset
+        if ($current.Count -le $offset -or $current[$offset] -ne [int]$patch.data) {
+          $needs = $true
+          break
+        }
+      }
+      if ($needs) { break }
+      continue
+    }
     switch ($desiredKind) {
       'string'        { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
       'expand_string' { if ([string]$prop.Value -ne [string]$spec.data) { $needs = $true } }
@@ -364,6 +436,28 @@ if ($ensure -eq 'absent') {
       $ensureValue = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
       if ($ensureValue -eq 'absent') {
         Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
+        continue
+      }
+      if ($spec.patch) {
+        $item = Get-Item -LiteralPath $path
+        $props = Get-ItemProperty -LiteralPath $path
+        $prop = $props.PSObject.Properties[$name]
+        if ($null -eq $prop) {
+          throw ("registry: cannot patch missing binary value " + $name)
+        }
+        if ((Normalize-RegistryKind($item.GetValueKind($name).ToString())) -ne 'binary') {
+          throw ("registry: cannot patch non-binary value " + $name)
+        }
+        $value = [byte[]]@($prop.Value | ForEach-Object { [byte][int]$_ })
+        foreach ($patch in @($spec.patch)) {
+          $offset = [int]$patch.offset
+          if ($value.Length -le $offset) {
+            throw ("registry: binary patch offset " + $offset + " is outside value " + $name)
+          }
+          $value[$offset] = [byte][int]$patch.data
+        }
+        Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
+        New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force | Out-Null
         continue
       }
       $kindMap = @{

@@ -98,9 +98,31 @@ func normalizeRegistryValues(raw any) ([]map[string]any, error) {
 				valueType = normalizeRegistryType(text)
 			}
 
-			value, ok := spec["data"]
-			if !ok {
-				return nil, fmt.Errorf("registry values[%d].data is required when ensure=present", i)
+			patch, hasPatch, err := normalizeRegistryPatch(spec["patch"])
+			if err != nil {
+				return nil, fmt.Errorf("registry values[%d].patch: %w", i, err)
+			}
+			if hasPatch {
+				if valueType == "" {
+					valueType = "binary"
+				}
+				if valueType != "binary" {
+					return nil, fmt.Errorf("registry values[%d].patch is only supported for binary values", i)
+				}
+				entry["patch"] = patch
+			}
+
+			value, hasData := spec["data"]
+			if !hasData {
+				if !hasPatch {
+					return nil, fmt.Errorf("registry values[%d].data is required when ensure=present", i)
+				}
+				entry["type"] = valueType
+				values = append(values, entry)
+				continue
+			}
+			if hasPatch {
+				return nil, fmt.Errorf("registry values[%d].data cannot be combined with patch", i)
 			}
 			normalizedValue, normalizedType, err := normalizeRegistryValue(value, valueType)
 			if err != nil {
@@ -114,6 +136,50 @@ func normalizeRegistryValues(raw any) ([]map[string]any, error) {
 	default:
 		return nil, fmt.Errorf("registry values must be an object or list, got %T", raw)
 	}
+}
+
+func normalizeRegistryPatch(raw any) ([]map[string]any, bool, error) {
+	if raw == nil {
+		return nil, false, nil
+	}
+	items, ok := raw.([]any)
+	if !ok {
+		return nil, true, fmt.Errorf("must be a list, got %T", raw)
+	}
+	if len(items) == 0 {
+		return nil, true, fmt.Errorf("must not be empty")
+	}
+	patches := make([]map[string]any, 0, len(items))
+	for i, item := range items {
+		spec, ok := item.(map[string]any)
+		if !ok {
+			return nil, true, fmt.Errorf("[%d] must be an object, got %T", i, item)
+		}
+		rawOffset, ok := spec["offset"]
+		if !ok {
+			return nil, true, fmt.Errorf("[%d].offset is required", i)
+		}
+		offset, err := normalizeIntegralValue(rawOffset, 32)
+		if err != nil {
+			return nil, true, fmt.Errorf("[%d].offset: %w", i, err)
+		}
+		if offset < 0 {
+			return nil, true, fmt.Errorf("[%d].offset must be non-negative", i)
+		}
+		rawData, ok := spec["data"]
+		if !ok {
+			return nil, true, fmt.Errorf("[%d].data is required", i)
+		}
+		data, err := normalizeIntegralValue(rawData, 8)
+		if err != nil {
+			return nil, true, fmt.Errorf("[%d].data: %w", i, err)
+		}
+		patches = append(patches, map[string]any{
+			"offset": offset,
+			"data":   data,
+		})
+	}
+	return patches, true, nil
 }
 
 func inferRegistryValue(value any) (any, string, error) {
