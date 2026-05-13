@@ -64,6 +64,41 @@ func NewClientContext(ctx context.Context, executablePath string) (*Client, erro
 	return c, nil
 }
 
+// NewClientFromCmd starts the given command and connects a Client to its
+// stdin/stdout for JSON-RPC communication. The command must not have been
+// started yet. The caller must call Close() when done.
+func NewClientFromCmd(cmd *exec.Cmd) (*Client, error) {
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("plugin stdin pipe: %w", err)
+	}
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, fmt.Errorf("plugin stdout pipe: %w", err)
+	}
+
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("start plugin: %w", err)
+	}
+
+	c := &Client{
+		cmd: cmd,
+		enc: json.NewEncoder(stdin),
+		dec: json.NewDecoder(stdout),
+	}
+
+	var initResult initializeResult
+	if err := c.call("initialize", nil, &initResult); err != nil {
+		_ = cmd.Process.Kill()
+		return nil, fmt.Errorf("plugin initialize: %w", err)
+	}
+	c.name = initResult.Name
+	c.version = initResult.Version
+
+	return c, nil
+}
+
 // Name returns the plugin's self-reported name.
 func (c *Client) Name() string { return c.name }
 
