@@ -61,7 +61,7 @@ $env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOr
 `
 
 const wingetPackagePresenceScript = `
-function Test-WingetPackageListed {
+function Test-WingetPackageListedCurrent {
   param(
     [string]$Id,
     [string]$Source
@@ -72,7 +72,13 @@ function Test-WingetPackageListed {
     $listArgs = @('list', '--id', $Id, '--exact', '--accept-source-agreements', '--disable-interactivity')
     if ($Source) { $listArgs += @('--source', $Source) }
     $process = Start-Process -FilePath 'winget.exe' -ArgumentList $listArgs -Wait -PassThru -NoNewWindow -RedirectStandardOutput $listStdoutPath -RedirectStandardError $listStderrPath
-    return $process.ExitCode -eq 0
+    if ($process.ExitCode -ne 0) { return $false }
+    $stdout = if (Test-Path -LiteralPath $listStdoutPath) { Get-Content -LiteralPath $listStdoutPath -Raw } else { '' }
+    if ([string]::IsNullOrWhiteSpace($stdout)) { return $false }
+    if ($stdout -notmatch [regex]::Escape($Id)) { return $false }
+    # If WinGet prints an Available column, install would attempt an upgrade.
+    # Treat that as needing change so check/apply stay aligned.
+    return ($stdout -notmatch '(?m)^\s*Name\s+Id\s+Version\s+Available\s+Source\s*$')
   } finally {
     Remove-Item -LiteralPath $listStdoutPath -Force -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $listStderrPath -Force -ErrorAction SilentlyContinue
@@ -88,7 +94,7 @@ function Test-WingetDesiredPresent {
   $source = if ($Spec.source) { [string]$Spec.source } else { '' }
   $match = $InstalledMap[$id]
   if ($null -eq $match) {
-    if (-not $version) { return (Test-WingetPackageListed -Id $id -Source $source) }
+    if (-not $version) { return (Test-WingetPackageListedCurrent -Id $id -Source $source) }
     return $false
   }
   if ($version) { return [string]$match.Version -eq $version }
@@ -202,12 +208,34 @@ foreach ($spec in $pkgs) {
   if ($version) { $args += @('--version', $version) }
   if ($source) { $args += @('--source', $source) }
   $args += $wingetArgs
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow
+  $installStdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
+  $installStderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
+  try {
+    $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow -RedirectStandardOutput $installStdoutPath -RedirectStandardError $installStderrPath
+  } finally {
+    $details = @()
+    if (Test-Path -LiteralPath $installStdoutPath) {
+      $installStdout = Get-Content -LiteralPath $installStdoutPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($installStdout)) { $details += $installStdout.Trim() }
+    }
+    if (Test-Path -LiteralPath $installStderrPath) {
+      $installStderr = Get-Content -LiteralPath $installStderrPath -Raw
+      if (-not [string]::IsNullOrWhiteSpace($installStderr)) { $details += $installStderr.Trim() }
+    }
+    Remove-Item -LiteralPath $installStdoutPath -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $installStderrPath -Force -ErrorAction SilentlyContinue
+  }
   if ($process.ExitCode -ne 0) {
+    $combinedDetails = [string]::Join([Environment]::NewLine, $details)
     # WinGet can turn "install an already-present package" into an update path
     # and return UPDATE_NOT_APPLICABLE even when the unversioned desired state is satisfied.
-    if ($ensure -ne 'absent' -and $process.ExitCode -eq -1978335189 -and (Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap)) {
-      continue
+    if ($ensure -ne 'absent' -and $process.ExitCode -eq -1978335189) {
+      if ((Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap) -or ($combinedDetails -match 'No available upgrade found' -and $combinedDetails -match 'No newer package versions are available')) {
+        continue
+      }
+    }
+    if ($details.Count -gt 0) {
+      throw ("winget command failed for '$id' with exit code $($process.ExitCode)" + [Environment]::NewLine + $combinedDetails)
     }
     throw "winget command failed for '$id' with exit code $($process.ExitCode)"
   }
