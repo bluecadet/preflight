@@ -82,18 +82,15 @@ Add a `become` block to any task that must execute under the exhibit account's i
 
 `become` is task execution metadata — it does not change the module's `params`, only the identity the task runs under.
 
-This is also the recommended way to apply current-user stdlib actions such as `preflight/windows-shell`, `preflight/windows-input`, and the screensaver portion of `preflight/windows-power` to a kiosk or exhibit account. Those actions now persist settings for the current execution identity rather than seeding future profiles.
+This is also the recommended way to apply current-user stdlib actions to a kiosk or exhibit account when the action does not expose a `user` input, or when you need every task in the action to run under that Windows identity.
 
-For `preflight/windows-shell`, you can also set `profile_user` when you only need the action's supported profile-scoped shell settings and do not want to switch the task process identity.
+For `preflight/windows-shell`, `preflight/windows-input`, `preflight/windows-power`, and `preflight/debloat`, you can set `with.user` when you only need the action's supported user-scoped registry settings and do not want to switch the task process identity. The target user's profile hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
 
 ```yaml
-  - name: Configure shell defaults for exhibit user
-    become:
-      user: exhibit
-      password: secret:exhibit-password
-      load_profile: true
+  - name: Configure supported shell defaults for exhibit user
     uses: preflight/windows-shell
     with:
+      user: exhibit
       theme_mode: dark
       taskbar_auto_hide: true
 ```

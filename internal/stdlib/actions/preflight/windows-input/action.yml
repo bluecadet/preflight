@@ -1,9 +1,13 @@
 name: preflight/windows-input
-version: "2.1.0"
+version: "2.2.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
 inputs:
+  user:
+    type: string
+    default: ""
+    description: Optional Windows user for user-scoped input preferences
   disable_edge_gestures:
     type: bool
     default: true
@@ -11,15 +15,15 @@ inputs:
   disable_touch_feedback:
     type: bool
     default: true
-    description: Disable touch contact visualization feedback for the current user
+    description: Disable touch contact visualization feedback for the selected user
   disable_touch_gestures:
     type: bool
     default: true
-    description: Disable gesture visualization feedback for the current user
+    description: Disable gesture visualization feedback for the selected user
   text_scale_percent:
     type: int
     default: 100
-    description: Windows text size percentage for the current user
+    description: Windows text size percentage for the selected user
 
 tasks:
   - name: Configure edge swipe policy
@@ -33,6 +37,7 @@ tasks:
   - name: Configure text scale
     registry:
       path: 'HKCU:\Software\Microsoft\Accessibility'
+      user: "{{ vars.user }}"
       values:
         - name: TextScaleFactor
           type: dword
@@ -40,7 +45,35 @@ tasks:
 
   - name: Configure touch feedback visualization
     powershell:
+      env:
+        PREFLIGHT_USER: "{{ vars.user }}"
       check_script: |
+        $targetUser = [string]$env:PREFLIGHT_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-input: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user input settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
         $desiredContact = [uint32]1
         if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
           $desiredContact = [uint32]0
@@ -50,13 +83,39 @@ tasks:
           $desiredGesture = [uint32]0
         }
 
-        $path = 'HKCU:\Control Panel\Cursors'
+        $path = Resolve-UserRegistryPath 'HKCU:\Control Panel\Cursors' $targetUser
         $prop = Get-ItemProperty -LiteralPath $path -Name ContactVisualization,GestureVisualization -ErrorAction SilentlyContinue
         if ($null -eq $prop) {
           return $true
         }
         return ([uint32]$prop.ContactVisualization -ne $desiredContact -or [uint32]$prop.GestureVisualization -ne $desiredGesture)
       script: |
+        $targetUser = [string]$env:PREFLIGHT_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-input: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user input settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
         $desiredContact = [uint32]1
         if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
           $desiredContact = [uint32]0
@@ -66,7 +125,7 @@ tasks:
           $desiredGesture = [uint32]0
         }
 
-        $path = 'HKCU:\Control Panel\Cursors'
+        $path = Resolve-UserRegistryPath 'HKCU:\Control Panel\Cursors' $targetUser
         New-Item -Path $path -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name ContactVisualization -Value $desiredContact -PropertyType DWord -Force | Out-Null
         New-ItemProperty -LiteralPath $path -Name GestureVisualization -Value $desiredGesture -PropertyType DWord -Force | Out-Null
@@ -80,6 +139,12 @@ tasks:
         }
         "@
 
-        Write-Output 'Applying touch feedback and gesture visibility settings for the current user'
-        [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
-        [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)
+        # SystemParametersInfo only updates the active session for the process user.
+        # Named profile writes are persisted through the hive for the next session.
+        if ([string]::IsNullOrWhiteSpace($targetUser)) {
+          Write-Output 'Applying touch feedback and gesture visibility settings for the current user'
+          [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
+          [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)
+        } else {
+          Write-Output ("Persisted touch feedback and gesture visibility settings for " + $targetUser)
+        }

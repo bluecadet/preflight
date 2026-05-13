@@ -1,7 +1,13 @@
 name: preflight/debloat
-version: "1.3.0"
+version: "1.4.0"
 description: Remove common Windows bloatware and disable telemetry, Copilot, and AI features
 author: preflight
+
+inputs:
+  user:
+    type: string
+    default: ""
+    description: Optional Windows user for user-scoped privacy and taskbar settings
 
 tasks:
   - name: Remove Microsoft news and media apps
@@ -270,24 +276,28 @@ tasks:
   - name: Disable advertising ID
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo'
+      user: "{{ vars.user }}"
       values:
         Enabled: 0
 
   - name: Disable tailored experiences
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
+      user: "{{ vars.user }}"
       values:
         TailoredExperiencesWithDiagnosticDataEnabled: 0
 
   - name: Disable feedback prompts
     registry:
       path: 'HKCU:\SOFTWARE\Microsoft\Siuf\Rules'
+      user: "{{ vars.user }}"
       values:
         NumberOfSIUFInPeriod: 0
 
   - name: Disable Copilot (user policy)
     registry:
       path: 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'
+      user: "{{ vars.user }}"
       values:
         TurnOffWindowsCopilot: 1
 
@@ -306,6 +316,7 @@ tasks:
   - name: Disable Bing and Cortana in search
     registry:
       path: 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'
+      user: "{{ vars.user }}"
       values:
         DisableSearchBoxSuggestions: 1
 
@@ -319,6 +330,7 @@ tasks:
   - name: Disable Copilot and Chat taskbar buttons
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+      user: "{{ vars.user }}"
       values:
         ShowCopilotButton: 0
         TaskbarMn: 0
@@ -333,5 +345,6 @@ tasks:
   - name: Disable Game DVR
     registry:
       path: 'HKCU:\System\GameConfigStore'
+      user: "{{ vars.user }}"
       values:
         GameDVR_Enabled: 0

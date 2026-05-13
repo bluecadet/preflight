@@ -46,6 +46,46 @@ func TestAllStdlibActions(t *testing.T) {
 	}
 }
 
+func TestStdlibHKCURegistryTasksForwardUser(t *testing.T) {
+	entries, err := stdlib.FS.ReadDir("actions/preflight")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		data, err := stdlib.FS.ReadFile("actions/preflight/" + name + "/action.yml")
+		if err != nil {
+			t.Fatalf("read stdlib action %s: %v", name, err)
+		}
+		a, err := action.ParseAction(data)
+		if err != nil {
+			t.Fatalf("parse stdlib action %s: %v", name, err)
+		}
+
+		for _, task := range a.Tasks {
+			params := task.InlineModules["registry"]
+			if params == nil {
+				continue
+			}
+			registryPath, _ := params["path"].(string)
+			normalizedPath := strings.ToUpper(registryPath)
+			if !strings.HasPrefix(normalizedPath, "HKCU:") && !strings.HasPrefix(normalizedPath, "HKEY_CURRENT_USER") {
+				continue
+			}
+			if _, ok := a.Inputs["user"]; !ok {
+				t.Fatalf("action %s task %q writes %s without a user input", name, task.Name, registryPath)
+			}
+			if got := params["user"]; got != "{{ vars.user }}" {
+				t.Fatalf("action %s task %q writes %s with user %v, want user passthrough", name, task.Name, registryPath, got)
+			}
+		}
+	}
+}
+
 func TestDebloatGamingAndAIAppsAvoidsPersistentXboxWildcard(t *testing.T) {
 	data, err := stdlib.FS.ReadFile("actions/preflight/debloat/action.yml")
 	if err != nil {

@@ -70,15 +70,15 @@ Configure machine-level baseline settings.
 
 ### `preflight/windows-shell`
 
-Configure desktop and Explorer defaults for the current execution identity, or set `profile_user` to write supported settings for a named Windows profile without switching process identity.
+Configure desktop and Explorer defaults for the current execution identity, or set `user` to write supported settings for a named Windows account without switching process identity.
 
-When `profile_user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
+When `user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
-| `profile_user` | string | Optional Windows user profile for user-scoped shell settings |
+| `user` | string | Optional Windows user for user-scoped shell settings |
 | `clear_desktop_background` | bool | Clear the wallpaper |
 | `clear_desktop_shortcuts` | bool | Remove shortcut files from desktop locations and hide common shell desktop icons |
 | `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide (default: `false`) |
@@ -92,12 +92,15 @@ Some shell visual changes do not update an already-running Explorer session imme
 
 ### `preflight/windows-input`
 
-Configure input, gesture, and text-scale preferences. User-facing preferences apply to the current execution identity; policy-backed edge-swipe settings apply at machine scope.
+Configure input, gesture, and text-scale preferences. User-facing preferences apply to the current execution identity, or to `user` when set. Policy-backed edge-swipe settings apply at machine scope.
 
-Current-user visual input changes may require sign-out or a new Explorer session before the desktop reflects them.
+When `user` is set, user-scoped registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
+
+User-scoped visual input changes may require sign-out or a new Explorer session before the desktop reflects them.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
+| `user` | string | Optional Windows user for user-scoped input preferences |
 | `disable_edge_gestures` | bool | Disable edge swipe gestures |
 | `disable_touch_feedback` | bool | Disable touch contact visualization |
 | `disable_touch_gestures` | bool | Disable gesture visualization |
@@ -126,12 +129,15 @@ Reduce background system changes driven by Windows Update and Microsoft Store po
 
 ### `preflight/windows-power`
 
-Manage named power plans, current-user screensaver defaults, and optional scheduled reboot tasks.
+Manage named power plans, user-scoped screensaver defaults, and optional scheduled reboot tasks.
 
-Current-user screensaver changes are persisted immediately but may require sign-out or a new Explorer session before the shell reflects them.
+When `user` is set, screen saver registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
+
+Screen saver changes are persisted immediately but may require sign-out or a new Explorer session before the shell reflects them.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
+| `user` | string | Optional Windows user for user-scoped screen saver preferences |
 | `plan_name` | string | Friendly name for the managed power plan |
 | `plan_base` | string | Base plan alias or GUID to clone |
 | `activate_plan` | bool | Activate the managed plan after applying it |
@@ -146,7 +152,13 @@ Current-user screensaver changes are persisted immediately but may require sign-
 
 ### `preflight/debloat`
 
-Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype, OneDrive). No inputs — use `remove_appx_packages` directly if you need a custom list.
+Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype, OneDrive) and set privacy, Copilot, search, taskbar, and Game DVR policies.
+
+When `user` is set, user-scoped registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. App removal and machine policy settings are not profile-scoped. Use `remove_appx_packages` directly if you need a custom app list.
+
+| Input | Type | Meaning |
+| --- | --- | --- |
+| `user` | string | Optional Windows user for user-scoped privacy and taskbar settings |
 
 ## Related Docs
 

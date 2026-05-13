@@ -509,7 +509,7 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	}
 }
 
-func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T) {
+func TestPlanStdlibWindowsShellCarriesUserToUserScopedTasks(t *testing.T) {
 	resolver := action.Chain{action.NewEmbeddedResolver(stdlib.FS)}
 	r := New(&mockTarget{}, resolver, Config{
 		ProjectVars: map[string]any{"kiosk_user": "kiosk"},
@@ -521,7 +521,7 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 				Name: "shell defaults",
 				Uses: "preflight/windows-shell",
 				With: map[string]any{
-					"profile_user":             "{{ vars.kiosk_user }}",
+					"user":                     "{{ vars.kiosk_user }}",
 					"theme_mode":               "dark",
 					"transparency_effects":     false,
 					"taskbar_auto_hide":        true,
@@ -614,11 +614,11 @@ func TestPlanStdlibWindowsShellCarriesProfileUserToUserScopedTasks(t *testing.T)
 	if !ok {
 		t.Fatalf("expected shortcuts env map, got %T", shortcuts.Params["env"])
 	}
-	if shortcutEnv["PREFLIGHT_PROFILE_USER"] != "kiosk" {
-		t.Fatalf("expected shortcuts profile env kiosk, got %#v", shortcutEnv["PREFLIGHT_PROFILE_USER"])
+	if shortcutEnv["PREFLIGHT_USER"] != "kiosk" {
+		t.Fatalf("expected shortcuts user env kiosk, got %#v", shortcutEnv["PREFLIGHT_USER"])
 	}
 	if !strings.Contains(shortcuts.Params["script"].(string), "ProfileList") {
-		t.Fatal("expected shortcuts script to resolve the profile user's desktop path")
+		t.Fatal("expected shortcuts script to resolve the target user's desktop path")
 	}
 	for _, fragment := range []string{"User Shell Folders", "Common Desktop", "OneDrive*", ".website"} {
 		if !strings.Contains(shortcuts.Params["script"].(string), fragment) {

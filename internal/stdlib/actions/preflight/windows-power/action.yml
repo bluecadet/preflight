@@ -1,9 +1,13 @@
 name: preflight/windows-power
-version: "2.0.0"
+version: "2.1.0"
 description: Configure Windows power plans and optional reboot scheduling
 author: preflight
 
 inputs:
+  user:
+    type: string
+    default: ""
+    description: Optional Windows user for user-scoped screen saver preferences
   plan_name:
     type: string
     default: Preflight Exhibit
@@ -35,7 +39,7 @@ inputs:
   disable_screensaver:
     type: bool
     default: true
-    description: Disable the Windows screen saver for the current user
+    description: Disable the Windows screen saver for the selected user
   scheduled_reboot_state:
     type: string
     default: absent
@@ -68,17 +72,71 @@ tasks:
 
   - name: Configure screen saver
     powershell:
+      env:
+        PREFLIGHT_USER: "{{ vars.user }}"
       check_script: |
+        $targetUser = [string]$env:PREFLIGHT_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-power: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user screen saver settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
-        $desktopPath = 'HKCU:\Control Panel\Desktop'
+        $desktopPath = Resolve-UserRegistryPath 'HKCU:\Control Panel\Desktop' $targetUser
         $prop = Get-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -ErrorAction SilentlyContinue
         if ($disable) {
           return ($null -eq $prop -or [string]$prop.ScreenSaveActive -ne '0')
         }
         return ($null -ne $prop -and [string]$prop.ScreenSaveActive -eq '0')
       script: |
+        $targetUser = [string]$env:PREFLIGHT_USER
+
+        function Resolve-ProfileSid([string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $null
+          }
+          $account = New-Object System.Security.Principal.NTAccount($user)
+          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        }
+
+        function Resolve-UserRegistryPath([string]$path, [string]$user) {
+          if ([string]::IsNullOrWhiteSpace($user)) {
+            return $path
+          }
+          $sid = Resolve-ProfileSid $user
+          $root = 'Registry::HKEY_USERS\' + $sid
+          if (-not (Test-Path -LiteralPath $root)) {
+            throw ("windows-power: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user screen saver settings")
+          }
+          $subPath = $path -replace '(?i)^HKCU:\\?', ''
+          if ($subPath) {
+            return (Join-Path $root $subPath)
+          }
+          return $root
+        }
+
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_screensaver }}')
-        $desktopPath = 'HKCU:\Control Panel\Desktop'
+        $desktopPath = Resolve-UserRegistryPath 'HKCU:\Control Panel\Desktop' $targetUser
         New-Item -Path $desktopPath -Force | Out-Null
         if ($disable) {
           New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '0' -PropertyType String -Force | Out-Null
@@ -86,8 +144,14 @@ tasks:
         } else {
           New-ItemProperty -LiteralPath $desktopPath -Name ScreenSaveActive -Value '1' -PropertyType String -Force | Out-Null
         }
-        Write-Output 'Applying screen saver settings to the current user profile'
-        if ($disable) {
+        # UpdatePerUserSystemParameters only refreshes the active session for the process user.
+        # Named profile writes are persisted through the hive for the next session.
+        if ([string]::IsNullOrWhiteSpace($targetUser)) {
+          Write-Output 'Applying screen saver settings to the current user'
+        } else {
+          Write-Output ("Persisted screen saver settings for " + $targetUser)
+        }
+        if ($disable -and [string]::IsNullOrWhiteSpace($targetUser)) {
           Write-Output 'Refreshing current user shell parameters after disabling the screen saver'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
         }
