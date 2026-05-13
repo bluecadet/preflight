@@ -235,6 +235,10 @@ func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 	if creates == "" {
 		return true, "", nil
 	}
+	workingDir, _ := params["working_dir"].(string)
+	if workingDir != "" {
+		return posixNonZeroExitMeansChange(ctx, backend, fmt.Sprintf("cd %q && test -e %q", workingDir, creates))
+	}
 	return posixNonZeroExitMeansChange(ctx, backend, fmt.Sprintf("test -e %q", creates))
 }
 

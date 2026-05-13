@@ -700,6 +700,10 @@
           "type": "string",
           "description": "Registry key or file path; skip if it already exists (idempotency hint)"
         },
+        "working_dir": {
+          "type": "string",
+          "description": "Working directory for the script"
+        },
         "env": {
           "type": "object",
           "additionalProperties": { "type": "string" },

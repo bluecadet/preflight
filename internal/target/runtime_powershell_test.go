@@ -16,6 +16,14 @@ func (b *recordingPowerShellBackend) RunPowerShellScript(_ context.Context, scri
 	return b.output, nil
 }
 
+func (b *recordingPowerShellBackend) CopyFile(context.Context, string, string) error {
+	return nil
+}
+
+func (b *recordingPowerShellBackend) RemoteTempDir() string {
+	return `C:\Windows\Temp\preflight`
+}
+
 func TestEnsurePowerShellModuleWrapsEnv(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: "changed"}
 	params := map[string]any{
@@ -55,6 +63,39 @@ func TestEnsurePowerShellModuleWrapsEnv(t *testing.T) {
 	}
 }
 
+func TestEnsurePowerShellModuleWrapsWorkingDir(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: "changed"}
+	params := map[string]any{
+		"working_dir":  `C:\App`,
+		"check_script": "Write-Output $true",
+		"script":       "Write-Output (Get-Location)",
+	}
+
+	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
+	if err != nil {
+		t.Fatalf("ensurePowerShellModule returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected ensurePowerShellModule to report changed")
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+
+	script := backend.scripts[0]
+	for _, want := range []string{
+		"$__pf_working_dir",
+		"Push-Location -LiteralPath $__pf_working_dir",
+		"Pop-Location",
+		"$__pf_check_script",
+		"$__pf_apply_script",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected wrapped script to contain %q, got:\n%s", want, script)
+		}
+	}
+}
+
 func TestEnsurePowerShellModuleResetsLastExitCodeBeforeCheckAndApply(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: "changed"}
 	params := map[string]any{
@@ -81,6 +122,32 @@ func TestEnsurePowerShellModuleResetsLastExitCodeBeforeCheckAndApply(t *testing.
 	}
 }
 
+func TestCheckPowerShellModuleWrapsWorkingDir(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: `__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOmZhbHNlLCJtZXNzYWdlIjpudWxsfQ==`}
+
+	_, _, err := checkPowerShellModule(context.Background(), backend, map[string]any{
+		"working_dir":  `C:\App`,
+		"check_script": "return $false",
+	})
+	if err != nil {
+		t.Fatalf("checkPowerShellModule returned error: %v", err)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+
+	script := backend.scripts[0]
+	for _, want := range []string{
+		"Push-Location -LiteralPath $__pf_working_dir",
+		"Pop-Location",
+		"$checkScript",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected wrapped script to contain %q, got:\n%s", want, script)
+		}
+	}
+}
+
 func TestCheckPowerShellModuleResetsLastExitCode(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: `__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOmZhbHNlLCJtZXNzYWdlIjpudWxsfQ==`}
 
@@ -95,6 +162,35 @@ func TestCheckPowerShellModuleResetsLastExitCode(t *testing.T) {
 	}
 	if !strings.HasPrefix(backend.scripts[0], "$global:LASTEXITCODE = 0\n") {
 		t.Fatalf("expected check script to reset LASTEXITCODE, got:\n%s", backend.scripts[0])
+	}
+}
+
+func TestApplyPowerShellModuleWrapsInlineWorkingDir(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: "done"}
+	params := map[string]any{
+		"working_dir": `C:\App`,
+		"script":      "Write-Output (Get-Location)",
+	}
+
+	out, err := applyPowerShellModule(context.Background(), backend, params)
+	if err != nil {
+		t.Fatalf("applyPowerShellModule returned error: %v", err)
+	}
+	if out != "done" {
+		t.Fatalf("expected output %q, got %q", "done", out)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+	script := backend.scripts[0]
+	for _, want := range []string{
+		"Push-Location -LiteralPath $__pf_working_dir",
+		"Write-Output (Get-Location)",
+		"Pop-Location",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected wrapped script to contain %q, got:\n%s", want, script)
+		}
 	}
 }
 
@@ -123,6 +219,38 @@ func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 	}
 	if !strings.Contains(script, "Write-Output $env:NAME") {
 		t.Fatalf("expected wrapped script body, got:\n%s", script)
+	}
+}
+
+func TestApplyWindowsShellWrapsWorkingDir(t *testing.T) {
+	backend := &recordingPowerShellBackend{output: "done"}
+
+	out, err := applyWindowsShell(context.Background(), backend, map[string]any{
+		"cmd":         "git",
+		"args":        []any{"status"},
+		"working_dir": `C:\Repo`,
+	})
+	if err != nil {
+		t.Fatalf("applyWindowsShell returned error: %v", err)
+	}
+	if out != "done" {
+		t.Fatalf("expected output %q, got %q", "done", out)
+	}
+	if len(backend.scripts) != 1 {
+		t.Fatalf("expected one script, got %d", len(backend.scripts))
+	}
+	script := backend.scripts[0]
+	for _, want := range []string{
+		"Push-Location -LiteralPath $__pf_working_dir",
+		"& $cmd @args",
+		"Pop-Location",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected wrapped script to contain %q, got:\n%s", want, script)
+		}
+	}
+	if strings.Contains(script, "Set-Location -LiteralPath") {
+		t.Fatalf("expected shell wrapper not to leak location with Set-Location, got:\n%s", script)
 	}
 }
 

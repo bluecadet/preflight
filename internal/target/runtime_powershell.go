@@ -28,6 +28,10 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 			return false, "", err
 		}
 		script = powerShellLastExitCodeReset + script
+		script, err = wrapPowerShellWorkingDir(params, script)
+		if err != nil {
+			return false, "", err
+		}
 		script, err = wrapPowerShellEnv(params, script)
 		if err != nil {
 			return false, "", err
@@ -56,9 +60,13 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 	if err != nil {
 		return false, "", err
 	}
-	script, err = wrapPowerShellEnv(params, script+`
+	script, err = wrapPowerShellWorkingDir(params, script+`
 Write-Output ([bool](Test-Path -LiteralPath $creates))
 `)
+	if err != nil {
+		return false, "", err
+	}
+	script, err = wrapPowerShellEnv(params, script)
 	if err != nil {
 		return false, "", err
 	}
@@ -109,6 +117,10 @@ $global:LASTEXITCODE = 0
 & $__pf_apply_block
 Write-Output 'changed'
 `
+	combined, err = wrapPowerShellWorkingDir(params, combined)
+	if err != nil {
+		return false, "", err
+	}
 	combined, err = wrapPowerShellEnv(params, combined)
 	if err != nil {
 		return false, "", err
@@ -134,6 +146,11 @@ Write-Output 'changed'
 func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (string, error) {
 	if script, _ := params["script"].(string); script != "" {
 		script = powerShellLastExitCodeReset + script
+		var err error
+		script, err = wrapPowerShellWorkingDir(params, script)
+		if err != nil {
+			return "", err
+		}
 		wrapped, err := wrapPowerShellEnv(params, script)
 		if err != nil {
 			return "", err
@@ -161,16 +178,44 @@ func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend,
 	if err != nil {
 		return "", err
 	}
-	script, err := wrapPowerShellEnv(params, scriptVar+`
-	`+scriptArgsVar+`
+	script := scriptVar + `
+	` + scriptArgsVar + `
 $block = [ScriptBlock]::Create($script)
 $global:LASTEXITCODE = 0
 & $block @scriptArgs
-`)
+`
+	script, err = wrapPowerShellWorkingDir(params, script)
+	if err != nil {
+		return "", err
+	}
+	script, err = wrapPowerShellEnv(params, script)
 	if err != nil {
 		return "", err
 	}
 	return backend.RunPowerShellScript(ctx, script)
+}
+
+func wrapPowerShellWorkingDir(params map[string]any, script string) (string, error) {
+	workingDir, _ := params["working_dir"].(string)
+	if strings.TrimSpace(workingDir) == "" {
+		return script, nil
+	}
+	workingDirVar, err := powershellJSONVar("__pf_working_dir", workingDir)
+	if err != nil {
+		return "", err
+	}
+	return workingDirVar + `
+$__pf_working_dir_pushed = $false
+try {
+  Push-Location -LiteralPath $__pf_working_dir
+  $__pf_working_dir_pushed = $true
+` + script + `
+} finally {
+  if ($__pf_working_dir_pushed) {
+    Pop-Location
+  }
+}
+`, nil
 }
 
 func wrapPowerShellEnv(params map[string]any, script string) (string, error) {

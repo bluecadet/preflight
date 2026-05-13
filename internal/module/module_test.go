@@ -282,6 +282,27 @@ func TestShellModule_Check_CreatesExists(t *testing.T) {
 	}
 }
 
+func TestShellModule_Check_CreatesUsesWorkingDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "created.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	reg := module.Registry()
+	m := reg["shell"]
+	res, err := m.Check(context.Background(), map[string]any{
+		"cmd":         "echo",
+		"creates":     "created.txt",
+		"working_dir": dir,
+	}, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false when relative creates path exists in working_dir")
+	}
+}
+
 func TestShellModule_Apply(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "out.txt")
@@ -296,6 +317,31 @@ func TestShellModule_Apply(t *testing.T) {
 	}
 	if _, err := os.Stat(out); os.IsNotExist(err) {
 		t.Error("expected file to be created by shell apply")
+	}
+}
+
+func TestShellModule_ApplyUsesWorkingDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("skipping on Windows: uses sh -c")
+	}
+
+	dir := t.TempDir()
+
+	reg := module.Registry()
+	m := reg["shell"]
+	if _, err := m.Apply(context.Background(), map[string]any{
+		"cmd":         "sh",
+		"args":        []any{"-c", "pwd > out.txt"},
+		"working_dir": dir,
+	}, nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "out.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(data)) != dir {
+		t.Fatalf("expected command to run in %q, got %q", dir, strings.TrimSpace(string(data)))
 	}
 }
 

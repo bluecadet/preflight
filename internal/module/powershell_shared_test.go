@@ -202,6 +202,46 @@ func TestPowershellApply_PassesEnvironment(t *testing.T) {
 	}
 }
 
+func TestPowershellApply_PassesWorkingDir(t *testing.T) {
+	orig := powershellCombinedOutputInDir
+	t.Cleanup(func() { powershellCombinedOutputInDir = orig })
+
+	var capturedWorkingDir string
+	powershellCombinedOutputInDir = func(_ context.Context, _ string, _ []string, _ map[string]string, workingDir string) ([]byte, error) {
+		capturedWorkingDir = workingDir
+		return []byte("ok"), nil
+	}
+
+	if err := powershellApply(context.Background(), map[string]any{
+		"script":      "Write-Output (Get-Location)",
+		"working_dir": `C:\Preflight`,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if capturedWorkingDir != `C:\Preflight` {
+		t.Fatalf("expected working_dir to be passed, got %q", capturedWorkingDir)
+	}
+}
+
+func TestPowershellCheck_CreatesUsesWorkingDir(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "created.txt"), []byte("ok"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	needed, err := powershellCheck(context.Background(), map[string]any{
+		"creates":     "created.txt",
+		"working_dir": dir,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if needed {
+		t.Fatal("expected check to report no change when relative creates path exists in working_dir")
+	}
+}
+
 func TestPowershellCheck_PassesEnvironment(t *testing.T) {
 	orig := powershellCombinedOutputWithEnv
 	t.Cleanup(func() { powershellCombinedOutputWithEnv = orig })

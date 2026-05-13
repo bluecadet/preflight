@@ -232,8 +232,23 @@ func checkWindowsCreates(ctx context.Context, backend windowsPowerShellBackend, 
 	if creates == "" {
 		return true, "", nil
 	}
-	out, err := windowsRunScript(ctx, backend, map[string]any{"creates": creates}, `
+	out, err := windowsRunScript(ctx, backend, map[string]any{
+		"creates":     creates,
+		"working_dir": params["working_dir"],
+	}, `
+$__pf_working_dir = if ($params.working_dir) { [string]$params.working_dir } else { '' }
+$__pf_working_dir_pushed = $false
+try {
+  if ($__pf_working_dir) {
+    Push-Location -LiteralPath $__pf_working_dir
+    $__pf_working_dir_pushed = $true
+  }
 Write-Output ([bool](Test-Path -LiteralPath $params.creates))
+} finally {
+  if ($__pf_working_dir_pushed) {
+    Pop-Location
+  }
+}
 `)
 	if err != nil {
 		return false, "", fmt.Errorf("%s: %w", label, err)
@@ -420,7 +435,8 @@ func applyWindowsShell(ctx context.Context, backend windowsPowerShellBackend, pa
 	if err != nil {
 		return "", err
 	}
-	return backend.RunPowerShellScript(ctx, script+`
+	if workingDir == "" {
+		return backend.RunPowerShellScript(ctx, script+`
 `+psArgs+`
 `+wd+`
 if ($workingDir) {
@@ -428,6 +444,16 @@ if ($workingDir) {
 }
 & $cmd @args
 `)
+	}
+	taskScript := script + `
+` + psArgs + `
+& $cmd @args
+`
+	taskScript, err = wrapPowerShellWorkingDir(map[string]any{"working_dir": workingDir}, taskScript)
+	if err != nil {
+		return "", err
+	}
+	return backend.RunPowerShellScript(ctx, taskScript)
 }
 
 func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {

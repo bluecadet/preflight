@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/target"
@@ -22,17 +23,26 @@ var powershellCombinedOutputWithEnv = func(ctx context.Context, name string, arg
 	return cmd.CombinedOutput()
 }
 
+var powershellCombinedOutputInDir = func(ctx context.Context, name string, args []string, env map[string]string, workingDir string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = workingDir
+	cmd.Env = mergeEnv(env)
+	return cmd.CombinedOutput()
+}
+
 type PowershellCheckParams struct {
 	CheckScript string            `param:"check_script"`
 	Creates     string            `param:"creates"`
+	WorkingDir  string            `param:"working_dir"`
 	Env         map[string]string `param:"env"`
 }
 
 type PowershellApplyParams struct {
-	Script string            `param:"script"`
-	File   string            `param:"file"`
-	Args   []string          `param:"args"`
-	Env    map[string]string `param:"env"`
+	Script     string            `param:"script"`
+	File       string            `param:"file"`
+	Args       []string          `param:"args"`
+	WorkingDir string            `param:"working_dir"`
+	Env        map[string]string `param:"env"`
 }
 
 func powershellCheck(ctx context.Context, params map[string]any) (bool, error) {
@@ -51,10 +61,10 @@ func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOut
 		}
 		var out []byte
 		if onOutput == nil {
-			out, err = runPowerShellInline(ctx, script, p.Env)
+			out, err = runPowerShellInline(ctx, script, p.Env, p.WorkingDir)
 		} else {
 			var lines []string
-			lines, err = runPowerShellInlineWithOutput(ctx, script, p.Env, func(line string) {
+			lines, err = runPowerShellInlineWithOutput(ctx, script, p.Env, p.WorkingDir, func(line string) {
 				if !winutil.IsPowerShellCheckResultLine(line) {
 					onOutput(line)
 				}
@@ -74,7 +84,7 @@ func powershellCheckWithOutput(ctx context.Context, params map[string]any, onOut
 	}
 
 	if p.Creates != "" {
-		_, statErr := os.Stat(p.Creates)
+		_, statErr := os.Stat(pathInWorkingDir(p.Creates, p.WorkingDir))
 		if statErr == nil {
 			return false, nil
 		}
@@ -97,9 +107,9 @@ func powershellApply(ctx context.Context, params map[string]any) error {
 
 	var err error
 	if p.Script != "" {
-		_, err = runPowerShellApplyInline(ctx, p.Script, p.Env)
+		_, err = runPowerShellApplyInline(ctx, p.Script, p.Env, p.WorkingDir)
 	} else {
-		_, err = runPowerShellFile(ctx, p.File, p.Args, p.Env)
+		_, err = runPowerShellFile(ctx, p.File, p.Args, p.Env, p.WorkingDir)
 	}
 	return err
 }
@@ -119,74 +129,79 @@ func powershellApplyWithOutput(ctx context.Context, params map[string]any, onOut
 	}
 
 	if p.Script != "" {
-		_, err := runPowerShellApplyInlineWithOutput(ctx, p.Script, p.Env, onOutput)
+		_, err := runPowerShellApplyInlineWithOutput(ctx, p.Script, p.Env, p.WorkingDir, onOutput)
 		return err
 	}
-	return runPowerShellFileWithOutput(ctx, p.File, p.Args, p.Env, onOutput)
+	return runPowerShellFileWithOutput(ctx, p.File, p.Args, p.Env, p.WorkingDir, onOutput)
 }
 
-func runPowerShellInline(ctx context.Context, script string, env map[string]string) ([]byte, error) {
+func runPowerShellInline(ctx context.Context, script string, env map[string]string, workingDir string) ([]byte, error) {
 	path, cleanup, err := writePowerShellInlineScript(script, false)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	return runPowerShellFile(ctx, path, nil, env)
+	return runPowerShellFile(ctx, path, nil, env, workingDir)
 }
 
-func runPowerShellApplyInline(ctx context.Context, script string, env map[string]string) ([]byte, error) {
+func runPowerShellApplyInline(ctx context.Context, script string, env map[string]string, workingDir string) ([]byte, error) {
 	path, cleanup, err := writePowerShellInlineScript(script, true)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
-	return runPowerShellFile(ctx, path, nil, env)
+	return runPowerShellFile(ctx, path, nil, env, workingDir)
 }
 
-func runPowerShellFile(ctx context.Context, file string, args []string, env map[string]string) ([]byte, error) {
+func runPowerShellFile(ctx context.Context, file string, args []string, env map[string]string, workingDir string) ([]byte, error) {
+	file = executableScriptPath(file, workingDir)
 	commandArgs := append(platformPowerShellArgs(), "-File", file)
 	commandArgs = append(commandArgs, args...)
-	return runPowerShellCommand(ctx, env, commandArgs...)
+	return runPowerShellCommand(ctx, env, workingDir, commandArgs...)
 }
 
-func runPowerShellCommand(ctx context.Context, env map[string]string, args ...string) ([]byte, error) {
-	out, err := powershellCommandOutput(ctx, platformPowerShellBinary(), args, env)
+func runPowerShellCommand(ctx context.Context, env map[string]string, workingDir string, args ...string) ([]byte, error) {
+	out, err := powershellCommandOutput(ctx, platformPowerShellBinary(), args, env, workingDir)
 	if err != nil {
 		return out, fmt.Errorf("powershell: command failed: %w\noutput: %s", err, string(out))
 	}
 	return out, nil
 }
 
-func runPowerShellApplyInlineWithOutput(ctx context.Context, script string, env map[string]string, onOutput target.OutputFunc) ([]string, error) {
+func runPowerShellApplyInlineWithOutput(ctx context.Context, script string, env map[string]string, workingDir string, onOutput target.OutputFunc) ([]string, error) {
 	path, cleanup, err := writePowerShellInlineScript(script, true)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 	commandArgs := append(platformPowerShellArgs(), "-File", path)
-	return runPowerShellCommandWithOutput(ctx, onOutput, env, commandArgs...)
+	return runPowerShellCommandWithOutput(ctx, onOutput, env, workingDir, commandArgs...)
 }
 
-func runPowerShellInlineWithOutput(ctx context.Context, script string, env map[string]string, onOutput target.OutputFunc) ([]string, error) {
+func runPowerShellInlineWithOutput(ctx context.Context, script string, env map[string]string, workingDir string, onOutput target.OutputFunc) ([]string, error) {
 	path, cleanup, err := writePowerShellInlineScript(script, false)
 	if err != nil {
 		return nil, err
 	}
 	defer cleanup()
 	commandArgs := append(platformPowerShellArgs(), "-File", path)
-	return runPowerShellCommandWithOutput(ctx, onOutput, env, commandArgs...)
+	return runPowerShellCommandWithOutput(ctx, onOutput, env, workingDir, commandArgs...)
 }
 
-func runPowerShellFileWithOutput(ctx context.Context, file string, args []string, env map[string]string, onOutput target.OutputFunc) error {
+func runPowerShellFileWithOutput(ctx context.Context, file string, args []string, env map[string]string, workingDir string, onOutput target.OutputFunc) error {
+	file = executableScriptPath(file, workingDir)
 	commandArgs := append(platformPowerShellArgs(), "-File", file)
 	commandArgs = append(commandArgs, args...)
-	_, err := runPowerShellCommandWithOutput(ctx, onOutput, env, commandArgs...)
+	_, err := runPowerShellCommandWithOutput(ctx, onOutput, env, workingDir, commandArgs...)
 	return err
 }
 
-func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, env map[string]string, args ...string) ([]string, error) {
+func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, env map[string]string, workingDir string, args ...string) ([]string, error) {
 	pw, done := NewOutputPipe(onOutput)
 	cmd := exec.CommandContext(ctx, platformPowerShellBinary(), args...)
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
 	cmd.Env = mergeEnv(env)
 	cmd.Stdout = pw
 	cmd.Stderr = pw
@@ -216,11 +231,25 @@ func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputF
 	return result.Lines, nil
 }
 
-func powershellCommandOutput(ctx context.Context, name string, args []string, env map[string]string) ([]byte, error) {
-	if len(env) == 0 {
+func powershellCommandOutput(ctx context.Context, name string, args []string, env map[string]string, workingDir string) ([]byte, error) {
+	if workingDir == "" && len(env) == 0 {
 		return powershellCombinedOutput(ctx, name, args...)
 	}
-	return powershellCombinedOutputWithEnv(ctx, name, args, env)
+	if workingDir == "" {
+		return powershellCombinedOutputWithEnv(ctx, name, args, env)
+	}
+	return powershellCombinedOutputInDir(ctx, name, args, env, workingDir)
+}
+
+func executableScriptPath(file, workingDir string) string {
+	if workingDir == "" || file == "" || filepath.IsAbs(file) {
+		return file
+	}
+	abs, err := filepath.Abs(file)
+	if err != nil {
+		return file
+	}
+	return abs
 }
 
 func writePowerShellInlineScript(script string, exitFromNativeCode bool) (string, func(), error) {

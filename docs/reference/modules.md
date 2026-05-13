@@ -351,9 +351,12 @@ Run PowerShell.
 | `args` | string[] | Arguments passed to the script file path |
 | `check_script` | string | Inline non-mutating PowerShell check script |
 | `creates` | string | Skip when this path already exists |
+| `working_dir` | string | Working directory |
 | `env` | object | Environment variables visible to the PowerShell process |
 
 Exactly one of `script` or `file` should be provided for meaningful behavior.
+
+When `working_dir` is set, relative `creates` paths are checked from that directory.
 
 `check_script` takes precedence over `creates`. It must return either:
 
@@ -371,6 +374,8 @@ Run a shell command.
 | `creates` | string | Skip when this path already exists |
 | `working_dir` | string | Working directory |
 | `env` | object | Environment variables visible to the command process |
+
+When `working_dir` is set, relative `creates` paths are checked from that directory.
 
 ### `reboot`
 
