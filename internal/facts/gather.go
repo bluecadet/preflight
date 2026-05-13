@@ -169,7 +169,11 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 		return nil, err
 	}
 
-	stdout, err := g.target.RunPowerShell(ctx, "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json")
+	runner, ok := g.target.(target.PowerShellRunner)
+	if !ok {
+		return nil, fmt.Errorf("facts: gatherWindowsDisks: target does not support PowerShell")
+	}
+	stdout, err := runner.RunPowerShell(ctx, "Get-PSDrive -PSProvider FileSystem | Select Name,Used,Free | ConvertTo-Json")
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsDisks: execute: %w", err)
 	}
@@ -210,7 +214,11 @@ func (g *Gatherer) gatherWindowsEnv(ctx context.Context) (map[string]string, err
 		return nil, err
 	}
 
-	stdout, err := g.target.RunPowerShell(ctx, `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`)
+	runner, ok := g.target.(target.PowerShellRunner)
+	if !ok {
+		return nil, fmt.Errorf("facts: gatherWindowsEnv: target does not support PowerShell")
+	}
+	stdout, err := runner.RunPowerShell(ctx, `[System.Environment]::GetEnvironmentVariables() | ConvertTo-Json`)
 	if err != nil {
 		return nil, fmt.Errorf("facts: gatherWindowsEnv: execute: %w", err)
 	}

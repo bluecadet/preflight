@@ -108,7 +108,13 @@ type Target interface {
 
 	// Transport returns the connection type used to reach the target.
 	Transport() Transport
+}
 
-	// RunPowerShell executes an inline PowerShell script against the target.
+// PowerShellRunner is implemented by targets that can execute an inline
+// PowerShell script. Callers that need PowerShell (e.g. Windows fact
+// gathering) consult this capability rather than assuming every target
+// supports it. Non-Windows transports that genuinely cannot reach a
+// PowerShell host need not implement it.
+type PowerShellRunner interface {
 	RunPowerShell(ctx context.Context, script string) (string, error)
 }
