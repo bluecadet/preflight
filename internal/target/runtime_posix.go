@@ -16,6 +16,9 @@ type posixShellBackend interface {
 	PowerShellBinary() string
 }
 
+// newPOSIXShellRegistry builds a ModuleRegistry for remote POSIX targets (SSH-POSIX).
+// LocalTarget no longer calls this function — local become uses subprocess elevation
+// via newSubprocessBecomeRegistry instead.
 func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 	supported := ModuleRegistry{
 		"directory": moduleFuncs{

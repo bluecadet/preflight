@@ -1,12 +1,10 @@
 package target
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -250,87 +248,6 @@ func wrapPOSIXBecome(command string, stdin []byte, become *BecomeOptions) (strin
 
 func shellQuote(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
-}
-
-type localPOSIXBackend struct {
-	posixTaskBackend
-}
-
-func newLocalPOSIXBackend(become *BecomeOptions) *localPOSIXBackend {
-	backend := &localPOSIXBackend{}
-	backend.posixTaskBackend = posixTaskBackend{
-		run:              backend.run,
-		copyPlain:        backend.copyPlain,
-		readPlain:        backend.readPlain,
-		powerShellBinary: detectLocalPowerShellBinary(),
-		become:           become,
-	}
-	return backend
-}
-
-func (b *localPOSIXBackend) run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
-	cmd := exec.CommandContext(ctx, "/bin/sh", "-lc", command)
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	code := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			code = exitErr.ExitCode()
-		} else {
-			return "", "", 0, err
-		}
-	}
-	return stdout.String(), stderr.String(), code, nil
-}
-
-func (b *localPOSIXBackend) copyPlain(_ context.Context, src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return err
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(dst, data, info.Mode())
-}
-
-func (b *localPOSIXBackend) readPlain(_ context.Context, path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
-
-func detectLocalPowerShellBinary() string {
-	for _, binary := range []string{"pwsh", "powershell"} {
-		if _, err := exec.LookPath(binary); err == nil {
-			return binary
-		}
-	}
-	return ""
-}
-
-func localWindowsTempDir() string {
-	return windowsRemoteTempDir
-}
-
-func runLocalWindowsPowerShell(ctx context.Context, script string) (string, error) {
-	out, err := exec.CommandContext(ctx, "powershell.exe",
-		"-NoProfile",
-		"-NonInteractive",
-		"-ExecutionPolicy", "Bypass",
-		"-Command", script,
-	).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("target/local: powershell failed: %w\noutput: %s", err, string(out))
-	}
-	return string(out), nil
 }
 
 func runtimeKindForLocal() RuntimeKind {

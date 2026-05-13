@@ -39,6 +39,9 @@ var windowsPowerShellModuleCatalog = map[string]struct {
 	"powershell": {freshSession: true},
 }
 
+// newWindowsPowerShellRegistry builds a ModuleRegistry for remote Windows targets
+// (WinRM, SSH-Windows-PS). LocalTarget no longer calls this function — local become
+// uses subprocess elevation via newSubprocessBecomeRegistry instead.
 func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegistry {
 	supported := ModuleRegistry{
 		"directory": moduleFuncs{

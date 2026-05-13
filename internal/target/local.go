@@ -38,13 +38,17 @@ func (t *LocalTarget) Transport() Transport { return TransportLocal }
 
 // Execute looks up the named module and dispatches through the unified
 // executeModule executor. Both the in-process registry path (no become) and
-// the become-via-remote-runtime path now share one executor, since both
-// produce ModuleRegistry values whose entries satisfy the same Module
-// interface.
+// the become-via-subprocess path share one executor, since both produce
+// ModuleRegistry values whose entries satisfy the same Module interface.
 func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	if opts.Enabled() {
 		kind := runtimeKindForLocal()
 		become, err := effectiveBecome(kind, opts)
+		if err != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+		}
+
+		subReg, err := newSubprocessBecomeRegistry(t.registry, kind, become)
 		if err != nil {
 			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 		}
@@ -56,18 +60,7 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 			return wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
 		}
 
-		if kind == RuntimeKindWindowsPowerShell {
-			backend := &windowsTaskBackend{
-				run:       runLocalWindowsPowerShell,
-				copyPlain: t.CopyFile,
-				tempDir:   localWindowsTempDir(),
-				become:    become,
-			}
-			return executeModule(ctx, taskID, module, params, dryRun, onOutput, newWindowsPowerShellRegistry(backend), unsupported)
-		}
-
-		backend := newLocalPOSIXBackend(become)
-		return executeModule(ctx, taskID, module, params, dryRun, onOutput, newPOSIXShellRegistry(backend), unsupported)
+		return executeModule(ctx, taskID, module, params, dryRun, onOutput, subReg, unsupported)
 	}
 
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, t.registry, func(module string) error {
