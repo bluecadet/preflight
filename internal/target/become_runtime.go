@@ -17,6 +17,9 @@ func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, e
 		return nil, nil
 	}
 	become := *opts.Become
+	if strings.EqualFold(strings.TrimSpace(become.User), "SYSTEM") {
+		return nil, fmt.Errorf("become: user %q is no longer supported; migrate to a privileged service account with credential elevation (become.method: runas)", become.User)
+	}
 	switch kind {
 	case RuntimeKindWindowsPowerShell:
 		if become.Method == "" {
@@ -36,10 +39,6 @@ func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, e
 		return nil, fmt.Errorf("become: unsupported runtime %q", kind)
 	}
 	return &become, nil
-}
-
-func isSystemBecome(become *BecomeOptions) bool {
-	return become != nil && strings.EqualFold(strings.TrimSpace(become.User), "SYSTEM")
 }
 
 type windowsTaskBackend struct {
@@ -87,13 +86,6 @@ func (b *windowsTaskBackend) RemoteTempDir() string {
 func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, string) (string, error), tempDir, script string, become *BecomeOptions) (string, error) {
 	if become == nil {
 		return run(ctx, script)
-	}
-	if isSystemBecome(become) {
-		wrapped, err := buildWindowsSystemRunner(tempDir, script)
-		if err != nil {
-			return "", err
-		}
-		return run(ctx, wrapped)
 	}
 	if strings.TrimSpace(become.Password) == "" {
 		return "", fmt.Errorf("become: password is required for Windows user %q", become.User)
@@ -169,69 +161,6 @@ try {
   }
   Write-Output $stdout
 } finally {
-  Remove-Item -LiteralPath $workDir -Force -Recurse -ErrorAction SilentlyContinue
-}
-`, nil
-}
-
-func buildWindowsSystemRunner(tempDir, payload string) (string, error) {
-	tempVar, err := powershellJSONVar("tempRoot", filepath.ToSlash(tempDir))
-	if err != nil {
-		return "", err
-	}
-	payloadVar, err := powershellJSONVar("payload", payload)
-	if err != nil {
-		return "", err
-	}
-	return tempVar + `
-` + payloadVar + `
-$ErrorActionPreference = 'Stop'
-$workDir = Join-Path $tempRoot ([guid]::NewGuid().ToString('N'))
-$payloadPath = Join-Path $workDir 'payload.ps1'
-$runnerPath = Join-Path $workDir 'runner.ps1'
-$stdoutPath = Join-Path $workDir 'stdout.txt'
-$exitPath = Join-Path $workDir 'exit.txt'
-$taskName = 'PreflightBecome-' + ([guid]::NewGuid().ToString('N'))
-try {
-  New-Item -ItemType Directory -Path $workDir -Force | Out-Null
-  Set-Content -LiteralPath $payloadPath -Value $payload -Encoding UTF8
-  $runner = @"
-$ErrorActionPreference = 'Continue'
-try {
-  $output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$payloadPath" 2>&1 | Out-String
-  $code = $LASTEXITCODE
-  if ($null -eq $code) { $code = 0 }
-} catch {
-  $output = $_ | Out-String
-  $code = 1
-}
-Set-Content -LiteralPath "$stdoutPath" -Value $output -Encoding UTF8
-Set-Content -LiteralPath "$exitPath" -Value ([string]$code) -Encoding ASCII
-"@
-  Set-Content -LiteralPath $runnerPath -Value $runner -Encoding UTF8
-  $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $runnerPath + '"')
-  $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(10)
-  $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-  Start-ScheduledTask -TaskName $taskName
-  $deadline = (Get-Date).AddMinutes(5)
-  while ((Get-Date) -lt $deadline) {
-    if (Test-Path -LiteralPath $exitPath) {
-      break
-    }
-    Start-Sleep -Milliseconds 500
-  }
-  if (-not (Test-Path -LiteralPath $exitPath)) {
-    throw 'SYSTEM task did not finish before timeout'
-  }
-  $stdout = if (Test-Path -LiteralPath $stdoutPath) { [IO.File]::ReadAllText($stdoutPath) } else { '' }
-  $exitCode = [int](Get-Content -LiteralPath $exitPath -Raw)
-  if ($exitCode -ne 0) {
-    throw ("SYSTEM task exited with code " + $exitCode + ": " + $stdout)
-  }
-  Write-Output $stdout
-} finally {
-  Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
   Remove-Item -LiteralPath $workDir -Force -Recurse -ErrorAction SilentlyContinue
 }
 `, nil

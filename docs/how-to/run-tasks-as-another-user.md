@@ -6,7 +6,7 @@ Use this guide when you need tasks to execute under a specific user identity —
 
 - A working playbook and target connection
 - The account used for your transport (WinRM or SSH) must have permission to create local users and to execute commands as other users
-- For Windows `become`: the target user must have a password (except when using the `SYSTEM` account)
+- For Windows `become`: the target user must have a password
 
 ## Overview
 
@@ -158,7 +158,7 @@ By default, Windows `become` does not load the user's full profile (environment 
 
 ### `become: password is required for Windows user`
 
-Windows `runas` requires a password for non-`SYSTEM` accounts. Make sure `password` is set and the secret resolves correctly:
+Windows `runas` requires a password. Make sure `password` is set and the secret resolves correctly:
 
 ```bash
 preflight secrets show exhibit-password
@@ -167,18 +167,6 @@ preflight secrets show exhibit-password
 ### `become` is not taking effect
 
 Check that the task does not have `enabled: false` and that it is not overriding an inherited default with an empty block. A `become:` key without `user:` is an error.
-
-### Running as `SYSTEM`
-
-To run a task as the Windows `SYSTEM` account, set `user: SYSTEM`. No password is needed. Preflight uses a temporary scheduled task to execute under the `SYSTEM` service account:
-
-```yaml
-  - name: Run as SYSTEM
-    become:
-      user: SYSTEM
-    powershell:
-      script: Write-Output $env:USERNAME
-```
 
 ## Related Docs
 

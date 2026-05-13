@@ -174,49 +174,6 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	}
 }
 
-func TestWinRMTarget_ExecuteShellWithBecomeSystem(t *testing.T) {
-	var sawRunCmd bool
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
-	tgt.client = &fakeWinRMClient{
-		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			switch {
-			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
-			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
-			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
-			default:
-				t.Fatalf("unexpected powershell command %q", command)
-			}
-			return "applied", "", 0, nil
-		},
-		runCmd: func(_ context.Context, command string) (string, string, int, error) {
-			sawRunCmd = true
-			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
-				t.Fatalf("unexpected runCmd command %q", command)
-			}
-			return "applied", "", 0, nil
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
-		"cmd":  "echo",
-		"args": []any{"hello"},
-	}, ExecutionOptions{
-		Become: &BecomeOptions{
-			Enabled: true,
-			User:    "SYSTEM",
-		},
-	}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected StatusChanged, got %q", result.Status)
-	}
-	if !sawRunCmd {
-		t.Fatalf("expected staged command execution for become system")
-	}
-}
-
 func TestBuildWindowsCredentialRunnerContainsRunAsWrapper(t *testing.T) {
 	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
 		User:     "kiosk",
@@ -230,19 +187,6 @@ func TestBuildWindowsCredentialRunnerContainsRunAsWrapper(t *testing.T) {
 	}
 	if !strings.Contains(script, "PSCredential") {
 		t.Fatalf("expected PSCredential usage, got %q", script)
-	}
-}
-
-func TestBuildWindowsSystemRunnerContainsScheduledTaskWrapper(t *testing.T) {
-	script, err := buildWindowsSystemRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'")
-	if err != nil {
-		t.Fatalf("buildWindowsSystemRunner returned error: %v", err)
-	}
-	if !strings.Contains(script, "New-ScheduledTaskPrincipal -UserId 'SYSTEM'") {
-		t.Fatalf("expected SYSTEM scheduled task wrapper, got %q", script)
-	}
-	if !strings.Contains(script, "Register-ScheduledTask") {
-		t.Fatalf("expected scheduled task registration, got %q", script)
 	}
 }
 

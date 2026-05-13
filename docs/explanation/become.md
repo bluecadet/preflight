@@ -22,23 +22,7 @@ On Windows, `become` defaults to `method: runas`. Preflight writes the task scri
 
 The temporary file is cleaned up after the task regardless of outcome.
 
-A password is required for all Windows `become` users except `SYSTEM`. Preflight rejects a task with `become.user` set (to a non-SYSTEM account) but no `password`.
-
-### Windows — `SYSTEM` account
-
-`SYSTEM` is handled separately. Because `Start-Process` cannot run under the service account with credential injection, Preflight registers a short-lived scheduled task under the `SYSTEM` principal, waits for it to complete, captures its output, and then removes the task.
-
-This pattern is useful for tasks that must write to machine-wide locations that are locked down to service accounts or that need `SYSTEM` level token privileges:
-
-```yaml
-- name: Flush DNS as SYSTEM
-  become:
-    user: SYSTEM
-  powershell:
-    script: ipconfig /flushdns
-```
-
-No password field is needed when `user` is `SYSTEM`.
+A password is required for all Windows `become` users. Preflight rejects a task with `become.user` set but no `password`.
 
 ### POSIX — `sudo`
 
