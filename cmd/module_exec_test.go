@@ -89,4 +89,3 @@ func TestModuleExec_NotInHelp(t *testing.T) {
 		t.Errorf("__module-exec should be hidden but appears in --help output")
 	}
 }
-

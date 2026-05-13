@@ -28,7 +28,7 @@ func (m *subprocessModule) Check(ctx context.Context, params map[string]any, out
 	if err != nil {
 		return CheckResult{}, fmt.Errorf("become: start elevated subprocess for %q check: %w", m.name, err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	var sdkOut sdk.OutputFunc
 	if out != nil {
@@ -46,7 +46,7 @@ func (m *subprocessModule) Apply(ctx context.Context, params map[string]any, out
 	if err != nil {
 		return ApplyResult{}, fmt.Errorf("become: start elevated subprocess for %q apply: %w", m.name, err)
 	}
-	defer cli.Close()
+	defer func() { _ = cli.Close() }()
 
 	var sdkOut sdk.OutputFunc
 	if out != nil {
@@ -59,7 +59,7 @@ func (m *subprocessModule) Apply(ctx context.Context, params map[string]any, out
 	return ApplyResult{Message: sdkRes.Message}, nil
 }
 
-// posixSudoElevation spawns: sudo -S -p '' -u <user> <binary> __module-exec <module>
+// posixSudoElevation spawns: sudo -S -p ” -u <user> <binary> __module-exec <module>
 // feeding the password on stdin before the JSON-RPC frames.
 type posixSudoElevation struct {
 	user     string

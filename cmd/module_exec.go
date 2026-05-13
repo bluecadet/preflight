@@ -24,7 +24,7 @@ func runModuleExec(_ *cobra.Command, args []string) error {
 	mod, ok := reg[name]
 	if !ok {
 		resp := fmt.Sprintf(`{"jsonrpc":"2.0","error":{"code":-32600,"message":"module-exec: unknown module %s"}}`, name)
-		fmt.Fprintln(os.Stdout, resp)
+		_, _ = fmt.Fprintln(os.Stdout, resp)
 		os.Exit(1)
 	}
 	adapter := target.NewSDKModuleAdapter(name, mod)

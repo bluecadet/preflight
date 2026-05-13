@@ -3,8 +3,6 @@ package target
 import (
 	"context"
 	"testing"
-
-	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 type mockAdapterModule struct {
@@ -59,7 +57,7 @@ func TestSDKModuleAdapter_CheckStreaming(t *testing.T) {
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
 	var received []string
-	result, err := adapter.(sdk.StreamingModule).CheckStreaming(map[string]any{}, func(line string) {
+	result, err := adapter.CheckStreaming(map[string]any{}, func(line string) {
 		received = append(received, line)
 	})
 	if err != nil {
