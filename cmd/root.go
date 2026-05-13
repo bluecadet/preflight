@@ -48,4 +48,5 @@ func Execute(version, commit, date string) {
 }
 
 func init() {
+	rootCmd.AddCommand(moduleExecCmd)
 }
