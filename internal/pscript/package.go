@@ -61,28 +61,37 @@ $env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOr
 `
 
 const wingetPackagePresenceScript = `
+function Invoke-Winget {
+  param(
+    [string[]]$Arguments
+  )
+  $output = & winget.exe @Arguments 2>&1
+  $exitCode = $LASTEXITCODE
+  $details = @()
+  if ($output) {
+    $text = ($output | Out-String).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($text)) { $details += $text }
+  }
+  return [pscustomobject]@{
+    ExitCode = $exitCode
+    Details = [string[]]$details
+  }
+}
 function Test-WingetPackageListedCurrent {
   param(
     [string]$Id,
     [string]$Source
   )
-  $listStdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
-  $listStderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
-  try {
-    $listArgs = @('list', '--id', $Id, '--exact', '--accept-source-agreements', '--disable-interactivity')
-    if ($Source) { $listArgs += @('--source', $Source) }
-    $process = Start-Process -FilePath 'winget.exe' -ArgumentList $listArgs -Wait -PassThru -NoNewWindow -RedirectStandardOutput $listStdoutPath -RedirectStandardError $listStderrPath
-    if ($process.ExitCode -ne 0) { return $false }
-    $stdout = if (Test-Path -LiteralPath $listStdoutPath) { Get-Content -LiteralPath $listStdoutPath -Raw } else { '' }
-    if ([string]::IsNullOrWhiteSpace($stdout)) { return $false }
-    if ($stdout -notmatch [regex]::Escape($Id)) { return $false }
-    # If WinGet prints an Available column, install would attempt an upgrade.
-    # Treat that as needing change so check/apply stay aligned.
-    return ($stdout -notmatch '(?m)^\s*Name\s+Id\s+Version\s+Available\s+Source\s*$')
-  } finally {
-    Remove-Item -LiteralPath $listStdoutPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $listStderrPath -Force -ErrorAction SilentlyContinue
-  }
+  $listArgs = @('list', '--id', $Id, '--exact', '--accept-source-agreements', '--disable-interactivity')
+  if ($Source) { $listArgs += @('--source', $Source) }
+  $result = Invoke-Winget -Arguments $listArgs
+  if ($result.ExitCode -ne 0) { return $false }
+  $stdout = [string]::Join([Environment]::NewLine, $result.Details)
+  if ([string]::IsNullOrWhiteSpace($stdout)) { return $false }
+  if ($stdout -notmatch [regex]::Escape($Id)) { return $false }
+  # If WinGet prints an Available column, install would attempt an upgrade.
+  # Treat that as needing change so check/apply stay aligned.
+  return ($stdout -notmatch '(?m)^\s*Name\s+Id\s+Version\s+Available\s+Source\s*$')
 }
 function Test-WingetDesiredPresent {
   param(
@@ -107,30 +116,17 @@ $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 ` + wingetPackagePresenceScript + `
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
-$stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
-$stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
 try {
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-  if ($process.ExitCode -ne 0) {
-    $details = @()
-    if (Test-Path -LiteralPath $stdoutPath) {
-      $stdout = Get-Content -LiteralPath $stdoutPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($stdout)) { $details += $stdout.Trim() }
+  $result = Invoke-Winget -Arguments @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
+  if ($result.ExitCode -ne 0) {
+    if ($result.Details.Count -gt 0) {
+      throw ("winget export failed with exit code $($result.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $result.Details))
     }
-    if (Test-Path -LiteralPath $stderrPath) {
-      $stderr = Get-Content -LiteralPath $stderrPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($stderr)) { $details += $stderr.Trim() }
-    }
-    if ($details.Count -gt 0) {
-      throw ("winget export failed with exit code $($process.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $details))
-    }
-    throw "winget export failed with exit code $($process.ExitCode)"
+    throw "winget export failed with exit code $($result.ExitCode)"
   }
   $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
 }
 $installedMap = @{}
 foreach ($src in @($doc.Sources)) {
@@ -155,30 +151,17 @@ $pkgs = @($params.packages)
 Get-Command winget.exe -ErrorAction Stop | Out-Null
 ` + wingetPackagePresenceScript + `
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
-$stdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
-$stderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
 try {
-  $process = Start-Process -FilePath 'winget.exe' -ArgumentList @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity') -Wait -PassThru -NoNewWindow -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath
-  if ($process.ExitCode -ne 0) {
-    $details = @()
-    if (Test-Path -LiteralPath $stdoutPath) {
-      $stdout = Get-Content -LiteralPath $stdoutPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($stdout)) { $details += $stdout.Trim() }
+  $result = Invoke-Winget -Arguments @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
+  if ($result.ExitCode -ne 0) {
+    if ($result.Details.Count -gt 0) {
+      throw ("winget export failed with exit code $($result.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $result.Details))
     }
-    if (Test-Path -LiteralPath $stderrPath) {
-      $stderr = Get-Content -LiteralPath $stderrPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($stderr)) { $details += $stderr.Trim() }
-    }
-    if ($details.Count -gt 0) {
-      throw ("winget export failed with exit code $($process.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $details))
-    }
-    throw "winget export failed with exit code $($process.ExitCode)"
+    throw "winget export failed with exit code $($result.ExitCode)"
   }
   $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $stdoutPath -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
 }
 $installedMap = @{}
 foreach ($src in @($doc.Sources)) {
@@ -208,36 +191,20 @@ foreach ($spec in $pkgs) {
   if ($version) { $args += @('--version', $version) }
   if ($source) { $args += @('--source', $source) }
   $args += $wingetArgs
-  $installStdoutPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stdout.log")
-  $installStderrPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".stderr.log")
-  try {
-    $process = Start-Process -FilePath 'winget.exe' -ArgumentList $args -Wait -PassThru -NoNewWindow -RedirectStandardOutput $installStdoutPath -RedirectStandardError $installStderrPath
-  } finally {
-    $details = @()
-    if (Test-Path -LiteralPath $installStdoutPath) {
-      $installStdout = Get-Content -LiteralPath $installStdoutPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($installStdout)) { $details += $installStdout.Trim() }
-    }
-    if (Test-Path -LiteralPath $installStderrPath) {
-      $installStderr = Get-Content -LiteralPath $installStderrPath -Raw
-      if (-not [string]::IsNullOrWhiteSpace($installStderr)) { $details += $installStderr.Trim() }
-    }
-    Remove-Item -LiteralPath $installStdoutPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $installStderrPath -Force -ErrorAction SilentlyContinue
-  }
-  if ($process.ExitCode -ne 0) {
-    $combinedDetails = [string]::Join([Environment]::NewLine, $details)
+  $result = Invoke-Winget -Arguments $args
+  if ($result.ExitCode -ne 0) {
+    $combinedDetails = [string]::Join([Environment]::NewLine, $result.Details)
     # WinGet can turn "install an already-present package" into an update path
     # and return UPDATE_NOT_APPLICABLE even when the unversioned desired state is satisfied.
-    if ($ensure -ne 'absent' -and $process.ExitCode -eq -1978335189) {
+    if ($ensure -ne 'absent' -and $result.ExitCode -eq -1978335189) {
       if ((Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap) -or ($combinedDetails -match 'No available upgrade found' -and $combinedDetails -match 'No newer package versions are available')) {
         continue
       }
     }
-    if ($details.Count -gt 0) {
-      throw ("winget command failed for '$id' with exit code $($process.ExitCode)" + [Environment]::NewLine + $combinedDetails)
+    if ($result.Details.Count -gt 0) {
+      throw ("winget command failed for '$id' with exit code $($result.ExitCode)" + [Environment]::NewLine + $combinedDetails)
     }
-    throw "winget command failed for '$id' with exit code $($process.ExitCode)"
+    throw "winget command failed for '$id' with exit code $($result.ExitCode)"
   }
   $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')

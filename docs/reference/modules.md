@@ -202,7 +202,9 @@ Manage packages through `winget`.
       - id: Git.Git
         scope: machine
       - id: Microsoft.VisualStudio.2022.Community
-        args: ["--override", "--quiet --wait --norestart"]
+        args:
+          - --override
+          - "--quiet --wait --norestart"
       - id: OldApp
         ensure: absent
 ```
@@ -217,6 +219,8 @@ The `packages` list is the primary interface. Each entry supports:
 | `args` | string[] | Extra `winget` command arguments |
 | `scope` | `machine` or `user` | Install scope (default: `machine`) |
 | `ensure` | `present` or `absent` | Desired state (default: `present`) |
+
+Put package-specific `winget` flags under `args` on that package entry. Do not add flags as additional `packages` list items.
 
 **Legacy single-package form** — `id` at the top level is still accepted for backward compatibility and behaves identically to a one-entry `packages` list:
 

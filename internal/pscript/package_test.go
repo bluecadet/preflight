@@ -10,10 +10,29 @@ func TestWingetPackageApplyScriptAppendsExtraArgs(t *testing.T) {
 		"$wingetArgs = @()",
 		"foreach ($arg in $spec.args)",
 		"$args += $wingetArgs",
-		"Start-Process -FilePath 'winget.exe' -ArgumentList $args",
+		"Invoke-Winget -Arguments $args",
 	} {
 		if !strings.Contains(WingetPackageApplyScript, fragment) {
 			t.Fatalf("expected winget apply script to contain %q, got:\n%s", fragment, WingetPackageApplyScript)
+		}
+	}
+}
+
+func TestWingetPackageScriptsInvokeWingetWithArgumentArray(t *testing.T) {
+	for name, script := range map[string]string{
+		"check": WingetPackageCheckScript,
+		"apply": WingetPackageApplyScript,
+	} {
+		for _, fragment := range []string{
+			"function Invoke-Winget",
+			"& winget.exe @Arguments 2>&1",
+		} {
+			if !strings.Contains(script, fragment) {
+				t.Fatalf("expected %s winget script to contain %q, got:\n%s", name, fragment, script)
+			}
+		}
+		if strings.Contains(script, "Start-Process -FilePath 'winget.exe'") {
+			t.Fatalf("expected %s winget script to preserve argument arrays without Start-Process, got:\n%s", name, script)
 		}
 	}
 }
@@ -46,7 +65,7 @@ func TestWingetPackageScriptsUseListFallbackForCurrentInstalls(t *testing.T) {
 
 func TestWingetPackageApplyTreatsUpdateNotApplicableAsSuccessfulNoop(t *testing.T) {
 	for _, fragment := range []string{
-		"$process.ExitCode -eq -1978335189",
+		"$result.ExitCode -eq -1978335189",
 		"Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap",
 		"No available upgrade found",
 		"No newer package versions are available",
