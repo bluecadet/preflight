@@ -43,7 +43,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           mkdir -p dist/release
-          gh release download "$TAG" --dir dist/release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir dist/release
           test -f dist/release/preflight_checksums.txt
           test -f dist/release/preflight_checksums.txt.sigstore.json
           test -f dist/release/preflight_Linux_x86_64.tar.gz
