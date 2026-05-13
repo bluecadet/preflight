@@ -129,7 +129,7 @@ Reduce background system changes driven by Windows Update and Microsoft Store po
 
 ### `preflight/windows-power`
 
-Manage named power plans, user-scoped screensaver defaults, and optional scheduled reboot tasks.
+Manage named power plans and user-scoped screensaver defaults.
 
 When `user` is set, screen saver registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
 
@@ -146,9 +146,8 @@ Screen saver changes are persisted immediately but may require sign-out or a new
 | `sleep_timeout_ac` | int | AC sleep timeout in minutes |
 | `sleep_timeout_dc` | int | DC sleep timeout in minutes |
 | `disable_screensaver` | bool | Disable the screen saver |
-| `scheduled_reboot_state` | string | `present` or `absent` for the reboot task |
-| `scheduled_reboot_time` | string | Daily scheduled reboot time |
-| `scheduled_reboot_name` | string | Scheduled reboot task name |
+
+Use the `scheduled_task` module directly when a machine needs a recurring reboot. See [Schedule a Windows reboot](../how-to/schedule-a-windows-reboot.md).
 
 ### `preflight/debloat`
 

@@ -21,6 +21,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Compare desired state to recorded state | [Inspect state and diffs](./how-to/inspect-state-and-diff.md) |
 | Provision a user and run tasks as that user | [Run tasks as another user](./how-to/run-tasks-as-another-user.md) |
 | Clone and update git repositories on targets | [Run git operations on a target](./how-to/git-operations.md) |
+| Schedule recurring Windows reboots | [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md) |
 
 ## Tutorials
 
@@ -40,6 +41,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Inspect state and diffs](./how-to/inspect-state-and-diff.md)
 - [Run tasks as another user](./how-to/run-tasks-as-another-user.md)
 - [Run git operations on a target](./how-to/git-operations.md)
+- [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md)
 
 ## Reference
 

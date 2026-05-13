@@ -455,13 +455,11 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 				Name: "power baseline",
 				Uses: "preflight/windows-power",
 				With: map[string]any{
-					"plan_name":              "Exhibit Plan",
-					"display_timeout_ac":     5,
-					"display_timeout_dc":     7,
-					"sleep_timeout_ac":       0,
-					"sleep_timeout_dc":       10,
-					"scheduled_reboot_state": "present",
-					"scheduled_reboot_time":  "04:30",
+					"plan_name":          "Exhibit Plan",
+					"display_timeout_ac": 5,
+					"display_timeout_dc": 7,
+					"sleep_timeout_ac":   0,
+					"sleep_timeout_dc":   10,
 				},
 			},
 		},
@@ -471,8 +469,8 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	if len(plan.Tasks) != 3 {
-		t.Fatalf("expected 3 expanded tasks, got %d", len(plan.Tasks))
+	if len(plan.Tasks) != 2 {
+		t.Fatalf("expected 2 expanded tasks, got %d", len(plan.Tasks))
 	}
 
 	previewPlan, err := PreviewTask(plan.Tasks[0], nil)
@@ -495,17 +493,6 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	}
 	if first["ac_value"] != "5" || first["dc_value"] != "7" {
 		t.Fatalf("unexpected first setting values: %#v", first)
-	}
-
-	previewReboot, err := PreviewTask(plan.Tasks[2], nil)
-	if err != nil {
-		t.Fatalf("PreviewTask(scheduled reboot) returned error: %v", err)
-	}
-	if previewReboot.Params["ensure"] != "present" {
-		t.Fatalf("expected scheduled task ensure=present, got %#v", previewReboot.Params["ensure"])
-	}
-	if previewReboot.Params["start_at"] != "04:30" {
-		t.Fatalf("expected scheduled reboot time 04:30, got %#v", previewReboot.Params["start_at"])
 	}
 }
 

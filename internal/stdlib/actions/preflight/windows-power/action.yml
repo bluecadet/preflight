@@ -1,6 +1,6 @@
 name: preflight/windows-power
-version: "2.1.0"
-description: Configure Windows power plans and optional reboot scheduling
+version: "3.0.0"
+description: Configure Windows power plans and screen saver settings
 author: preflight
 
 inputs:
@@ -40,18 +40,6 @@ inputs:
     type: bool
     default: true
     description: Disable the Windows screen saver for the selected user
-  scheduled_reboot_state:
-    type: string
-    default: absent
-    description: Whether a scheduled reboot task should be present or absent
-  scheduled_reboot_time:
-    type: string
-    default: "03:00"
-    description: Daily time for the scheduled reboot task
-  scheduled_reboot_name:
-    type: string
-    default: Preflight Scheduled Reboot
-    description: Scheduled task name for the reboot task
 
 tasks:
   - name: Configure power plan
@@ -155,17 +143,3 @@ tasks:
           Write-Output 'Refreshing current user shell parameters after disabling the screen saver'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
         }
-
-  - name: Configure scheduled reboot task
-    scheduled_task:
-      path: Preflight
-      name: "{{ vars.scheduled_reboot_name }}"
-      execute: C:\Windows\System32\shutdown.exe
-      arguments: /r /f /t 30
-      working_dir: C:\Windows\System32
-      trigger: daily
-      start_at: "{{ vars.scheduled_reboot_time }}"
-      run_as: SYSTEM
-      run_level: highest
-      enabled: true
-      ensure: "{{ vars.scheduled_reboot_state }}"
