@@ -126,6 +126,12 @@ func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
 	if !strings.Contains(capturedScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected task folder creation helper, got:\n%s", capturedScript)
 	}
+	if !strings.Contains(capturedScript, "Register-ManagedScheduledTask $principal") {
+		t.Fatalf("expected task registration helper for principal tasks, got:\n%s", capturedScript)
+	}
+	if !strings.Contains(capturedScript, "Unregister-ScheduledTask -TaskPath $path -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue") {
+		t.Fatalf("expected task replacement before registration, got:\n%s", capturedScript)
+	}
 	if !strings.Contains(capturedScript, "Normalize-TaskFolderPathForCom") {
 		t.Fatalf("expected COM task-path normalization helper, got:\n%s", capturedScript)
 	}

@@ -194,6 +194,12 @@ func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
 	if !strings.Contains(scheduledTaskApplyScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected scheduled task apply script to create folders, got %q", scheduledTaskApplyScript)
 	}
+	if !strings.Contains(scheduledTaskApplyScript, "Register-ManagedScheduledTask $principal") {
+		t.Fatalf("expected scheduled task apply script to use replacement registration helper, got %q", scheduledTaskApplyScript)
+	}
+	if !strings.Contains(scheduledTaskApplyScript, "Unregister-ScheduledTask -TaskPath $path -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue") {
+		t.Fatalf("expected scheduled task apply script to replace the exact task before registration, got %q", scheduledTaskApplyScript)
+	}
 	if !strings.Contains(scheduledTaskApplyScript, "Normalize-TaskFolderPathForCom") {
 		t.Fatalf("expected scheduled task apply script to normalize COM paths, got %q", scheduledTaskApplyScript)
 	}

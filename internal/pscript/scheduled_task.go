@@ -143,9 +143,30 @@ function Ensure-TaskFolder([string]$taskPath) {
       $null = $service.GetFolder($nextPath)
     } catch {
       $parent = $service.GetFolder($currentPath)
-      $null = $parent.CreateFolder($segment)
+      try {
+        $null = $parent.CreateFolder($segment)
+      } catch {
+        # Task Scheduler can report "already exists" during fresh folder
+        # creation if another process or stale scheduler state creates it first.
+        try {
+          $null = $service.GetFolder($nextPath)
+        } catch {
+          throw
+        }
+      }
     }
     $currentPath = $nextPath
+  }
+}
+
+function Register-ManagedScheduledTask($taskPrincipal) {
+  # Replace the exact managed task before registration. Some Windows builds
+  # still throw HRESULT 0x800700B7 with -Force when the task file already exists.
+  Unregister-ScheduledTask -TaskPath $path -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
+  if ($null -ne $taskPrincipal) {
+    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
+  } else {
+    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -RunLevel $runLevelMap[[string]$params.run_level] -Force | Out-Null
   }
 }
 
@@ -198,9 +219,9 @@ if ($params.run_as) {
     default { $principalArgs.LogonType = 'S4U' }
   }
   $principal = New-ScheduledTaskPrincipal @principalArgs
-  Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+  Register-ManagedScheduledTask $principal
 } else {
-  Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -RunLevel $runLevelMap[[string]$params.run_level] -Force | Out-Null
+  Register-ManagedScheduledTask $null
 }
 if ($null -ne $params.enabled -and -not [bool]$params.enabled) {
   Disable-ScheduledTask -TaskPath $path -TaskName $name | Out-Null
