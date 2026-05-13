@@ -149,12 +149,19 @@ func executeModule(
 	}
 
 	applyRes, applyErr := mod.Apply(ctx, params, capture)
-	result := Result{TaskID: taskID, Status: StatusChanged, Message: defaultMessage(applyRes.Message, "change applied"), Output: append([]string(nil), captured...)}
+	result := Result{TaskID: taskID, Status: StatusChanged, Output: append([]string(nil), captured...)}
 	if applyErr != nil {
+		// Preserve the legacy distinction: failed apply does not get the
+		// "change applied" default message — the renderer would otherwise
+		// surface a confusing "failed (change applied)" status line. The
+		// module's own message (e.g. a single-line tail of script output)
+		// is still propagated when provided.
 		result.Status = StatusFailed
+		result.Message = strings.TrimSpace(applyRes.Message)
 		result.Error = applyErr
 		return result, applyErr
 	}
+	result.Message = defaultMessage(applyRes.Message, "change applied")
 	return result, nil
 }
 

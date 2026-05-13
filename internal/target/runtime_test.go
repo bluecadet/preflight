@@ -102,6 +102,30 @@ func TestExecuteModuleUsesSingleLineOutputAsMessage(t *testing.T) {
 	}
 }
 
+func TestExecuteModuleFailedApplyDoesNotInheritChangeAppliedMessage(t *testing.T) {
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{NeedsChange: true}, nil
+			},
+			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, errors.New("boom")
+			},
+		},
+	}
+
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, false, nil, registry, errors.New)
+	if err == nil {
+		t.Fatal("expected apply error, got nil")
+	}
+	if result.Status != StatusFailed {
+		t.Fatalf("result.Status = %q, want %q", result.Status, StatusFailed)
+	}
+	if result.Message != "" {
+		t.Fatalf("result.Message = %q, want empty (failed apply must not show 'change applied')", result.Message)
+	}
+}
+
 func TestExecuteModuleCapturesCheckOutputDuringDryRun(t *testing.T) {
 	registry := ModuleRegistry{
 		"demo": moduleFuncs{
