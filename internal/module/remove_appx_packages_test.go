@@ -70,4 +70,7 @@ func TestRemoveAppxPackagesModule_CheckFiltersMalformedMatches(t *testing.T) {
 	if !strings.Contains(capturedScript, "IsNullOrWhiteSpace($packageName)") {
 		t.Fatalf("expected check script to filter empty provisioned PackageName values, got:\n%s", capturedScript)
 	}
+	if !strings.Contains(capturedScript, "NonRemovable") {
+		t.Fatalf("expected check script to ignore non-removable installed packages, got:\n%s", capturedScript)
+	}
 }

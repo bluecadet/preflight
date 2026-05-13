@@ -44,3 +44,37 @@ func TestAllStdlibActions(t *testing.T) {
 		}
 	}
 }
+
+func TestDebloatGamingAndAIAppsAvoidsPersistentXboxWildcard(t *testing.T) {
+	data, err := stdlib.FS.ReadFile("actions/preflight/debloat/action.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := action.ParseAction(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, task := range a.Tasks {
+		if task.Name != "Remove Microsoft gaming and AI apps" {
+			continue
+		}
+		params := task.InlineModules["remove_appx_packages"]
+		packages, ok := params["packages"].([]any)
+		if !ok {
+			t.Fatalf("expected remove_appx_packages packages list in task %q", task.Name)
+		}
+		for _, pkg := range packages {
+			spec, ok := pkg.(map[string]any)
+			if !ok {
+				t.Fatalf("expected package spec map, got %T", pkg)
+			}
+			name, _ := spec["name"].(string)
+			if name == "Microsoft.Xbox*" {
+				t.Fatalf("task %q must not use Microsoft.Xbox*: it also matches non-removable Xbox system components", task.Name)
+			}
+		}
+		return
+	}
+	t.Fatal("missing Remove Microsoft gaming and AI apps task")
+}

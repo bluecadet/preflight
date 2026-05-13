@@ -97,7 +97,19 @@ tasks:
           scope: both
         - name: Microsoft.WindowsFeedbackHub
           scope: both
-        - name: Microsoft.Xbox*
+        - name: Microsoft.GamingApp
+          scope: both
+        - name: Microsoft.Xbox.TCUI
+          scope: both
+        - name: Microsoft.XboxApp
+          scope: both
+        - name: Microsoft.XboxGameOverlay
+          scope: both
+        - name: Microsoft.XboxGamingOverlay
+          scope: both
+        - name: Microsoft.XboxIdentityProvider
+          scope: both
+        - name: Microsoft.XboxSpeechToTextOverlay
           scope: both
         - name: MicrosoftCorporationII.MicrosoftFamily
           scope: both

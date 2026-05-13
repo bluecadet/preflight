@@ -251,6 +251,9 @@ func TestRemoveAppxCheckScriptFiltersMalformedPackageNames(t *testing.T) {
 	if !strings.Contains(removeAppxPackagesCheckScript, "IsNullOrWhiteSpace($packageName)") {
 		t.Fatalf("expected remove-appx check script to guard provisioned PackageName, got %q", removeAppxPackagesCheckScript)
 	}
+	if !strings.Contains(removeAppxPackagesCheckScript, "NonRemovable") {
+		t.Fatalf("expected remove-appx check script to ignore non-removable installed packages, got %q", removeAppxPackagesCheckScript)
+	}
 }
 
 func TestWinRMTarget_CopyAndReadFile(t *testing.T) {

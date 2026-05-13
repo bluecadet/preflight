@@ -31,7 +31,11 @@ function Get-InstalledAppxMatches([string]$scope, [string]$name) {
     }
     $installed = @()
   }
-  return @($installed | Where-Object { $null -ne $_ -and -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName) })
+  return @($installed | Where-Object {
+    $null -ne $_ -and
+    -not [string]::IsNullOrWhiteSpace([string]$_.PackageFullName) -and
+    -not ($null -ne $_.PSObject.Properties['NonRemovable'] -and [bool]$_.NonRemovable)
+  })
 }
 
 function Remove-AppxProvisionedSafe([string]$packageName) {
@@ -138,6 +142,10 @@ foreach ($spec in $pkgs) {
     }
     foreach ($pkg in $installed) {
       if ($null -eq $pkg) { continue }
+      if ($null -ne $pkg.PSObject.Properties['NonRemovable'] -and [bool]$pkg.NonRemovable) {
+        Write-Output ("skipping appx package " + $name + " because it is marked NonRemovable")
+        continue
+      }
       $packageFullName = [string]$pkg.PackageFullName
       if ([string]::IsNullOrWhiteSpace($packageFullName)) {
         Write-Output ("skipping appx package " + $name + " because PackageFullName is empty")
