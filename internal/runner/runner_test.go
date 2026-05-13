@@ -1875,8 +1875,12 @@ func mustOneBundlePath(t *testing.T, dir string) string {
 
 type noopModule struct{}
 
-func (noopModule) Check(_ context.Context, _ map[string]any) (bool, error) { return false, nil }
-func (noopModule) Apply(_ context.Context, _ map[string]any) error         { return nil }
+func (noopModule) Check(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
+	return target.CheckResult{}, nil
+}
+func (noopModule) Apply(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
+	return target.ApplyResult{}, nil
+}
 
 type fetchableResolver struct {
 	actions map[string]*action.Action

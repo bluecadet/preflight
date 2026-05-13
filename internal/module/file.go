@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type FileParams struct {
@@ -18,22 +20,22 @@ type FileParams struct {
 
 type FileModule struct{}
 
-func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, error) {
+func (m *FileModule) Check(_ context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	if err := RejectParams("file", params, "owner", "permissions"); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 	var p FileParams
 	if err := Decode(params, &p); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 	hasContent, err := validateFileContentParams("file", params, p.Src)
 	if err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 
 	info, statErr := os.Stat(p.Dest)
 
-	return EnsureCheck("file", p.Ensure,
+	needed, err := EnsureCheck("file", p.Ensure,
 		func() (bool, error) {
 			if os.IsNotExist(statErr) {
 				return true, nil
@@ -74,22 +76,23 @@ func (m *FileModule) Check(_ context.Context, params map[string]any) (bool, erro
 			return true, nil
 		},
 	)
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func (m *FileModule) Apply(_ context.Context, params map[string]any) error {
+func (m *FileModule) Apply(_ context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	if err := RejectParams("file", params, "owner", "permissions"); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 	var p FileParams
 	if err := Decode(params, &p); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 	hasContent, err := validateFileContentParams("file", params, p.Src)
 	if err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 
-	return EnsureApply("file", p.Ensure,
+	return target.ApplyResult{}, EnsureApply("file", p.Ensure,
 		func() error {
 			if p.Src != "" {
 				return copyFile(p.Src, p.Dest)

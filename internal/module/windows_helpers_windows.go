@@ -236,58 +236,51 @@ func firewallPortsArg(params map[string]any) (string, error) {
 }
 
 // validate-then-run helpers below were previously in windows_module_helpers.go.
-// Single file, single discovery point for Windows module utilities.
+// Single file, single discovery point for Windows module utilities. They
+// return target.CheckResult / target.ApplyResult so module Check/Apply
+// methods are one-line delegates.
 
 type windowsParamsPreparer func(map[string]any) (map[string]any, error)
 
-func runValidatedWindowsCheck[T any](ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer) (bool, error) {
+func runValidatedWindowsCheck[T any](ctx context.Context, params map[string]any, out target.OutputFunc, script string, prepare windowsParamsPreparer) (target.CheckResult, error) {
 	if err := validateWindowsParams[T](params); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
-	return runPreparedWindowsCheck(ctx, params, script, prepare)
+	return runPreparedWindowsCheck(ctx, params, out, script, prepare)
 }
 
-func runValidatedWindowsApply[T any](ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer) error {
+func runValidatedWindowsApply[T any](ctx context.Context, params map[string]any, out target.OutputFunc, script string, prepare windowsParamsPreparer) (target.ApplyResult, error) {
 	if err := validateWindowsParams[T](params); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
-	return runPreparedWindowsApply(ctx, params, script, prepare)
+	return runPreparedWindowsApply(ctx, params, out, script, prepare)
 }
 
-func runPreparedWindowsCheck(ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer) (bool, error) {
+func runPreparedWindowsCheck(ctx context.Context, params map[string]any, out target.OutputFunc, script string, prepare windowsParamsPreparer) (target.CheckResult, error) {
 	prepared, err := prepareWindowsParams(params, prepare)
 	if err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
-	return runWindowsPowerShellBool(ctx, prepared, script)
+	var needed bool
+	if out == nil {
+		needed, err = runWindowsPowerShellBool(ctx, prepared, script)
+	} else {
+		needed, err = runWindowsPowerShellBoolWithOutput(ctx, prepared, script, out)
+	}
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func runPreparedWindowsApply(ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer) error {
+func runPreparedWindowsApply(ctx context.Context, params map[string]any, out target.OutputFunc, script string, prepare windowsParamsPreparer) (target.ApplyResult, error) {
 	prepared, err := prepareWindowsParams(params, prepare)
 	if err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
-	_, err = runWindowsPowerShellWithParams(ctx, prepared, script)
-	return err
-}
-
-func runPreparedWindowsCheckWithOutput(ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer, onOutput target.OutputFunc) (bool, error) {
-	prepared, err := prepareWindowsParams(params, prepare)
-	if err != nil {
-		return false, err
+	if out == nil {
+		_, err = runWindowsPowerShellWithParams(ctx, prepared, script)
+	} else {
+		err = runWindowsPowerShellWithParamsWithOutput(ctx, prepared, script, out)
 	}
-	if onOutput == nil {
-		return runWindowsPowerShellBool(ctx, prepared, script)
-	}
-	return runWindowsPowerShellBoolWithOutput(ctx, prepared, script, onOutput)
-}
-
-func runPreparedWindowsApplyWithOutput(ctx context.Context, params map[string]any, script string, prepare windowsParamsPreparer, onOutput target.OutputFunc) error {
-	prepared, err := prepareWindowsParams(params, prepare)
-	if err != nil {
-		return err
-	}
-	return runWindowsPowerShellWithParamsWithOutput(ctx, prepared, script, onOutput)
+	return target.ApplyResult{}, err
 }
 
 func prepareWindowsParams(params map[string]any, prepare windowsParamsPreparer) (map[string]any, error) {

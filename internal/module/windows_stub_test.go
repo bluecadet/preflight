@@ -29,7 +29,7 @@ func TestWindowsOnlyModulesUseNonWindowsStubs(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected module %q in registry", name)
 		}
-		_, err := mod.Check(context.Background(), map[string]any{})
+		_, err := mod.Check(context.Background(), map[string]any{}, nil)
 		if err == nil {
 			t.Fatalf("expected non-Windows stub error for %q", name)
 		}

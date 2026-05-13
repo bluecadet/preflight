@@ -18,14 +18,11 @@ import (
 //   - creates: path that indicates the operation is already done
 type PowershellModule struct{}
 
-func (m *PowershellModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	return powershellCheck(ctx, params)
+func (m *PowershellModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
+	needed, err := powershellCheckWithOutput(ctx, params, out)
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func (m *PowershellModule) Apply(ctx context.Context, params map[string]any) error {
-	return m.ApplyWithOutput(ctx, params, nil)
-}
-
-func (m *PowershellModule) ApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
-	return powershellApplyWithOutput(ctx, params, onOutput)
+func (m *PowershellModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
+	return target.ApplyResult{}, powershellApplyWithOutput(ctx, params, out)
 }

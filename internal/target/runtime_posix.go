@@ -16,49 +16,49 @@ type posixShellBackend interface {
 	PowerShellBinary() string
 }
 
-func newPOSIXShellRegistry(backend posixShellBackend) remoteModuleRegistry {
-	supported := remoteModuleRegistry{
-		"directory": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
+	supported := ModuleRegistry{
+		"directory": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPOSIXDirectory(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyPOSIXDirectory(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyPOSIXDirectory(ctx, backend, params)
+			}),
 		},
-		"file": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"file": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPOSIXFile(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyPOSIXFile(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyPOSIXFile(ctx, backend, params)
+			}),
 		},
-		"shell": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"shell": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPOSIXShell(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyPOSIXShell(ctx, backend, params)
-			},
+			}),
 		},
-		"wait": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"wait": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPOSIXWait(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyPOSIXWait(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyPOSIXWait(ctx, backend, params)
+			}),
 		},
 	}
 	if backend.PowerShellBinary() != "" {
-		supported["powershell"] = remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		supported["powershell"] = moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPowerShellModule(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyPowerShellModule(ctx, backend, params)
-			},
+			}),
 		}
 	}
 	return buildRemoteModuleRegistry(RuntimeKindPOSIXShell, supported, func(module string) error {

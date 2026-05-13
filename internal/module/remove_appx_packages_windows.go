@@ -12,21 +12,14 @@ import (
 
 type RemoveAppxPackagesModule struct{}
 
-func (m *RemoveAppxPackagesModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	return m.CheckWithOutput(ctx, params, nil)
-}
-
-func (m *RemoveAppxPackagesModule) CheckWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) (bool, error) {
-	if onOutput == nil {
-		return runPreparedWindowsCheck(ctx, params, pscript.RemoveAppxCheckScript, winutil.NormalizeRemoveAppxParams)
+func (m *RemoveAppxPackagesModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
+	script := pscript.RemoveAppxCheckScript
+	if out != nil {
+		script = pscript.RemoveAppxCheckScriptWithOutput
 	}
-	return runPreparedWindowsCheckWithOutput(ctx, params, pscript.RemoveAppxCheckScriptWithOutput, winutil.NormalizeRemoveAppxParams, onOutput)
+	return runPreparedWindowsCheck(ctx, params, out, script, winutil.NormalizeRemoveAppxParams)
 }
 
-func (m *RemoveAppxPackagesModule) Apply(ctx context.Context, params map[string]any) error {
-	return m.ApplyWithOutput(ctx, params, nil)
-}
-
-func (m *RemoveAppxPackagesModule) ApplyWithOutput(ctx context.Context, params map[string]any, onOutput target.OutputFunc) error {
-	return runPreparedWindowsApplyWithOutput(ctx, params, pscript.ModuleRemoveAppxApplyScript, winutil.NormalizeRemoveAppxParams, onOutput)
+func (m *RemoveAppxPackagesModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
+	return runPreparedWindowsApply(ctx, params, out, pscript.ModuleRemoveAppxApplyScript, winutil.NormalizeRemoveAppxParams)
 }

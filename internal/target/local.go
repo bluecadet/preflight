@@ -36,9 +36,11 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 // Transport identifies the local target connection type.
 func (t *LocalTarget) Transport() Transport { return TransportLocal }
 
-// Execute looks up the named module, runs Check, and conditionally runs Apply.
-// If dryRun is true, Apply is never called.
-// If the module implements StreamingModule, ApplyWithOutput is used and lines are forwarded to onOutput.
+// Execute looks up the named module and dispatches through the unified
+// executeModule executor. Both the in-process registry path (no become) and
+// the become-via-remote-runtime path now share one executor, since both
+// produce ModuleRegistry values whose entries satisfy the same Module
+// interface.
 func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
 	if opts.Enabled() {
 		kind := runtimeKindForLocal()
@@ -61,59 +63,16 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 				tempDir:   localWindowsTempDir(),
 				become:    become,
 			}
-			return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, newWindowsPowerShellRegistry(backend), unsupported)
+			return executeModule(ctx, taskID, module, params, dryRun, onOutput, newWindowsPowerShellRegistry(backend), unsupported)
 		}
 
 		backend := newLocalPOSIXBackend(become)
-		return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, newPOSIXShellRegistry(backend), unsupported)
+		return executeModule(ctx, taskID, module, params, dryRun, onOutput, newPOSIXShellRegistry(backend), unsupported)
 	}
 
-	mod, ok := t.registry[module]
-	if !ok {
-		return Result{}, wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
-	}
-
-	var captured []string
-	captureOnOutput := func(line string) {
-		captured = append(captured, line)
-		if onOutput != nil {
-			onOutput(line)
-		}
-	}
-
-	var (
-		needsChange bool
-		err         error
-	)
-	if sm, ok := mod.(CheckStreamingModule); ok {
-		needsChange, err = sm.CheckWithOutput(ctx, params, captureOnOutput)
-	} else {
-		needsChange, err = mod.Check(ctx, params)
-	}
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
-	}
-
-	if !needsChange {
-		return Result{TaskID: taskID, Status: StatusOK, Message: "already in desired state", Output: captured}, nil
-	}
-
-	// Change is needed but we're in dry-run mode — report what would happen.
-	if dryRun {
-		return Result{TaskID: taskID, Status: StatusChanged, Message: "would apply change (dry-run)", Output: captured}, nil
-	}
-
-	var applyErr error
-	if sm, ok := mod.(StreamingModule); ok {
-		applyErr = sm.ApplyWithOutput(ctx, params, captureOnOutput)
-	} else {
-		applyErr = mod.Apply(ctx, params)
-	}
-	if applyErr != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: applyErr}, applyErr
-	}
-
-	return Result{TaskID: taskID, Status: StatusChanged, Message: "change applied", Output: captured}, nil
+	return executeModule(ctx, taskID, module, params, dryRun, onOutput, t.registry, func(module string) error {
+		return wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
+	})
 }
 
 // CopyFile copies src (local path) to dst (local path), preserving file permissions.

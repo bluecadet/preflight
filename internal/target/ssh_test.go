@@ -18,12 +18,14 @@ import (
 // (which would create a target → plugins → target import cycle).
 type fakePluggableModule struct{ path string }
 
-func (fakePluggableModule) Check(context.Context, map[string]any) (bool, error) {
-	return false, nil
+func (fakePluggableModule) Check(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+	return CheckResult{}, nil
 }
-func (fakePluggableModule) Apply(context.Context, map[string]any) error { return nil }
-func (m fakePluggableModule) PluginPath() string                        { return m.path }
-func (m fakePluggableModule) CloneModule() Module                       { return m }
+func (fakePluggableModule) Apply(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+	return ApplyResult{}, nil
+}
+func (m fakePluggableModule) PluginPath() string  { return m.path }
+func (m fakePluggableModule) CloneModule() Module { return m }
 
 type fakeSSHRunner struct {
 	run func(context.Context, string, []byte) (string, string, int, error)

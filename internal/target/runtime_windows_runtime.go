@@ -39,173 +39,167 @@ var windowsPowerShellModuleCatalog = map[string]struct {
 	"powershell": {freshSession: true},
 }
 
-func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) remoteModuleRegistry {
-	supported := remoteModuleRegistry{
-		"directory": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegistry {
+	supported := ModuleRegistry{
+		"directory": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsDirectory(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyWindowsDirectory(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyWindowsDirectory(ctx, backend, params)
+			}),
 		},
-		"file": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"file": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsFile(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyWindowsFile(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyWindowsFile(ctx, backend, params)
+			}),
 		},
-		"shell": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"shell": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsCreates(ctx, backend, params, "shell")
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsShell(ctx, backend, params)
-			},
+			}),
 		},
-		"powershell": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkPowerShellModule(ctx, backend, params)
-			},
-			checkWithOutput: func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error) {
-				return checkPowerShellModuleWithOutput(ctx, backend, params, onOutput)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+		"powershell": moduleFuncs{
+			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+				return checkPowerShellModuleWithOutput(ctx, backend, params, out)
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyPowerShellModule(ctx, backend, params)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
-				return ensurePowerShellModule(ctx, backend, params, dryRun, onOutput)
-			},
+			}),
+			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error) {
+				return ensurePowerShellModule(ctx, backend, params, dryRun, out)
+			}),
 		},
-		"environment": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"environment": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsEnvironment(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyWindowsEnvironment(ctx, backend, params)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyWindowsEnvironment(ctx, backend, params)
+			}),
+			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
 				return ensureWindowsEnvironment(ctx, backend, params, dryRun)
-			},
+			}),
 		},
-		"wait": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"wait": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsWait(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyWindowsWait(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyWindowsWait(ctx, backend, params)
+			}),
 		},
-		"reboot": remoteModuleFuncs{
-			check: func(context.Context, map[string]any) (bool, string, error) {
+		"reboot": moduleFuncs{
+			check: check(func(context.Context, map[string]any) (bool, string, error) {
 				return true, "", nil
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
-				return "", applyWindowsReboot(ctx, backend, params)
-			},
+			}),
+			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
+				return applyWindowsReboot(ctx, backend, params)
+			}),
 		},
-		"registry": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"registry": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsRegistry(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsRegistry(ctx, backend, params)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+			}),
+			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
 				return ensureWindowsRegistry(ctx, backend, params, dryRun)
-			},
+			}),
 		},
-		"service": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"service": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, serviceCheckScript)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return windowsRunScript(ctx, backend, params, serviceApplyScript)
-			},
+			}),
 		},
-		"package": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"package": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				normalized, err := winutil.NormalizePackageParams(params)
 				if err != nil {
 					return false, "", err
 				}
 				return checkWindowsBooleanScript(ctx, backend, normalized, packageCheckScript)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsPackage(ctx, backend, params)
-			},
+			}),
 		},
-		"shortcut": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"shortcut": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsShortcut(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsShortcut(ctx, backend, params)
-			},
+			}),
 		},
-		"scheduled_task": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"scheduled_task": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsScheduledTask(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsScheduledTask(ctx, backend, params)
-			},
+			}),
 		},
-		"user": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"user": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsUser(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsUser(ctx, backend, params)
-			},
+			}),
 		},
-		"winget_package": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"winget_package": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsWingetPackage(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsWingetPackage(ctx, backend, params)
-			},
+			}),
 		},
-		"remove_appx_packages": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkWindowsRemoveAppxPackages(ctx, backend, params)
-			},
-			checkWithOutput: func(ctx context.Context, params map[string]any, onOutput OutputFunc) (bool, string, error) {
-				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, onOutput)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+		"remove_appx_packages": moduleFuncs{
+			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, out)
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsRemoveAppxPackages(ctx, backend, params)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
-				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun, onOutput)
-			},
+			}),
+			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error) {
+				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun, out)
+			}),
 		},
-		"power_plan": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"power_plan": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, powerPlanCheckScript)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return windowsRunScript(ctx, backend, params, powerPlanApplyScript)
-			},
+			}),
 		},
-		"windows_feature": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"windows_feature": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, windowsFeatureCheckScript)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return windowsRunScript(ctx, backend, params, windowsFeatureApplyScript)
-			},
+			}),
 		},
-		"firewall_rule": remoteModuleFuncs{
-			check: func(ctx context.Context, params map[string]any) (bool, string, error) {
+		"firewall_rule": moduleFuncs{
+			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkWindowsFirewallRule(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any) (string, error) {
+			}),
+			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
 				return applyWindowsFirewallRule(ctx, backend, params)
-			},
+			}),
 		},
 	}
 	return buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, supported, func(module string) error {
@@ -656,10 +650,6 @@ func applyWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBac
 		return "", err
 	}
 	return windowsRunScript(ctx, backend, normalized, wingetPackageApplyScript)
-}
-
-func checkWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
-	return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, nil)
 }
 
 func checkWindowsRemoveAppxPackagesWithOutput(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, onOutput OutputFunc) (bool, string, error) {

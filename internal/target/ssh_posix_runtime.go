@@ -21,7 +21,7 @@ func (r *sshPOSIXShellRuntime) Kind() RuntimeKind {
 	return RuntimeKindPOSIXShell
 }
 
-func (r *sshPOSIXShellRuntime) Registry() remoteModuleRegistry {
+func (r *sshPOSIXShellRuntime) Registry() ModuleRegistry {
 	return newPOSIXShellRegistry(r)
 }
 

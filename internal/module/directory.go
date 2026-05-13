@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type DirectoryParams struct {
@@ -13,18 +15,18 @@ type DirectoryParams struct {
 
 type DirectoryModule struct{}
 
-func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool, error) {
+func (m *DirectoryModule) Check(_ context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	if err := RejectParams("directory", params, "owner", "permissions"); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 	var p DirectoryParams
 	if err := Decode(params, &p); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 
 	info, statErr := os.Stat(p.Path)
 
-	return EnsureCheck("directory", p.Ensure,
+	needed, err := EnsureCheck("directory", p.Ensure,
 		func() (bool, error) {
 			if os.IsNotExist(statErr) {
 				return true, nil
@@ -47,18 +49,19 @@ func (m *DirectoryModule) Check(_ context.Context, params map[string]any) (bool,
 			return true, nil
 		},
 	)
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func (m *DirectoryModule) Apply(_ context.Context, params map[string]any) error {
+func (m *DirectoryModule) Apply(_ context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	if err := RejectParams("directory", params, "owner", "permissions"); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 	var p DirectoryParams
 	if err := Decode(params, &p); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 
-	return EnsureApply("directory", p.Ensure,
+	return target.ApplyResult{}, EnsureApply("directory", p.Ensure,
 		func() error {
 			if err := os.MkdirAll(p.Path, 0755); err != nil {
 				return fmt.Errorf("directory: mkdir %q: %w", p.Path, err)

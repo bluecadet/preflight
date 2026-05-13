@@ -159,7 +159,7 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		become:    become,
 	}
 	registry := newWindowsPowerShellRegistry(backend)
-	return executeRemoteModule(
+	return executeModule(
 		ctx,
 		taskID,
 		module,

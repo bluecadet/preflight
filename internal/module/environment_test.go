@@ -19,15 +19,15 @@ func TestEnvironmentModule_Check_NotSet(t *testing.T) {
 		t.Fatalf("Unsetenv(%q): %v", varName, err)
 	}
 
-	needsChange, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"name":  varName,
 		"value": "hello",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if !needsChange {
-		t.Error("expected needsChange=true for unset variable")
+	if !res.NeedsChange {
+		t.Error("expected NeedsChange=true for unset variable")
 	}
 }
 
@@ -38,15 +38,15 @@ func TestEnvironmentModule_Check_AlreadySet(t *testing.T) {
 	const varName = "PREFLIGHT_TEST_ENV_ALREADY_SET"
 	t.Setenv(varName, "desired")
 
-	needsChange, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"name":  varName,
 		"value": "desired",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Check: %v", err)
 	}
-	if needsChange {
-		t.Error("expected needsChange=false when variable already at desired value")
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false when variable already at desired value")
 	}
 }
 
@@ -64,22 +64,22 @@ func TestEnvironmentModule_ApplyThenCheck(t *testing.T) {
 		}
 	})
 
-	if err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"name":  varName,
 		"value": "applied",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("Apply: %v", err)
 	}
 
-	needsChange, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"name":  varName,
 		"value": "applied",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Check after Apply: %v", err)
 	}
-	if needsChange {
-		t.Error("expected needsChange=false after Apply set the variable")
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false after Apply set the variable")
 	}
 }
 
@@ -90,32 +90,32 @@ func TestEnvironmentModule_EnsureAbsent(t *testing.T) {
 	const varName = "PREFLIGHT_TEST_ENV_ABSENT"
 	t.Setenv(varName, "present")
 
-	needsChange, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"name":   varName,
 		"ensure": "absent",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Check absent: %v", err)
 	}
-	if !needsChange {
-		t.Error("expected needsChange=true when var is present and ensure=absent")
+	if !res.NeedsChange {
+		t.Error("expected NeedsChange=true when var is present and ensure=absent")
 	}
 
-	if err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"name":   varName,
 		"ensure": "absent",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("Apply absent: %v", err)
 	}
 
-	needsChange, err = m.Check(context.Background(), map[string]any{
+	res, err = m.Check(context.Background(), map[string]any{
 		"name":   varName,
 		"ensure": "absent",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("Check after absent Apply: %v", err)
 	}
-	if needsChange {
-		t.Error("expected needsChange=false after Apply removed the variable")
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false after Apply removed the variable")
 	}
 }

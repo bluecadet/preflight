@@ -2,6 +2,8 @@ package module
 
 import (
 	"context"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type RebootParams struct {
@@ -11,21 +13,22 @@ type RebootParams struct {
 
 type RebootModule struct{}
 
-func (m *RebootModule) Check(_ context.Context, params map[string]any) (bool, error) {
+func (m *RebootModule) Check(_ context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	var p RebootParams
 	if err := Decode(params, &p); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 	if p.Condition == "always" {
-		return true, nil
+		return target.CheckResult{NeedsChange: true}, nil
 	}
-	return rebootPending()
+	needed, err := rebootPending()
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func (m *RebootModule) Apply(_ context.Context, params map[string]any) error {
+func (m *RebootModule) Apply(_ context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	var p RebootParams
 	if err := Decode(params, &p); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
-	return applyReboot(p.Timeout)
+	return target.ApplyResult{}, applyReboot(p.Timeout)
 }

@@ -62,39 +62,39 @@ func (m *Plugin) PluginPath() string {
 	return m.path
 }
 
-func (m *Plugin) Check(ctx context.Context, params map[string]any) (bool, error) {
+func (m *Plugin) Check(ctx context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
-		return false, fmt.Errorf("plugin %q: %w", m.name, err)
+		return target.CheckResult{}, fmt.Errorf("plugin %q: %w", m.name, err)
 	}
 	if name := client.Name(); name != "" && name != m.name {
 		_ = m.Close()
-		return false, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
+		return target.CheckResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
 	result, err := client.Check(params)
 	if err != nil {
 		m.resetClient(client)
-		return false, fmt.Errorf("plugin %q check: %w", m.name, err)
+		return target.CheckResult{}, fmt.Errorf("plugin %q check: %w", m.name, err)
 	}
-	return result.NeedsChange, nil
+	return target.CheckResult{NeedsChange: result.NeedsChange}, nil
 }
 
-func (m *Plugin) Apply(ctx context.Context, params map[string]any) error {
+func (m *Plugin) Apply(ctx context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
-		return fmt.Errorf("plugin %q: %w", m.name, err)
+		return target.ApplyResult{}, fmt.Errorf("plugin %q: %w", m.name, err)
 	}
 	if name := client.Name(); name != "" && name != m.name {
 		_ = m.Close()
-		return fmt.Errorf("plugin %q reported logical name %q", m.name, name)
+		return target.ApplyResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
 	if _, err := client.Apply(params); err != nil {
 		m.resetClient(client)
-		return fmt.Errorf("plugin %q apply: %w", m.name, err)
+		return target.ApplyResult{}, fmt.Errorf("plugin %q apply: %w", m.name, err)
 	}
-	return nil
+	return target.ApplyResult{}, nil
 }
 
 func (m *Plugin) Close() error {

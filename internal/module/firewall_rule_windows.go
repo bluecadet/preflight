@@ -6,17 +6,18 @@ import (
 	"context"
 
 	"github.com/bluecadet/preflight/internal/pscript"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 type FirewallRuleModule struct{}
 
-func (m *FirewallRuleModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	return runValidatedWindowsCheck[FirewallRuleParams](ctx, params, pscript.FirewallRuleCheckScript, normalizeFirewallRuleParams)
+func (m *FirewallRuleModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
+	return runValidatedWindowsCheck[FirewallRuleParams](ctx, params, out, pscript.FirewallRuleCheckScript, normalizeFirewallRuleParams)
 }
 
-func (m *FirewallRuleModule) Apply(ctx context.Context, params map[string]any) error {
-	return runValidatedWindowsApply[FirewallRuleParams](ctx, params, pscript.FirewallRuleApplyScript, normalizeFirewallRuleParams)
+func (m *FirewallRuleModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
+	return runValidatedWindowsApply[FirewallRuleParams](ctx, params, out, pscript.FirewallRuleApplyScript, normalizeFirewallRuleParams)
 }
 
 func normalizeFirewallRuleParams(params map[string]any) (map[string]any, error) {

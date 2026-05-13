@@ -6,19 +6,21 @@ import (
 	"context"
 	"fmt"
 	"os"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type EnvironmentModule struct{}
 
-func (m *EnvironmentModule) Check(_ context.Context, params map[string]any) (bool, error) {
+func (m *EnvironmentModule) Check(_ context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	var p EnvironmentParams
 	if err := Decode(params, &p); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 
 	current := os.Getenv(p.Name)
 
-	return EnsureCheck("environment", p.Ensure,
+	needed, err := EnsureCheck("environment", p.Ensure,
 		func() (bool, error) {
 			if p.Value == "" {
 				return false, fmt.Errorf("module: required param %q is missing", "value")
@@ -32,15 +34,16 @@ func (m *EnvironmentModule) Check(_ context.Context, params map[string]any) (boo
 			return true, nil
 		},
 	)
+	return target.CheckResult{NeedsChange: needed}, err
 }
 
-func (m *EnvironmentModule) Apply(_ context.Context, params map[string]any) error {
+func (m *EnvironmentModule) Apply(_ context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	var p EnvironmentParams
 	if err := Decode(params, &p); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 
-	return EnsureApply("environment", p.Ensure,
+	return target.ApplyResult{}, EnsureApply("environment", p.Ensure,
 		func() error {
 			if p.Value == "" {
 				return fmt.Errorf("module: required param %q is missing", "value")

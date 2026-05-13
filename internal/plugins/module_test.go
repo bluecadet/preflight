@@ -47,23 +47,23 @@ func TestPluginReusesClientAcrossCalls(t *testing.T) {
 		},
 	}
 
-	needed, err := mod.Check(context.Background(), map[string]any{"name": "first"})
+	res, err := mod.Check(context.Background(), map[string]any{"name": "first"}, nil)
 	if err != nil {
 		t.Fatalf("Check() error = %v", err)
 	}
-	if !needed {
+	if !res.NeedsChange {
 		t.Fatal("Check() = false, want true")
 	}
 
-	if err := mod.Apply(context.Background(), map[string]any{"name": "first"}); err != nil {
+	if _, err := mod.Apply(context.Background(), map[string]any{"name": "first"}, nil); err != nil {
 		t.Fatalf("Apply() error = %v", err)
 	}
 
-	needed, err = mod.Check(context.Background(), map[string]any{"name": "second"})
+	res, err = mod.Check(context.Background(), map[string]any{"name": "second"}, nil)
 	if err != nil {
 		t.Fatalf("second Check() error = %v", err)
 	}
-	if !needed {
+	if !res.NeedsChange {
 		t.Fatal("second Check() = false, want true")
 	}
 
@@ -104,7 +104,7 @@ func TestPluginRejectsNameMismatch(t *testing.T) {
 		},
 	}
 
-	if _, err := mod.Check(context.Background(), nil); err == nil {
+	if _, err := mod.Check(context.Background(), nil, nil); err == nil {
 		t.Fatal("Check() error = nil, want mismatch error")
 	}
 	if client.closeCalls != 1 {
@@ -129,11 +129,11 @@ func TestPluginCloseDropsCachedClient(t *testing.T) {
 		},
 	}
 
-	needed, err := mod.Check(context.Background(), nil)
+	res, err := mod.Check(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("first Check() error = %v", err)
 	}
-	if !needed {
+	if !res.NeedsChange {
 		t.Fatal("first Check() = false, want true")
 	}
 
@@ -141,11 +141,11 @@ func TestPluginCloseDropsCachedClient(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	needed, err = mod.Check(context.Background(), nil)
+	res, err = mod.Check(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("second Check() error = %v", err)
 	}
-	if needed {
+	if res.NeedsChange {
 		t.Fatal("second Check() = true, want false")
 	}
 

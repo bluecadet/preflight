@@ -6,6 +6,8 @@ import (
 	"net"
 	"os"
 	"time"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type WaitParams struct {
@@ -16,28 +18,28 @@ type WaitParams struct {
 
 type WaitModule struct{}
 
-func (m *WaitModule) Check(_ context.Context, params map[string]any) (bool, error) {
+func (m *WaitModule) Check(_ context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
 	var p WaitParams
 	if err := Decode(params, &p); err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
 
 	met, err := checkCondition(p.Condition, p.Target)
 	if err != nil {
-		return false, err
+		return target.CheckResult{}, err
 	}
-	return !met, nil
+	return target.CheckResult{NeedsChange: !met}, nil
 }
 
-func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
+func (m *WaitModule) Apply(ctx context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	var p WaitParams
 	if err := Decode(params, &p); err != nil {
-		return err
+		return target.ApplyResult{}, err
 	}
 
 	timeout, err := time.ParseDuration(p.Timeout)
 	if err != nil {
-		return fmt.Errorf("wait: invalid timeout %q: %w", p.Timeout, err)
+		return target.ApplyResult{}, fmt.Errorf("wait: invalid timeout %q: %w", p.Timeout, err)
 	}
 
 	deadline := time.Now().Add(timeout)
@@ -46,18 +48,18 @@ func (m *WaitModule) Apply(ctx context.Context, params map[string]any) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return target.ApplyResult{}, ctx.Err()
 		case <-pollTimer.C:
 		}
 		met, err := checkCondition(p.Condition, p.Target)
 		if err != nil {
-			return err
+			return target.ApplyResult{}, err
 		}
 		if met {
-			return nil
+			return target.ApplyResult{}, nil
 		}
 		if time.Now().After(deadline) {
-			return fmt.Errorf("wait: timeout after %s waiting for condition %q on %q", p.Timeout, p.Condition, p.Target)
+			return target.ApplyResult{}, fmt.Errorf("wait: timeout after %s waiting for condition %q on %q", p.Timeout, p.Condition, p.Target)
 		}
 		pollTimer.Reset(5 * time.Second)
 	}

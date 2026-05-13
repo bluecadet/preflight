@@ -13,11 +13,13 @@ type closeableModule struct {
 	closeCalls  int
 }
 
-func (m *closeableModule) Check(context.Context, map[string]any) (bool, error) {
-	return m.needsChange, nil
+func (m *closeableModule) Check(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+	return CheckResult{NeedsChange: m.needsChange}, nil
 }
 
-func (m *closeableModule) Apply(context.Context, map[string]any) error { return nil }
+func (m *closeableModule) Apply(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+	return ApplyResult{}, nil
+}
 
 func (m *closeableModule) Close() error { m.closeCalls++; return nil }
 

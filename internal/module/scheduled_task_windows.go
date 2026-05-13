@@ -6,17 +6,18 @@ import (
 	"context"
 
 	"github.com/bluecadet/preflight/internal/pscript"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 type ScheduledTaskModule struct{}
 
-func (m *ScheduledTaskModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	return runValidatedWindowsCheck[ScheduledTaskParams](ctx, params, pscript.ScheduledTaskCheckScript, normalizeScheduledTaskModuleParams)
+func (m *ScheduledTaskModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
+	return runValidatedWindowsCheck[ScheduledTaskParams](ctx, params, out, pscript.ScheduledTaskCheckScript, normalizeScheduledTaskModuleParams)
 }
 
-func (m *ScheduledTaskModule) Apply(ctx context.Context, params map[string]any) error {
-	return runValidatedWindowsApply[ScheduledTaskParams](ctx, params, pscript.ScheduledTaskApplyScript, normalizeScheduledTaskModuleParams)
+func (m *ScheduledTaskModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
+	return runValidatedWindowsApply[ScheduledTaskParams](ctx, params, out, pscript.ScheduledTaskApplyScript, normalizeScheduledTaskModuleParams)
 }
 
 func normalizeScheduledTaskModuleParams(params map[string]any) (map[string]any, error) {

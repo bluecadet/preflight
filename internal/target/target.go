@@ -15,10 +15,54 @@ const (
 	StatusSkipped Status = "skipped"
 )
 
-// Module is the interface implemented by all built-in modules.
+// Module is the interface implemented by all built-in modules, plugin
+// adapters, and remote-execution closures. A single contract replaces what
+// used to be three parallel ones (in-process Module, target.remoteModule,
+// optional CheckStreamingModule / StreamingModule upgrades).
+//
+// Output streaming is part of the main signature: implementations call out(line)
+// for each line they want to surface; callers pass nil when they do not care.
+// Modules that do not stream simply ignore the OutputFunc.
 type Module interface {
-	Check(ctx context.Context, params map[string]any) (needed bool, err error)
-	Apply(ctx context.Context, params map[string]any) error
+	Check(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error)
+	Apply(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error)
+}
+
+// CheckResult is the outcome of a module's Check method.
+type CheckResult struct {
+	// NeedsChange reports whether Apply must run to bring the system to the
+	// desired state.
+	NeedsChange bool
+	// Message is an optional human-readable summary. When non-empty it
+	// overrides the runner's default status message ("already in desired
+	// state" or "would apply change (dry-run)").
+	Message string
+}
+
+// ApplyResult is the outcome of a module's Apply method.
+type ApplyResult struct {
+	// Message is an optional human-readable summary. When non-empty it
+	// overrides the runner's default "change applied" message.
+	Message string
+}
+
+// EnsureModule is an optional capability for modules that can combine Check
+// and Apply into a single round trip. Worthwhile on high-latency transports
+// (e.g. WinRM) where two separate invocations double overhead. Implementations
+// may return ErrEnsureNotHandled to fall back to the standard Check+Apply
+// path (e.g. when params don't support the fast path).
+type EnsureModule interface {
+	Module
+	Ensure(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error)
+}
+
+// EnsureResult is the outcome of an ensure single-round-trip operation.
+type EnsureResult struct {
+	// Changed reports whether the module made (or, in dry-run, would have
+	// made) a change.
+	Changed bool
+	// Message is an optional human-readable summary.
+	Message string
 }
 
 // PluggableModule is implemented by modules that delegate to an out-of-process
@@ -32,20 +76,6 @@ type PluggableModule interface {
 	PluginPath() string
 	// CloneModule returns a fresh adapter that owns no shared client state.
 	CloneModule() Module
-}
-
-// CheckStreamingModule is an optional extension of Module for implementations
-// that can emit output line-by-line during Check.
-type CheckStreamingModule interface {
-	Module
-	CheckWithOutput(ctx context.Context, params map[string]any, onOutput OutputFunc) (needed bool, err error)
-}
-
-// StreamingModule is an optional extension of Module for implementations
-// that can emit output line-by-line during Apply.
-type StreamingModule interface {
-	Module
-	ApplyWithOutput(ctx context.Context, params map[string]any, onOutput OutputFunc) error
 }
 
 // Result holds the outcome of a single task execution.

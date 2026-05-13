@@ -75,12 +75,12 @@ Write-Output ([bool](Test-Path -LiteralPath $creates))
 
 // ensurePowerShellModule combines check and apply into a single round trip when
 // both check_script and script are inline strings (the common case). Returns
-// errEnsureNotHandled for other configurations to fall back to check+apply.
+// ErrEnsureNotHandled for other configurations to fall back to check+apply.
 func ensurePowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
 	checkScript, _ := params["check_script"].(string)
 	applyScript, _ := params["script"].(string)
 	if strings.TrimSpace(checkScript) == "" || strings.TrimSpace(applyScript) == "" {
-		return false, "", errEnsureNotHandled
+		return false, "", ErrEnsureNotHandled
 	}
 
 	checkScriptVar, err := winutil.JSONVarScript("__pf_check_script", checkScript)

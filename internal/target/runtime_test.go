@@ -8,13 +8,13 @@ import (
 )
 
 func TestBuildRemoteModuleRegistryFillsUnsupportedModules(t *testing.T) {
-	registry := buildRemoteModuleRegistry(RuntimeKindPOSIXShell, remoteModuleRegistry{
-		"shell": remoteModuleFuncs{
-			check: func(context.Context, map[string]any) (bool, string, error) {
-				return false, "", nil
+	registry := buildRemoteModuleRegistry(RuntimeKindPOSIXShell, ModuleRegistry{
+		"shell": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{}, nil
 			},
-			apply: func(context.Context, map[string]any) (string, error) {
-				return "", nil
+			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, nil
 			},
 		},
 	}, func(module string) error {
@@ -25,7 +25,7 @@ func TestBuildRemoteModuleRegistryFillsUnsupportedModules(t *testing.T) {
 		t.Fatal("expected supported module to remain in registry")
 	}
 
-	result, err := executeRemoteModule(context.Background(), "task-1", "service", nil, false, nil, registry, errors.New)
+	result, err := executeModule(context.Background(), "task-1", "service", nil, false, nil, registry, errors.New)
 	if err == nil || err.Error() != "unsupported: service" {
 		t.Fatalf("expected unsupported service error, got result=%+v err=%v", result, err)
 	}
@@ -38,36 +38,36 @@ func TestBuildRemoteModuleRegistryPanicsOnUnknownModule(t *testing.T) {
 		}
 	}()
 
-	buildRemoteModuleRegistry(RuntimeKindPOSIXShell, remoteModuleRegistry{
-		"not-a-real-module": remoteModuleFuncs{
-			check: func(context.Context, map[string]any) (bool, string, error) {
-				return false, "", nil
+	buildRemoteModuleRegistry(RuntimeKindPOSIXShell, ModuleRegistry{
+		"not-a-real-module": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{}, nil
 			},
-			apply: func(context.Context, map[string]any) (string, error) {
-				return "", nil
+			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, nil
 			},
 		},
 	}, errors.New)
 }
 
-func TestExecuteRemoteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) {
-	registry := remoteModuleRegistry{
-		"demo": remoteModuleFuncs{
-			check: func(context.Context, map[string]any) (bool, string, error) {
-				return true, "", nil
+func TestExecuteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) {
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: func(context.Context, map[string]any) (string, error) {
+			apply: apply(func(context.Context, map[string]any) (string, error) {
 				return "step one\nstep two\n", nil
-			},
+			}),
 		},
 	}
 
 	var gotOutput []string
-	result, err := executeRemoteModule(context.Background(), "task-1", "demo", nil, false, func(line string) {
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, false, func(line string) {
 		gotOutput = append(gotOutput, line)
 	}, registry, errors.New)
 	if err != nil {
-		t.Fatalf("executeRemoteModule returned error: %v", err)
+		t.Fatalf("executeModule returned error: %v", err)
 	}
 	if result.Message != "change applied" {
 		t.Fatalf("result.Message = %q, want %q", result.Message, "change applied")
@@ -81,47 +81,47 @@ func TestExecuteRemoteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) 
 	}
 }
 
-func TestExecuteRemoteModuleUsesSingleLineOutputAsMessage(t *testing.T) {
-	registry := remoteModuleRegistry{
-		"demo": remoteModuleFuncs{
-			check: func(context.Context, map[string]any) (bool, string, error) {
-				return true, "", nil
+func TestExecuteModuleUsesSingleLineOutputAsMessage(t *testing.T) {
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: func(context.Context, map[string]any) (string, error) {
+			apply: apply(func(context.Context, map[string]any) (string, error) {
 				return "applied", nil
-			},
+			}),
 		},
 	}
 
-	result, err := executeRemoteModule(context.Background(), "task-1", "demo", nil, false, nil, registry, errors.New)
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, false, nil, registry, errors.New)
 	if err != nil {
-		t.Fatalf("executeRemoteModule returned error: %v", err)
+		t.Fatalf("executeModule returned error: %v", err)
 	}
 	if result.Message != "applied" {
 		t.Fatalf("result.Message = %q, want %q", result.Message, "applied")
 	}
 }
 
-func TestExecuteRemoteModuleCapturesCheckOutputDuringDryRun(t *testing.T) {
-	registry := remoteModuleRegistry{
-		"demo": remoteModuleFuncs{
-			checkWithOutput: func(_ context.Context, _ map[string]any, onOutput OutputFunc) (bool, string, error) {
-				onOutput("checking package A")
-				onOutput("checking package B")
-				return true, "", nil
+func TestExecuteModuleCapturesCheckOutputDuringDryRun(t *testing.T) {
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(_ context.Context, _ map[string]any, out OutputFunc) (CheckResult, error) {
+				out("checking package A")
+				out("checking package B")
+				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: func(context.Context, map[string]any) (string, error) {
-				return "", nil
+			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, nil
 			},
 		},
 	}
 
 	var gotOutput []string
-	result, err := executeRemoteModule(context.Background(), "task-1", "demo", nil, true, func(line string) {
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, true, func(line string) {
 		gotOutput = append(gotOutput, line)
 	}, registry, errors.New)
 	if err != nil {
-		t.Fatalf("executeRemoteModule returned error: %v", err)
+		t.Fatalf("executeModule returned error: %v", err)
 	}
 	want := []string{"checking package A", "checking package B"}
 	if !reflect.DeepEqual(gotOutput, want) {

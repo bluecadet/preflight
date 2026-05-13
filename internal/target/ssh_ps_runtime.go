@@ -57,7 +57,7 @@ func (r *sshWindowsPowerShellRuntime) Kind() RuntimeKind {
 	return RuntimeKindWindowsPowerShell
 }
 
-func (r *sshWindowsPowerShellRuntime) Registry() remoteModuleRegistry {
+func (r *sshWindowsPowerShellRuntime) Registry() ModuleRegistry {
 	return newWindowsPowerShellRegistry(r)
 }
 

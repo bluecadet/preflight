@@ -17,13 +17,13 @@ type mockModule struct {
 	applyCalled bool
 }
 
-func (m *mockModule) Check(_ context.Context, _ map[string]any) (bool, error) {
-	return m.needsChange, m.checkErr
+func (m *mockModule) Check(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
+	return target.CheckResult{NeedsChange: m.needsChange}, m.checkErr
 }
 
-func (m *mockModule) Apply(_ context.Context, _ map[string]any) error {
+func (m *mockModule) Apply(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	m.applyCalled = true
-	return m.applyErr
+	return target.ApplyResult{}, m.applyErr
 }
 
 func TestLocalTarget_UnknownModule(t *testing.T) {
@@ -99,48 +99,42 @@ func TestLocalTarget_CheckError(t *testing.T) {
 	}
 }
 
-// streamingMockModule is a Module that also implements StreamingModule.
-// It emits a fixed set of lines via the onOutput callback.
+// streamingMockModule emits a fixed set of lines via the Apply out callback,
+// exercising the unified Module's streaming-during-Apply path.
 type streamingMockModule struct {
 	lines []string
 }
 
-func (m *streamingMockModule) Check(_ context.Context, _ map[string]any) (bool, error) {
-	return true, nil // always needs change
+func (m *streamingMockModule) Check(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
+	return target.CheckResult{NeedsChange: true}, nil
 }
 
-func (m *streamingMockModule) Apply(_ context.Context, _ map[string]any) error {
-	return nil
-}
-
-func (m *streamingMockModule) ApplyWithOutput(_ context.Context, _ map[string]any, onOutput target.OutputFunc) error {
+func (m *streamingMockModule) Apply(_ context.Context, _ map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
 	for _, line := range m.lines {
-		if onOutput != nil {
-			onOutput(line)
+		if out != nil {
+			out(line)
 		}
 	}
-	return nil
+	return target.ApplyResult{}, nil
 }
 
+// checkStreamingMockModule emits a fixed set of lines via the Check out
+// callback, exercising the streaming-during-Check path.
 type checkStreamingMockModule struct {
 	lines []string
 }
 
-func (m *checkStreamingMockModule) Check(_ context.Context, _ map[string]any) (bool, error) {
-	return true, nil
-}
-
-func (m *checkStreamingMockModule) CheckWithOutput(_ context.Context, _ map[string]any, onOutput target.OutputFunc) (bool, error) {
+func (m *checkStreamingMockModule) Check(_ context.Context, _ map[string]any, out target.OutputFunc) (target.CheckResult, error) {
 	for _, line := range m.lines {
-		if onOutput != nil {
-			onOutput(line)
+		if out != nil {
+			out(line)
 		}
 	}
-	return true, nil
+	return target.CheckResult{NeedsChange: true}, nil
 }
 
-func (m *checkStreamingMockModule) Apply(_ context.Context, _ map[string]any) error {
-	return nil
+func (m *checkStreamingMockModule) Apply(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
+	return target.ApplyResult{}, nil
 }
 
 func TestLocalTarget_Execute_StreamingOutput(t *testing.T) {

@@ -6,14 +6,15 @@ import (
 	"context"
 
 	"github.com/bluecadet/preflight/internal/pscript"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 type PowerPlanModule struct{}
 
-func (m *PowerPlanModule) Check(ctx context.Context, params map[string]any) (bool, error) {
-	return runValidatedWindowsCheck[PowerPlanParams](ctx, params, pscript.PowerPlanModuleCheckScript, nil)
+func (m *PowerPlanModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
+	return runValidatedWindowsCheck[PowerPlanParams](ctx, params, out, pscript.PowerPlanModuleCheckScript, nil)
 }
 
-func (m *PowerPlanModule) Apply(ctx context.Context, params map[string]any) error {
-	return runValidatedWindowsApply[PowerPlanParams](ctx, params, pscript.PowerPlanModuleApplyScript, nil)
+func (m *PowerPlanModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
+	return runValidatedWindowsApply[PowerPlanParams](ctx, params, out, pscript.PowerPlanModuleApplyScript, nil)
 }

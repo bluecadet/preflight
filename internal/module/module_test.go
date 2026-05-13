@@ -10,7 +10,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/modulecatalog"
-	"github.com/bluecadet/preflight/internal/target"
 )
 
 func TestRegistry_NotEmpty(t *testing.T) {
@@ -59,15 +58,15 @@ var targetModules = func() map[string]struct{} {
 func TestFileModule_Check_Missing(t *testing.T) {
 	reg := module.Registry()
 	m := reg["file"]
-	needed, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"dest":   "/nonexistent/path/that/does/not/exist",
 		"ensure": "present",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !needed {
-		t.Error("expected needsChange=true for missing file")
+	if !res.NeedsChange {
+		t.Error("expected NeedsChange=true for missing file")
 	}
 }
 
@@ -76,10 +75,10 @@ func TestFileModule_ApplyCreatesParentDirectories(t *testing.T) {
 	m := reg["file"]
 	dest := filepath.Join(t.TempDir(), "nested", "deeper", "out.txt")
 
-	if err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"dest":   dest,
 		"ensure": "present",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -98,11 +97,11 @@ func TestFileModule_ApplyCopyCreatesParentDirectories(t *testing.T) {
 		t.Fatalf("WriteFile(%q): %v", src, err)
 	}
 
-	if err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"src":    src,
 		"dest":   dest,
 		"ensure": "present",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -120,10 +119,10 @@ func TestFileModule_ApplyWritesContent(t *testing.T) {
 	m := reg["file"]
 	dest := filepath.Join(t.TempDir(), "nested", "secret.txt")
 
-	if err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"dest":    dest,
 		"content": "line one\nline two\n",
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -144,25 +143,25 @@ func TestFileModule_CheckComparesContent(t *testing.T) {
 		t.Fatalf("WriteFile(%q): %v", dest, err)
 	}
 
-	needed, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"dest":    dest,
 		"content": "same",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if needed {
+	if res.NeedsChange {
 		t.Fatal("expected matching content to need no change")
 	}
 
-	needed, err = m.Check(context.Background(), map[string]any{
+	res, err = m.Check(context.Background(), map[string]any{
 		"dest":    dest,
 		"content": "different",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !needed {
+	if !res.NeedsChange {
 		t.Fatal("expected different content to need change")
 	}
 }
@@ -174,7 +173,7 @@ func TestFileModule_RejectsSrcAndContent(t *testing.T) {
 		"dest":    "/some/path",
 		"src":     "/source/path",
 		"content": "hello",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for src and content, got nil")
 	}
@@ -187,15 +186,15 @@ func TestDirectoryModule_Check_Existing(t *testing.T) {
 	dir := t.TempDir()
 	reg := module.Registry()
 	m := reg["directory"]
-	needed, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"path":   dir,
 		"ensure": "present",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if needed {
-		t.Error("expected needsChange=false for existing directory")
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false for existing directory")
 	}
 }
 
@@ -205,7 +204,7 @@ func TestFileModule_Check_RejectsOwner(t *testing.T) {
 	_, err := m.Check(context.Background(), map[string]any{
 		"dest":  "/some/path",
 		"owner": "admin",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for owner param, got nil")
 	}
@@ -220,7 +219,7 @@ func TestFileModule_Check_RejectsPermissions(t *testing.T) {
 	_, err := m.Check(context.Background(), map[string]any{
 		"dest":        "/some/path",
 		"permissions": "0644",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for permissions param, got nil")
 	}
@@ -235,7 +234,7 @@ func TestDirectoryModule_Check_RejectsOwner(t *testing.T) {
 	_, err := m.Check(context.Background(), map[string]any{
 		"path":  "/some/path",
 		"owner": "admin",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for owner param, got nil")
 	}
@@ -250,7 +249,7 @@ func TestDirectoryModule_Check_RejectsPermissions(t *testing.T) {
 	_, err := m.Check(context.Background(), map[string]any{
 		"path":        "/some/path",
 		"permissions": "0755",
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected error for permissions param, got nil")
 	}
@@ -271,15 +270,15 @@ func TestShellModule_Check_CreatesExists(t *testing.T) {
 
 	reg := module.Registry()
 	m := reg["shell"]
-	needed, err := m.Check(context.Background(), map[string]any{
+	res, err := m.Check(context.Background(), map[string]any{
 		"cmd":     "echo",
 		"creates": f.Name(),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if needed {
-		t.Error("expected needsChange=false when creates path exists")
+	if res.NeedsChange {
+		t.Error("expected NeedsChange=false when creates path exists")
 	}
 }
 
@@ -289,11 +288,10 @@ func TestShellModule_Apply(t *testing.T) {
 
 	reg := module.Registry()
 	m := reg["shell"]
-	err := m.Apply(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"cmd":  "touch",
 		"args": []any{out},
-	})
-	if err != nil {
+	}, nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if _, err := os.Stat(out); os.IsNotExist(err) {
@@ -307,21 +305,16 @@ func TestShellModule_ApplyWithOutput(t *testing.T) {
 	}
 
 	reg := module.Registry()
-	raw := reg["shell"]
-	sm, ok := raw.(target.StreamingModule)
-	if !ok {
-		t.Fatal("shell module does not implement ApplyWithOutput")
-	}
+	m := reg["shell"]
 
 	var collected []string
-	err := sm.ApplyWithOutput(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"cmd":  "sh",
 		"args": []any{"-c", "printf 'line1\\nline2\\n'"},
 	}, func(line string) {
 		collected = append(collected, line)
-	})
-	if err != nil {
-		t.Fatalf("ApplyWithOutput returned error: %v", err)
+	}); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
 	}
 	if len(collected) != 2 {
 		t.Fatalf("expected 2 lines, got %d: %v", len(collected), collected)
@@ -333,13 +326,12 @@ func TestShellModule_ApplyWithOutput(t *testing.T) {
 		t.Errorf("expected collected[1]=%q, got %q", "line2", collected[1])
 	}
 
-	// nil onOutput must not panic.
-	err = sm.ApplyWithOutput(context.Background(), map[string]any{
+	// nil OutputFunc must not panic.
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"cmd":  "sh",
 		"args": []any{"-c", "printf 'hello\\n'"},
-	}, nil)
-	if err != nil {
-		t.Fatalf("ApplyWithOutput with nil onOutput returned error: %v", err)
+	}, nil); err != nil {
+		t.Fatalf("Apply with nil onOutput returned error: %v", err)
 	}
 }
 
@@ -349,14 +341,10 @@ func TestShellModule_ApplyWithEnvironment(t *testing.T) {
 	}
 
 	reg := module.Registry()
-	raw := reg["shell"]
-	sm, ok := raw.(target.StreamingModule)
-	if !ok {
-		t.Fatal("shell module does not implement ApplyWithOutput")
-	}
+	m := reg["shell"]
 
 	var collected []string
-	err := sm.ApplyWithOutput(context.Background(), map[string]any{
+	if _, err := m.Apply(context.Background(), map[string]any{
 		"cmd": "sh",
 		"args": []any{
 			"-c",
@@ -367,9 +355,8 @@ func TestShellModule_ApplyWithEnvironment(t *testing.T) {
 		},
 	}, func(line string) {
 		collected = append(collected, line)
-	})
-	if err != nil {
-		t.Fatalf("ApplyWithOutput returned error: %v", err)
+	}); err != nil {
+		t.Fatalf("Apply returned error: %v", err)
 	}
 	if len(collected) != 1 || collected[0] != "expected" {
 		t.Fatalf("expected env output, got %v", collected)

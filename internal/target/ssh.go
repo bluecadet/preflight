@@ -87,7 +87,7 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 
 type sshRuntime interface {
 	Kind() RuntimeKind
-	Registry() remoteModuleRegistry
+	Registry() ModuleRegistry
 	CopyFile(ctx context.Context, src, dst string) error
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	Reachable(ctx context.Context) (bool, error)
@@ -163,7 +163,7 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 		}
 	}
 
-	return executeRemoteModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
+	return executeModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
 		if become != nil {
 			return fmt.Errorf("ssh: module %q does not support become", module)
 		}
