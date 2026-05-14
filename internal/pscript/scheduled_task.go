@@ -205,7 +205,10 @@ if ($delay) {
 }
 $arguments = if ($params.arguments) { [string]$params.arguments } else { '' }
 $workingDir = if ($params.working_dir) { [string]$params.working_dir } else { '' }
-$action = New-ScheduledTaskAction -Execute ([string]$params.execute) -Argument $arguments -WorkingDirectory $workingDir
+$actionArgs = @{ Execute = [string]$params.execute }
+if ($arguments) { $actionArgs.Argument = $arguments }
+if ($workingDir) { $actionArgs.WorkingDirectory = $workingDir }
+$action = New-ScheduledTaskAction @actionArgs
 $runLevelMap = @{ least = 'Limited'; highest = 'Highest' }
 if ($params.run_as) {
   $principalArgs = @{
