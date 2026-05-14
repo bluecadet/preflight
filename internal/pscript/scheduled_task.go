@@ -112,6 +112,15 @@ if ($trigger -eq 'daily' -or $trigger -eq 'once') {
 if ($runAs -and (Normalize-PrincipalUserId ([string]$task.Principal.UserId)) -ne (Normalize-PrincipalUserId $runAs)) {
   $needs = $true
 }
+$desiredLogonType = switch (Normalize-PrincipalUserId $runAs) {
+  'SYSTEM' { 'ServiceAccount' }
+  'LOCALSERVICE' { 'ServiceAccount' }
+  'NETWORKSERVICE' { 'ServiceAccount' }
+  default { 'Interactive' }
+}
+if ($runAs -and ([string]$task.Principal.LogonType) -ne $desiredLogonType) {
+  $needs = $true
+}
 Write-Output $needs
 `
 
@@ -164,9 +173,9 @@ function Register-ManagedScheduledTask($taskPrincipal) {
   # still throw HRESULT 0x800700B7 with -Force when the task file already exists.
   Unregister-ScheduledTask -TaskPath $path -TaskName $name -Confirm:$false -ErrorAction SilentlyContinue
   if ($null -ne $taskPrincipal) {
-    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
+    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -Principal $taskPrincipal -Force -ErrorAction Stop | Out-Null
   } else {
-    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -RunLevel $runLevelMap[[string]$params.run_level] -Force | Out-Null
+    Register-ScheduledTask -TaskPath $path -TaskName $name -Action $action -Trigger $trigger -RunLevel $runLevelMap[[string]$params.run_level] -Force -ErrorAction Stop | Out-Null
   }
 }
 
@@ -219,7 +228,7 @@ if ($params.run_as) {
     'SYSTEM' { $principalArgs.LogonType = 'ServiceAccount' }
     'LOCALSERVICE' { $principalArgs.LogonType = 'ServiceAccount' }
     'NETWORKSERVICE' { $principalArgs.LogonType = 'ServiceAccount' }
-    default { $principalArgs.LogonType = 'S4U' }
+    default { $principalArgs.LogonType = 'Interactive' }
   }
   $principal = New-ScheduledTaskPrincipal @principalArgs
   Register-ManagedScheduledTask $principal
