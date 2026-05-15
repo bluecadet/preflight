@@ -24,10 +24,10 @@ func TestRemoveAppxPackagesModule_GuardsAgainstEmptyPackageFullName(t *testing.T
 	}
 
 	m := &RemoveAppxPackagesModule{}
-	_ = m.Apply(context.Background(), map[string]any{
+	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":  "Microsoft.Xbox*",
 		"scope": "both",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")
@@ -59,7 +59,7 @@ func TestRemoveAppxPackagesModule_CheckFiltersMalformedMatches(t *testing.T) {
 	_, _ = m.Check(context.Background(), map[string]any{
 		"name":  "Microsoft.Xbox*",
 		"scope": "both",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")

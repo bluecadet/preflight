@@ -28,11 +28,11 @@ func TestScheduledTaskModule_NoCmdExecWrapper(t *testing.T) {
 	}
 
 	m := &ScheduledTaskModule{}
-	_ = m.Apply(context.Background(), map[string]any{
+	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":    "test-task",
 		"command": `C:\app\run.exe`,
 		"trigger": "startup",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured (PowerShell may not have been invoked in this test environment)")
@@ -74,11 +74,11 @@ func TestScheduledTaskModule_CommandMetacharsDoNotInject(t *testing.T) {
 	maliciousCommand := `C:\app\run.exe & net user /add attacker P@ssw0rd`
 
 	m := &ScheduledTaskModule{}
-	_ = m.Apply(context.Background(), map[string]any{
+	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":    "test-task",
 		"command": maliciousCommand,
 		"trigger": "startup",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")
@@ -110,7 +110,7 @@ func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
 	}
 
 	m := &ScheduledTaskModule{}
-	_ = m.Apply(context.Background(), map[string]any{
+	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":      "test-task",
 		"path":      `Preflight\Maintenance`,
 		"command":   `C:\Windows\System32\shutdown.exe`,
@@ -118,7 +118,7 @@ func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
 		"start_at":  "04:30",
 		"run_as":    "SYSTEM",
 		"run_level": "highest",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")
@@ -175,7 +175,7 @@ func TestScheduledTaskModule_CheckUsesExactFolderLookup(t *testing.T) {
 		"trigger":  "daily",
 		"start_at": "04:30",
 		"run_as":   "SYSTEM",
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")
@@ -210,7 +210,7 @@ func TestScheduledTaskModule_PresentTasksAreExplicitlyEnabled(t *testing.T) {
 	}
 
 	m := &ScheduledTaskModule{}
-	_ = m.Apply(context.Background(), map[string]any{
+	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":     "test-task",
 		"path":     `Preflight`,
 		"command":  `C:\Windows\System32\shutdown.exe`,
@@ -218,7 +218,7 @@ func TestScheduledTaskModule_PresentTasksAreExplicitlyEnabled(t *testing.T) {
 		"start_at": "04:30",
 		"ensure":   "present",
 		"enabled":  true,
-	})
+	}, nil)
 
 	if capturedScript == "" {
 		t.Skip("no script captured")
