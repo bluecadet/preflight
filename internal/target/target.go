@@ -5,6 +5,11 @@ import "context"
 // OutputFunc is a callback invoked with each line of output emitted by a module during execution.
 type OutputFunc func(line string)
 
+// NoOutput is a nil OutputFunc that can be passed to modules which do not
+// produce streaming output. Passing nil directly is equivalent; this named
+// form makes the intent explicit at call sites and in tests.
+var NoOutput OutputFunc
+
 // Status represents the outcome of a task execution.
 type Status string
 
