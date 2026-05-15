@@ -1,12 +1,10 @@
 package runner
 
 import (
-	"context"
 	"slices"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/secrets"
-	"github.com/bluecadet/preflight/internal/target"
 	pftemplate "github.com/bluecadet/preflight/internal/template"
 )
 
@@ -102,23 +100,6 @@ func NormalizeParamsForState(source, params, sourceBecome, become map[string]any
 		"params": normalized,
 		"become": normalizeStateValue("become", becomeSource, become),
 	}
-}
-
-func resolveExecutionOptions(ctx context.Context, resolver *secrets.Resolver, source map[string]any) (map[string]any, target.ExecutionOptions, error) {
-	if len(source) == 0 || resolver == nil || !resolver.HasProviders() {
-		opts, err := target.NormalizeExecutionOptions(map[string]any{"become": source})
-		return source, opts, err
-	}
-
-	resolved, err := resolver.ResolveMap(ctx, source)
-	if err != nil {
-		return nil, target.ExecutionOptions{}, err
-	}
-	opts, err := target.NormalizeExecutionOptions(map[string]any{"become": resolved})
-	if err != nil {
-		return nil, target.ExecutionOptions{}, err
-	}
-	return resolved, opts, nil
 }
 
 func normalizeStateValue(key string, source, resolved any) any {

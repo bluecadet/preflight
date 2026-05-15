@@ -320,38 +320,6 @@ func cloneMap(src map[string]any) map[string]any {
 	return dst
 }
 
-func canonicalizeBecome(src map[string]any) map[string]any {
-	if len(src) == 0 {
-		return nil
-	}
-	dst := cloneMap(src)
-	if _, ok := dst["enabled"]; !ok {
-		dst["enabled"] = true
-	}
-	return dst
-}
-
-func mergeBecome(base, override map[string]any) map[string]any {
-	if len(base) == 0 && len(override) == 0 {
-		return nil
-	}
-	if enabled, ok := override["enabled"].(bool); ok && !enabled {
-		return canonicalizeBecome(override)
-	}
-
-	dst := cloneMap(base)
-	if dst == nil {
-		dst = make(map[string]any)
-	}
-	if len(override) > 0 {
-		maps.Copy(dst, canonicalizeBecome(override))
-	}
-	if len(dst) == 0 {
-		return nil
-	}
-	return dst
-}
-
 func (r *Runner) targetName() string {
 	if r.config.TargetName != "" {
 		return r.config.TargetName
