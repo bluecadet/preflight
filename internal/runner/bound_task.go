@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
@@ -28,7 +29,7 @@ func bindTask(task *PlanTask, execCtx *executionContext, preserveUnknown bool) (
 	if preserveUnknown {
 		eng = template.New(task.TemplateVars).WithTarget(execCtx.target).WithPreserveUnknown()
 	}
-	if task.Module == "file" {
+	if module.PreservesSecretRefs(task.Module) {
 		eng = eng.WithPreserveSecretRefs()
 	}
 
