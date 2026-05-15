@@ -34,6 +34,57 @@ tasks:
           type: dword
           data: "{{ vars.disable_edge_gestures == 'false' }}"
 
+  - name: Configure touch gestures
+    registry:
+      path: 'HKCU:\Control Panel\Desktop'
+      user: "{{ vars.user }}"
+      values:
+        - name: TouchGestureSetting
+          type: dword
+          data: "{{ vars.disable_touch_gestures == 'false' }}"
+
+  # See https://www.tenforums.com/tutorials/98415-turn-off-touch-visual-feedback-windows-10-a.html
+  - name: Configure touch visual feedback
+    registry:
+      path: 'HKCU:\Control Panel\Cursors'
+      user: "{{ vars.user }}"
+      values:
+        - name: ContactVisualization
+          type: dword
+          data: "{{ vars.disable_touch_feedback == 'false' }}"
+        - name: GestureVisualization
+          type: dword
+          data: "{{ vars.disable_touch_feedback == 'false' }}"
+
+  # See https://www.top-password.com/blog/turn-on-off-press-and-hold-for-right-clicking-in-windows-10/
+  - name: Configure press and hold for right-clicking
+    registry:
+      path: 'HKCU:\Software\Microsoft\Wisp\Touch'
+      user: "{{ vars.user }}"
+      values:
+        - name: TouchMode_hold
+          type: dword
+          data: "{{ vars.disable_touch_gestures == 'false' }}"
+
+  - name: Configure press and hold for right-clicking on pen input
+    when: vars.disable_touch_gestures == 'true'
+    registry:
+      path: 'HKCU:\Software\Microsoft\Wisp\Pen\SysEventParameters'
+      user: "{{ vars.user }}"
+      values:
+        - name: HoldMode
+          type: dword
+          data: 3
+
+  # See https://getadmx.com/?Category=Windows_10_2016&Policy=Microsoft.Policies.TabletPCInputPanel::EdgeTarget_2
+  - name: Configure touch gesture edge targeting
+    registry:
+      path: 'HKLM:\software\policies\microsoft\TabletTip\1.7"'
+      values:
+        - name: DisableEdgeTarget
+          type: dword
+          data: "{{ vars.disable_touch_gestures == 'false' }}"
+
   - name: Configure text scale
     registry:
       path: 'HKCU:\Software\Microsoft\Accessibility'
@@ -42,109 +93,3 @@ tasks:
         - name: TextScaleFactor
           type: dword
           data: "{{ vars.text_scale_percent }}"
-
-  - name: Configure touch feedback visualization
-    powershell:
-      env:
-        PREFLIGHT_USER: "{{ vars.user }}"
-      check_script: |
-        $targetUser = [string]$env:PREFLIGHT_USER
-
-        function Resolve-ProfileSid([string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $null
-          }
-          $account = New-Object System.Security.Principal.NTAccount($user)
-          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
-        }
-
-        function Resolve-UserRegistryPath([string]$path, [string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $path
-          }
-          $sid = Resolve-ProfileSid $user
-          $root = 'Registry::HKEY_USERS\' + $sid
-          if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-input: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user input settings")
-          }
-          $subPath = $path -replace '(?i)^HKCU:\\?', ''
-          if ($subPath) {
-            return (Join-Path $root $subPath)
-          }
-          return $root
-        }
-
-        $desiredContact = [uint32]1
-        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
-          $desiredContact = [uint32]0
-        }
-        $desiredGesture = [uint32]31
-        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')) {
-          $desiredGesture = [uint32]0
-        }
-
-        $path = Resolve-UserRegistryPath 'HKCU:\Control Panel\Cursors' $targetUser
-        $prop = Get-ItemProperty -LiteralPath $path -Name ContactVisualization,GestureVisualization -ErrorAction SilentlyContinue
-        if ($null -eq $prop) {
-          return $true
-        }
-        return ([uint32]$prop.ContactVisualization -ne $desiredContact -or [uint32]$prop.GestureVisualization -ne $desiredGesture)
-      script: |
-        $targetUser = [string]$env:PREFLIGHT_USER
-
-        function Resolve-ProfileSid([string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $null
-          }
-          $account = New-Object System.Security.Principal.NTAccount($user)
-          return $account.Translate([System.Security.Principal.SecurityIdentifier]).Value
-        }
-
-        function Resolve-UserRegistryPath([string]$path, [string]$user) {
-          if ([string]::IsNullOrWhiteSpace($user)) {
-            return $path
-          }
-          $sid = Resolve-ProfileSid $user
-          $root = 'Registry::HKEY_USERS\' + $sid
-          if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-input: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user input settings")
-          }
-          $subPath = $path -replace '(?i)^HKCU:\\?', ''
-          if ($subPath) {
-            return (Join-Path $root $subPath)
-          }
-          return $root
-        }
-
-        $desiredContact = [uint32]1
-        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_feedback }}')) {
-          $desiredContact = [uint32]0
-        }
-        $desiredGesture = [uint32]31
-        if ([System.Convert]::ToBoolean('{{ vars.disable_touch_gestures }}')) {
-          $desiredGesture = [uint32]0
-        }
-
-        $path = Resolve-UserRegistryPath 'HKCU:\Control Panel\Cursors' $targetUser
-        New-Item -Path $path -Force | Out-Null
-        New-ItemProperty -LiteralPath $path -Name ContactVisualization -Value $desiredContact -PropertyType DWord -Force | Out-Null
-        New-ItemProperty -LiteralPath $path -Name GestureVisualization -Value $desiredGesture -PropertyType DWord -Force | Out-Null
-
-        Add-Type @"
-        using System;
-        using System.Runtime.InteropServices;
-        public static class NativeMethods {
-          [DllImport("user32.dll", SetLastError=true)]
-          public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, ref uint pvParam, uint fWinIni);
-        }
-        "@
-
-        # SystemParametersInfo only updates the active session for the process user.
-        # Named profile writes are persisted through the hive for the next session.
-        if ([string]::IsNullOrWhiteSpace($targetUser)) {
-          Write-Output 'Applying touch feedback and gesture visibility settings for the current user'
-          [void][NativeMethods]::SystemParametersInfo(0x2019, 0, [ref]$desiredContact, 3)
-          [void][NativeMethods]::SystemParametersInfo(0x201B, 0, [ref]$desiredGesture, 3)
-        } else {
-          Write-Output ("Persisted touch feedback and gesture visibility settings for " + $targetUser)
-        }
