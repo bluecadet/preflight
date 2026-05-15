@@ -62,19 +62,20 @@ func bindTask(task *PlanTask, execCtx *executionContext, preserveUnknown bool) (
 }
 
 func (b *BoundTask) resolveSecrets(ctx context.Context, resolver *secrets.Resolver) error {
-	if resolver == nil || !resolver.HasProviders() {
-		return nil
+	if resolver != nil && resolver.HasProviders() {
+		var err error
+		b.Params, err = resolver.ResolveMap(ctx, b.Params)
+		if err != nil {
+			return fmt.Errorf("resolve params: %w", err)
+		}
+		b.Become, _, err = resolveExecutionOptions(ctx, resolver, b.Become)
+		if err != nil {
+			return fmt.Errorf("resolve become: %w", err)
+		}
 	}
-	var err error
-	b.Params, err = resolver.ResolveMap(ctx, b.Params)
-	if err != nil {
-		return fmt.Errorf("resolve params: %w", err)
-	}
-	b.Become, _, err = resolveExecutionOptions(ctx, resolver, b.Become)
-	if err != nil {
-		return fmt.Errorf("resolve become: %w", err)
-	}
-	return nil
+	// content_template is a late-bind param rendered after main param resolution.
+	// No-op when the param is absent, so safe to call for every task.
+	return b.renderFileContentTemplate(ctx, resolver)
 }
 
 func (b *BoundTask) renderFileContentTemplate(ctx context.Context, resolver *secrets.Resolver) error {
