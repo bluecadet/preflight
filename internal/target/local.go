@@ -12,6 +12,12 @@ import (
 // ModuleRegistry maps module names to their implementations.
 type ModuleRegistry map[string]Module
 
+// Lookup returns the Module registered under name, and whether it was found.
+func (r ModuleRegistry) Lookup(name string) (Module, bool) {
+	m, ok := r[name]
+	return m, ok
+}
+
 // LocalTarget executes modules in-process on the local machine.
 type LocalTarget struct {
 	registry ModuleRegistry

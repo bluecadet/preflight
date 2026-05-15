@@ -103,7 +103,7 @@ func executeModule(
 	registry ModuleRegistry,
 	unsupportedErr func(module string) error,
 ) (Result, error) {
-	mod, ok := registry[module]
+	mod, ok := registry.Lookup(module)
 	if !ok {
 		err := unsupportedErr(module)
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
