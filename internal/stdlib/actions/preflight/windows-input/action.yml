@@ -1,5 +1,5 @@
 name: preflight/windows-input
-version: "2.2.0"
+version: "2.3.0"
 description: Configure Windows touch, gesture, and text-size input preferences
 author: preflight
 
@@ -24,6 +24,10 @@ inputs:
     type: int
     default: 100
     description: Windows text size percentage for the selected user
+  disable_accessibility_shortcuts:
+    type: bool
+    default: true
+    description: Disable Sticky Keys, Filter Keys, and Toggle Keys shortcuts for the selected user
 
 tasks:
   - name: Configure edge swipe policy
@@ -67,23 +71,49 @@ tasks:
           data: "{{ vars.disable_touch_gestures == 'false' }}"
 
   - name: Configure press and hold for right-clicking on pen input
-    when: vars.disable_touch_gestures == 'true'
     registry:
       path: 'HKCU:\Software\Microsoft\Wisp\Pen\SysEventParameters'
       user: "{{ vars.user }}"
       values:
         - name: HoldMode
           type: dword
-          data: 3
+          data: "{{ vars.disable_touch_gestures ? 3 : 1 }}"
 
   # See https://getadmx.com/?Category=Windows_10_2016&Policy=Microsoft.Policies.TabletPCInputPanel::EdgeTarget_2
   - name: Configure touch gesture edge targeting
     registry:
-      path: 'HKLM:\software\policies\microsoft\TabletTip\1.7"'
+      path: 'HKLM:\software\policies\microsoft\TabletTip\1.7'
       values:
         - name: DisableEdgeTarget
           type: dword
           data: "{{ vars.disable_touch_gestures == 'false' }}"
+
+  - name: Configure Sticky Keys shortcut behavior
+    registry:
+      path: 'HKCU:\Control Panel\Accessibility\StickyKeys'
+      user: "{{ vars.user }}"
+      values:
+        - name: Flags
+          type: string
+          data: "{{ vars.disable_accessibility_shortcuts ? '506' : '510' }}"
+
+  - name: Configure Filter Keys shortcut behavior
+    registry:
+      path: 'HKCU:\Control Panel\Accessibility\Keyboard Response'
+      user: "{{ vars.user }}"
+      values:
+        - name: Flags
+          type: string
+          data: "{{ vars.disable_accessibility_shortcuts ? '122' : '126' }}"
+
+  - name: Configure Toggle Keys shortcut behavior
+    registry:
+      path: 'HKCU:\Control Panel\Accessibility\ToggleKeys'
+      user: "{{ vars.user }}"
+      values:
+        - name: Flags
+          type: string
+          data: "{{ vars.disable_accessibility_shortcuts ? '58' : '62' }}"
 
   - name: Configure text scale
     registry:

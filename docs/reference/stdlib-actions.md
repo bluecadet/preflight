@@ -67,6 +67,7 @@ Configure machine-level baseline settings.
 | `timezone` | string | Windows time zone ID |
 | `enable_long_paths` | bool | Enable or disable the long path policy |
 | `ps1_execution_policy` | string | LocalMachine PowerShell execution policy |
+| `disable_new_network_prompt` | bool | Disable the first-connection new network prompt |
 
 ### `preflight/windows-shell`
 
@@ -87,6 +88,17 @@ Some shell visual changes do not update an already-running Explorer session imme
 | `hide_recycle_bin` | bool | Hide the Recycle Bin icon |
 | `show_hidden_files` | bool | Show hidden files in Explorer |
 | `show_file_extensions` | bool | Show file extensions in Explorer |
+| `show_empty_drives` | bool | Show empty removable drives in Explorer |
+| `show_sync_provider_notifications` | bool | Show sync provider notifications in Explorer |
+| `aero_shake` | bool | Enable Aero Shake window minimization |
+| `launch_to_this_pc` | bool | Open Explorer to This PC instead of Quick Access |
+| `show_item_check_boxes` | bool | Show item check boxes in Explorer |
+| `taskbar_allow_resize` | bool | Allow taskbar resizing |
+| `taskbar_on_all_displays` | bool | Show taskbar on all displays |
+| `taskbar_allow_multimon` | bool | Allow multi-monitor taskbar behavior |
+| `hide_this_pc_folders` | bool | Hide common library folders from This PC |
+| `disable_network_folder_thumbnails` | bool | Prevent Explorer thumbnail caches on network folders |
+| `show_store_apps_on_taskbar` | bool | Show Microsoft Store apps on the taskbar |
 | `clear_start_pins` | bool | Apply an empty Start pin set |
 | `start_pins_json` | string | Explicit `ConfigureStartPins` JSON payload |
 
@@ -105,6 +117,7 @@ User-scoped visual input changes may require sign-out or a new Explorer session 
 | `disable_touch_feedback` | bool | Disable touch contact visualization |
 | `disable_touch_gestures` | bool | Disable gesture visualization |
 | `text_scale_percent` | int | Text scale percentage, typically `100` |
+| `disable_accessibility_shortcuts` | bool | Disable Sticky Keys, Filter Keys, and Toggle Keys shortcuts |
 
 ### `preflight/windows-quiet-mode`
 
@@ -112,10 +125,13 @@ Reduce notifications, prompts, and recovery UI noise with machine-scoped Windows
 
 | Input | Type | Meaning |
 | --- | --- | --- |
+| `user` | string | Optional Windows user for user-scoped notification and prompt settings |
 | `disable_notifications` | bool | Disable toast and cloud notifications |
+| `disable_news_and_interests` | bool | Hide the Windows news and interests feed |
 | `disable_error_reporting` | bool | Disable Windows Error Reporting |
 | `disable_windows_setup_prompt` | bool | Disable consumer and cloud-optimized Windows prompts |
 | `disable_app_restore_on_boot` | bool | Disable automatic restart sign-on after update reboots |
+| `disable_app_suggestions` | bool | Disable user-scoped consumer app suggestions and silent app installs |
 
 ### `preflight/windows-update-lockdown`
 
@@ -124,7 +140,8 @@ Reduce background system changes driven by Windows Update and Microsoft Store po
 | Input | Type | Meaning |
 | --- | --- | --- |
 | `disable_windows_update` | bool | Disable automatic Windows Update policy checks |
-| `disable_windows_update_service` | bool | Stop and disable the Windows Update service |
+| `disable_windows_update_service` | bool | Stop and disable Windows Update, Update Orchestrator, and Windows Update Medic services |
+| `disable_update_auto_reboot` | bool | Prevent Windows Update from rebooting while users are signed in |
 | `disable_store_auto_download` | bool | Disable Store app auto-download and update behavior |
 
 ### `preflight/windows-power`

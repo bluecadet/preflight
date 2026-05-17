@@ -1,13 +1,21 @@
 name: preflight/windows-quiet-mode
-version: "2.1.0"
+version: "2.2.0"
 description: Reduce notifications, prompts, and Windows recovery UI noise
 author: preflight
 
 inputs:
+  user:
+    type: string
+    default: ""
+    description: Optional Windows user for user-scoped notification and prompt settings
   disable_notifications:
     type: bool
     default: true
     description: Turn off toast and cloud notifications with machine policy
+  disable_news_and_interests:
+    type: bool
+    default: true
+    description: Hide the Windows news and interests feed for the selected user
   disable_error_reporting:
     type: bool
     default: true
@@ -20,6 +28,10 @@ inputs:
     type: bool
     default: true
     description: Disable automatic restart sign-on after Windows Update restarts
+  disable_app_suggestions:
+    type: bool
+    default: true
+    description: Disable Windows consumer app suggestions and silent app installs for the selected user
 
 tasks:
   - name: Configure notification policy
@@ -32,6 +44,36 @@ tasks:
         - name: NoCloudApplicationNotification
           type: dword
           data: "{{ vars.disable_notifications }}"
+
+  - name: Configure notification center for selected user
+    registry:
+      path: 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'
+      user: "{{ vars.user }}"
+      values:
+        - name: DisableNotificationCenter
+          type: dword
+          data: "{{ vars.disable_notifications ? 1 : 0 }}"
+
+  - name: Configure toast notifications for selected user
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\PushNotifications'
+      user: "{{ vars.user }}"
+      values:
+        - name: ToastEnabled
+          type: dword
+          data: "{{ vars.disable_notifications ? 0 : 1 }}"
+
+  - name: Configure news and interests feed
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds'
+      user: "{{ vars.user }}"
+      values:
+        - name: IsFeedsAvailable
+          type: dword
+          data: "{{ vars.disable_news_and_interests ? 0 : 1 }}"
+        - name: ShellFeedsTaskbarViewMode
+          type: dword
+          data: "{{ vars.disable_news_and_interests ? 2 : 0 }}"
 
   - name: Configure Windows Error Reporting
     registry:
@@ -62,6 +104,66 @@ tasks:
         - name: DisableCloudOptimizedContent
           type: dword
           data: "{{ vars.disable_windows_setup_prompt }}"
+
+  - name: Configure selected user setup prompt
+    registry:
+      path: 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\UserProfileEngagement'
+      user: "{{ vars.user }}"
+      values:
+        - name: ScoobeSystemSettingEnabled
+          type: dword
+          data: "{{ vars.disable_windows_setup_prompt ? 0 : 1 }}"
+
+  - name: Configure selected user app suggestions
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+      user: "{{ vars.user }}"
+      values:
+        - name: FeatureManagementEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: OemPreInstalledAppsEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: PreInstalledAppsEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SilentInstalledAppsEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: ContentDeliveryAllowed
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: PreInstalledAppsEverEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContentEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-338388Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-338389Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-314559Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-338387Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-338393Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SubscribedContent-310093Enabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SystemPaneSuggestionsEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
+        - name: SoftLandingEnabled
+          type: dword
+          data: "{{ vars.disable_app_suggestions ? 0 : 1 }}"
 
   - name: Configure automatic restart sign-on
     registry:

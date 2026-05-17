@@ -1,5 +1,5 @@
 name: preflight/windows-machine
-version: "1.1.0"
+version: "1.2.0"
 description: Configure machine-wide Windows baseline settings
 author: preflight
 
@@ -20,6 +20,10 @@ inputs:
     type: string
     default: RemoteSigned
     description: PowerShell execution policy for LocalMachine scope
+  disable_new_network_prompt:
+    type: bool
+    default: true
+    description: Disable the first-connection new network prompt
 
 tasks:
   - name: Set Windows computer name
@@ -68,3 +72,15 @@ tasks:
           }
           throw
         }
+
+  - name: Disable new network prompt
+    when: "{{ vars.disable_new_network_prompt }}"
+    registry:
+      path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Network\NewNetworkWindowOff'
+      ensure: present
+
+  - name: Enable new network prompt
+    when: "{{ vars.disable_new_network_prompt == 'false' }}"
+    registry:
+      path: 'HKLM:\SYSTEM\CurrentControlSet\Control\Network\NewNetworkWindowOff'
+      ensure: absent

@@ -1,5 +1,5 @@
 name: preflight/windows-update-lockdown
-version: "1.1.0"
+version: "1.2.0"
 description: Reduce Windows Update and Store-driven background changes
 author: preflight
 
@@ -11,7 +11,11 @@ inputs:
   disable_windows_update_service:
     type: bool
     default: true
-    description: Stop and disable the Windows Update service
+    description: Stop and disable Windows Update, Update Orchestrator, and Windows Update Medic services
+  disable_update_auto_reboot:
+    type: bool
+    default: true
+    description: Prevent Windows Update from automatically rebooting while users are signed in
   disable_store_auto_download:
     type: bool
     default: true
@@ -25,23 +29,75 @@ tasks:
         - name: NoAutoUpdate
           type: dword
           data: "{{ vars.disable_windows_update }}"
+        - name: AUOptions
+          type: dword
+          data: "{{ vars.disable_windows_update ? 1 : 0 }}"
+        - name: NoAutoRebootWithLoggedOnUsers
+          type: dword
+          data: "{{ vars.disable_update_auto_reboot ? 1 : 0 }}"
 
-  - name: Configure Windows Update service
+  - name: Configure Windows Update reboot policy
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate'
+      values:
+        - name: NoAutoRebootWithLoggedOnUsers
+          type: dword
+          data: "{{ vars.disable_update_auto_reboot ? 1 : 0 }}"
+
+  - name: Configure Windows Update services
     powershell:
       check_script: |
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update_service }}')
-        $service = Get-CimInstance Win32_Service -Filter "Name='wuauserv'"
-        if ($disable) {
-          return ($service.StartMode -ne 'Disabled' -or $service.State -ne 'Stopped')
+        foreach ($serviceName in @('wuauserv', 'UsoSvc')) {
+          $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction SilentlyContinue
+          if ($null -eq $service) {
+            continue
+          }
+          if ($disable) {
+            if ($service.StartMode -ne 'Disabled' -or $service.State -ne 'Stopped') {
+              return $true
+            }
+          } elseif ($service.StartMode -eq 'Disabled') {
+            return $true
+          }
         }
-        return ($service.StartMode -eq 'Disabled')
+
+        $medicPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc'
+        $medicStart = $null
+        if (Test-Path -LiteralPath $medicPath) {
+          $medicStart = (Get-ItemProperty -LiteralPath $medicPath -Name Start -ErrorAction SilentlyContinue).Start
+        }
+        $medicService = Get-CimInstance Win32_Service -Filter "Name='WaaSMedicSvc'" -ErrorAction SilentlyContinue
+        if ($disable) {
+          return (($null -ne $medicStart -and [int]$medicStart -ne 4) -or ($null -ne $medicService -and $medicService.State -eq 'Running'))
+        }
+        return ($null -ne $medicStart -and [int]$medicStart -eq 4)
       script: |
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_windows_update_service }}')
-        if ($disable) {
-          Stop-Service -Name wuauserv -Force -ErrorAction SilentlyContinue
-          Set-Service -Name wuauserv -StartupType Disabled
-        } else {
-          Set-Service -Name wuauserv -StartupType Manual
+        foreach ($serviceName in @('wuauserv', 'UsoSvc')) {
+          $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'" -ErrorAction SilentlyContinue
+          if ($null -eq $service) {
+            continue
+          }
+          if ($disable) {
+            Stop-Service -Name $serviceName -Force -ErrorAction SilentlyContinue
+            Set-Service -Name $serviceName -StartupType Disabled
+          } else {
+            Set-Service -Name $serviceName -StartupType Manual
+          }
+        }
+
+        $medicPath = 'HKLM:\SYSTEM\CurrentControlSet\Services\WaaSMedicSvc'
+        if (Test-Path -LiteralPath $medicPath) {
+          if ($disable) {
+            Set-ItemProperty -LiteralPath $medicPath -Name Start -Value 4
+            $medicService = Get-CimInstance Win32_Service -Filter "Name='WaaSMedicSvc'" -ErrorAction SilentlyContinue
+            if ($null -ne $medicService -and $medicService.State -eq 'Running') {
+              Invoke-CimMethod -InputObject $medicService -MethodName StopService | Out-Null
+            }
+          } else {
+            Set-ItemProperty -LiteralPath $medicPath -Name Start -Value 2
+          }
         }
 
   - name: Disable Store automatic downloads

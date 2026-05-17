@@ -1,5 +1,5 @@
 name: preflight/debloat
-version: "1.4.0"
+version: "1.5.0"
 description: Remove common Windows bloatware and disable telemetry, Copilot, and AI features
 author: preflight
 
@@ -16,6 +16,10 @@ tasks:
         - name: Clipchamp.Clipchamp
           scope: both
         - name: Microsoft.3DBuilder
+          scope: both
+        - name: Microsoft.Advertising.Xaml
+          scope: both
+        - name: Microsoft.Appconnector
           scope: both
         - name: Microsoft.549981C3F5F10 # Cortana
           scope: both
@@ -35,6 +39,10 @@ tasks:
           scope: both
         - name: Microsoft.BingWeather
           scope: both
+        - name: Microsoft.CommsPhone
+          scope: both
+        - name: Microsoft.ConnectivityStore
+          scope: both
         - name: Microsoft.Microsoft3DViewer
           scope: both
         - name: Microsoft.NetworkSpeedTest
@@ -43,9 +51,21 @@ tasks:
           scope: both
         - name: Microsoft.Print3D
           scope: both
+        - name: Microsoft.ScreenSketch
+          scope: both
+        - name: Microsoft.WindowsCamera
+          scope: both
+        - name: microsoft.windowscommunicationsapps
+          scope: both
         - name: Microsoft.WindowsMaps
           scope: both
+        - name: Microsoft.WindowsPhone
+          scope: both
+        - name: Microsoft.WindowsReadingList
+          scope: both
         - name: Microsoft.WindowsSoundRecorder
+          scope: both
+        - name: Microsoft.ZuneMusic
           scope: both
         - name: Microsoft.ZuneVideo
           scope: both
@@ -53,6 +73,8 @@ tasks:
   - name: Remove Microsoft productivity and communication apps
     remove_appx_packages:
       packages:
+        - name: Microsoft.GetHelp
+          scope: both
         - name: Microsoft.Getstarted
           scope: both
         - name: Microsoft.Messaging
@@ -67,11 +89,15 @@ tasks:
           scope: both
         - name: Microsoft.Office.OneNote
           scope: both
+        - name: Microsoft.OfficeLens
+          scope: both
         - name: Microsoft.Office.Sway
           scope: both
         - name: Microsoft.OneConnect
           scope: both
         - name: Microsoft.OneDriveSync
+          scope: both
+        - name: Microsoft.People
           scope: both
         - name: Microsoft.PCManager
           scope: both
@@ -80,6 +106,12 @@ tasks:
         - name: Microsoft.SkypeApp
           scope: both
         - name: Microsoft.Todos
+          scope: both
+        - name: Microsoft.Wallet
+          scope: both
+        - name: Microsoft.Whiteboard
+          scope: both
+        - name: Microsoft.YourPhone
           scope: both
         - name: MicrosoftCorporationII.QuickAssist
           scope: both
@@ -150,6 +182,8 @@ tasks:
       packages:
         - name: Microsoft.Copilot
           scope: both
+        - name: Microsoft.MinecraftUWP
+          scope: both
         - name: Microsoft.MicrosoftSolitaireCollection
           scope: both
         - name: Microsoft.MixedReality.Portal
@@ -161,6 +195,8 @@ tasks:
         - name: Microsoft.WindowsAlarms
           scope: both
         - name: Microsoft.WindowsFeedbackHub
+          scope: both
+        - name: Microsoft.WindowsFeedback
           scope: both
         - name: Microsoft.GamingApp
           scope: both
@@ -178,10 +214,20 @@ tasks:
           scope: both
         - name: MicrosoftCorporationII.MicrosoftFamily
           scope: both
+        - name: Windows.ContactSupport
+          scope: both
 
   - name: Remove third-party media and shopping apps
     remove_appx_packages:
       packages:
+        - name: "*Advertising*"
+          scope: both
+        - name: "*BingTranslator*"
+          scope: both
+        - name: "*BingWeather*"
+          scope: both
+        - name: "*feedbackhub*"
+          scope: both
         - name: ACGMediaPlayer
           scope: both
         - name: AdobeSystemsIncorporated.AdobePhotoshopExpress
@@ -192,15 +238,31 @@ tasks:
           scope: both
         - name: Flipboard
           scope: both
+        - name: "*Flipboard*"
+          scope: both
+        - name: "*FreshPaint*"
+          scope: both
         - name: HULULLC.HULUPLUS
           scope: both
         - name: iHeartRadio
           scope: both
         - name: Netflix
           scope: both
+        - name: PandoraMediaInc.29680B314EFC2
+          scope: both
         - name: PandoraMediaInc
           scope: both
         - name: PicsArt-PhotoStudio
+          scope: both
+        - name: "*PicsArt*"
+          scope: both
+        - name: "*Microsoft.NetworkSpeedTest*"
+          scope: both
+        - name: "*windowscommunicationsapps*"
+          scope: both
+        - name: "*ZuneMusic*"
+          scope: both
+        - name: 613EBCEA.PolarrPhotoEditorAcademicEdition
           scope: both
         - name: Plex
           scope: both
@@ -210,6 +272,10 @@ tasks:
           scope: both
         - name: Spotify
           scope: both
+        - name: SpotifyAB.SpotifyMusic
+          scope: both
+        - name: ThumbmunkeysLtd.PhototasticCollage
+          scope: both
         - name: TuneInRadio
           scope: both
         - name: WinZipUniversal
@@ -218,17 +284,23 @@ tasks:
   - name: Remove third-party social and lifestyle apps
     remove_appx_packages:
       packages:
+        - name: "*Duolingo*"
+          scope: both
         - name: Disney
           scope: both
         - name: Duolingo-LearnLanguagesforFree
           scope: both
         - name: Facebook
           scope: both
+        - name: Fitbit.FitbitCoach
+          scope: both
         - name: fitbit
           scope: both
         - name: Instagram
           scope: both
         - name: LinkedInforWindows
+          scope: both
+        - name: 7EE7776C.LinkedInforWindows
           scope: both
         - name: NYTCrossword
           scope: both
@@ -238,7 +310,11 @@ tasks:
           scope: both
         - name: Twitter
           scope: both
+        - name: 9E2F88E3.Twitter
+          scope: both
         - name: Viber
+          scope: both
+        - name: XINGAG.XING
           scope: both
 
   - name: Remove third-party games and utility apps
@@ -246,19 +322,41 @@ tasks:
       packages:
         - name: Asphalt8Airborne
           scope: both
+        - name: 89006A2E.AutodeskSketchBook
+          scope: both
         - name: CaesarsSlotsFreeCasino
+          scope: both
+        - name: ActiproSoftwareLLC.562882FEEB491
           scope: both
         - name: COOKINGFEVER
           scope: both
+        - name: DB6EA5DB.CyberLinkMediaSuiteEssentials
+          scope: both
         - name: DisneyMagicKingdoms
+          scope: both
+        - name: DolbyLaboratories.DolbyAccess
+          scope: both
+        - name: Drawboard.DrawboardPDF
+          scope: both
+        - name: "*EclipseManager*"
+          scope: both
+        - name: 46928bounde.EclipseManager
           scope: both
         - name: FarmVille2CountryEscape
           scope: both
+        - name: flaregamesGmbH.RoyalRevolt2
+          scope: both
         - name: HiddenCity
+          scope: both
+        - name: KeeperSecurityInc.Keeper
           scope: both
         - name: king.com.*
           scope: both
         - name: MarchofEmpires
+          scope: both
+        - name: "*Wunderlist*"
+          scope: both
+        - name: 6Wunderkinder.Wunderlist
           scope: both
 
   - name: Disable telemetry

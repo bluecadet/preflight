@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "4.0.0"
+version: "4.1.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -40,10 +40,58 @@ inputs:
     type: bool
     default: true
     description: Show file extensions in File Explorer for the selected user
+  show_empty_drives:
+    type: bool
+    default: true
+    description: Show empty removable drives in File Explorer for the selected user
+  show_sync_provider_notifications:
+    type: bool
+    default: false
+    description: Show sync provider notifications in File Explorer for the selected user
+  aero_shake:
+    type: bool
+    default: false
+    description: Enable or disable Aero Shake window minimization for the selected user
+  launch_to_this_pc:
+    type: bool
+    default: true
+    description: Open File Explorer to This PC instead of Quick Access for the selected user
+  show_item_check_boxes:
+    type: bool
+    default: false
+    description: Show item check boxes in File Explorer for the selected user
+  taskbar_allow_resize:
+    type: bool
+    default: true
+    description: Allow taskbar resizing for the selected user
+  taskbar_on_all_displays:
+    type: bool
+    default: false
+    description: Show the taskbar on all displays for the selected user
+  taskbar_allow_multimon:
+    type: bool
+    default: true
+    description: Allow multi-monitor taskbar behavior for the selected user
+  hide_this_pc_folders:
+    type: bool
+    default: true
+    description: Hide common library folders from This PC
+  disable_network_folder_thumbnails:
+    type: bool
+    default: true
+    description: Stop Explorer from creating thumbnail caches on network folders for the selected user
+  show_store_apps_on_taskbar:
+    type: bool
+    default: false
+    description: Show Microsoft Store apps on the taskbar for the selected user
   clear_start_pins:
     type: bool
     default: false
     description: Replace the selected user's Start pins with an empty pinned list
+  start_pins_json:
+    type: string
+    default: '{"pinnedList":[]}'
+    description: ConfigureStartPins JSON payload used when clearing Start pins
 
 tasks:
   - name: Clear desktop background
@@ -55,6 +103,15 @@ tasks:
         Wallpaper: ""
         WallpaperStyle: "0"
         TileWallpaper: "0"
+      ensure: present
+
+  - name: Set desktop background color
+    when: "{{ vars.clear_desktop_background }}"
+    registry:
+      path: 'HKCU:\Control Panel\Colors'
+      user: "{{ vars.user }}"
+      values:
+        Background: "0 0 0"
       ensure: present
 
   - name: Configure theme mode
@@ -96,6 +153,54 @@ tasks:
         - name: HideFileExt
           type: dword
           data: "{{ vars.show_file_extensions == 'false' }}"
+
+  - name: Configure Explorer advanced preferences
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+      user: "{{ vars.user }}"
+      values:
+        - name: HideDrivesWithNoMedia
+          type: dword
+          data: "{{ vars.show_empty_drives ? 0 : 1 }}"
+        - name: ShowSyncProviderNotifications
+          type: dword
+          data: "{{ vars.show_sync_provider_notifications ? 1 : 0 }}"
+        - name: DisallowShaking
+          type: dword
+          data: "{{ vars.aero_shake ? 0 : 1 }}"
+        - name: LaunchTo
+          type: dword
+          data: "{{ vars.launch_to_this_pc ? 1 : 2 }}"
+        - name: AutoCheckSelect
+          type: dword
+          data: "{{ vars.show_item_check_boxes ? 1 : 0 }}"
+        - name: TaskbarSizeMove
+          type: dword
+          data: "{{ vars.taskbar_allow_resize ? 1 : 0 }}"
+        - name: MMTaskbarEnabled
+          type: dword
+          data: "{{ vars.taskbar_on_all_displays ? 1 : 0 }}"
+        - name: StoreAppsOnTaskbar
+          type: dword
+          data: "{{ vars.show_store_apps_on_taskbar ? 1 : 0 }}"
+
+  - name: Configure Explorer network thumbnail policy
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer'
+      user: "{{ vars.user }}"
+      values:
+        - name: DisableThumbnailsOnNetworkFolders
+          type: dword
+          data: "{{ vars.disable_network_folder_thumbnails ? 1 : 0 }}"
+
+  - name: Configure multi-monitor taskbar policy
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer'
+      user: "{{ vars.user }}"
+      values:
+        - name: TaskbarNoMultimon
+          type: dword
+          data: "{{ vars.taskbar_allow_multimon ? 0 : 1 }}"
 
   - name: Configure Recycle Bin desktop icon visibility (NewStartPanel)
     registry:
@@ -157,6 +262,90 @@ tasks:
           patch:
             - offset: 8
               data: "{{ vars.taskbar_auto_hide ? 3 : 2 }}"
+
+  - name: Hide Music folder from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{1CF1260C-4DD0-4ebb-811F-33C572699FDE}'
+      ensure: absent
+
+  - name: Hide Music folder from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{1CF1260C-4DD0-4ebb-811F-33C572699FDE}'
+      ensure: absent
+
+  - name: Hide Music library from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{3dfdf296-dbec-4fb4-81d1-6a3438bcf4de}'
+      ensure: absent
+
+  - name: Hide Music library from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{3dfdf296-dbec-4fb4-81d1-6a3438bcf4de}'
+      ensure: absent
+
+  - name: Hide Pictures folder from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{3ADD1653-EB32-4cb0-BBD7-DFA0ABB5ACCA}'
+      ensure: absent
+
+  - name: Hide Pictures folder from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{3ADD1653-EB32-4cb0-BBD7-DFA0ABB5ACCA}'
+      ensure: absent
+
+  - name: Hide Pictures library from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{24ad3ad4-a569-4530-98e1-ab02f9417aa8}'
+      ensure: absent
+
+  - name: Hide Pictures library from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{24ad3ad4-a569-4530-98e1-ab02f9417aa8}'
+      ensure: absent
+
+  - name: Hide Videos folder from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{A0953C92-50DC-43bf-BE83-3742FED03C9C}'
+      ensure: absent
+
+  - name: Hide Videos folder from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{A0953C92-50DC-43bf-BE83-3742FED03C9C}'
+      ensure: absent
+
+  - name: Hide Videos library from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{f86fa3ab-70d2-4fc7-9c99-fcbf05467f3a}'
+      ensure: absent
+
+  - name: Hide Videos library from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{f86fa3ab-70d2-4fc7-9c99-fcbf05467f3a}'
+      ensure: absent
+
+  - name: Hide 3D Objects folder from This PC
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{0DB7E03F-FC29-4DC6-9020-FF41B59E513A}'
+      ensure: absent
+
+  - name: Hide 3D Objects folder from This PC (32-bit view)
+    when: "{{ vars.hide_this_pc_folders }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{0DB7E03F-FC29-4DC6-9020-FF41B59E513A}'
+      ensure: absent
 
   - name: Clear desktop shortcuts
     when: "{{ vars.clear_desktop_shortcuts }}"
@@ -381,4 +570,4 @@ tasks:
       path: 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
       user: "{{ vars.user }}"
       values:
-        ConfigureStartPins: '{"pinnedList":[]}'
+        ConfigureStartPins: "{{ vars.start_pins_json }}"

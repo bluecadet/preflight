@@ -428,8 +428,8 @@ func TestPlanStdlibWindowsMachineRendersLeafInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	if len(plan.Tasks) != 4 {
-		t.Fatalf("expected 4 expanded tasks, got %d", len(plan.Tasks))
+	if len(plan.Tasks) != 6 {
+		t.Fatalf("expected 6 expanded tasks, got %d", len(plan.Tasks))
 	}
 
 	previewName, err := PreviewTask(plan.Tasks[0], nil)
@@ -928,6 +928,7 @@ func TestApplyStdlibWindowsMachineRendersNestedExecutionTimeInputs(t *testing.T)
 			{Status: target.StatusChanged},
 			{Status: target.StatusChanged},
 			{Status: target.StatusChanged},
+			{Status: target.StatusChanged},
 		},
 	}
 	r := New(mt, resolver, Config{
@@ -957,8 +958,8 @@ func TestApplyStdlibWindowsMachineRendersNestedExecutionTimeInputs(t *testing.T)
 	if err := r.Apply(context.Background(), plan); err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
-	if len(mt.calls) != 4 {
-		t.Fatalf("expected 4 executed tasks, got %d", len(mt.calls))
+	if len(mt.calls) != 5 {
+		t.Fatalf("expected 5 executed tasks, got %d", len(mt.calls))
 	}
 
 	checkScript, ok := mt.calls[0].Params["check_script"].(string)
@@ -990,6 +991,7 @@ func TestApplyStdlibWindowsMachineSkipsOptionalTasksWhenInputsOmitted(t *testing
 		results: []target.Result{
 			{Status: target.StatusOK},
 			{Status: target.StatusOK},
+			{Status: target.StatusOK},
 		},
 	}
 	r := New(mt, resolver, Config{})
@@ -1011,10 +1013,10 @@ func TestApplyStdlibWindowsMachineSkipsOptionalTasksWhenInputsOmitted(t *testing
 	if err := r.Apply(context.Background(), plan); err != nil {
 		t.Fatalf("Apply returned error: %v", err)
 	}
-	// computer_name and timezone tasks should be skipped; only long_paths and
-	// ps1_execution_policy should execute.
-	if len(mt.calls) != 2 {
-		t.Fatalf("expected 2 executed tasks (skipped computer_name and timezone), got %d", len(mt.calls))
+	// computer_name and timezone tasks should be skipped; long_paths,
+	// ps1_execution_policy, and the default new-network prompt task should execute.
+	if len(mt.calls) != 3 {
+		t.Fatalf("expected 3 executed tasks (skipped computer_name and timezone), got %d", len(mt.calls))
 	}
 }
 
