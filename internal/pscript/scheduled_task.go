@@ -95,7 +95,7 @@ $currentDelay = if ($null -ne $currentTriggerObject.Delay) { [string]$currentTri
 $currentStartAt = Normalize-StartBoundary $currentTrigger $currentTriggerObject.StartBoundary
 $desiredStartAt = Normalize-StartBoundary $trigger $desiredStartAt
 $currentEnabled = [bool]$task.Settings.Enabled
-$currentRunLevel = if ([string]$task.Principal.RunLevel -eq 'Highest') { 'highest' } else { 'least' }
+$currentRunLevel = if ([string]$task.Principal.RunLevel -eq 'Highest' -or [string]$task.Principal.RunLevel -eq '1') { 'highest' } else { 'least' }
 
 $needs = (Normalize-TaskText $action.Execute) -ne $execute -or
   (Normalize-TaskText $action.Arguments) -ne $arguments -or
@@ -118,7 +118,13 @@ $desiredLogonType = switch (Normalize-PrincipalUserId $runAs) {
   'NETWORKSERVICE' { 'ServiceAccount' }
   default { 'Interactive' }
 }
-if ($runAs -and ([string]$task.Principal.LogonType) -ne $desiredLogonType) {
+$logonTypeByInt = @{ 0='None'; 1='Password'; 2='S4U'; 3='Interactive'; 4='Group'; 5='ServiceAccount'; 6='InteractiveOrPassword' }
+$rawLogonType = [string]$task.Principal.LogonType
+$currentLogonType = if ($rawLogonType -match '^\d+$') {
+  $idx = [int]$rawLogonType
+  if ($logonTypeByInt.ContainsKey($idx)) { $logonTypeByInt[$idx] } else { $rawLogonType }
+} else { $rawLogonType }
+if ($runAs -and $currentLogonType -ne $desiredLogonType) {
   $needs = $true
 }
 Write-Output $needs
