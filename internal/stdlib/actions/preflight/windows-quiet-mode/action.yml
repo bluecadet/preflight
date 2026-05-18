@@ -75,6 +75,20 @@ tasks:
           type: dword
           data: "{{ vars.disable_news_and_interests ? 2 : 0 }}"
 
+  - name: Disable Windows Error Reporting service
+    when: "{{ vars.disable_error_reporting }}"
+    powershell:
+      check_script: |
+        $svc = Get-CimInstance Win32_Service -Filter "Name='WerSvc'" -ErrorAction SilentlyContinue
+        if ($null -eq $svc) { return $false }
+        return ($svc.State -ne 'Stopped' -or $svc.StartMode -ne 'Disabled')
+      script: |
+        $svc = Get-CimInstance Win32_Service -Filter "Name='WerSvc'" -ErrorAction SilentlyContinue
+        if ($null -ne $svc -and [int]$svc.ProcessId -gt 0) {
+          Stop-Process -Id ([int]$svc.ProcessId) -Force -ErrorAction SilentlyContinue
+        }
+        Set-Service -Name WerSvc -StartupType Disabled -ErrorAction SilentlyContinue
+
   - name: Configure Windows Error Reporting
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Error Reporting'
