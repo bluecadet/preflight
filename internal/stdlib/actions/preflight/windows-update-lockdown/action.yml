@@ -67,9 +67,8 @@ tasks:
         if (Test-Path -LiteralPath $medicPath) {
           $medicStart = (Get-ItemProperty -LiteralPath $medicPath -Name Start -ErrorAction SilentlyContinue).Start
         }
-        $medicService = Get-CimInstance Win32_Service -Filter "Name='WaaSMedicSvc'" -ErrorAction SilentlyContinue
         if ($disable) {
-          return (($null -ne $medicStart -and [int]$medicStart -ne 4) -or ($null -ne $medicService -and $medicService.State -eq 'Running'))
+          return ($null -ne $medicStart -and [int]$medicStart -ne 4)
         }
         return ($null -ne $medicStart -and [int]$medicStart -eq 4)
       script: |
