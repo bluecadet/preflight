@@ -92,7 +92,7 @@ type sshRuntime interface {
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	Reachable(ctx context.Context) (bool, error)
 	Info(ctx context.Context) (TargetInfo, error)
-	RunPowerShellScript(ctx context.Context, script string) (string, error)
+	RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error)
 }
 
 type sshCloser interface {
@@ -208,7 +208,7 @@ func (t *SSHTarget) RunPowerShell(ctx context.Context, script string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return runtime.RunPowerShellScript(ctx, script)
+	return runtime.RunPowerShellScript(ctx, script, nil)
 }
 
 func (t *SSHTarget) Close() error {

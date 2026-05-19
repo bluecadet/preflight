@@ -2,6 +2,7 @@ package target
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -11,8 +12,13 @@ type recordingPowerShellBackend struct {
 	scripts []string
 }
 
-func (b *recordingPowerShellBackend) RunPowerShellScript(_ context.Context, script string) (string, error) {
+func (b *recordingPowerShellBackend) RunPowerShellScript(_ context.Context, script string, out OutputFunc) (string, error) {
 	b.scripts = append(b.scripts, script)
+	if out != nil {
+		for _, line := range splitOutputLines(b.output) {
+			out(line)
+		}
+	}
 	return b.output, nil
 }
 
@@ -172,7 +178,7 @@ func TestApplyPowerShellModuleWrapsInlineWorkingDir(t *testing.T) {
 		"script":      "Write-Output (Get-Location)",
 	}
 
-	out, err := applyPowerShellModule(context.Background(), backend, params)
+	out, err := applyPowerShellModule(context.Background(), backend, params, nil)
 	if err != nil {
 		t.Fatalf("applyPowerShellModule returned error: %v", err)
 	}
@@ -203,7 +209,7 @@ func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 		"script": "Write-Output $env:NAME",
 	}
 
-	out, err := applyPowerShellModule(context.Background(), backend, params)
+	out, err := applyPowerShellModule(context.Background(), backend, params, nil)
 	if err != nil {
 		t.Fatalf("applyPowerShellModule returned error: %v", err)
 	}
@@ -259,7 +265,7 @@ func TestApplyPowerShellModuleResetsLastExitCode(t *testing.T) {
 
 	_, err := applyPowerShellModule(context.Background(), backend, map[string]any{
 		"script": "if ($LASTEXITCODE -ne 0) { throw $LASTEXITCODE }",
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("applyPowerShellModule returned error: %v", err)
 	}
@@ -268,6 +274,84 @@ func TestApplyPowerShellModuleResetsLastExitCode(t *testing.T) {
 	}
 	if !strings.HasPrefix(backend.scripts[0], "$global:LASTEXITCODE = 0\n") {
 		t.Fatalf("expected inline script to reset LASTEXITCODE, got:\n%s", backend.scripts[0])
+	}
+}
+
+func TestEnsurePowerShellModuleForwardsIntermediateLinesOnChange(t *testing.T) {
+	// Simulate a long-running script that emits diagnostic lines before the
+	// "changed" sentinel. All lines before the marker must reach onOutput and
+	// nothing from the marker itself should leak through.
+	backend := &recordingPowerShellBackend{output: "progress-1\nprogress-2\nprogress-3\nchanged"}
+	params := map[string]any{
+		"check_script": "return $true",
+		"script":       "Write-Output 'progress'",
+	}
+
+	var gotLines []string
+	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("ensurePowerShellModule returned error: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected changed=true")
+	}
+	want := []string{"progress-1", "progress-2", "progress-3"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
+	}
+}
+
+func TestEnsurePowerShellModuleForwardsIntermediateLinesOnOk(t *testing.T) {
+	// When the script reports "ok" (no change needed), any diagnostic lines
+	// emitted before the marker should still be forwarded.
+	backend := &recordingPowerShellBackend{output: "verified-a\nverified-b\nok"}
+	params := map[string]any{
+		"check_script": "return $false",
+		"script":       "Write-Output 'noop'",
+	}
+
+	var gotLines []string
+	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("ensurePowerShellModule returned error: %v", err)
+	}
+	if changed {
+		t.Fatal("expected changed=false")
+	}
+	want := []string{"verified-a", "verified-b"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
+	}
+}
+
+func TestCheckPowerShellModuleWithOutputForwardsLines(t *testing.T) {
+	// check_script may emit diagnostic lines before its result. Those lines
+	// must be forwarded via onOutput and not silently discarded.
+	const checkResultMarker = "__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOnRydWUsIm1lc3NhZ2UiOm51bGx9"
+	backend := &recordingPowerShellBackend{
+		output: "diag-line-1\ndiag-line-2\n" + checkResultMarker,
+	}
+	params := map[string]any{
+		"check_script": "Write-Output 'diag'; return $true",
+	}
+
+	var gotLines []string
+	needsChange, _, err := checkPowerShellModuleWithOutput(context.Background(), backend, params, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("checkPowerShellModuleWithOutput returned error: %v", err)
+	}
+	if !needsChange {
+		t.Fatal("expected needsChange=true")
+	}
+	want := []string{"diag-line-1", "diag-line-2"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
 	}
 }
 

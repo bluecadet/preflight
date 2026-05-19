@@ -113,7 +113,7 @@ func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 	}, nil
 }
 
-func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script string, _ OutputFunc) (string, error) {
 	if r.powerShellBinary == "" {
 		return "", fmt.Errorf("posix-shell runtime: powershell is not available on the remote host")
 	}

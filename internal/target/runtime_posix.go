@@ -59,9 +59,13 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
 				return checkPowerShellModule(ctx, backend, params)
 			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyPowerShellModule(ctx, backend, params)
-			}),
+			// applyPowerShellModule streams lines through out during execution.
+			// Pass nil to applyStreamed so it only extracts a single-line message
+			// without re-emitting lines that were already forwarded.
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				output, err := applyPowerShellModule(ctx, backend, params, out)
+				return applyStreamed(output, nil), err
+			},
 		}
 	}
 	return buildRemoteModuleRegistry(RuntimeKindPOSIXShell, supported, func(module string) error {

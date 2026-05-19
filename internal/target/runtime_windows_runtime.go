@@ -72,9 +72,13 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
 				return checkPowerShellModuleWithOutput(ctx, backend, params, out)
 			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyPowerShellModule(ctx, backend, params)
-			}),
+			// applyPowerShellModule streams lines through out during execution.
+			// Pass nil to applyStreamed so it only extracts a single-line message
+			// without re-emitting lines that were already forwarded.
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				output, err := applyPowerShellModule(ctx, backend, params, out)
+				return applyStreamed(output, nil), err
+			},
 			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error) {
 				return ensurePowerShellModule(ctx, backend, params, dryRun, out)
 			}),
@@ -215,7 +219,7 @@ func windowsRunScript(ctx context.Context, backend windowsPowerShellBackend, par
 	if err != nil {
 		return "", err
 	}
-	return backend.RunPowerShellScript(ctx, script+"\n"+body)
+	return backend.RunPowerShellScript(ctx, script+"\n"+body, nil)
 }
 
 func checkWindowsBooleanScript(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, body string) (bool, string, error) {
@@ -278,7 +282,7 @@ if (-not (Test-Path -LiteralPath $path)) {
 }
 $item = Get-Item -LiteralPath $path
 Write-Output ([bool](-not $item.PSIsContainer))
-`)
+`, nil)
 	if err != nil {
 		return false, "", err
 	}
@@ -329,7 +333,7 @@ if ($item.PSIsContainer) {
 }
 $hash = (Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash.ToLowerInvariant()
 Write-Output ("present:" + $hash)
-`)
+`, nil)
 	if err != nil {
 		if ensure == "absent" && strings.Contains(err.Error(), "missing") {
 			return false, "", nil
@@ -443,7 +447,7 @@ if ($workingDir) {
   Set-Location -LiteralPath $workingDir
 }
 & $cmd @args
-`)
+`, nil)
 	}
 	taskScript := script + `
 ` + psArgs + `
@@ -453,7 +457,7 @@ if ($workingDir) {
 	if err != nil {
 		return "", err
 	}
-	return backend.RunPowerShellScript(ctx, taskScript)
+	return backend.RunPowerShellScript(ctx, taskScript, nil)
 }
 
 func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
@@ -492,7 +496,7 @@ if (`+fmt.Sprintf("%q", ensure)+` -eq 'absent') {
 } else {
   Write-Output ([bool]($current -ne $value))
 }
-`)
+`, nil)
 	if err != nil {
 		return false, "", err
 	}
@@ -661,7 +665,7 @@ func applyWindowsReboot(ctx context.Context, backend windowsPowerShellBackend, p
 	case float64:
 		timeout = int(raw)
 	}
-	_, err := backend.RunPowerShellScript(ctx, fmt.Sprintf("shutdown /r /t %d", timeout))
+	_, err := backend.RunPowerShellScript(ctx, fmt.Sprintf("shutdown /r /t %d", timeout), nil)
 	return err
 }
 
@@ -720,7 +724,7 @@ func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerSh
 		return false, "", err
 	}
 	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
-	out, err := backend.RunPowerShellScript(ctx, preamble+removeAppxPackagesEnsureScript)
+	out, err := backend.RunPowerShellScript(ctx, preamble+removeAppxPackagesEnsureScript, nil)
 	if err != nil {
 		return false, "", err
 	}
@@ -859,7 +863,7 @@ func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend
 		return false, "", err
 	}
 	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
-	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript)
+	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript, nil)
 	if err != nil {
 		return false, "", err
 	}

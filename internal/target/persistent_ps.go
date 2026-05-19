@@ -17,7 +17,7 @@ import (
 // same stdin/stdout marker protocol (buildPSStdinLine + readPSOutput); only
 // session setup and teardown differ between transports.
 type psSessionRunner interface {
-	run(ctx context.Context, script string) (string, error)
+	run(ctx context.Context, script string, out OutputFunc) (string, error)
 }
 
 // runPSWithFallback executes script through the persistent PS session when one
@@ -33,23 +33,24 @@ type psSessionRunner interface {
 func runPSWithFallback(
 	ctx context.Context,
 	script string,
+	out OutputFunc,
 	acquireSession func(context.Context) (psSessionRunner, error),
 	resetSession func(cause error),
-	legacy func(context.Context, string) (string, error),
+	legacy func(context.Context, string, OutputFunc) (string, error),
 ) (string, error) {
 	ps, err := acquireSession(ctx)
 	if err == nil && ps != nil {
-		out, psErr := ps.run(ctx, script)
+		result, psErr := ps.run(ctx, script, out)
 		if psErr == nil {
-			return out, nil
+			return result, nil
 		}
 		if isSessionError(psErr) {
 			resetSession(psErr)
 		} else {
-			return out, psErr
+			return result, psErr
 		}
 	}
-	return legacy(ctx, script)
+	return legacy(ctx, script, out)
 }
 
 // psMarkerBase is the unique prefix used to delimit script output from control
@@ -127,7 +128,10 @@ if($__pf_err-ne$null){Write-Output('` + errMark + `'+$__pf_err)}else{Write-Outpu
 // id. Lines before the marker are the user script's stdout. Returns the output
 // and any script-level error. Returns *psSessionError if the underlying reader
 // closes before the marker is found.
-func readPSOutput(reader *bufio.Reader, id string) (string, error) {
+//
+// When out is non-nil, each user-visible output line is forwarded to it as it
+// arrives, enabling real-time streaming for persistent-session callers.
+func readPSOutput(reader *bufio.Reader, id string, out OutputFunc) (string, error) {
 	doneMark := psMarkerBase + id + "__DONE"
 	errMark := psMarkerBase + id + "__ERR:"
 
@@ -149,6 +153,9 @@ func readPSOutput(reader *bufio.Reader, id string) (string, error) {
 			return strings.Join(lines, "\n"), errors.New(string(decoded))
 		default:
 			lines = append(lines, line)
+			if out != nil {
+				out(line)
+			}
 		}
 		if readErr != nil {
 			return "", &psSessionError{cause: readErr}

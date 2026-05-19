@@ -158,3 +158,67 @@ func TestExecuteModuleCapturesCheckOutputDuringDryRun(t *testing.T) {
 		t.Fatalf("result.Status = %q, want %q", result.Status, StatusChanged)
 	}
 }
+
+func TestExecuteModuleAccumulatesCheckAndApplyOutputInOrder(t *testing.T) {
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(_ context.Context, _ map[string]any, out OutputFunc) (CheckResult, error) {
+				out("check-line-1")
+				out("check-line-2")
+				return CheckResult{NeedsChange: true}, nil
+			},
+			apply: apply(func(context.Context, map[string]any) (string, error) {
+				return "apply-line-1\napply-line-2\n", nil
+			}),
+		},
+	}
+
+	var gotOutput []string
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, false, func(line string) {
+		gotOutput = append(gotOutput, line)
+	}, registry, errors.New)
+	if err != nil {
+		t.Fatalf("executeModule returned error: %v", err)
+	}
+	want := []string{"check-line-1", "check-line-2", "apply-line-1", "apply-line-2"}
+	if !reflect.DeepEqual(gotOutput, want) {
+		t.Fatalf("gotOutput = %v, want %v", gotOutput, want)
+	}
+	if !reflect.DeepEqual(result.Output, want) {
+		t.Fatalf("result.Output = %v, want %v", result.Output, want)
+	}
+}
+
+func TestExecuteModuleOutputForwardedBeforeApplyFailure(t *testing.T) {
+	applyErr := errors.New("boom")
+	registry := ModuleRegistry{
+		"demo": moduleFuncs{
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{NeedsChange: true}, nil
+			},
+			apply: func(_ context.Context, _ map[string]any, out OutputFunc) (ApplyResult, error) {
+				out("before-failure-1")
+				out("before-failure-2")
+				return ApplyResult{}, applyErr
+			},
+		},
+	}
+
+	var gotOutput []string
+	result, err := executeModule(context.Background(), "task-1", "demo", nil, false, func(line string) {
+		gotOutput = append(gotOutput, line)
+	}, registry, errors.New)
+	if !errors.Is(err, applyErr) {
+		t.Fatalf("expected apply error, got %v", err)
+	}
+	if result.Status != StatusFailed {
+		t.Fatalf("result.Status = %q, want %q", result.Status, StatusFailed)
+	}
+	want := []string{"before-failure-1", "before-failure-2"}
+	if !reflect.DeepEqual(gotOutput, want) {
+		t.Fatalf("gotOutput = %v, want %v", gotOutput, want)
+	}
+	if !reflect.DeepEqual(result.Output, want) {
+		t.Fatalf("result.Output = %v, want %v", result.Output, want)
+	}
+}

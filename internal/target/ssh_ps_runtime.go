@@ -30,7 +30,7 @@ type sshPersistentPS struct {
 	mu      sync.Mutex
 }
 
-func (p *sshPersistentPS) run(_ context.Context, script string) (string, error) {
+func (p *sshPersistentPS) run(_ context.Context, script string, out OutputFunc) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -39,7 +39,7 @@ func (p *sshPersistentPS) run(_ context.Context, script string) (string, error) 
 	if _, err := p.stdin.Write([]byte(line)); err != nil {
 		return "", &psSessionError{fmt.Errorf("write stdin: %w", err)}
 	}
-	return readPSOutput(p.reader, id)
+	return readPSOutput(p.reader, id, out)
 }
 
 func (p *sshPersistentPS) close() {
@@ -132,8 +132,8 @@ func (r *sshWindowsPowerShellRuntime) Close() error {
 // target), which eliminates per-task process-startup overhead. If the session
 // cannot be created or signals a transport failure, it falls back to
 // runPSLegacy which spawns a fresh PowerShell process per invocation.
-func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, script string) (string, error) {
-	return runPSWithFallback(ctx, script,
+func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
+	return runPSWithFallback(ctx, script, out,
 		func(ctx context.Context) (psSessionRunner, error) {
 			ps, err := r.getOrCreatePSSession(ctx)
 			if ps == nil {
@@ -146,7 +146,11 @@ func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, s
 	)
 }
 
-func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string) (string, error) {
+// runPSLegacy spawns a fresh PowerShell process per invocation via the SSH
+// transport. The out parameter is accepted for interface compatibility but
+// ignored — SSH's r.target.run collects stdout into a buffer and does not
+// support streaming to an arbitrary writer.
+func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string, _ OutputFunc) (string, error) {
 	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
 	if err != nil {
 		return "", wrapSSHTargetError("powershell failed", err)
@@ -189,11 +193,13 @@ $payload = [Console]::In.ReadToEnd()
 }
 
 func (r *sshWindowsPowerShellRuntime) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	return readRemoteWindowsFile(ctx, r.target.Transport(), r.RunPowerShellScript, path)
+	return readRemoteWindowsFile(ctx, r.target.Transport(), func(ctx context.Context, script string) (string, error) {
+		return r.RunPowerShellScript(ctx, script, nil)
+	}, path)
 }
 
 func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, error) {
-	stdout, err := r.RunPowerShellScript(ctx, `Write-Output 'preflight'`)
+	stdout, err := r.RunPowerShellScript(ctx, `Write-Output 'preflight'`, nil)
 	if err != nil {
 		return false, err
 	}
@@ -201,7 +207,9 @@ func (r *sshWindowsPowerShellRuntime) Reachable(ctx context.Context) (bool, erro
 }
 
 func (r *sshWindowsPowerShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
-	return remoteWindowsTargetInfo(ctx, r.target.Transport(), r.RunPowerShellScript)
+	return remoteWindowsTargetInfo(ctx, r.target.Transport(), func(ctx context.Context, script string) (string, error) {
+		return r.RunPowerShellScript(ctx, script, nil)
+	})
 }
 
 func (r *sshWindowsPowerShellRuntime) RemoteTempDir() string {

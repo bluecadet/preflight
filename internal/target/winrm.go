@@ -2,10 +2,12 @@ package target
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -38,6 +40,14 @@ type winRMClient interface {
 // test fakes typically do not, and the persistent-session path is skipped for them.
 type winRMShellCreator interface {
 	CreateShell() (*winrm.Shell, error)
+}
+
+// winRMStreamRunner is an optional extension of winRMClient for implementations
+// that can write stdout/stderr to arbitrary io.Writer values. The real
+// *winrm.Client satisfies this via RunWithContextWithInput; test fakes
+// typically do not, so runPSLegacy falls back to RunPSWithContext (batch mode).
+type winRMStreamRunner interface {
+	RunWithContextWithInput(ctx context.Context, command string, stdout, stderr io.Writer, stdin io.Reader) (int, error)
 }
 
 type winRMClientFactory func(WinRMConfig) (winRMClient, error)
@@ -74,7 +84,7 @@ type winRMPersistentPS struct {
 // indefinitely with no actionable error.
 const winRMPersistentPSReadTimeout = 90 * time.Second
 
-func (p *winRMPersistentPS) run(ctx context.Context, script string) (string, error) {
+func (p *winRMPersistentPS) run(ctx context.Context, script string, out OutputFunc) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -90,8 +100,8 @@ func (p *winRMPersistentPS) run(ctx context.Context, script string) (string, err
 	}
 	resultCh := make(chan readResult, 1)
 	go func() {
-		out, err := readPSOutput(p.reader, id)
-		resultCh <- readResult{out: out, err: err}
+		result, err := readPSOutput(p.reader, id, out)
+		resultCh <- readResult{out: result, err: err}
 	}()
 
 	readCtx, cancel := context.WithTimeout(ctx, winRMPersistentPSReadTimeout)
@@ -199,7 +209,9 @@ func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {
 }
 
 func (t *WinRMTarget) ReadFile(ctx context.Context, path string) ([]byte, error) {
-	return readRemoteWindowsFile(ctx, t.Transport(), t.runPS, path)
+	return readRemoteWindowsFile(ctx, t.Transport(), func(ctx context.Context, script string) (string, error) {
+		return t.runPS(ctx, script, nil)
+	}, path)
 }
 
 func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
@@ -211,15 +223,17 @@ func (t *WinRMTarget) Reachable(ctx context.Context) (bool, error) {
 }
 
 func (t *WinRMTarget) Info(ctx context.Context) (TargetInfo, error) {
-	return remoteWindowsTargetInfo(ctx, t.Transport(), t.runPS)
+	return remoteWindowsTargetInfo(ctx, t.Transport(), func(ctx context.Context, script string) (string, error) {
+		return t.runPS(ctx, script, nil)
+	})
 }
 
 func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string, error) {
-	return t.runPS(ctx, script)
+	return t.runPS(ctx, script, nil)
 }
 
 func (t *WinRMTarget) RunPowerShellScript(ctx context.Context, script string) (string, error) {
-	return t.runPS(ctx, script)
+	return t.runPS(ctx, script, nil)
 }
 
 func (t *WinRMTarget) RemoteTempDir() string {
@@ -299,8 +313,8 @@ func (t *WinRMTarget) Close() error {
 // avoids the per-task shell-create and process-startup overhead. If the session
 // does not exist, cannot be created, or signals a transport failure, it falls
 // back to runPSLegacy which opens a fresh shell per invocation.
-func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) {
-	return runPSWithFallback(ctx, script,
+func (t *WinRMTarget) runPS(ctx context.Context, script string, out OutputFunc) (string, error) {
+	return runPSWithFallback(ctx, script, out,
 		func(ctx context.Context) (psSessionRunner, error) {
 			ps, err := t.getOrCreatePSSession(ctx)
 			if ps == nil {
@@ -316,10 +330,43 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string) (string, error) 
 	)
 }
 
+// lineStreamWriter splits incoming bytes into lines and forwards each complete
+// line to out as it arrives. All bytes are also accumulated in all for the
+// final return value. Trailing \r is trimmed from each line (WinRM sends CRLF).
+type lineStreamWriter struct {
+	out     OutputFunc
+	all     strings.Builder
+	pending strings.Builder
+}
+
+func (w *lineStreamWriter) Write(p []byte) (int, error) {
+	w.all.Write(p)
+	for _, b := range p {
+		if b == '\n' {
+			line := strings.TrimSuffix(w.pending.String(), "\r")
+			w.pending.Reset()
+			if w.out != nil {
+				w.out(line)
+			}
+		} else {
+			w.pending.WriteByte(b)
+		}
+	}
+	return len(p), nil
+}
+
+// flush emits any trailing bytes that did not end with a newline.
+func (w *lineStreamWriter) flush() {
+	if w.pending.Len() > 0 && w.out != nil {
+		w.out(strings.TrimSuffix(w.pending.String(), "\r"))
+		w.pending.Reset()
+	}
+}
+
 // runPSLegacy executes a PowerShell script by creating a new WinRM shell per
 // invocation. Used when no persistent session is available and as a fallback
 // when the persistent session fails.
-func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string) (string, error) {
+func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out OutputFunc) (string, error) {
 	if shouldStageWinRMPowerShellScript(script) {
 		return t.runPSViaTempFile(ctx, script)
 	}
@@ -327,6 +374,33 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string) (string, e
 	if err != nil {
 		return "", err
 	}
+
+	// When the client supports streaming output (the real *winrm.Client does),
+	// use RunWithContextWithInput so lines reach out as they arrive. Fall back
+	// to the batch RunPSWithContext path for test fakes that only implement the
+	// minimal winRMClient interface.
+	if streamer, ok := client.(winRMStreamRunner); ok && out != nil {
+		encoded := winrm.Powershell(script)
+		if encoded == "" {
+			return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("cannot encode script"))
+		}
+		sw := &lineStreamWriter{out: out}
+		var errBuf bytes.Buffer
+		code, err := streamer.RunWithContextWithInput(ctx, encoded, sw, &errBuf, nil)
+		sw.flush()
+		if err != nil {
+			return "", wrapWinRMTargetError("powershell failed", err)
+		}
+		stderr := errBuf.String()
+		if code != 0 {
+			if isWinRMCommandLineTooLong(stderr) {
+				return t.runPSViaTempFile(ctx, script)
+			}
+			return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
+		}
+		return sw.all.String(), nil
+	}
+
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
 		return "", wrapWinRMTargetError("powershell failed", err)
@@ -336,6 +410,14 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string) (string, e
 			return t.runPSViaTempFile(ctx, script)
 		}
 		return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
+	}
+	// Batch fallback: replay output line-by-line through out so callers that
+	// wrap out (e.g. ensurePowerShellModule's hold-back) receive the same
+	// events they would have gotten from the streaming path.
+	if out != nil {
+		for _, line := range splitOutputLines(stdout) {
+			out(line)
+		}
 	}
 	return stdout, nil
 }
@@ -385,7 +467,7 @@ func (t *WinRMTarget) runPSViaTempFile(ctx context.Context, script string) (stri
 		if cleanupErr != nil {
 			return
 		}
-		_, _ = t.runPS(ctx, cleanupScript+`Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue`)
+		_, _ = t.runPS(ctx, cleanupScript+`Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue`, nil)
 	}()
 
 	// Execute via cmd.exe with -ExecutionPolicy Bypass so that unsigned staged
@@ -445,7 +527,9 @@ func (t *WinRMTarget) copyBytes(ctx context.Context, data []byte, dst string) er
 }
 
 func (t *WinRMTarget) copyBytesViaSession(ctx context.Context, ps *winRMPersistentPS, data []byte, dst string) error {
-	return uploadBytesChunked(ctx, data, dst, copyBytesSessionChunkSize, ps.run)
+	return uploadBytesChunked(ctx, data, dst, copyBytesSessionChunkSize, func(ctx context.Context, script string) (string, error) {
+		return ps.run(ctx, script, nil)
+	})
 }
 
 // uploadBytesChunked writes data to dst on a remote Windows host by base64-

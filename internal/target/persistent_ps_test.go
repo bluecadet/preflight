@@ -60,12 +60,11 @@ func decodePayloadFromStdinLine(t *testing.T, line string) string {
 	if !ok {
 		t.Fatalf("base64 payload not found in stdin line: %q", line)
 	}
-	rest := after
-	end := strings.Index(rest, "'")
-	if end < 0 {
+	payload, _, ok2 := strings.Cut(after, "'")
+	if !ok2 {
 		t.Fatalf("base64 payload not terminated in stdin line: %q", line)
 	}
-	decoded, err := decodeBase64String(rest[:end])
+	decoded, err := decodeBase64String(payload)
 	if err != nil {
 		t.Fatalf("decode base64 payload: %v", err)
 	}
@@ -190,7 +189,7 @@ func TestReadPSOutput_SuccessNoOutput(t *testing.T) {
 	id := "abc12345"
 	raw := psMarkerBase + id + "__DONE\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -203,7 +202,7 @@ func TestReadPSOutput_SuccessWithSingleLine(t *testing.T) {
 	id := "abc12345"
 	raw := "hello world\n" + psMarkerBase + id + "__DONE\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -216,7 +215,7 @@ func TestReadPSOutput_SuccessWithMultipleLines(t *testing.T) {
 	id := "abc12345"
 	raw := "line one\nline two\nline three\n" + psMarkerBase + id + "__DONE\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -231,7 +230,7 @@ func TestReadPSOutput_ScriptError(t *testing.T) {
 	errMsg := "something went wrong in PS"
 	raw := psMarkerBase + id + "__ERR:" + encodeBase64String(errMsg) + "\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err == nil {
 		t.Fatalf("expected error, got output %q", out)
 	}
@@ -248,7 +247,7 @@ func TestReadPSOutput_ScriptErrorPreservesOutputBefore(t *testing.T) {
 	errMsg := "kaboom"
 	raw := "partial output\n" + psMarkerBase + id + "__ERR:" + encodeBase64String(errMsg) + "\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err == nil {
 		t.Fatalf("expected error, got output %q", out)
 	}
@@ -261,7 +260,7 @@ func TestReadPSOutput_SessionClosedBeforeMarker(t *testing.T) {
 	id := "sess1234"
 	// EOF without marker — simulates unexpected session close.
 
-	_, err := readPSOutput(bufio.NewReader(strings.NewReader("some output\n")), id)
+	_, err := readPSOutput(bufio.NewReader(strings.NewReader("some output\n")), id, nil)
 	if err == nil {
 		t.Fatal("expected error when session closes without marker")
 	}
@@ -271,7 +270,7 @@ func TestReadPSOutput_SessionClosedBeforeMarker(t *testing.T) {
 }
 
 func TestReadPSOutput_EmptyReader(t *testing.T) {
-	_, err := readPSOutput(bufio.NewReader(strings.NewReader("")), "anyid00")
+	_, err := readPSOutput(bufio.NewReader(strings.NewReader("")), "anyid00", nil)
 	if err == nil {
 		t.Fatal("expected error on empty reader")
 	}
@@ -289,7 +288,7 @@ func TestReadPSOutput_WrongIDTreatedAsOutput(t *testing.T) {
 		"real output\n" +
 		psMarkerBase + id + "__DONE\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -307,7 +306,7 @@ func TestReadPSOutput_AllowsLongSingleLine(t *testing.T) {
 	longLine := strings.Repeat("x", 2<<20)
 	raw := longLine + "\n" + psMarkerBase + id + "__DONE\n"
 
-	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id)
+	out, err := readPSOutput(bufio.NewReader(strings.NewReader(raw)), id, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -369,7 +368,7 @@ func TestWinRMTarget_UsesLegacyWhenClientHasNoCreateShell(t *testing.T) {
 		},
 	}
 
-	out, err := tgt.runPS(context.Background(), `Write-Output 'hi'`)
+	out, err := tgt.runPS(context.Background(), `Write-Output 'hi'`, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -413,7 +412,7 @@ func TestSSHWindowsRuntime_PersistentSession_Success(t *testing.T) {
 		psSession: ps,
 	}
 
-	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'hello'")
+	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'hello'", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -440,7 +439,7 @@ func TestSSHWindowsRuntime_PersistentSession_ScriptError(t *testing.T) {
 		psSession: ps,
 	}
 
-	_, err := rt.RunPowerShellScript(context.Background(), "throw 'oops'")
+	_, err := rt.RunPowerShellScript(context.Background(), "throw 'oops'", nil)
 	if err == nil {
 		t.Fatal("expected error from script, got nil")
 	}
@@ -477,7 +476,7 @@ func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
 		psSession: ps,
 	}
 
-	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'test'")
+	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'test'", nil)
 	if err != nil {
 		t.Fatalf("unexpected error after legacy fallback: %v", err)
 	}
@@ -515,7 +514,7 @@ func TestSSHWindowsRuntime_FallsBackToLegacyWhenNoSessionCreator(t *testing.T) {
 	tgt.runtime = rt
 	tgt.runtimeMu.Unlock()
 
-	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'test'")
+	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'test'", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -547,7 +546,7 @@ func TestSSHWindowsRuntime_MultipleScriptsReuseSession(t *testing.T) {
 	}
 
 	for i := range 5 {
-		if _, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'x'"); err != nil {
+		if _, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'x'", nil); err != nil {
 			t.Fatalf("script %d failed: %v", i, err)
 		}
 	}
@@ -573,7 +572,7 @@ func TestSSHWindowsRuntime_SessionRemainsAliveAfterScriptError(t *testing.T) {
 	}
 
 	callNum++
-	_, err := rt.RunPowerShellScript(context.Background(), "first script")
+	_, err := rt.RunPowerShellScript(context.Background(), "first script", nil)
 	if err == nil {
 		t.Fatalf("call %d: expected error, got nil", callNum)
 	}
@@ -590,7 +589,7 @@ func TestSSHWindowsRuntime_SessionRemainsAliveAfterScriptError(t *testing.T) {
 	}
 
 	callNum++
-	out, err := rt.RunPowerShellScript(context.Background(), "second script")
+	out, err := rt.RunPowerShellScript(context.Background(), "second script", nil)
 	if err != nil {
 		t.Fatalf("call %d: unexpected error: %v", callNum, err)
 	}

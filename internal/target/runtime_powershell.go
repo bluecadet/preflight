@@ -10,7 +10,7 @@ import (
 )
 
 type powerShellScriptBackend interface {
-	RunPowerShellScript(ctx context.Context, script string) (string, error)
+	RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error)
 }
 
 // User-authored scripts may inspect $LASTEXITCODE even when the previous or
@@ -36,18 +36,24 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 		if err != nil {
 			return false, "", err
 		}
-		out, err := backend.RunPowerShellScript(ctx, script)
-		if err != nil {
-			return false, "", err
-		}
-		result, outputLines, err := winutil.ParsePowerShellCheckOutput([]byte(out))
-		if err != nil {
-			return false, "", err
-		}
+		// Wrap onOutput to suppress the check-result protocol marker line before
+		// forwarding lines to the caller. Real PowerShell output is forwarded as
+		// it arrives; the marker is an internal encoding that users should not see.
+		var streamOut OutputFunc
 		if onOutput != nil {
-			for _, line := range outputLines {
-				onOutput(line)
+			streamOut = func(line string) {
+				if !strings.HasPrefix(line, "__PREFLIGHT_CHECK_RESULT__:") {
+					onOutput(line)
+				}
 			}
+		}
+		out, err := backend.RunPowerShellScript(ctx, script, streamOut)
+		if err != nil {
+			return false, "", err
+		}
+		result, _, err := winutil.ParsePowerShellCheckOutput([]byte(out))
+		if err != nil {
+			return false, "", err
 		}
 		return result.NeedsChange, result.Message, nil
 	}
@@ -70,7 +76,7 @@ Write-Output ([bool](Test-Path -LiteralPath $creates))
 	if err != nil {
 		return false, "", err
 	}
-	out, err := backend.RunPowerShellScript(ctx, script)
+	out, err := backend.RunPowerShellScript(ctx, script, nil)
 	if err != nil {
 		return false, "", err
 	}
@@ -125,7 +131,23 @@ Write-Output 'changed'
 	if err != nil {
 		return false, "", err
 	}
-	out, err := backend.RunPowerShellScript(ctx, combined)
+	// Wrap onOutput with a one-line hold-back so the ensure protocol marker
+	// (the last line, one of: ok / changed / would-change) is never forwarded
+	// to the caller. Lines are held until a subsequent line arrives, ensuring
+	// only non-trailing lines (user script output) are forwarded.
+	var streamOut OutputFunc
+	if onOutput != nil {
+		var held string
+		var hasHeld bool
+		streamOut = func(line string) {
+			if hasHeld {
+				onOutput(held)
+			}
+			held = line
+			hasHeld = true
+		}
+	}
+	out, err := backend.RunPowerShellScript(ctx, combined, streamOut)
 	if err != nil {
 		return false, "", err
 	}
@@ -134,16 +156,10 @@ Write-Output 'changed'
 		return false, "", fmt.Errorf("powershell ensure: empty output")
 	}
 	marker := strings.TrimSpace(lines[len(lines)-1])
-	outputLines := lines[:len(lines)-1]
-	if onOutput != nil {
-		for _, line := range outputLines {
-			onOutput(line)
-		}
-	}
 	return parseEnsureMarkerOutput("powershell", marker)
 }
 
-func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (string, error) {
+func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, out OutputFunc) (string, error) {
 	if script, _ := params["script"].(string); script != "" {
 		script = powerShellLastExitCodeReset + script
 		var err error
@@ -155,7 +171,7 @@ func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend,
 		if err != nil {
 			return "", err
 		}
-		return backend.RunPowerShellScript(ctx, wrapped)
+		return backend.RunPowerShellScript(ctx, wrapped, out)
 	}
 
 	file, _ := params["file"].(string)
@@ -192,7 +208,7 @@ $global:LASTEXITCODE = 0
 	if err != nil {
 		return "", err
 	}
-	return backend.RunPowerShellScript(ctx, script)
+	return backend.RunPowerShellScript(ctx, script, out)
 }
 
 func wrapPowerShellWorkingDir(params map[string]any, script string) (string, error) {

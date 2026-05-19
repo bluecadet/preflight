@@ -40,14 +40,14 @@ func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, e
 }
 
 type windowsTaskBackend struct {
-	run       func(context.Context, string) (string, error)
+	run       func(context.Context, string, OutputFunc) (string, error)
 	copyPlain func(context.Context, string, string) error
 	tempDir   string
 	become    *BecomeOptions
 }
 
-func (b *windowsTaskBackend) RunPowerShellScript(ctx context.Context, script string) (string, error) {
-	return runWindowsPowerShellScript(ctx, b.run, b.tempDir, script, b.become)
+func (b *windowsTaskBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
+	return runWindowsPowerShellScript(ctx, b.run, b.tempDir, script, b.become, out)
 }
 
 func (b *windowsTaskBackend) CopyFile(ctx context.Context, src, dst string) error {
@@ -73,7 +73,7 @@ if ($dir) {
   New-Item -ItemType Directory -Path $dir -Force | Out-Null
 }
 [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($payload))
-`, b.become)
+`, b.become, nil)
 	return err
 }
 
@@ -81,9 +81,9 @@ func (b *windowsTaskBackend) RemoteTempDir() string {
 	return b.tempDir
 }
 
-func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, string) (string, error), tempDir, script string, become *BecomeOptions) (string, error) {
+func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, string, OutputFunc) (string, error), tempDir, script string, become *BecomeOptions, out OutputFunc) (string, error) {
 	if become == nil {
-		return run(ctx, script)
+		return run(ctx, script, out)
 	}
 	if strings.TrimSpace(become.Password) == "" {
 		return "", fmt.Errorf("become: password is required for Windows user %q", become.User)
@@ -92,7 +92,9 @@ func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, s
 	if err != nil {
 		return "", err
 	}
-	return run(ctx, wrapped)
+	// become wraps the user script in a Start-Process; streaming is not
+	// available through that indirection, so out is discarded here.
+	return run(ctx, wrapped, nil)
 }
 
 func buildWindowsCredentialRunner(tempDir, payload string, become *BecomeOptions) (string, error) {
@@ -219,7 +221,7 @@ func (b *posixTaskBackend) PowerShellBinary() string {
 	return b.powerShellBinary
 }
 
-func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string) (string, error) {
+func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, _ OutputFunc) (string, error) {
 	if b.powerShellBinary == "" {
 		return "", fmt.Errorf("posix-shell runtime: powershell is not available on the remote host")
 	}

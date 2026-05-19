@@ -7,6 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -908,6 +909,71 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 	}
 	if !normalizedPortsObserved {
 		t.Fatalf("expected generated PowerShell to contain normalized ports %q", "80,443")
+	}
+}
+
+func TestWinRMTarget_ExecuteForwardsOutputLinesViaCallback(t *testing.T) {
+	// Verifies the full path: WinRMTarget.Execute → ensurePowerShellModule →
+	// onOutput called once per line for all non-marker output. This exercises
+	// the same code path that fires during long-running apply scripts.
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, _ string) (string, string, int, error) {
+			return "step-1\nstep-2\nstep-3\nchanged", "", 0, nil
+		},
+	}
+
+	var gotLines []string
+	result, err := tgt.Execute(context.Background(), "task-1", "powershell", map[string]any{
+		"check_script": "return $true",
+		"script":       "Write-Output 'step'",
+	}, ExecutionOptions{}, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+	want := []string{"step-1", "step-2", "step-3"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
+	}
+	if !reflect.DeepEqual(result.Output, want) {
+		t.Fatalf("result.Output = %v, want %v", result.Output, want)
+	}
+}
+
+func TestWinRMTarget_ExecuteShellForwardsOutputLinesViaCallback(t *testing.T) {
+	// Shell module uses applyStreamed → the same onOutput path. Ensure multi-line
+	// apply output is split and each line forwarded individually.
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, _ string) (string, string, int, error) {
+			return "shell-out-1\nshell-out-2\n", "", 0, nil
+		},
+	}
+
+	var gotLines []string
+	result, err := tgt.Execute(context.Background(), "task-2", "shell", map[string]any{
+		"cmd":  "echo",
+		"args": []any{"hello"},
+	}, ExecutionOptions{}, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+	want := []string{"shell-out-1", "shell-out-2"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
+	}
+	if !reflect.DeepEqual(result.Output, want) {
+		t.Fatalf("result.Output = %v, want %v", result.Output, want)
 	}
 }
 
