@@ -1004,6 +1004,117 @@ func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 	}
 }
 
+func TestLineStreamWriterSplitsOnNewline(t *testing.T) {
+	var got []string
+	w := &lineStreamWriter{out: func(line string) { got = append(got, line) }}
+
+	if _, err := w.Write([]byte("alpha\nbeta\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	want := []string{"alpha", "beta"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	if w.all.String() != "alpha\nbeta\n" {
+		t.Fatalf("all = %q", w.all.String())
+	}
+}
+
+func TestLineStreamWriterSplitAcrossChunkBoundary(t *testing.T) {
+	var got []string
+	w := &lineStreamWriter{out: func(line string) { got = append(got, line) }}
+
+	// Write the newline in a separate chunk to exercise the boundary case.
+	if _, err := w.Write([]byte("hello")); err != nil {
+		t.Fatalf("Write 1: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no lines before newline, got %v", got)
+	}
+	if _, err := w.Write([]byte("\nworld\n")); err != nil {
+		t.Fatalf("Write 2: %v", err)
+	}
+	want := []string{"hello", "world"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestLineStreamWriterStripsCRLF(t *testing.T) {
+	var got []string
+	w := &lineStreamWriter{out: func(line string) { got = append(got, line) }}
+
+	if _, err := w.Write([]byte("line1\r\nline2\r\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	want := []string{"line1", "line2"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestLineStreamWriterFlushEmitsUnterminatedLine(t *testing.T) {
+	var got []string
+	w := &lineStreamWriter{out: func(line string) { got = append(got, line) }}
+
+	if _, err := w.Write([]byte("no-newline")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("expected no lines before flush, got %v", got)
+	}
+	w.flush()
+	want := []string{"no-newline"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	// Second flush is a no-op.
+	w.flush()
+	if len(got) != 1 {
+		t.Fatalf("expected flush to be idempotent, got %v", got)
+	}
+}
+
+func TestLineStreamWriterFlushStripsCR(t *testing.T) {
+	var got []string
+	w := &lineStreamWriter{out: func(line string) { got = append(got, line) }}
+
+	if _, err := w.Write([]byte("trailing\r")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	w.flush()
+	want := []string{"trailing"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
+	// The batch (non-streaming) fallback in runPSLegacy replays output through
+	// out with \r stripped. Verify the callback receives clean lines.
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, _ string) (string, string, int, error) {
+			return "line-a\r\nline-b\r\nchanged\r\n", "", 0, nil
+		},
+	}
+
+	var gotLines []string
+	_, err := tgt.Execute(context.Background(), "task-1", "powershell", map[string]any{
+		"check_script": "return $true",
+		"script":       "Write-Output 'x'",
+	}, ExecutionOptions{}, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	want := []string{"line-a", "line-b"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
+	}
+}
+
 func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 	call := 0
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})

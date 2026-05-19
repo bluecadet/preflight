@@ -147,16 +147,20 @@ func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, s
 }
 
 // runPSLegacy spawns a fresh PowerShell process per invocation via the SSH
-// transport. The out parameter is accepted for interface compatibility but
-// ignored — SSH's r.target.run collects stdout into a buffer and does not
-// support streaming to an arbitrary writer.
-func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string, _ OutputFunc) (string, error) {
+// transport. Output is collected into a buffer and replayed through out after
+// the process exits; true line-by-line streaming is not available here.
+func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string, out OutputFunc) (string, error) {
 	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
 	if err != nil {
 		return "", wrapSSHTargetError("powershell failed", err)
 	}
 	if code != 0 {
 		return "", wrapSSHTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
+	}
+	if out != nil {
+		for _, line := range splitOutputLines(stdout) {
+			out(strings.TrimSuffix(line, "\r"))
+		}
 	}
 	return stdout, nil
 }

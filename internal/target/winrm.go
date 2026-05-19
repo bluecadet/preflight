@@ -333,13 +333,17 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string, out OutputFunc) 
 // lineStreamWriter splits incoming bytes into lines and forwards each complete
 // line to out as it arrives. All bytes are also accumulated in all for the
 // final return value. Trailing \r is trimmed from each line (WinRM sends CRLF).
+// Write and flush are safe for concurrent use.
 type lineStreamWriter struct {
+	mu      sync.Mutex
 	out     OutputFunc
 	all     strings.Builder
 	pending strings.Builder
 }
 
 func (w *lineStreamWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	w.all.Write(p)
 	for _, b := range p {
 		if b == '\n' {
@@ -357,6 +361,8 @@ func (w *lineStreamWriter) Write(p []byte) (int, error) {
 
 // flush emits any trailing bytes that did not end with a newline.
 func (w *lineStreamWriter) flush() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	if w.pending.Len() > 0 && w.out != nil {
 		w.out(strings.TrimSuffix(w.pending.String(), "\r"))
 		w.pending.Reset()
@@ -413,10 +419,11 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 	}
 	// Batch fallback: replay output line-by-line through out so callers that
 	// wrap out (e.g. ensurePowerShellModule's hold-back) receive the same
-	// events they would have gotten from the streaming path.
+	// events they would have gotten from the streaming path. Trim \r to match
+	// the lineStreamWriter behaviour (WinRM returns CRLF line endings).
 	if out != nil {
 		for _, line := range splitOutputLines(stdout) {
-			out(line)
+			out(strings.TrimSuffix(line, "\r"))
 		}
 	}
 	return stdout, nil

@@ -221,7 +221,7 @@ func (b *posixTaskBackend) PowerShellBinary() string {
 	return b.powerShellBinary
 }
 
-func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, _ OutputFunc) (string, error) {
+func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
 	if b.powerShellBinary == "" {
 		return "", fmt.Errorf("posix-shell runtime: powershell is not available on the remote host")
 	}
@@ -231,6 +231,11 @@ func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script strin
 	}
 	if code != 0 {
 		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
+	}
+	if out != nil {
+		for _, line := range splitOutputLines(stdout) {
+			out(strings.TrimSuffix(line, "\r"))
+		}
 	}
 	return stdout, nil
 }
