@@ -132,7 +132,7 @@ func TestWinRMTarget_ExecuteFileContentHashNoop(t *testing.T) {
 }
 
 func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
-	var sawRunCmd bool
+	var sawCredentialRunner bool
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
@@ -140,13 +140,17 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
 			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
 			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+			case strings.Contains(command, "System.Diagnostics.ProcessStartInfo"):
+				// credential runner executed inline (script small enough)
+				sawCredentialRunner = true
 			default:
 				t.Fatalf("unexpected powershell command %q", command)
 			}
 			return "applied", "", 0, nil
 		},
 		runCmd: func(_ context.Context, command string) (string, string, int, error) {
-			sawRunCmd = true
+			// credential runner staged via temp file (script large enough)
+			sawCredentialRunner = true
 			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
 				t.Fatalf("unexpected runCmd command %q", command)
 			}
@@ -170,12 +174,12 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected StatusChanged, got %q", result.Status)
 	}
-	if !sawRunCmd {
-		t.Fatalf("expected staged command execution for become user")
+	if !sawCredentialRunner {
+		t.Fatalf("expected become credential runner to be executed")
 	}
 }
 
-func TestBuildWindowsCredentialRunnerContainsRunAsWrapper(t *testing.T) {
+func TestBuildWindowsCredentialRunnerContainsProcessRelay(t *testing.T) {
 	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
 		User:     "kiosk",
 		Password: "secret",
@@ -183,11 +187,35 @@ func TestBuildWindowsCredentialRunnerContainsRunAsWrapper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
 	}
-	if !strings.Contains(script, "Start-Process @start") {
-		t.Fatalf("expected runas wrapper, got %q", script)
+	for _, want := range []string{
+		"System.Diagnostics.ProcessStartInfo",
+		"RedirectStandardOutput",
+		"ReadToEndAsync",
+		"ReadLine()",
+		"Write-Output $line",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("expected credential runner to contain %q, got:\n%s", want, script)
+		}
 	}
-	if !strings.Contains(script, "PSCredential") {
-		t.Fatalf("expected PSCredential usage, got %q", script)
+	if strings.Contains(script, "Start-Process") {
+		t.Fatalf("expected credential runner to use System.Diagnostics.Process, not Start-Process")
+	}
+}
+
+func TestBuildWindowsCredentialRunnerSplitsDomainUser(t *testing.T) {
+	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
+		User:     `CORP\serviceacct`,
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
+	}
+	if !strings.Contains(script, `$becomeUser -like '*\*'`) {
+		t.Fatalf("expected domain user handling, got:\n%s", script)
+	}
+	if !strings.Contains(script, `$psi.Domain`) {
+		t.Fatalf("expected domain field assignment, got:\n%s", script)
 	}
 }
 
@@ -974,6 +1002,54 @@ func TestWinRMTarget_ExecuteShellForwardsOutputLinesViaCallback(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.Output, want) {
 		t.Fatalf("result.Output = %v, want %v", result.Output, want)
+	}
+}
+
+func TestWinRMTarget_ExecutePowerShellWithBecomeForwardsOutput(t *testing.T) {
+	// Verifies that become output lines reach onOutput. The credential runner
+	// forwards subprocess stdout via Write-Output $line; those lines flow back
+	// through the batch replay path and then through the ensure hold-back.
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			switch {
+			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
+			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
+			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
+			case strings.Contains(command, "System.Diagnostics.ProcessStartInfo"):
+				return "become-line-1\nbecome-line-2\nchanged", "", 0, nil
+			default:
+				t.Fatalf("unexpected powershell command %q", command)
+			}
+			return "", "", 0, nil
+		},
+		runCmd: func(_ context.Context, _ string) (string, string, int, error) {
+			return "become-line-1\nbecome-line-2\nchanged", "", 0, nil
+		},
+	}
+
+	var gotLines []string
+	result, err := tgt.Execute(context.Background(), "task-become-ps", "powershell", map[string]any{
+		"check_script": "return $true",
+		"script":       "Write-Output 'become-output'",
+	}, ExecutionOptions{
+		Become: &BecomeOptions{
+			Enabled:  true,
+			User:     "kiosk",
+			Password: "secret",
+		},
+	}, false, func(line string) {
+		gotLines = append(gotLines, line)
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q", result.Status)
+	}
+	want := []string{"become-line-1", "become-line-2"}
+	if !reflect.DeepEqual(gotLines, want) {
+		t.Fatalf("gotLines = %v, want %v", gotLines, want)
 	}
 }
 

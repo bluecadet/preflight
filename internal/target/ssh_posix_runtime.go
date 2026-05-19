@@ -124,11 +124,7 @@ func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script s
 	if code != 0 {
 		return "", wrapSSHTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
-	if out != nil {
-		for _, line := range splitOutputLines(stdout) {
-			out(strings.TrimSuffix(line, "\r"))
-		}
-	}
+	replayBatchOutput(stdout, out)
 	return stdout, nil
 }
 

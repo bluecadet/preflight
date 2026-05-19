@@ -178,9 +178,6 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		onOutput,
 		registry,
 		func(module string) error {
-			if _, ok := registry[module]; ok && become != nil {
-				return fmt.Errorf("winrm: module %q does not support become", module)
-			}
 			return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
 		},
 	)
@@ -374,7 +371,12 @@ func (w *lineStreamWriter) flush() {
 // when the persistent session fails.
 func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out OutputFunc) (string, error) {
 	if shouldStageWinRMPowerShellScript(script) {
-		return t.runPSViaTempFile(ctx, script)
+		stdout, err := t.runPSViaTempFile(ctx, script)
+		if err != nil {
+			return "", err
+		}
+		replayBatchOutput(stdout, out)
+		return stdout, nil
 	}
 	client, err := t.clientForUse()
 	if err != nil {
@@ -400,7 +402,12 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 		stderr := errBuf.String()
 		if code != 0 {
 			if isWinRMCommandLineTooLong(stderr) {
-				return t.runPSViaTempFile(ctx, script)
+				stdout, err := t.runPSViaTempFile(ctx, script)
+				if err != nil {
+					return "", err
+				}
+				replayBatchOutput(stdout, out)
+				return stdout, nil
 			}
 			return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 		}
@@ -413,19 +420,16 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 	}
 	if code != 0 {
 		if isWinRMCommandLineTooLong(stderr) {
-			return t.runPSViaTempFile(ctx, script)
+			stdout, err := t.runPSViaTempFile(ctx, script)
+			if err != nil {
+				return "", err
+			}
+			replayBatchOutput(stdout, out)
+			return stdout, nil
 		}
 		return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))
 	}
-	// Batch fallback: replay output line-by-line through out so callers that
-	// wrap out (e.g. ensurePowerShellModule's hold-back) receive the same
-	// events they would have gotten from the streaming path. Trim \r to match
-	// the lineStreamWriter behaviour (WinRM returns CRLF line endings).
-	if out != nil {
-		for _, line := range splitOutputLines(stdout) {
-			out(strings.TrimSuffix(line, "\r"))
-		}
-	}
+	replayBatchOutput(stdout, out)
 	return stdout, nil
 }
 

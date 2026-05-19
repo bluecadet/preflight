@@ -268,6 +268,19 @@ func splitOutputLines(output string) []string {
 	return strings.Split(trimmed, "\n")
 }
 
+// replayBatchOutput calls out once per line of stdout, trimming \r so callers
+// receive consistent line endings regardless of the remote host's convention.
+// It is the batch counterpart to lineStreamWriter for transports where native
+// streaming is unavailable.
+func replayBatchOutput(stdout string, out OutputFunc) {
+	if out == nil {
+		return
+	}
+	for _, line := range splitOutputLines(stdout) {
+		out(strings.TrimSuffix(line, "\r"))
+	}
+}
+
 func unsupportedRuntimeModuleError(kind RuntimeKind, module string) error {
 	return fmt.Errorf("%s runtime: module %q is not supported", kind, module)
 }

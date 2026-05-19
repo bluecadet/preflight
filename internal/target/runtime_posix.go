@@ -56,8 +56,8 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 	}
 	if backend.PowerShellBinary() != "" {
 		supported["powershell"] = moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
-				return checkPowerShellModule(ctx, backend, params)
+			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+				return checkPowerShellModuleWithOutput(ctx, backend, params, out)
 			}),
 			// applyPowerShellModule streams lines through out during execution.
 			// Pass nil to applyStreamed so it only extracts a single-line message

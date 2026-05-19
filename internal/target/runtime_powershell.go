@@ -135,10 +135,11 @@ Write-Output 'changed'
 	// (the last line, one of: ok / changed / would-change) is never forwarded
 	// to the caller. Lines are held until a subsequent line arrives, ensuring
 	// only non-trailing lines (user script output) are forwarded.
+	// On error the held line is user output, not a marker, so it must be flushed.
 	var streamOut OutputFunc
+	var held string
+	var hasHeld bool
 	if onOutput != nil {
-		var held string
-		var hasHeld bool
 		streamOut = func(line string) {
 			if hasHeld {
 				onOutput(held)
@@ -149,6 +150,9 @@ Write-Output 'changed'
 	}
 	out, err := backend.RunPowerShellScript(ctx, combined, streamOut)
 	if err != nil {
+		if hasHeld {
+			onOutput(held)
+		}
 		return false, "", err
 	}
 	lines := splitOutputLines(out)

@@ -92,9 +92,7 @@ func runWindowsPowerShellScript(ctx context.Context, run func(context.Context, s
 	if err != nil {
 		return "", err
 	}
-	// become wraps the user script in a Start-Process; streaming is not
-	// available through that indirection, so out is discarded here.
-	return run(ctx, wrapped, nil)
+	return run(ctx, wrapped, out)
 }
 
 func buildWindowsCredentialRunner(tempDir, payload string, become *BecomeOptions) (string, error) {
@@ -131,35 +129,40 @@ func buildWindowsCredentialRunner(tempDir, payload string, become *BecomeOptions
 $ErrorActionPreference = 'Stop'
 $workDir = Join-Path $tempRoot ([guid]::NewGuid().ToString('N'))
 $payloadPath = Join-Path $workDir 'payload.ps1'
-$stdoutPath = Join-Path $workDir 'stdout.txt'
-$stderrPath = Join-Path $workDir 'stderr.txt'
 try {
   New-Item -ItemType Directory -Path $workDir -Force | Out-Null
   Set-Content -LiteralPath $payloadPath -Value $payload -Encoding UTF8
-  $secure = ConvertTo-SecureString $becomePassword -AsPlainText -Force
-  $cred = New-Object System.Management.Automation.PSCredential($becomeUser, $secure)
-  $args = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $payloadPath)
-  $start = @{
-    FilePath = 'powershell.exe'
-    ArgumentList = $args
-    Credential = $cred
-    RedirectStandardOutput = $stdoutPath
-    RedirectStandardError = $stderrPath
-    Wait = $true
-    PassThru = $true
-    WindowStyle = 'Hidden'
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = 'powershell.exe'
+  $psi.Arguments = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $payloadPath + '"'
+  $psi.UseShellExecute = $false
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  if ($becomeUser -like '*\*') {
+    $parts = $becomeUser -split '\\', 2
+    $psi.Domain = $parts[0]
+    $psi.UserName = $parts[1]
+  } else {
+    $psi.UserName = $becomeUser
   }
-  if ($loadProfile) {
-    $start.LoadUserProfile = $true
+  $psi.Password = ConvertTo-SecureString $becomePassword -AsPlainText -Force
+  if ($loadProfile) { $psi.LoadUserProfile = $true }
+  $proc = New-Object System.Diagnostics.Process
+  $proc.StartInfo = $psi
+  [void]$proc.Start()
+  $stderrTask = $proc.StandardError.ReadToEndAsync()
+  while ($true) {
+    $line = $proc.StandardOutput.ReadLine()
+    if ($null -eq $line) { break }
+    Write-Output $line
+    [Console]::Out.Flush()
   }
-  $proc = Start-Process @start
-  $stdout = if (Test-Path -LiteralPath $stdoutPath) { [IO.File]::ReadAllText($stdoutPath) } else { '' }
-  $stderr = if (Test-Path -LiteralPath $stderrPath) { [IO.File]::ReadAllText($stderrPath) } else { '' }
+  $proc.WaitForExit()
+  $stderrText = $stderrTask.GetAwaiter().GetResult()
   if ($proc.ExitCode -ne 0) {
-    $message = if ($stderr) { $stderr } else { $stdout }
-    throw ("runas exited with code " + $proc.ExitCode + ": " + $message)
+    $message = if ($stderrText) { $stderrText } else { '(no stderr)' }
+    throw ('runas exited with code ' + $proc.ExitCode + ': ' + $message)
   }
-  Write-Output $stdout
 } finally {
   Remove-Item -LiteralPath $workDir -Force -Recurse -ErrorAction SilentlyContinue
 }
@@ -232,11 +235,7 @@ func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script strin
 	if code != 0 {
 		return "", fmt.Errorf("ssh powershell exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
-	if out != nil {
-		for _, line := range splitOutputLines(stdout) {
-			out(strings.TrimSuffix(line, "\r"))
-		}
-	}
+	replayBatchOutput(stdout, out)
 	return stdout, nil
 }
 
