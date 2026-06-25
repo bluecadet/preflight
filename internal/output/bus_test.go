@@ -1,0 +1,167 @@
+package output
+
+import (
+	"bytes"
+	"encoding/json"
+	"os"
+	"strings"
+	"testing"
+)
+
+func TestBus_ScrubRedactsSecrets(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+
+	bus := NewBus(r)
+	bus.Scrub([]string{"my-secret-token", "sensitive-data"})
+
+	bus.Emit(TaskResultEvent{
+		TaskID:  "t1",
+		Status:  "failed",
+		Message: "error using sensitive-data",
+		Output:  []string{"login with my-secret-token", "normal line"},
+	})
+	bus.Close()
+
+	out := buf.String()
+	if strings.Contains(out, "my-secret-token") {
+		t.Errorf("my-secret-token should be redacted, got: %q", out)
+	}
+	if strings.Contains(out, "sensitive-data") {
+		t.Errorf("sensitive-data should be redacted, got: %q", out)
+	}
+	if !strings.Contains(out, "***") {
+		t.Errorf("expected redaction markers (***) in output, got: %q", out)
+	}
+	if !strings.Contains(out, "normal line") {
+		t.Errorf("expected non-secret content to remain, got: %q", out)
+	}
+}
+
+func TestBus_FanOut(t *testing.T) {
+	var buf1, buf2 bytes.Buffer
+	r1 := NewTextRendererWithOptions(&buf1, Options{Mode: "apply"})
+	r2 := NewTextRendererWithOptions(&buf2, Options{Mode: "apply"})
+
+	bus := NewBus(r1, r2)
+	bus.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"local"},
+	})
+	bus.Close()
+
+	out1 := buf1.String()
+	out2 := buf2.String()
+	if !strings.Contains(out1, "Apply") {
+		t.Errorf("sink 1 expected Apply heading, got: %q", out1)
+	}
+	if !strings.Contains(out2, "Apply") {
+		t.Errorf("sink 2 expected Apply heading, got: %q", out2)
+	}
+}
+
+func TestRunLogSink_WritesJSONL(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/run.jsonl"
+
+	sink, err := NewRunLogSink("test-run-id", path)
+	if err != nil {
+		t.Fatalf("NewRunLogSink: %v", err)
+	}
+
+	// Emit the lifecycle events for a happy-path run.
+	sink.Emit(VersionEvent{
+		SchemaVersion:    "1.0",
+		PreflightVersion: "1.4.0",
+		PlaybookName:     "kiosk-provision.yml",
+	})
+	sink.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "kiosk-provision.yml",
+		PlaybookName: "kiosk-provision",
+		Targets:      []string{"kiosk-01"},
+		DryRun:       false,
+	})
+	sink.Emit(TargetStartEvent{
+		Target:    "kiosk-01",
+		Transport: "local",
+	})
+	sink.Emit(TaskStartedEvent{
+		Target:   "kiosk-01",
+		TaskID:   "task-1",
+		TaskName: "install display drivers",
+		Module:   "command",
+	})
+	sink.Emit(TaskOKEvent{
+		Target:    "kiosk-01",
+		TaskID:    "task-1",
+		TaskName:  "install display drivers",
+		ElapsedMs: 500,
+	})
+	sink.Emit(TargetCompleteEvent{
+		Target:        "kiosk-01",
+		Outcome:       "ok",
+		OKCount:       1,
+		ChangedCount:  0,
+		FailedCount:   0,
+		SkippedCount:  0,
+		ElapsedMs:     5000,
+	})
+	sink.Emit(RunSummaryEvent{
+		Status:   "success",
+		OKCount:  1,
+		ElapsedMs: 5000,
+		TargetTallies: TargetCounts{OK: 1},
+	})
+	sink.Close()
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read run log: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 7 {
+		t.Fatalf("expected 7 JSONL lines, got %d", len(lines))
+	}
+
+	// Verify envelope fields on every line.
+	var lastSeq float64
+	for i, line := range lines {
+		var m map[string]any
+		if err := json.Unmarshal([]byte(line), &m); err != nil {
+			t.Fatalf("line %d: invalid JSON: %v — %q", i, err, line)
+		}
+		// Check envelope fields exist.
+		for _, field := range []string{"seq", "ts", "type", "level", "run_id", "msg"} {
+			if _, ok := m[field]; !ok {
+				t.Errorf("line %d: missing envelope field %q", i, field)
+			}
+		}
+		// Check seq is monotonic.
+		seq, ok := m["seq"].(float64)
+		if !ok {
+			t.Errorf("line %d: seq is not a number: %v", i, m["seq"])
+		} else if seq <= lastSeq {
+			t.Errorf("line %d: seq %v <= previous %v", i, seq, lastSeq)
+		}
+		lastSeq = seq
+		// Check run_id is consistent.
+		if runID, ok := m["run_id"].(string); ok && runID != "test-run-id" {
+			t.Errorf("line %d: unexpected run_id %q", i, runID)
+		}
+	}
+
+	// First line is version.
+	var first map[string]any
+	json.Unmarshal([]byte(lines[0]), &first)
+	if first["type"] != "version" {
+		t.Errorf("first line type=%q, want %q", first["type"], "version")
+	}
+	if first["schema_version"] != "1.0" {
+		t.Errorf("schema_version=%q, want %q", first["schema_version"], "1.0")
+	}
+}
+

@@ -1,10 +1,8 @@
 package output
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -36,77 +34,6 @@ func (b *tuiCardBuilder) render() string {
 	return tsRenderSection(b.title, strings.Join(b.sections, "\n\n"))
 }
 
-// tsRenderPath formats a display path for a task, collapsing middle segments if
-// the rendered width exceeds maxWidth. Pass maxWidth <= 0 for no limit.
-func tsRenderPath(actionPath, taskName string, maxWidth int) string {
-	if actionPath == "" {
-		return taskName
-	}
-	sep := tsMuted.Render(" › ")
-	ellipsis := tsMuted.Render("…")
-
-	render := func(segments []string, useDots bool) string {
-		parts := make([]string, 0, len(segments)*2+1)
-		for i, segment := range segments {
-			switch {
-			case useDots && i == 1:
-				parts = append(parts, ellipsis)
-			default:
-				parts = append(parts, tsAction.Render(segment))
-			}
-			parts = append(parts, sep)
-		}
-		parts = append(parts, taskName)
-		return lipgloss.JoinHorizontal(lipgloss.Top, parts...)
-	}
-
-	segments := strings.Split(actionPath, "/")
-	full := render(segments, false)
-	if maxWidth <= 0 || lipgloss.Width(full) <= maxWidth {
-		return full
-	}
-
-	if len(segments) > 1 {
-		collapsed := lipgloss.JoinHorizontal(
-			lipgloss.Top,
-			tsAction.Render(segments[0]),
-			sep,
-			ellipsis,
-			sep,
-			taskName,
-		)
-		if lipgloss.Width(collapsed) <= maxWidth {
-			return collapsed
-		}
-	}
-
-	return taskName
-}
-
-func tsRenderOutputBlock(message string, width int) string {
-	var parts []string
-	for line := range strings.SplitSeq(strings.TrimSpace(message), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		parts = append(parts, tsOutputLines(5, line, width)...)
-	}
-	return strings.Join(parts, "\n")
-}
-
-func tsFmtElapsed(d time.Duration) string {
-	if d < time.Second {
-		return fmt.Sprintf("%.1fs", d.Seconds())
-	}
-	if d < time.Minute {
-		return fmt.Sprintf("%.0fs", d.Seconds())
-	}
-	minutes := int(d.Minutes())
-	seconds := int(d.Seconds()) % 60
-	return fmt.Sprintf("%dm%02ds", minutes, seconds)
-}
-
 func tsTruncate(s string, n int) string {
 	if len(s) <= n {
 		return s
@@ -122,13 +49,6 @@ func tsPluralize(n int, singular, plural string) string {
 		return singular
 	}
 	return plural
-}
-
-func tsStat(style lipgloss.Style, glyph string, n int) string {
-	if n == 0 {
-		return tsMuted.Render(glyph + " 0")
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Top, style.Render(glyph), " ", fmt.Sprintf("%d", n))
 }
 
 func tsRow(elems ...string) string {

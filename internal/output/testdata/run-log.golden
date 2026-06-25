@@ -1,0 +1,7 @@
+{"level":"info","msg":"preflight 1.4.0","playbook":"kiosk-provision.yml","preflight_version":"1.4.0","run_id":"golden-run","schema_version":"1.0","seq":1,"ts":"<timestamp>","type":"version"}
+{"dry_run":false,"level":"info","mode":"apply","msg":"1 target","run_id":"golden-run","seq":2,"target_count":1,"targets":["kiosk-01"],"ts":"<timestamp>","type":"run_start"}
+{"level":"info","msg":"connecting","run_id":"golden-run","seq":3,"target":"kiosk-01","transport":"local","ts":"<timestamp>","type":"target_start"}
+{"level":"info","module":"command","msg":"install display drivers","name":"install display drivers","run_id":"golden-run","seq":4,"target":"kiosk-01","task_id":"install-drivers","ts":"<timestamp>","type":"task_started"}
+{"elapsed_ms":500,"level":"info","msg":"install display drivers ok","run_id":"golden-run","seq":5,"target":"kiosk-01","task_id":"install-drivers","ts":"<timestamp>","type":"task_ok"}
+{"counts":{"changed":0,"failed":0,"ok":1,"skipped":0},"elapsed_ms":5000,"level":"info","msg":"ok","outcome":"ok","run_id":"golden-run","seq":6,"target":"kiosk-01","ts":"<timestamp>","type":"target_complete"}
+{"counts":{"changed":0,"failed":0,"ok":1,"skipped":0},"elapsed_ms":5000,"level":"info","msg":"success","run_id":"golden-run","seq":7,"status":"success","tallies":{"ok":1,"failed":0,"unreachable":0},"ts":"<timestamp>","type":"run_summary"}

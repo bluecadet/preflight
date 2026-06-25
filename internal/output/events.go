@@ -4,6 +4,8 @@ package output
 type EventType string
 
 const (
+	EventVersion        EventType = "version"
+	EventRunStart       EventType = "run_start"
 	EventPlayStart      EventType = "play_start"
 	EventTaskStart      EventType = "task_start"
 	EventTaskOutput     EventType = "task_output"
@@ -23,11 +25,38 @@ const (
 	EventSecretList     EventType = "secret_list"
 	EventActivityStart  EventType = "activity_start"
 	EventActivityResult EventType = "activity_result"
+	EventTargetStart    EventType = "target_start"
+	EventTargetComplete EventType = "target_complete"
+	EventTaskStarted    EventType = "task_started"
+	EventTaskOK         EventType = "task_ok"
+	EventTaskChanged    EventType = "task_changed"
+	EventTaskSkipped    EventType = "task_skipped"
+	EventTaskFailed     EventType = "task_failed"
+	EventRunSummary     EventType = "run_summary"
 )
 
 // Event is the sealed interface implemented by all renderer event types.
 type Event interface{ isEvent() }
 
+// VersionEvent is the first event in every run log.
+type VersionEvent struct {
+	SchemaVersion    string
+	PreflightVersion string
+	PlaybookName     string
+}
+
+// RunStartEvent signals the start of a run.
+type RunStartEvent struct {
+	Mode         string
+	PlaybookPath string
+	PlaybookName string
+	Targets      []string
+	DryRun       bool
+	Tags         []string
+	SkipTags     []string
+}
+
+// PlayStartEvent signals the start of a play (legacy, use RunStartEvent instead).
 type PlayStartEvent struct{ PlayName string }
 
 type TaskStartEvent struct {
@@ -54,6 +83,7 @@ type TaskResultEvent struct {
 	Output     []string
 }
 
+// PlayEndEvent is the legacy per-target completion event.
 type PlayEndEvent struct {
 	Target       string
 	OKCount      int
@@ -197,7 +227,97 @@ type SecretListEvent struct {
 	Entries []SecretListEntry
 }
 
+func (RunStartEvent) isEvent()       {}
 func (PlayStartEvent) isEvent()      {}
+// TargetStartEvent signals the start of work on a single target.
+type TargetStartEvent struct {
+	Target    string
+	Transport string
+	Address   string
+}
+
+// TargetCompleteEvent signals all tasks for a target have completed.
+type TargetCompleteEvent struct {
+	Target        string
+	Outcome       string
+	OKCount       int
+	ChangedCount  int
+	FailedCount   int
+	SkippedCount  int
+	ElapsedMs     int64
+}
+
+// TaskStartedEvent signals the start of a single task.
+type TaskStartedEvent struct {
+	Target     string
+	TaskID     string
+	TaskName   string
+	Module     string
+	ActionPath string
+}
+
+// TaskOKEvent signals a task completed with status "ok".
+type TaskOKEvent struct {
+	Target    string
+	TaskID    string
+	TaskName  string
+	ElapsedMs int64
+}
+
+// TaskChangedEvent signals a task completed with status "changed".
+type TaskChangedEvent struct {
+	Target    string
+	TaskID    string
+	TaskName  string
+	ElapsedMs int64
+}
+
+// TaskSkippedEvent signals a task was skipped.
+type TaskSkippedEvent struct {
+	Target   string
+	TaskID   string
+	TaskName string
+	Reason   string
+}
+
+// TaskFailedEvent signals a task failed.
+type TaskFailedEvent struct {
+	Target      string
+	TaskID      string
+	TaskName    string
+	ElapsedMs   int64
+	ExitCode    int
+	Output      []string
+	FailMessage string
+}
+
+// TargetCounts holds per-target outcome counts for RunSummaryEvent.
+type TargetCounts struct {
+	OK         int `json:"ok"`
+	Failed     int `json:"failed"`
+	Unreachable int `json:"unreachable"`
+}
+
+// RunSummaryEvent is the final event in a run.
+type RunSummaryEvent struct {
+	Status        string
+	TargetTallies TargetCounts
+	OKCount       int
+	ChangedCount  int
+	FailedCount   int
+	SkippedCount  int
+	ElapsedMs     int64
+}
+
+func (VersionEvent) isEvent()        {}
+func (TargetStartEvent) isEvent()    {}
+func (TargetCompleteEvent) isEvent() {}
+func (TaskStartedEvent) isEvent()    {}
+func (TaskOKEvent) isEvent()         {}
+func (TaskChangedEvent) isEvent()    {}
+func (TaskSkippedEvent) isEvent()    {}
+func (TaskFailedEvent) isEvent()     {}
+func (RunSummaryEvent) isEvent()     {}
 func (TaskStartEvent) isEvent()      {}
 func (TaskOutputEvent) isEvent()     {}
 func (TaskResultEvent) isEvent()     {}

@@ -1,0 +1,121 @@
+name: stream-output-test
+
+tasks:
+
+  # PATH A: apply-only streaming
+  # powershell with script only (no check_script, no creates) — check always returns
+  # NeedsChange=true, then apply runs. Output flows through applyStreamed → onOutput.
+  #
+  # Timing probe: 1-second sleep between each line. Both execution paths (runPSLegacy
+  # and the persistent session) buffer all output until the script finishes, so all
+  # three lines should appear together ~2 seconds after the task starts — not one
+  # per second. If you observe them trickling in 1s apart, streaming is happening
+  # within the task; if they appear all at once at the end, it is batched (expected).
+  #
+  # Expect: three lines appear together after ~2s, status=changed.
+  - name: apply-only timed output
+    powershell:
+      script: |
+        Write-Output "apply-line-1"
+        Start-Sleep -Seconds 1
+        Write-Output "apply-line-2"
+        Start-Sleep -Seconds 1
+        Write-Output "apply-line-3"
+
+  # PATH B: ensure fast-path streaming
+  # Both check_script and script are non-empty → ensurePowerShellModule runs a single
+  # combined round trip. Output lines from the check phase AND apply phase are forwarded
+  # through onOutput. The last line is the marker (ok/would-change/changed) and is
+  # consumed internally, so it should NOT appear in TaskOutputEvent.
+  #
+  # Timing probe: sleep in check phase. Because the entire combined script runs in
+  # one round trip, all output (check-diag + apply-diag) arrives together when the
+  # script completes. The sleep makes the task take ~1s so you can observe that the
+  # TUI shows the task as in-progress before the result appears.
+  #
+  # Run this task twice:
+  #   First run:  check emits "check-diag", apply emits "apply-diag", marker=changed
+  #   Second run: check emits "check-diag", marker=ok (apply skipped, no apply-diag)
+  - name: ensure fast-path timed output
+    powershell:
+      check_script: |
+        Write-Output "check-diag: inspecting state"
+        Start-Sleep -Seconds 1
+        $marker = "C:\Windows\Temp\_pf_stream_test.marker"
+        !(Test-Path $marker)
+      script: |
+        Write-Output "apply-diag: writing marker"
+        New-Item -ItemType File -Path "C:\Windows\Temp\_pf_stream_test.marker" -Force | Out-Null
+
+  # PATH C: already-OK task (no output lines expected)
+  # The marker from PATH B now exists, so check returns false → status=ok.
+  # Expect: no TaskOutputEvent, TaskResultEvent with status=ok.
+  - name: already-ok produces no output
+    powershell:
+      check_script: |
+        $marker = "C:\Windows\Temp\_pf_stream_test.marker"
+        !(Test-Path $marker)
+      script: |
+        Write-Output "this should not appear"
+        New-Item -ItemType File -Path "C:\Windows\Temp\_pf_stream_test.marker" -Force | Out-Null
+
+  # PATH D: shell module output
+  # shell uses applyWindowsShell → returns stdout string → applyStreamed → onOutput.
+  # Expect: TaskOutputEvent with cmd.exe output line(s).
+  - name: shell module output
+    shell:
+      cmd: cmd.exe
+      args:
+        - /c
+        - echo shell-output-line-1 && echo shell-output-line-2
+
+  # PATH E: failing task with prior output
+  # Script emits two lines, sleeps, then throws. The sleep adds visible delay so you
+  # can confirm the task is in-flight before the failure arrives. Output should still
+  # be captured and forwarded despite the error.
+  # Expect: "before-fail-1" and "before-fail-2" in output, status=failed.
+  - name: failing task preserves prior output
+    ignore_errors: true
+    powershell:
+      script: |
+        Write-Output "before-fail-1"
+        Write-Output "before-fail-2"
+        Start-Sleep -Seconds 1
+        throw "intentional failure"
+
+  # PATH F: many output lines
+  # Stress-tests line splitting and forwarding — 50 lines from a loop.
+  # A short sleep every 10 lines spreads execution time so the session read path is
+  # exercised across multiple buffer reads.
+  # Expect: exactly 50 lines numbered 1..50 in order, status=changed.
+  - name: many output lines (loop)
+    powershell:
+      script: |
+        1..50 | ForEach-Object {
+          Write-Output "line-$_"
+          if ($_ % 10 -eq 0) { Start-Sleep -Milliseconds 200 }
+        }
+
+  # PATH G: multi-task output attribution
+  # Two tasks run back to back with a sleep in each script. The sleep makes them
+  # individually distinguishable in the timeline so you can confirm that output from
+  # G1 does not bleed into G2's events even when the tasks are back-to-back.
+  - name: attribution-task-g1
+    powershell:
+      script: |
+        Start-Sleep -Seconds 1
+        Write-Output "output-from-g1"
+
+  - name: attribution-task-g2
+    powershell:
+      script: |
+        Start-Sleep -Seconds 1
+        Write-Output "output-from-g2"
+
+  # Cleanup: remove the marker file written by PATH B so re-runs start clean.
+  - name: cleanup marker
+    powershell:
+      check_script: |
+        Test-Path "C:\Windows\Temp\_pf_stream_test.marker"
+      script: |
+        Remove-Item "C:\Windows\Temp\_pf_stream_test.marker" -Force

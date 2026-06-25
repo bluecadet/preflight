@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -90,10 +91,38 @@ func runHosts(
 		concurrency = len(hosts)
 	}
 
-	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency)
+	sem := make(chan struct{}, concurrency)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var joined error
+
+hostLoop:
 	for _, host := range hosts {
-		g.Go(func() error { return fn(ctx, host) })
+		select {
+		case <-ctx.Done():
+			mu.Lock()
+			joined = errors.Join(joined, ctx.Err())
+			mu.Unlock()
+			break hostLoop
+		case sem <- struct{}{}:
+		}
+
+		wg.Add(1)
+		go func(host targeting.ResolvedHost) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := fn(ctx, host); err != nil {
+				mu.Lock()
+				joined = errors.Join(joined, err)
+				mu.Unlock()
+			}
+		}(host)
 	}
-	return g.Wait()
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		mu.Lock()
+		joined = errors.Join(joined, err)
+		mu.Unlock()
+	}
+	return joined
 }

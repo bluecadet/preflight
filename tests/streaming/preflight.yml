@@ -1,0 +1,8 @@
+inventory:
+  hosts:
+    - name: stream-test-host
+      address: 192.168.207.131
+      transport: winrm
+      username: preflight-test
+      password: "TempPreflight123!"
+

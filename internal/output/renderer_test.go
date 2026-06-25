@@ -22,11 +22,11 @@ func TestTextRenderer_PlayStart(t *testing.T) {
 	r.Emit(PlayStartEvent{PlayName: "lobby"})
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY [lobby]") {
-		t.Errorf("expected PLAY [lobby] in output, got: %q", out)
+	if !strings.Contains(out, "Apply") {
+		t.Errorf("expected Apply heading in output, got: %q", out)
 	}
-	if !strings.Contains(out, "*") {
-		t.Errorf("expected fill characters (*) in output, got: %q", out)
+	if !strings.Contains(out, "playbook: lobby") {
+		t.Errorf("expected playbook identity in output, got: %q", out)
 	}
 }
 
@@ -41,10 +41,10 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "ok") {
-		t.Errorf("expected 'ok' in output, got: %q", out)
+	if !strings.Contains(out, "✓") {
+		t.Errorf("expected ok glyph in output, got: %q", out)
 	}
-	if !strings.Contains(out, "TASK [preflight/kiosk-mode : Disable Windows Update]") {
+	if !strings.Contains(out, "preflight/kiosk-mode : Disable Windows Update") {
 		t.Errorf("expected task name in output, got: %q", out)
 	}
 }
@@ -59,8 +59,65 @@ func TestTextRenderer_TaskResultChanged(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "changed") {
-		t.Errorf("expected 'changed' in output, got: %q", out)
+	if !strings.Contains(out, "~") {
+		t.Errorf("expected changed glyph in output, got: %q", out)
+	}
+}
+
+func TestTextRenderer_SingleTargetOmitsRepeatedHostLabels(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRendererWithOptions(&buf, Options{Mode: "apply"})
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "playbooks/lobby.yml",
+		PlaybookName: "lobby",
+		Targets:      []string{"lobby-pc-01"},
+	})
+	r.Emit(TaskResultEvent{
+		TaskName: "Create content directory",
+		Target:   "lobby-pc-01",
+		Status:   "ok",
+	})
+
+	out := buf.String()
+	if strings.Contains(out, "[lobby-pc-01]") {
+		t.Fatalf("expected single-target rows to omit host label, got %q", out)
+	}
+	if !strings.Contains(out, "target: lobby-pc-01") {
+		t.Fatalf("expected run intro to name the target, got %q", out)
+	}
+}
+
+func TestTextRenderer_GroupsExpandedActionTasks(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTextRendererWithOptions(&buf, Options{Mode: "apply"})
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "playbooks/lobby.yml",
+		PlaybookName: "lobby",
+		Targets:      []string{"lobby-01", "lobby-02"},
+	})
+	r.Emit(TaskResultEvent{
+		TaskName:   "Set computer name",
+		ActionPath: "Apply machine baseline",
+		Target:     "lobby-01",
+		Status:     "changed",
+		Message:    "computer name",
+	})
+	r.Emit(TaskResultEvent{
+		TaskName:   "Set timezone",
+		ActionPath: "Apply machine baseline",
+		Target:     "lobby-01",
+		Status:     "ok",
+	})
+
+	out := buf.String()
+	header := "[lobby-01] Apply machine baseline"
+	if strings.Count(out, header) != 1 {
+		t.Fatalf("expected adjacent action children to share one group header, got %q", out)
+	}
+	if !strings.Contains(out, "  ~ Set computer name") || !strings.Contains(out, "  ✓ Set timezone") {
+		t.Fatalf("expected grouped child task rows, got %q", out)
 	}
 }
 
@@ -74,24 +131,25 @@ func TestTextRenderer_PlayEnd(t *testing.T) {
 		FailedCount:  1,
 		SkippedCount: 0,
 	})
+	r.Close()
 
 	out := buf.String()
-	if !strings.Contains(out, "PLAY RECAP") {
-		t.Errorf("expected PLAY RECAP in output, got: %q", out)
+	if !strings.Contains(out, "Recap") {
+		t.Errorf("expected Recap in output, got: %q", out)
 	}
 	if !strings.Contains(out, "lobby-pc-01") {
 		t.Errorf("expected target hostname in output, got: %q", out)
 	}
-	if !strings.Contains(out, "ok=4") {
+	if !strings.Contains(out, "4 ok") {
 		t.Errorf("expected ok=4 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "changed=2") {
+	if !strings.Contains(out, "2 changed") {
 		t.Errorf("expected changed=2 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "failed=1") {
+	if !strings.Contains(out, "1 failed") {
 		t.Errorf("expected failed=1 in output, got: %q", out)
 	}
-	if !strings.Contains(out, "skipped=0") {
+	if !strings.Contains(out, "0 skipped") {
 		t.Errorf("expected skipped=0 in output, got: %q", out)
 	}
 }
@@ -225,9 +283,6 @@ func TestTextRenderer_TaskOutput(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "│") {
-		t.Errorf("expected │ border character in output, got: %q", out)
-	}
 	if !strings.Contains(out, "line1") {
 		t.Errorf("expected 'line1' in output, got: %q", out)
 	}
@@ -318,7 +373,7 @@ func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing
 	})
 
 	out := buf.String()
-	taskPos := strings.Index(out, "TASK [Run smoke test]")
+	taskPos := strings.Index(out, "Run smoke test")
 	linePos := strings.Index(out, "line1")
 	if taskPos < 0 || linePos < 0 {
 		t.Fatalf("expected task line and buffered output, got %q", out)
@@ -380,7 +435,7 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	})
 
 	out := buf.String()
-	if !strings.Contains(out, "TASK [Run smoke test]") {
+	if !strings.Contains(out, "x Run smoke test") {
 		t.Fatalf("expected task header in output, got: %q", out)
 	}
 	if !strings.Contains(out, "Launching kiosk application...") {
@@ -413,7 +468,7 @@ func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
 			t.Fatalf("expected wrapped line <= %d chars, got %d: %q\n%s", lineWidth, len(line), line, buf.String())
 		}
 	}
-	if strings.Count(buf.String(), "  │ ") < 2 {
+	if !strings.Contains(buf.String(), "output:") {
 		t.Fatalf("expected wrapped message/output continuation lines, got %q", buf.String())
 	}
 }
@@ -458,9 +513,9 @@ func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
 	})
 
 	out := buf.String()
-	host2TaskPos := strings.Index(out, "TASK [Sync assets on gallery-02]")
+	host2TaskPos := strings.Index(out, "Sync assets on gallery-02")
 	host2LinePos := strings.Index(out, "gallery-02 line")
-	host1TaskPos := strings.Index(out, "TASK [Sync assets on gallery-01]")
+	host1TaskPos := strings.Index(out, "Sync assets on gallery-01")
 	host1LinePos := strings.Index(out, "gallery-01 line")
 	if host2TaskPos < 0 || host2LinePos < 0 || host1TaskPos < 0 || host1LinePos < 0 {
 		t.Fatalf("expected per-host task output, got %q", out)

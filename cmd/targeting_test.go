@@ -45,6 +45,35 @@ func TestRunHostsHonorsConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestRunHostsContinuesAfterHostError(t *testing.T) {
+	hosts := []targeting.ResolvedHost{
+		{Name: "a"},
+		{Name: "b"},
+	}
+
+	var mu sync.Mutex
+	visited := make(map[string]bool)
+	errBoom := errors.New("boom")
+
+	err := runHosts(context.Background(), hosts, 1, func(_ context.Context, host targeting.ResolvedHost) error {
+		mu.Lock()
+		visited[host.Name] = true
+		mu.Unlock()
+		if host.Name == "a" {
+			return errBoom
+		}
+		return nil
+	})
+	if !errors.Is(err, errBoom) {
+		t.Fatalf("expected joined host error, got %v", err)
+	}
+	for _, host := range hosts {
+		if !visited[host.Name] {
+			t.Fatalf("expected host %q to run after peer failure", host.Name)
+		}
+	}
+}
+
 func TestMergeSelectors(t *testing.T) {
 	cases := []struct {
 		name       string

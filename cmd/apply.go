@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -88,9 +90,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage command")
 	}
 
-	renderer := newRenderer(cmd)
-	defer renderer.Close()
-
 	session, err := newPlaybookSession(ctx, playbookPath, false)
 	if err != nil {
 		return err
@@ -99,11 +98,41 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	if err != nil {
 		return err
 	}
+
+	// Set up the fan-out bus: terminal renderer + disk run log.
+	runID := output.RunID()
+	runLogPath := filepath.Join(session.ProjectDir, output.RunDir(runID), "run.jsonl")
+	runLogSink, err := output.NewRunLogSink(runID, runLogPath)
+	if err != nil {
+		return fmt.Errorf("create run log: %w", err)
+	}
+	termRenderer := newRenderer(cmd)
+	bus := output.NewBus(termRenderer, runLogSink)
+	defer bus.Close()
+
+	// Emit the version event.
+	bus.Emit(output.VersionEvent{
+		SchemaVersion:    "1.0",
+		PreflightVersion: buildVersion,
+		PlaybookName:     session.Playbook.Name,
+	})
+
+	runStartTime := time.Now()
+	bus.Emit(output.RunStartEvent{
+		Mode:         runMode(opts),
+		PlaybookPath: playbookPath,
+		PlaybookName: session.Playbook.Name,
+		Targets:      displayTargetNames(hosts),
+		DryRun:       opts.dryRun,
+		Tags:         tags,
+		SkipTags:     skipTags,
+	})
 	if err := runner.New(nil, session.Chain, runner.Config{}).Fetch(ctx, session.Playbook); err != nil {
+		bus.Emit(output.ErrorEvent{Message: fmt.Sprintf("fetch phase failed: %v", err)})
 		return err
 	}
 
-	return runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
+	hostErrors := runHosts(ctx, hosts, concurrency, func(runCtx context.Context, host targeting.ResolvedHost) error {
 		bundleDir, err := bundleOutputDir(cmd, session.ProjectDir)
 		if err != nil {
 			return fmt.Errorf("resolve bundle output dir: %w", err)
@@ -121,7 +150,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 			Vars:                          vars,
 			TargetVars:                    host.TargetVars,
 			TargetName:                    host.Name,
-			Renderer:                      renderer,
+			Renderer:                      bus,
 			SkipFetch:                     true,
 			Secrets:                       session.Secrets,
 			SecretsConfig:                 session.ProjectCfg.Secrets,
@@ -149,6 +178,37 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		}
 		return nil
 	})
+
+	// Emit run summary.
+	elapsedMs := time.Since(runStartTime).Milliseconds()
+	bus.Emit(output.RunSummaryEvent{
+		Status:   runStatus(hostErrors),
+		OKCount:  0,
+		ChangedCount: 0,
+		FailedCount:  0,
+		SkippedCount: 0,
+		ElapsedMs:    elapsedMs,
+	})
+
+	// Write run status files.
+	runDir := filepath.Join(session.ProjectDir, output.RunDir(runID))
+	_ = output.WriteStatusFile(runDir, runStatus(hostErrors), runExitCode(hostErrors))
+
+	return hostErrors
+}
+
+func runStatus(err error) string {
+	if err == nil {
+		return "success"
+	}
+	return "failed"
+}
+
+func runExitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	return 1
 }
 
 func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
@@ -195,9 +255,12 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	if extracted.Manifest.SecretMode == bundle.SecretModePlaintext && renderer != nil {
 		renderer.Emit(output.WarningEvent{Message: "bundle contains plaintext secrets"})
 	}
-	if renderer != nil {
-		renderer.Emit(output.PlayStartEvent{PlayName: plan.PlaybookName})
-	}
+	renderer.Emit(output.RunStartEvent{
+		Mode:         runMode(playbookRunOptions{dryRun: dryRun}),
+		PlaybookPath: bundlePath,
+		PlaybookName: plan.PlaybookName,
+		Targets:      []string{displayTargetName(extracted.Manifest.TargetName, target.TransportLocal)},
+	})
 	statePath, err := stateFilePath(cmd)
 	if err != nil {
 		return fmt.Errorf("apply bundle: %w", err)
@@ -214,6 +277,39 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 		BuildDate:      extracted.Manifest.Build.Date,
 	})
 	return r.Apply(ctx, &plan)
+}
+
+func runMode(opts playbookRunOptions) string {
+	switch {
+	case opts.stageOnly:
+		return "stage"
+	case opts.dryRun:
+		return "check"
+	default:
+		return "apply"
+	}
+}
+
+func displayTargetNames(hosts []targeting.ResolvedHost) []string {
+	names := make([]string, 0, len(hosts))
+	for _, host := range hosts {
+		transport := target.Transport("")
+		if host.Target != nil {
+			transport = host.Target.Transport()
+		}
+		names = append(names, displayTargetName(host.Name, transport))
+	}
+	return names
+}
+
+func displayTargetName(name string, transport target.Transport) string {
+	if transport == target.TransportLocal {
+		return "local"
+	}
+	if name == "" {
+		return "local"
+	}
+	return name
 }
 
 func buildBundleSecretsResolver(extracted *bundle.ExtractedBundle, identityPath string) (*secrets.Resolver, error) {

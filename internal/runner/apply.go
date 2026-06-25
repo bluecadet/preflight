@@ -14,6 +14,70 @@ import (
 	"github.com/bluecadet/preflight/internal/template"
 )
 
+func (r *Runner) emitNewTaskStarted(pt *PlanTask) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.TaskStartedEvent{
+		Target:     r.targetName(),
+		TaskID:     pt.ID,
+		TaskName:   pt.Name,
+		Module:     pt.Module,
+		ActionPath: pt.ActionPath,
+	})
+}
+
+func (r *Runner) emitNewTaskSkipped(pt *PlanTask, reason string) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.TaskSkippedEvent{
+		Target:   r.targetName(),
+		TaskID:   pt.ID,
+		TaskName: pt.Name,
+		Reason:   reason,
+	})
+}
+
+func (r *Runner) emitNewTaskOK(pt *PlanTask, elapsedMs int64) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.TaskOKEvent{
+		Target:    r.targetName(),
+		TaskID:    pt.ID,
+		TaskName:  pt.Name,
+		ElapsedMs: elapsedMs,
+	})
+}
+
+func (r *Runner) emitNewTaskChanged(pt *PlanTask, elapsedMs int64) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.TaskChangedEvent{
+		Target:    r.targetName(),
+		TaskID:    pt.ID,
+		TaskName:  pt.Name,
+		ElapsedMs: elapsedMs,
+	})
+}
+
+func (r *Runner) emitNewTaskFailed(pt *PlanTask, message string, exitCode int, outputLines []string, elapsedMs int64) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.TaskFailedEvent{
+		Target:      r.targetName(),
+		TaskID:      pt.ID,
+		TaskName:    pt.Name,
+		ElapsedMs:   elapsedMs,
+		ExitCode:    exitCode,
+		Output:      outputLines,
+		FailMessage: message,
+	})
+}
+
 // apply executes the task graph against the target.
 func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
@@ -71,6 +135,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
+			r.emitNewTaskSkipped(pt, "tag-filtered")
 			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
@@ -90,6 +155,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 		if depFailed && !pt.IgnoreErrors {
+			r.emitNewTaskSkipped(pt, "dependency-failed")
 			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil))
 			skippedCount++
@@ -103,6 +169,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 		}
 		if !whenOK {
+			r.emitNewTaskSkipped(pt, "when-condition-false")
 			r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
 			skippedCount++
@@ -126,7 +193,9 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		// Execute the task against the target.
 		slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
+		r.emitNewTaskStarted(pt)
 		r.emitTaskStart(pt)
+		taskStartTime := time.Now()
 		var onOutput target.OutputFunc
 		if r.config.Renderer != nil {
 			onOutput = func(line string) {
@@ -139,8 +208,10 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, execOpts, r.config.DryRun, onOutput)
+		elapsedMs := time.Since(taskStartTime).Milliseconds()
 		if execErr != nil {
 			if !pt.IgnoreErrors {
+				r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error(), result.Output)
 				state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
@@ -152,6 +223,16 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 
 		state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, result.Status, result.Message, dag))
 
+		switch result.Status {
+		case target.StatusOK:
+			r.emitNewTaskOK(pt, elapsedMs)
+		case target.StatusChanged:
+			r.emitNewTaskChanged(pt, elapsedMs)
+		case target.StatusFailed:
+			r.emitNewTaskFailed(pt, result.Message, 0, result.Output, elapsedMs)
+		case target.StatusSkipped:
+			r.emitNewTaskSkipped(pt, result.Message)
+		}
 		r.emitTaskResult(pt, result.Status, result.Message, result.Output)
 
 		switch result.Status {

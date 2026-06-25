@@ -9,7 +9,10 @@ import (
 // jsonEvent is the serializable form of an Event.
 type jsonEvent struct {
 	Type         EventType            `json:"type"`
+	SchemaVersion string              `json:"schema_version,omitempty"`
+	Mode         string               `json:"mode,omitempty"`
 	PlayName     string               `json:"play,omitempty"`
+	PlaybookPath string               `json:"playbook_path,omitempty"`
 	Name         string               `json:"name,omitempty"`
 	Namespace    string               `json:"namespace,omitempty"`
 	Ref          string               `json:"ref,omitempty"`
@@ -31,7 +34,7 @@ type jsonEvent struct {
 	StatePath    string               `json:"state_path,omitempty"`
 	LastApplied  string               `json:"last_applied,omitempty"`
 	Comparisons  []StateComparison    `json:"comparisons,omitempty"`
-	PlaybookPath string               `json:"playbook_path,omitempty"`
+	Targets      []string             `json:"targets,omitempty"`
 	VisitedRefs  int                  `json:"visited_refs,omitempty"`
 	ResolvedRefs []string             `json:"resolved_refs,omitempty"`
 	ErrorCount   int                  `json:"error_count,omitempty"`
@@ -67,9 +70,43 @@ func NewJSONRenderer(w io.Writer) *JSONRenderer {
 func (r *JSONRenderer) Emit(event Event) {
 	je := jsonEvent{TS: time.Now().UTC().Format(time.RFC3339)}
 	switch e := event.(type) {
+	case VersionEvent:
+		je.Type = EventVersion
+		je.SchemaVersion = e.SchemaVersion
+		je.Version = e.PreflightVersion
+		je.PlayName = e.PlaybookName
+	case RunStartEvent:
+		je.Type = EventRunStart
+		je.Mode, je.PlayName, je.PlaybookPath = e.Mode, e.PlaybookName, e.PlaybookPath
+		je.Targets = e.Targets
 	case PlayStartEvent:
 		je.Type = EventPlayStart
 		je.PlayName = e.PlayName
+	case TargetStartEvent:
+		je.Type = EventTargetStart
+		je.Target = e.Target
+	case TargetCompleteEvent:
+		je.Type = EventTargetComplete
+		je.Target = e.Target
+		okCount, changedCount, failedCount, skippedCount := e.OKCount, e.ChangedCount, e.FailedCount, e.SkippedCount
+		je.OKCount, je.ChangedCount, je.FailedCount, je.SkippedCount = &okCount, &changedCount, &failedCount, &skippedCount
+	case TaskStartedEvent:
+		je.Type = EventTaskStarted
+		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+	case TaskOKEvent:
+		je.Type = EventTaskOK
+		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+	case TaskChangedEvent:
+		je.Type = EventTaskChanged
+		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+	case TaskSkippedEvent:
+		je.Type = EventTaskSkipped
+		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+	case TaskFailedEvent:
+		je.Type = EventTaskFailed
+		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+	case RunSummaryEvent:
+		je.Type = EventRunSummary
 	case TaskStartEvent:
 		je.Type = EventTaskStart
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target

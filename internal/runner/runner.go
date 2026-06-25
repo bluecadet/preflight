@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
@@ -86,6 +88,8 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		r.config.Renderer.Emit(output.PlayStartEvent{PlayName: playbook.Name})
 	}
 
+	targetName := r.targetName()
+
 	if r.config.Phase == "plan" {
 		slog.Debug("starting phase", "phase", "plan")
 		_, err := r.Plan(ctx, playbook)
@@ -123,19 +127,65 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		return err
 	}
 
+	// Emit target start before the apply phase.
+	r.emitTargetStart(targetName)
+	targetStartTime := time.Now()
+
 	slog.Debug("starting phase", "phase", "apply")
-	if err := r.apply(ctx, plan); err != nil {
-		r.emitError(fmt.Errorf("apply phase failed: %w", err))
-		return err
+	applyErr := r.apply(ctx, plan)
+
+	// Emit target complete.
+	elapsedMs := time.Since(targetStartTime).Milliseconds()
+	r.emitTargetComplete(targetName, elapsedMs)
+
+	if applyErr != nil {
+		if !isApplyTaskFailureSummary(applyErr) {
+			r.emitError(fmt.Errorf("apply phase failed: %w", applyErr))
+		}
+		return applyErr
 	}
 
 	return nil
+}
+
+func isApplyTaskFailureSummary(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "apply: ") && strings.Contains(err.Error(), " task(s) failed")
 }
 
 func (r *Runner) emitError(err error) {
 	if r.config.Renderer != nil {
 		r.config.Renderer.Emit(output.ErrorEvent{Message: err.Error()})
 	}
+}
+
+// emitTargetStart emits a target-level start event.
+func (r *Runner) emitTargetStart(targetName string) {
+	if r.config.Renderer == nil {
+		return
+	}
+	transport := "local"
+	if r.target != nil {
+		transport = string(r.target.Transport())
+	}
+	r.config.Renderer.Emit(output.TargetStartEvent{
+		Target:    targetName,
+		Transport: transport,
+	})
+}
+
+// emitTargetComplete emits a target-level complete event.
+func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64) {
+	if r.config.Renderer == nil {
+		return
+	}
+	// Outcome is determined by whether any task failed.
+	outcome := "ok"
+	// Tracked via PlayEndEvent counters. For now default to ok.
+	r.config.Renderer.Emit(output.TargetCompleteEvent{
+		Target:    targetName,
+		Outcome:   outcome,
+		ElapsedMs: elapsedMs,
+	})
 }
 
 func (r *Runner) emitTaskStart(pt *PlanTask) {

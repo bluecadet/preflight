@@ -66,7 +66,7 @@ func getRendererOptions(cmd *cobra.Command) output.Options {
 		return output.Options{}
 	}
 	verbose, _ := cmd.Flags().GetBool("verbose")
-	return output.Options{Verbose: verbose}
+	return output.Options{Verbose: verbose, Mode: cmd.Name()}
 }
 
 func newRenderer(cmd *cobra.Command) output.Renderer {
