@@ -136,7 +136,11 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	// Emit target complete.
 	elapsedMs := time.Since(targetStartTime).Milliseconds()
-	r.emitTargetComplete(targetName, elapsedMs)
+	outcome := "ok"
+	if applyErr != nil {
+		outcome = "failed"
+	}
+	r.emitTargetComplete(targetName, elapsedMs, outcome)
 
 	if applyErr != nil {
 		if !isApplyTaskFailureSummary(applyErr) {
@@ -174,13 +178,10 @@ func (r *Runner) emitTargetStart(targetName string) {
 }
 
 // emitTargetComplete emits a target-level complete event.
-func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64) {
+func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, outcome string) {
 	if r.config.Renderer == nil {
 		return
 	}
-	// Outcome is determined by whether any task failed.
-	outcome := "ok"
-	// Tracked via PlayEndEvent counters. For now default to ok.
 	r.config.Renderer.Emit(output.TargetCompleteEvent{
 		Target:    targetName,
 		Outcome:   outcome,

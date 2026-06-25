@@ -102,6 +102,11 @@
         {
           "properties": {
             "type": { "const": "run_start" },
+            "mode": {
+              "type": "string",
+              "enum": ["apply", "check", "stage"],
+              "description": "Execution mode for this run."
+            },
             "target_count": {
               "type": "integer",
               "description": "Number of targets in this run."
@@ -287,7 +292,7 @@
             "type": { "const": "task_skipped" },
             "reason": {
               "type": "string",
-              "enum": ["tag-filtered", "when-false", "dependency-failed"],
+              "enum": ["tag-filtered", "when-condition-false", "dependency-failed"],
               "description": "Reason the task was skipped."
             }
           },
@@ -310,6 +315,15 @@
             "exit_code": {
               "type": "integer",
               "description": "Process exit code."
+            },
+            "error": {
+              "type": "string",
+              "description": "Human-readable error message."
+            },
+            "output": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Output lines produced by the failed task."
             }
           },
           "required": ["type"]
@@ -426,6 +440,17 @@
                 "unreachable": { "type": "integer" }
               },
               "required": ["ok", "failed", "unreachable"]
+            },
+            "counts": {
+              "type": "object",
+              "description": "Task-level outcome counts for the run.",
+              "properties": {
+                "ok": { "type": "integer" },
+                "changed": { "type": "integer" },
+                "failed": { "type": "integer" },
+                "skipped": { "type": "integer" }
+              },
+              "required": ["ok", "changed", "failed", "skipped"]
             },
             "elapsed_ms": {
               "type": "integer",

@@ -154,7 +154,7 @@ func runLogFixtureCases() []struct {
 		},
 		{
 			name:  "task-skipped-when-false",
-			jsonl: `{"seq":33,"ts":"2026-06-24T14:12:48.000Z","type":"task_skipped","level":"info","run_id":"r01","target":"kiosk-02","task_id":"optional","msg":"optional skipped","reason":"when-false"}`,
+			jsonl: `{"seq":33,"ts":"2026-06-24T14:12:48.000Z","type":"task_skipped","level":"info","run_id":"r01","target":"kiosk-02","task_id":"optional","msg":"optional skipped","reason":"when-condition-false"}`,
 		},
 		{
 			name:  "task-failed",
