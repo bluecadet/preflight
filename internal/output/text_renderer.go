@@ -236,14 +236,6 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	r.failedTasks = append(r.failedTasks, failedTask{
-		target:     e.Target,
-		name:       e.TaskName,
-		message:    e.FailMessage,
-		output:     e.Output,
-	})
-	r.failedCount++
-
 	r.lastGroupKey = ""
 	left := statusGlyph("failed", r.isCheckMode()) + " " + e.TaskName
 	right := ""

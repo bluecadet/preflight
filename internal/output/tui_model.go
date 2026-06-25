@@ -49,17 +49,18 @@ type failedTask struct {
 
 // tuiModel is the Bubble Tea model for the TUI renderer.
 type tuiModel struct {
-	spinner     spinner.Model
-	width       int
-	events      chan Event
-	verbose     bool
+	spinner      spinner.Model
+	width        int
+	events       chan Event
+	verbose      bool
 	maxFailLines int
-	mode        string
-	playName    string
-	playbook    string
-	targets     []string
-	startedAt   time.Time
-	playStarted bool
+	mode         string
+	playName     string
+	playbook     string
+	targets      []string
+	startedAt    time.Time
+	playStarted  bool
+	runDir       string
 
 	hosts         map[string]map[string]*activeTask
 	hostOrder     []string
@@ -101,11 +102,12 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		events:       events,
 		verbose:      opts.Verbose,
 		maxFailLines: maxFailLines,
-		mode:       normalizeRunMode(opts.Mode),
-		width:      80,
-		hosts:      make(map[string]map[string]*activeTask),
-		taskOrder:  make(map[string][]string),
-		activities: make(map[string]*activeActivity),
+		mode:         normalizeRunMode(opts.Mode),
+		runDir:       opts.RunDir,
+		width:        80,
+		hosts:        make(map[string]map[string]*activeTask),
+		taskOrder:    make(map[string][]string),
+		activities:   make(map[string]*activeActivity),
 	}
 }
 
@@ -567,6 +569,9 @@ func (m tuiModel) renderFinalSummary() string {
 			for _, failed := range failedByHost[recap.target] {
 				b.WriteString("  [" + m.displayTarget(recap.target) + "] " + renderTaskFailurePath(failed.actionPath, failed.name) + "\n")
 			}
+		}
+		if m.runDir != "" {
+			b.WriteString("  Run directory: " + m.runDir + "\n")
 		}
 	}
 	return b.String()
