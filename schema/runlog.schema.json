@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://preflight.dev/schema/runlog.schema.json",
+  "title": "RunLog",
+  "description": "Schema for preflight run-log JSONL output — one JSON object per line. The run-log is a stable, versioned public contract emitted by every apply/check/stage run. See .afk/docs/run-log-format.md.",
+  "type": "object",
+  "allOf": [
+    { "$ref": "#/$defs/envelope" },
+    {
+      "oneOf": [
+        { "$ref": "#/$defs/versionEvent" },
+        { "$ref": "#/$defs/runStartEvent" },
+        { "$ref": "#/$defs/targetStartEvent" },
+        { "$ref": "#/$defs/activityStartEvent" },
+        { "$ref": "#/$defs/activityEndEvent" },
+        { "$ref": "#/$defs/taskStartedEvent" },
+        { "$ref": "#/$defs/taskOutputEvent" },
+        { "$ref": "#/$defs/taskOkEvent" },
+        { "$ref": "#/$defs/taskChangedEvent" },
+        { "$ref": "#/$defs/taskSkippedEvent" },
+        { "$ref": "#/$defs/taskFailedEvent" },
+        { "$ref": "#/$defs/diagnosticEvent" },
+        { "$ref": "#/$defs/targetUnreachableEvent" },
+        { "$ref": "#/$defs/targetCompleteEvent" },
+        { "$ref": "#/$defs/warningEvent" },
+        { "$ref": "#/$defs/runSummaryEvent" }
+      ]
+    }
+  ],
+  "$defs": {
+    "envelope": {
+      "type": "object",
+      "description": "Fields carried by every event in the run-log stream.",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "description": "Monotonic, gap-free per-run sequence number; the canonical ordering."
+        },
+        "ts": {
+          "type": "string",
+          "format": "date-time",
+          "description": "RFC3339 with nanoseconds."
+        },
+        "type": {
+          "type": "string",
+          "description": "Event discriminator."
+        },
+        "level": {
+          "type": "string",
+          "enum": ["info", "warn", "error"],
+          "description": "Severity level."
+        },
+        "run_id": {
+          "type": "string",
+          "description": "Stable identifier for this invocation."
+        },
+        "target": {
+          "type": ["string", "null"],
+          "description": "Target host or null for run-level events."
+        },
+        "task_id": {
+          "type": ["string", "null"],
+          "description": "Task identifier or null for run- and target-level events."
+        },
+        "msg": {
+          "type": "string",
+          "description": "Human-readable summary of the event."
+        }
+      },
+      "required": ["seq", "ts", "type", "level", "run_id", "msg"]
+    },
+
+    "versionEvent": {
+      "description": "First event in every stream; carries schema version and run metadata.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "version" },
+            "schema_version": {
+              "type": "string",
+              "description": "Semantic version of the run-log format."
+            },
+            "preflight_version": {
+              "type": "string",
+              "description": "Preflight release version."
+            },
+            "playbook": {
+              "type": "string",
+              "description": "Playbook file name used for this run."
+            }
+          },
+          "required": ["type", "schema_version"]
+        }
+      ]
+    },
+
+    "runStartEvent": {
+      "description": "Signals the start of a run with target and execution metadata.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "run_start" },
+            "target_count": {
+              "type": "integer",
+              "description": "Number of targets in this run."
+            },
+            "targets": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "List of target identifiers."
+            },
+            "dry_run": {
+              "type": "boolean",
+              "description": "Whether this is a dry run (check mode)."
+            },
+            "tags": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Tags used to filter tasks."
+            },
+            "skip_tags": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Tags used to exclude tasks."
+            }
+          },
+          "required": ["type", "target_count", "targets", "dry_run"]
+        }
+      ]
+    },
+
+    "targetStartEvent": {
+      "description": "Signals that work has begun on a single target.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "target_start" },
+            "transport": {
+              "type": "string",
+              "enum": ["local", "ssh", "winrm"],
+              "description": "Transport used to connect to the target."
+            },
+            "address": {
+              "type": "string",
+              "description": "Network address of the target."
+            }
+          },
+          "required": ["type", "transport"]
+        }
+      ]
+    },
+
+    "activityStartEvent": {
+      "description": "Signals the start of a setup activity (connect, facts, fetch) on a target.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "activity_start" },
+            "phase": {
+              "type": "string",
+              "enum": ["connect", "facts", "fetch"],
+              "description": "Activity phase."
+            },
+            "activity_id": {
+              "type": "string",
+              "description": "Stable identifier for this activity instance."
+            }
+          },
+          "required": ["type", "phase", "activity_id"]
+        }
+      ]
+    },
+
+    "activityEndEvent": {
+      "description": "Signals the completion of a setup activity on a target.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "activity_end" },
+            "activity_id": {
+              "type": "string",
+              "description": "Stable identifier matching the corresponding activity_start."
+            },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Elapsed time in milliseconds."
+            }
+          },
+          "required": ["type", "activity_id", "elapsed_ms"]
+        }
+      ]
+    },
+
+    "taskStartedEvent": {
+      "description": "Signals the start of a task on a target.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_started" },
+            "name": {
+              "type": "string",
+              "description": "Human-readable task name."
+            },
+            "module": {
+              "type": "string",
+              "description": "Module used for this task."
+            },
+            "action_ref": {
+              "type": "string",
+              "description": "Action reference (namespace/path)."
+            }
+          },
+          "required": ["type", "name"]
+        }
+      ]
+    },
+
+    "taskOutputEvent": {
+      "description": "Carries output lines produced by a running task.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_output" },
+            "stream": {
+              "type": "string",
+              "enum": ["stdout", "stderr"],
+              "description": "The stream the output originated from."
+            },
+            "lines": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Output lines, redacted of known secrets."
+            }
+          },
+          "required": ["type", "stream", "lines"]
+        }
+      ]
+    },
+
+    "taskOkEvent": {
+      "description": "Signals a task completed successfully with no changes.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_ok" },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Elapsed time in milliseconds."
+            }
+          },
+          "required": ["type", "elapsed_ms"]
+        }
+      ]
+    },
+
+    "taskChangedEvent": {
+      "description": "Signals a task completed successfully with changes.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_changed" },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Elapsed time in milliseconds."
+            }
+          },
+          "required": ["type", "elapsed_ms"]
+        }
+      ]
+    },
+
+    "taskSkippedEvent": {
+      "description": "Signals a task was skipped without execution.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_skipped" },
+            "reason": {
+              "type": "string",
+              "enum": ["tag-filtered", "when-false", "dependency-failed"],
+              "description": "Reason the task was skipped."
+            }
+          },
+          "required": ["type", "reason"]
+        }
+      ]
+    },
+
+    "taskFailedEvent": {
+      "description": "Signals a task failed during execution.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "task_failed" },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Elapsed time in milliseconds."
+            },
+            "exit_code": {
+              "type": "integer",
+              "description": "Process exit code."
+            }
+          },
+          "required": ["type"]
+        }
+      ]
+    },
+
+    "diagnosticEvent": {
+      "description": "Follows a failure to provide additional error details.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "diagnostic" },
+            "summary": {
+              "type": "string",
+              "description": "Short error summary."
+            },
+            "detail": {
+              "type": "string",
+              "description": "Detailed error description."
+            },
+            "source": {
+              "type": "string",
+              "description": "Source component of the diagnostic."
+            }
+          },
+          "required": ["type", "summary"]
+        }
+      ]
+    },
+
+    "targetUnreachableEvent": {
+      "description": "Signals a target could not be reached; a diagnostic event follows.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "target_unreachable" },
+            "reason": {
+              "type": "string",
+              "description": "Reason the target is unreachable."
+            }
+          },
+          "required": ["type", "reason"]
+        }
+      ]
+    },
+
+    "targetCompleteEvent": {
+      "description": "Signals all tasks for a target have completed.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "target_complete" },
+            "outcome": {
+              "type": "string",
+              "enum": ["ok", "failed"],
+              "description": "Final outcome for the target."
+            },
+            "counts": {
+              "type": "object",
+              "description": "Per-outcome task counts for this target.",
+              "properties": {
+                "ok": { "type": "integer" },
+                "changed": { "type": "integer" },
+                "failed": { "type": "integer" },
+                "skipped": { "type": "integer" }
+              },
+              "required": ["ok", "changed", "failed", "skipped"]
+            },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Total elapsed time for the target in milliseconds."
+            }
+          },
+          "required": ["type", "outcome", "counts", "elapsed_ms"]
+        }
+      ]
+    },
+
+    "warningEvent": {
+      "description": "A non-fatal warning during the run.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "warning" }
+          },
+          "required": ["type"]
+        }
+      ]
+    },
+
+    "runSummaryEvent": {
+      "description": "Final event in every stream; carries aggregated run results.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "run_summary" },
+            "status": {
+              "type": "string",
+              "enum": ["success", "partial", "failed"],
+              "description": "Overall run status."
+            },
+            "tallies": {
+              "type": "object",
+              "description": "Target-level outcome counts.",
+              "properties": {
+                "ok": { "type": "integer" },
+                "failed": { "type": "integer" },
+                "unreachable": { "type": "integer" }
+              },
+              "required": ["ok", "failed", "unreachable"]
+            },
+            "elapsed_ms": {
+              "type": "integer",
+              "description": "Total elapsed time for the run in milliseconds."
+            }
+          },
+          "required": ["type", "status", "tallies", "elapsed_ms"]
+        }
+      ]
+    }
+  }
+}

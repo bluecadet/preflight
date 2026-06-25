@@ -14,6 +14,7 @@ func TestEmbeddedSchemasAvailable(t *testing.T) {
 		"playbook.schema.json",
 		"inventory.schema.json",
 		"config.schema.json",
+		"runlog.schema.json",
 	}
 
 	for _, name := range cases {
