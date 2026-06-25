@@ -53,6 +53,7 @@ type tuiModel struct {
 	width       int
 	events      chan Event
 	verbose     bool
+	maxFailLines int
 	mode        string
 	playName    string
 	playbook    string
@@ -91,10 +92,15 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(tsSpin),
 	)
+	maxFailLines := opts.MaxFailLines
+	if maxFailLines <= 0 {
+		maxFailLines = defaultFailureOutputLimit
+	}
 	return tuiModel{
-		spinner:    s,
-		events:     events,
-		verbose:    opts.Verbose,
+		spinner:      s,
+		events:       events,
+		verbose:      opts.Verbose,
+		maxFailLines: maxFailLines,
 		mode:       normalizeRunMode(opts.Mode),
 		width:      80,
 		hosts:      make(map[string]map[string]*activeTask),
@@ -553,19 +559,13 @@ func (m tuiModel) renderFinalSummary() string {
 
 	if failedTargets > 0 {
 		b.WriteByte('\n')
-		b.WriteString("Failed targets\n")
+		b.WriteString("Needs attention\n")
 		for _, recap := range m.recaps {
 			if recap.failed == 0 {
 				continue
 			}
-			b.WriteString("  " + m.displayTarget(recap.target) + "\n")
 			for _, failed := range failedByHost[recap.target] {
-				b.WriteString("    " + renderTaskFailurePath(failed.actionPath, failed.name) + "\n")
-				if failed.message != "" {
-					for _, wrapped := range wrapTextLine(strings.TrimSpace(failed.message), max(m.width-6, 20)) {
-						b.WriteString("      " + wrapped + "\n")
-					}
-				}
+				b.WriteString("  [" + m.displayTarget(recap.target) + "] " + renderTaskFailurePath(failed.actionPath, failed.name) + "\n")
 			}
 		}
 	}
@@ -592,11 +592,11 @@ func (m tuiModel) committedDetailLines(e TaskResultEvent) []string {
 		lines = append(lines, tsOutputLines(indent, "ERROR: "+message, m.width)...)
 		if len(e.Output) > 0 {
 			lines = append(lines, tsOutputLine(indent, "output:"))
-			for _, line := range limitFailureOutput(e.Output) {
+			for _, line := range limitFailureOutput(m.maxFailLines, e.Output) {
 				lines = append(lines, tsOutputLines(indent+2, line, m.width)...)
 			}
-			if len(e.Output) > failureOutputLimit {
-				lines = append(lines, tsOutputLines(indent, fmt.Sprintf("output truncated: showing last %d of %d lines", failureOutputLimit, len(e.Output)), m.width)...)
+			if len(e.Output) > m.maxFailLines {
+				lines = append(lines, tsOutputLines(indent, fmt.Sprintf("output truncated: showing last %d of %d lines", m.maxFailLines, len(e.Output)), m.width)...)
 			}
 		}
 		lines = append(lines, tsOutputLines(indent, "target stopped: remaining tasks were not run", m.width)...)

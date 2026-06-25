@@ -69,6 +69,10 @@ func (b *Bus) scrubEvent(event Event, secrets []string) Event {
 		e.FailMessage = scrubString(e.FailMessage, secrets)
 		e.Output = scrubStrings(e.Output, secrets)
 		return e
+	case DiagnosticEvent:
+		e.Summary = scrubString(e.Summary, secrets)
+		e.Detail = scrubString(e.Detail, secrets)
+		return e
 	case WarningEvent:
 		e.Message = scrubString(e.Message, secrets)
 		return e

@@ -18,6 +18,7 @@ func addTagFlags(cmd *cobra.Command) {
 func addOutputFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("verbose", "v", false, "verbose output")
 	cmd.Flags().String("output", "", "output format: text, tui, or json (default: tui when interactive, text otherwise)")
+	cmd.Flags().Int("max-fail-lines", 80, "max lines of output to show for a failed task (0 = unlimited)")
 }
 
 func addConcurrencyFlag(cmd *cobra.Command) {

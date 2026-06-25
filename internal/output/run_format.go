@@ -165,11 +165,11 @@ func outputBlockLines(lines []string, indent int) []string {
 	return out
 }
 
-func limitFailureOutput(lines []string) []string {
-	if len(lines) <= failureOutputLimit {
+func limitFailureOutput(limit int, lines []string) []string {
+	if len(lines) <= limit {
 		return lines
 	}
-	return lines[len(lines)-failureOutputLimit:]
+	return lines[len(lines)-limit:]
 }
 
 func recapTotals(recaps []hostRecap) outcomeTotals {

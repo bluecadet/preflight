@@ -101,12 +101,13 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 
 	// Set up the fan-out bus: terminal renderer + disk run log.
 	runID := output.RunID()
-	runLogPath := filepath.Join(session.ProjectDir, output.RunDir(runID), "run.jsonl")
+	runDir := filepath.Join(session.ProjectDir, output.RunDir(runID))
+	runLogPath := filepath.Join(runDir, "run.jsonl")
 	runLogSink, err := output.NewRunLogSink(runID, runLogPath)
 	if err != nil {
 		return fmt.Errorf("create run log: %w", err)
 	}
-	termRenderer := newRenderer(cmd)
+	termRenderer := newRendererWithOptions(cmd, runDir)
 	bus := output.NewBus(termRenderer, runLogSink)
 	defer bus.Close()
 
@@ -182,8 +183,8 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	// Emit run summary.
 	elapsedMs := time.Since(runStartTime).Milliseconds()
 	bus.Emit(output.RunSummaryEvent{
-		Status:   runStatus(hostErrors),
-		OKCount:  0,
+		Status:       runStatus(hostErrors),
+		OKCount:      0,
 		ChangedCount: 0,
 		FailedCount:  0,
 		SkippedCount: 0,
@@ -191,7 +192,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	})
 
 	// Write run status files.
-	runDir := filepath.Join(session.ProjectDir, output.RunDir(runID))
 	_ = output.WriteStatusFile(runDir, runStatus(hostErrors), runExitCode(hostErrors))
 
 	return hostErrors

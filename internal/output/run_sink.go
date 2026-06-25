@@ -13,7 +13,7 @@ import (
 // logLevel returns the log level string for an event.
 func logLevel(event Event) string {
 	switch event.(type) {
-	case ErrorEvent, TaskFailedEvent:
+	case ErrorEvent, TaskFailedEvent, DiagnosticEvent:
 		return "error"
 	case WarningEvent:
 		return "warn"
@@ -58,6 +58,8 @@ func runLogMsg(event Event) string {
 		return e.TaskName + " skipped"
 	case TaskFailedEvent:
 		return e.TaskName + " failed"
+	case DiagnosticEvent:
+		return e.Summary
 	case RunSummaryEvent:
 		return e.Status
 	case TaskResultEvent:
@@ -192,6 +194,8 @@ func (s *RunLogSink) extractIDs(event Event) (string, string) {
 		return e.Target, e.TaskID
 	case TaskFailedEvent:
 		return e.Target, e.TaskID
+	case DiagnosticEvent:
+		return e.Target, e.TaskID
 	case TaskStartEvent:
 		return e.Target, e.TaskID
 	case TaskOutputEvent:
@@ -236,6 +240,8 @@ func (s *RunLogSink) eventType(event Event) string {
 		return "task_skipped"
 	case TaskFailedEvent:
 		return "task_failed"
+	case DiagnosticEvent:
+		return "diagnostic"
 	case RunSummaryEvent:
 		return "run_summary"
 	case PlayStartEvent:
@@ -360,6 +366,14 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 		}
 		if len(e.Output) > 0 {
 			m["output"] = e.Output
+		}
+	case DiagnosticEvent:
+		m["summary"] = e.Summary
+		if e.Detail != "" {
+			m["detail"] = e.Detail
+		}
+		if e.Source != "" {
+			m["source"] = e.Source
 		}
 	case RunSummaryEvent:
 		m["status"] = e.Status

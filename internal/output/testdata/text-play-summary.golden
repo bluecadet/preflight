@@ -14,7 +14,5 @@ x Apply failed
   target: lobby-pc-01
   tasks: 1 ok, 1 changed, 0 skipped, 1 failed
 
-Failed targets
-  lobby-pc-01
-    Smoke test
-      timeout
+Needs attention
+  [lobby-pc-01] Smoke test

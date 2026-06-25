@@ -16,8 +16,10 @@ const (
 
 // Options controls optional renderer behavior.
 type Options struct {
-	Verbose bool
-	Mode    string
+	Verbose      bool
+	Mode         string
+	MaxFailLines int
+	RunDir       string
 }
 
 // New returns a Renderer for the requested format writing to w.

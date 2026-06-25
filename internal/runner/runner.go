@@ -131,16 +131,18 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	r.emitTargetStart(targetName)
 	targetStartTime := time.Now()
 
+	// Track whether apply had failures for the target completion event.
+	var hasFailure bool
+
 	slog.Debug("starting phase", "phase", "apply")
 	applyErr := r.apply(ctx, plan)
+	if applyErr != nil {
+		hasFailure = true
+	}
 
 	// Emit target complete.
 	elapsedMs := time.Since(targetStartTime).Milliseconds()
-	outcome := "ok"
-	if applyErr != nil {
-		outcome = "failed"
-	}
-	r.emitTargetComplete(targetName, elapsedMs, outcome)
+	r.emitTargetComplete(targetName, elapsedMs, hasFailure)
 
 	if applyErr != nil {
 		if !isApplyTaskFailureSummary(applyErr) {
@@ -178,9 +180,13 @@ func (r *Runner) emitTargetStart(targetName string) {
 }
 
 // emitTargetComplete emits a target-level complete event.
-func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, outcome string) {
+func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool) {
 	if r.config.Renderer == nil {
 		return
+	}
+	outcome := "ok"
+	if hasFailure {
+		outcome = "failed"
 	}
 	r.config.Renderer.Emit(output.TargetCompleteEvent{
 		Target:    targetName,

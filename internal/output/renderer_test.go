@@ -9,11 +9,11 @@ import (
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
 func newTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false, taskOutput: make(map[string][]string)}
+	return &TextRenderer{w: w, color: false, maxFailLines: defaultFailureOutputLimit, taskOutput: make(map[string][]string)}
 }
 
 func newVerboseTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false, verbose: true, taskOutput: make(map[string][]string)}
+	return &TextRenderer{w: w, color: false, verbose: true, maxFailLines: defaultFailureOutputLimit, taskOutput: make(map[string][]string)}
 }
 
 func TestTextRenderer_PlayStart(t *testing.T) {

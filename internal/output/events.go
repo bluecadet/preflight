@@ -32,6 +32,7 @@ const (
 	EventTaskChanged    EventType = "task_changed"
 	EventTaskSkipped    EventType = "task_skipped"
 	EventTaskFailed     EventType = "task_failed"
+	EventDiagnostic     EventType = "diagnostic"
 	EventRunSummary     EventType = "run_summary"
 )
 
@@ -227,8 +228,9 @@ type SecretListEvent struct {
 	Entries []SecretListEntry
 }
 
-func (RunStartEvent) isEvent()       {}
-func (PlayStartEvent) isEvent()      {}
+func (RunStartEvent) isEvent()  {}
+func (PlayStartEvent) isEvent() {}
+
 // TargetStartEvent signals the start of work on a single target.
 type TargetStartEvent struct {
 	Target    string
@@ -238,13 +240,13 @@ type TargetStartEvent struct {
 
 // TargetCompleteEvent signals all tasks for a target have completed.
 type TargetCompleteEvent struct {
-	Target        string
-	Outcome       string
-	OKCount       int
-	ChangedCount  int
-	FailedCount   int
-	SkippedCount  int
-	ElapsedMs     int64
+	Target       string
+	Outcome      string
+	OKCount      int
+	ChangedCount int
+	FailedCount  int
+	SkippedCount int
+	ElapsedMs    int64
 }
 
 // TaskStartedEvent signals the start of a single task.
@@ -291,10 +293,20 @@ type TaskFailedEvent struct {
 	FailMessage string
 }
 
+// DiagnosticEvent carries the error body following a task failure or target_unreachable.
+// It is always paired with a preceding failure identity event.
+type DiagnosticEvent struct {
+	Target  string
+	TaskID  string
+	Summary string
+	Detail  string
+	Source  string
+}
+
 // TargetCounts holds per-target outcome counts for RunSummaryEvent.
 type TargetCounts struct {
-	OK         int `json:"ok"`
-	Failed     int `json:"failed"`
+	OK          int `json:"ok"`
+	Failed      int `json:"failed"`
 	Unreachable int `json:"unreachable"`
 }
 
@@ -317,6 +329,7 @@ func (TaskOKEvent) isEvent()         {}
 func (TaskChangedEvent) isEvent()    {}
 func (TaskSkippedEvent) isEvent()    {}
 func (TaskFailedEvent) isEvent()     {}
+func (DiagnosticEvent) isEvent()     {}
 func (RunSummaryEvent) isEvent()     {}
 func (TaskStartEvent) isEvent()      {}
 func (TaskOutputEvent) isEvent()     {}

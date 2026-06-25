@@ -78,6 +78,19 @@ func (r *Runner) emitNewTaskFailed(pt *PlanTask, message string, exitCode int, o
 	})
 }
 
+func (r *Runner) emitDiagnostic(pt *PlanTask, summary, detail, source string) {
+	if r.config.Renderer == nil {
+		return
+	}
+	r.config.Renderer.Emit(output.DiagnosticEvent{
+		Target:  r.targetName(),
+		TaskID:  pt.ID,
+		Summary: summary,
+		Detail:  detail,
+		Source:  source,
+	})
+}
+
 // apply executes the task graph against the target.
 func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
@@ -212,6 +225,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		if execErr != nil {
 			if !pt.IgnoreErrors {
 				r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
+				r.emitDiagnostic(pt, execErr.Error(), "", pt.Module)
 				r.emitTaskResult(pt, target.StatusFailed, execErr.Error(), result.Output)
 				state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
@@ -230,6 +244,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			r.emitNewTaskChanged(pt, elapsedMs)
 		case target.StatusFailed:
 			r.emitNewTaskFailed(pt, result.Message, 0, result.Output, elapsedMs)
+			r.emitDiagnostic(pt, result.Message, "", pt.Module)
 		case target.StatusSkipped:
 			r.emitNewTaskSkipped(pt, result.Message)
 		}

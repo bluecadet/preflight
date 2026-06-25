@@ -66,11 +66,21 @@ func getRendererOptions(cmd *cobra.Command) output.Options {
 		return output.Options{}
 	}
 	verbose, _ := cmd.Flags().GetBool("verbose")
-	return output.Options{Verbose: verbose, Mode: cmd.Name()}
+	opts := output.Options{Verbose: verbose, Mode: cmd.Name()}
+	if maxFail, err := cmd.Flags().GetInt("max-fail-lines"); err == nil {
+		opts.MaxFailLines = maxFail
+	}
+	return opts
 }
 
 func newRenderer(cmd *cobra.Command) output.Renderer {
-	return output.Synchronized(output.NewWithOptions(getOutputFormat(cmd), os.Stdout, getRendererOptions(cmd)))
+	return newRendererWithOptions(cmd, "")
+}
+
+func newRendererWithOptions(cmd *cobra.Command, runDir string) output.Renderer {
+	opts := getRendererOptions(cmd)
+	opts.RunDir = runDir
+	return output.Synchronized(output.NewWithOptions(getOutputFormat(cmd), os.Stdout, opts))
 }
 
 func newTextJSONRenderer(cmd *cobra.Command) output.Renderer {
@@ -78,7 +88,8 @@ func newTextJSONRenderer(cmd *cobra.Command) output.Renderer {
 	if format == output.FormatTUI {
 		format = output.FormatText
 	}
-	return output.Synchronized(output.NewWithOptions(format, os.Stdout, getRendererOptions(cmd)))
+	opts := getRendererOptions(cmd)
+	return output.Synchronized(output.NewWithOptions(format, os.Stdout, opts))
 }
 
 // getPlaybookPath returns the first element of args (the playbook path).

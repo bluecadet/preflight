@@ -13,6 +13,11 @@ func TestRunLogGolden(t *testing.T) {
 	runLogGoldenTest(t, "run-log")
 }
 
+func TestRunLogGolden_Failure(t *testing.T) {
+	t.Parallel()
+	runLogGoldenTest(t, "run-log-failure")
+}
+
 func runLogGoldenTest(t *testing.T, name string) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "run.jsonl")
@@ -22,8 +27,17 @@ func runLogGoldenTest(t *testing.T, name string) {
 		t.Fatalf("NewRunLogSink: %v", err)
 	}
 
-	// Happy-path fixture: single target, one ok task.
-	for _, event := range runLogFixture() {
+	var events []Event
+	switch name {
+	case "run-log":
+		events = runLogFixtureHappy()
+	case "run-log-failure":
+		events = runLogFixtureFailure()
+	default:
+		t.Fatalf("unknown run log fixture: %s", name)
+	}
+
+	for _, event := range events {
 		sink.Emit(event)
 	}
 	sink.Close()
@@ -55,7 +69,7 @@ func runLogGoldenTest(t *testing.T, name string) {
 	}
 }
 
-func runLogFixture() []Event {
+func runLogFixtureHappy() []Event {
 	return []Event{
 		VersionEvent{
 			SchemaVersion:    "1.0",
@@ -99,6 +113,64 @@ func runLogFixture() []Event {
 			OKCount:  1,
 			ElapsedMs: 5000,
 			TargetTallies: TargetCounts{OK: 1},
+		},
+	}
+}
+
+func runLogFixtureFailure() []Event {
+	return []Event{
+		VersionEvent{
+			SchemaVersion:    "1.0",
+			PreflightVersion: "1.4.0",
+			PlaybookName:     "kiosk-provision.yml",
+		},
+		RunStartEvent{
+			Mode:         "apply",
+			PlaybookPath: "kiosk-provision.yml",
+			PlaybookName: "kiosk-provision",
+			Targets:      []string{"kiosk-01"},
+			DryRun:       false,
+		},
+		TargetStartEvent{
+			Target:    "kiosk-01",
+			Transport: "local",
+		},
+		TaskStartedEvent{
+			Target:   "kiosk-01",
+			TaskID:   "install-drivers",
+			TaskName: "install display drivers",
+			Module:   "command",
+		},
+		TaskFailedEvent{
+			Target:      "kiosk-01",
+			TaskID:      "install-drivers",
+			TaskName:    "install display drivers",
+			ElapsedMs:   14500,
+			ExitCode:    1,
+			FailMessage: "DISM.exe failed: 0x800f0954",
+			Output:      []string{"source files could not be downloaded", "check network connectivity"},
+		},
+		DiagnosticEvent{
+			Target:  "kiosk-01",
+			TaskID:  "install-drivers",
+			Summary: "DISM.exe failed: 0x800f0954",
+			Detail:  "source files could not be downloaded",
+			Source:  "command",
+		},
+		TargetCompleteEvent{
+			Target:        "kiosk-01",
+			Outcome:       "failed",
+			OKCount:       0,
+			ChangedCount:  0,
+			FailedCount:   1,
+			SkippedCount:  0,
+			ElapsedMs:     47000,
+		},
+		RunSummaryEvent{
+			Status:   "failed",
+			OKCount:  0,
+			ElapsedMs: 47000,
+			TargetTallies: TargetCounts{Failed: 1},
 		},
 	}
 }

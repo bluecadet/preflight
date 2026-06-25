@@ -18,8 +18,8 @@ const (
 )
 
 const (
-	lineWidth          = 80
-	failureOutputLimit = 80
+	lineWidth                = 80
+	defaultFailureOutputLimit = 80
 )
 
 // TextRenderer writes the append-only form of the apply/check transcript.
@@ -27,7 +27,9 @@ type TextRenderer struct {
 	w                  io.Writer
 	color              bool
 	verbose            bool
+	maxFailLines       int
 	mode               string
+	runDir             string
 	runStarted         bool
 	playbookPath       string
 	playbookName       string
@@ -54,15 +56,21 @@ func NewTextRenderer(w io.Writer) *TextRenderer {
 
 // NewTextRendererWithOptions creates a TextRenderer with the provided options.
 func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
-	return &TextRenderer{
+	r := &TextRenderer{
 		w:                  w,
 		color:              isTTY(w),
 		verbose:            opts.Verbose,
+		maxFailLines:       opts.MaxFailLines,
 		mode:               normalizeRunMode(opts.Mode),
+		runDir:             opts.RunDir,
 		activeTasks:        make(map[string]time.Time),
 		taskOutput:         make(map[string][]string),
 		streamedTaskOutput: make(map[string]bool),
 	}
+	if r.maxFailLines <= 0 {
+		r.maxFailLines = defaultFailureOutputLimit
+	}
+	return r
 }
 
 func (r *TextRenderer) ensureState() {
@@ -105,7 +113,7 @@ func (r *TextRenderer) Emit(event Event) {
 	case TargetStartEvent:
 		// Target-level events are handled by the runner activity emit; no terminal output needed.
 	case TargetCompleteEvent:
-		// Terminal output uses PlayEndEvent from the runner; this is for the run log.
+		r.emitTargetComplete(e)
 	case TaskStartedEvent:
 		r.emitNewTaskStarted(e)
 	case TaskOKEvent:
@@ -116,6 +124,8 @@ func (r *TextRenderer) Emit(event Event) {
 		r.emitNewTaskSkipped(e)
 	case TaskFailedEvent:
 		r.emitNewTaskFailed(e)
+	case DiagnosticEvent:
+		// Diagnostic detail is already carried in TaskFailedEvent; no render-time output.
 	case RunSummaryEvent:
 		r.emitRunSummary(e)
 	case TaskStartEvent:
@@ -250,7 +260,7 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	}
 	if len(e.Output) > 0 {
 		r.writeLine(strings.Repeat(" ", indent) + "output:")
-		for _, line := range outputBlockLines(limitFailureOutput(e.Output), indent+2) {
+		for _, line := range outputBlockLines(limitFailureOutput(r.maxFailLines, e.Output), indent+2) {
 			r.writeLine(line)
 		}
 	}
@@ -458,9 +468,9 @@ func (r *TextRenderer) failureDetailLines(e TaskResultEvent, outputLines []strin
 	}
 	if !outputAlreadyStreamed && len(outputLines) > 0 {
 		lines = append(lines, strings.Repeat(" ", indent)+"output:")
-		lines = append(lines, outputBlockLines(limitFailureOutput(outputLines), indent+2)...)
-		if len(outputLines) > failureOutputLimit {
-			lines = append(lines, indentWrapped(indent, fmt.Sprintf("output truncated: showing last %d of %d lines", failureOutputLimit, len(outputLines)))...)
+		lines = append(lines, outputBlockLines(limitFailureOutput(r.maxFailLines, outputLines), indent+2)...)
+		if len(outputLines) > r.maxFailLines {
+			lines = append(lines, indentWrapped(indent, fmt.Sprintf("output truncated: showing last %d of %d lines", r.maxFailLines, len(outputLines)))...)
 		}
 	}
 	lines = append(lines, indentWrapped(indent, "target stopped: remaining tasks were not run")...)
@@ -475,6 +485,22 @@ func (r *TextRenderer) emitPlayEnd(e PlayEndEvent) {
 		failed:  e.FailedCount,
 		skipped: e.SkippedCount,
 	})
+}
+
+func (r *TextRenderer) emitTargetComplete(e TargetCompleteEvent) {
+	if e.Outcome != "failed" {
+		// Only render a completion line when there were failures.
+		return
+	}
+	r.lastGroupKey = ""
+	target := e.Target
+	if target == "" {
+		target = "local"
+	}
+	if len(r.targets) == 1 && r.targets[0] == "local" && target == "localhost" {
+		target = "local"
+	}
+	r.writeLine(r.colorize(ansiRed, "x "+target+" — failed (see above)"))
 }
 
 func (r *TextRenderer) emitActivityStart(e ActivityStartEvent) {
@@ -647,25 +673,22 @@ func (r *TextRenderer) writeFinalRecap() {
 	}
 
 	r.writeBlank()
-	r.writeLine("Failed targets")
+	r.writeLine("Needs attention")
 	for _, recap := range r.recaps {
 		if recap.failed == 0 {
 			continue
 		}
 		target := r.displayTarget(recap.target)
-		r.writeLine("  " + target)
 		for _, failed := range r.failedTasks {
 			if failed.target != recap.target {
 				continue
 			}
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			r.writeLine("    " + path)
-			if strings.TrimSpace(failed.message) != "" {
-				for _, line := range wrapTextLine(strings.TrimSpace(failed.message), lineWidth-6) {
-					r.writeLine("      " + line)
-				}
-			}
+			r.writeLine("  [" + target + "] " + path)
 		}
+	}
+	if r.runDir != "" {
+		r.writeLine("  Run directory: " + r.runDir)
 	}
 }
 
