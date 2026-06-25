@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -87,6 +88,15 @@ func newTUIModel(events chan Event) tuiModel {
 }
 
 func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
+	// When colors are disabled, strip foreground colors from all TUI styles.
+	colorMode := opts.Color
+	if colorMode == ColorAuto {
+		colorMode = DetectColor("", false, os.Stdout)
+	}
+	if !colorMode.UseColor() {
+		noColorifyStyles()
+	}
+
 	s := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
 		spinner.WithStyle(tsSpin),

@@ -1,0 +1,11 @@
+Apply
+playbook: app-deploy.yml
+name: app-deploy
+targets: 2
+  app-01, app-02
+
+x install .NET runtime                                                      0.0s
+  ERROR: DISM failure: 0x800f0954
+  output:
+    DISM.exe /Online /Add-Capability
+    Error: source files not found

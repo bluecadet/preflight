@@ -29,6 +29,23 @@ func TestTextRendererSnapshots(t *testing.T) {
 	}
 }
 
+func TestTextRendererNewEventTypes_Snapshots(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range newEventSnapshotCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			r := NewTextRendererWithOptions(&buf, tc.opts)
+			for _, event := range tc.events {
+				r.Emit(event)
+			}
+			r.Close()
+
+			assertSnapshot(t, snapshotPath("text", tc.name), normalizeSnapshot(buf.String()))
+		})
+	}
+}
+
 func TestTUIRendererSnapshots(t *testing.T) {
 	t.Parallel()
 
@@ -205,6 +222,226 @@ func snapshotCases() []snapshotCase {
 						{Ref: "github.com/acme/root@v1", SHA: "abc123"},
 						{Ref: "github.com/acme/child@v2", SHA: "def456"},
 					},
+				},
+			},
+		},
+	}
+}
+
+func newEventSnapshotCases() []snapshotCase {
+	return []snapshotCase{
+		{
+			name: "run-with-one-ok-task",
+			opts: Options{Mode: "apply"},
+			events: []Event{
+				RunStartEvent{
+					Mode:         "apply",
+					PlaybookPath: "kiosk-provision.yml",
+					PlaybookName: "kiosk-provision",
+					Targets:      []string{"kiosk-01"},
+					DryRun:       false,
+				},
+				TargetStartEvent{
+					Target:    "kiosk-01",
+					Transport: "local",
+				},
+				TaskStartedEvent{
+					Target:   "kiosk-01",
+					TaskID:   "install-drivers",
+					TaskName: "install display drivers",
+					Module:   "command",
+				},
+				TaskOutputEvent{
+					Target:   "kiosk-01",
+					TaskID:   "install-drivers",
+					TaskName: "install display drivers",
+					Lines:    []string{"Installing driver version 2.14"},
+				},
+				TaskOKEvent{
+					Target:    "kiosk-01",
+					TaskID:    "install-drivers",
+					TaskName:  "install display drivers",
+					ElapsedMs: 500,
+				},
+				TargetCompleteEvent{
+					Target:        "kiosk-01",
+					Outcome:       "ok",
+					OKCount:       1,
+					ChangedCount:  0,
+					FailedCount:   0,
+					SkippedCount:  0,
+					ElapsedMs:     5000,
+				},
+				RunSummaryEvent{
+					Status:        "success",
+					OKCount:       1,
+					ElapsedMs:     5000,
+					TargetTallies: TargetCounts{OK: 1},
+				},
+			},
+		},
+		{
+			name: "run-with-failed-task",
+			opts: Options{Mode: "apply"},
+			events: []Event{
+				RunStartEvent{
+					Mode:         "apply",
+					PlaybookPath: "app-deploy.yml",
+					PlaybookName: "app-deploy",
+					Targets:      []string{"app-01", "app-02"},
+					DryRun:       false,
+				},
+				TargetStartEvent{
+					Target:    "app-01",
+					Transport: "winrm",
+				},
+				TaskStartedEvent{
+					Target:   "app-01",
+					TaskID:   "install-runtime",
+					TaskName: "install .NET runtime",
+					Module:   "command",
+				},
+				TaskFailedEvent{
+					Target:      "app-01",
+					TaskID:      "install-runtime",
+					TaskName:    "install .NET runtime",
+					ExitCode:    1,
+					ElapsedMs:   15000,
+					FailMessage: "DISM failure: 0x800f0954",
+					Output:      []string{"DISM.exe /Online /Add-Capability", "Error: source files not found"},
+				},
+				TargetCompleteEvent{
+					Target:        "app-01",
+					Outcome:       "failed",
+					OKCount:       0,
+					ChangedCount:  0,
+					FailedCount:   1,
+					SkippedCount:  0,
+					ElapsedMs:     16000,
+				},
+				RunSummaryEvent{
+					Status:        "failed",
+					OKCount:       0,
+					ChangedCount:  0,
+					FailedCount:   1,
+					SkippedCount:  0,
+					ElapsedMs:     16000,
+					TargetTallies: TargetCounts{Failed: 1},
+				},
+			},
+		},
+		{
+			name: "verbose-run",
+			opts: Options{Verbose: true, Mode: "apply"},
+			events: []Event{
+				RunStartEvent{
+					Mode:         "apply",
+					PlaybookPath: "kiosk-provision.yml",
+					PlaybookName: "kiosk-provision",
+					Targets:      []string{"kiosk-01"},
+				},
+				TargetStartEvent{
+					Target:    "kiosk-01",
+					Transport: "local",
+				},
+				TaskStartedEvent{
+					Target:   "kiosk-01",
+					TaskID:   "configure",
+					TaskName: "configure autologin",
+					Module:   "registry",
+				},
+				TaskOutputEvent{
+					Target:   "kiosk-01",
+					TaskID:   "configure",
+					TaskName: "configure autologin",
+					Lines:    []string{"Setting HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion\\\\Winlogon\\\\AutoAdminLogon"},
+				},
+				TaskChangedEvent{
+					Target:    "kiosk-01",
+					TaskID:    "configure",
+					TaskName:  "configure autologin",
+					ElapsedMs: 200,
+				},
+				TargetCompleteEvent{
+					Target:        "kiosk-01",
+					Outcome:       "ok",
+					OKCount:       1,
+					ChangedCount:  1,
+					FailedCount:   0,
+					SkippedCount:  0,
+					ElapsedMs:     3000,
+				},
+				RunSummaryEvent{
+					Status:        "success",
+					OKCount:       1,
+					ChangedCount:  1,
+					ElapsedMs:     3000,
+					TargetTallies: TargetCounts{OK: 1},
+				},
+			},
+		},
+		{
+			name: "two-targets-mixed-results",
+			opts: Options{Mode: "apply"},
+			events: []Event{
+				RunStartEvent{
+					Mode:         "apply",
+					PlaybookPath: "deploy.yml",
+					PlaybookName: "deploy",
+					Targets:      []string{"host-a", "host-b"},
+				},
+				TargetStartEvent{
+					Target:    "host-a",
+					Transport: "ssh",
+				},
+				TaskStartedEvent{
+					Target:   "host-a",
+					TaskID:   "sync",
+					TaskName: "sync artifacts",
+				},
+				TaskOKEvent{
+					Target:    "host-a",
+					TaskID:    "sync",
+					TaskName:  "sync artifacts",
+					ElapsedMs: 800,
+				},
+				TaskStartedEvent{
+					Target:   "host-b",
+					TaskID:   "sync",
+					TaskName: "sync artifacts",
+				},
+				TaskSkippedEvent{
+					Target:   "host-b",
+					TaskID:   "sync",
+					TaskName: "sync artifacts",
+					Reason:   "when-condition-false",
+				},
+				TargetCompleteEvent{
+					Target:        "host-a",
+					Outcome:       "ok",
+					OKCount:       1,
+					ChangedCount:  0,
+					FailedCount:   0,
+					SkippedCount:  0,
+					ElapsedMs:     1000,
+				},
+				TargetCompleteEvent{
+					Target:        "host-b",
+					Outcome:       "ok",
+					OKCount:       0,
+					ChangedCount:  0,
+					FailedCount:   0,
+					SkippedCount:  1,
+					ElapsedMs:     100,
+				},
+				RunSummaryEvent{
+					Status:        "success",
+					OKCount:       1,
+					ChangedCount:  0,
+					FailedCount:   0,
+					SkippedCount:  1,
+					ElapsedMs:     1100,
+					TargetTallies: TargetCounts{OK: 2},
 				},
 			},
 		},

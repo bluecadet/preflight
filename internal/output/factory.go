@@ -18,6 +18,7 @@ const (
 type Options struct {
 	Verbose bool
 	Mode    string
+	Color   ColorMode
 }
 
 // New returns a Renderer for the requested format writing to w.

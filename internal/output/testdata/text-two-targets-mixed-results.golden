@@ -1,0 +1,9 @@
+Apply
+playbook: deploy.yml
+name: deploy
+targets: 2
+  host-a, host-b
+
+✓ sync artifacts                                                          0.0s
+- sync artifacts
+  reason: when-condition-false

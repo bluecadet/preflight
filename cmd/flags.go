@@ -18,6 +18,8 @@ func addTagFlags(cmd *cobra.Command) {
 func addOutputFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolP("verbose", "v", false, "verbose output")
 	cmd.Flags().String("output", "", "output format: text, tui, or json (default: tui when interactive, text otherwise)")
+	cmd.Flags().Bool("no-color", false, "disable color output (overrides --color)")
+	cmd.Flags().String("color", "auto", "color output: auto, always, or never")
 }
 
 func addConcurrencyFlag(cmd *cobra.Command) {

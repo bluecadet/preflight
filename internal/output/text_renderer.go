@@ -54,9 +54,13 @@ func NewTextRenderer(w io.Writer) *TextRenderer {
 
 // NewTextRendererWithOptions creates a TextRenderer with the provided options.
 func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
+	colorMode := opts.Color
+	if colorMode == ColorAuto {
+		colorMode = DetectColor("", false, w)
+	}
 	return &TextRenderer{
 		w:                  w,
-		color:              isTTY(w),
+		color:              colorMode.UseColor(),
 		verbose:            opts.Verbose,
 		mode:               normalizeRunMode(opts.Mode),
 		activeTasks:        make(map[string]time.Time),

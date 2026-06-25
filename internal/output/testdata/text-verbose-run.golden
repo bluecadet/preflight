@@ -1,0 +1,9 @@
+Apply
+playbook: kiosk-provision.yml
+name: kiosk-provision
+target: kiosk-01
+
+- configure autologin started
+    Setting HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\
+    AutoAdminLogon
+~ configure autologin                                                       0.0s
