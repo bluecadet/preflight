@@ -1,5 +1,5 @@
 name: preflight/windows-quiet-mode
-version: "2.2.0"
+version: "2.3.0"
 description: Reduce notifications, prompts, and Windows recovery UI noise
 author: preflight
 
@@ -15,7 +15,7 @@ inputs:
   disable_news_and_interests:
     type: bool
     default: true
-    description: Hide the Windows news and interests feed for the selected user
+    description: Hide the Windows news and interests feed
   disable_error_reporting:
     type: bool
     default: true
@@ -63,7 +63,16 @@ tasks:
           type: dword
           data: "{{ vars.disable_notifications ? 0 : 1 }}"
 
-  - name: Configure news and interests feed
+  - name: Configure news and interests machine policy
+    when: "{{ vars.disable_news_and_interests }}"
+    registry:
+      path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds'
+      values:
+        - name: EnableFeeds
+          type: dword
+          data: 0
+
+  - name: Configure news and interests feed for selected user
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds'
       user: "{{ vars.user }}"

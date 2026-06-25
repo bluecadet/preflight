@@ -1,5 +1,5 @@
 name: preflight/windows-shell
-version: "4.1.0"
+version: "4.2.0"
 description: Configure Windows shell defaults for kiosk-style machines
 author: preflight
 
@@ -84,6 +84,10 @@ inputs:
     type: bool
     default: false
     description: Show Microsoft Store apps on the taskbar for the selected user
+  hide_spotlight_desktop_icon:
+    type: bool
+    default: true
+    description: Hide the Windows Spotlight "Learn about this picture" desktop icon for the selected user
   clear_start_pins:
     type: bool
     default: false
@@ -346,6 +350,24 @@ tasks:
     registry:
       path: 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Explorer\MyComputer\NameSpace\{0DB7E03F-FC29-4DC6-9020-FF41B59E513A}'
       ensure: absent
+
+  - name: Configure Windows Spotlight desktop icon visibility (NewStartPanel)
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\NewStartPanel'
+      user: "{{ vars.user }}"
+      values:
+        - name: '{2cc5ca98-6485-489a-920e-b3e88a6ccce3}'
+          type: dword
+          data: "{{ vars.hide_spotlight_desktop_icon }}"
+
+  - name: Configure Windows Spotlight desktop icon visibility (ClassicStartMenu)
+    registry:
+      path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\HideDesktopIcons\ClassicStartMenu'
+      user: "{{ vars.user }}"
+      values:
+        - name: '{2cc5ca98-6485-489a-920e-b3e88a6ccce3}'
+          type: dword
+          data: "{{ vars.hide_spotlight_desktop_icon }}"
 
   - name: Clear desktop shortcuts
     when: "{{ vars.clear_desktop_shortcuts }}"
