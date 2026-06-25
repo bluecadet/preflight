@@ -1,6 +1,6 @@
 name: preflight/windows-power
-version: "3.0.0"
-description: Configure Windows power plans and screen saver settings
+version: "3.1.0"
+description: Configure Windows power plans, screen saver, and hibernation settings
 author: preflight
 
 inputs:
@@ -40,6 +40,10 @@ inputs:
     type: bool
     default: true
     description: Disable the Windows screen saver for the selected user
+  disable_hibernation:
+    type: bool
+    default: false
+    description: Disable Windows hibernation and remove hiberfil.sys
 
 tasks:
   - name: Configure power plan
@@ -142,4 +146,26 @@ tasks:
         if ($disable -and [string]::IsNullOrWhiteSpace($targetUser)) {
           Write-Output 'Refreshing current user shell parameters after disabling the screen saver'
           Start-Process -FilePath RUNDLL32.EXE -ArgumentList 'user32.dll,UpdatePerUserSystemParameters' -WindowStyle Hidden -Wait
+        }
+
+  - name: Configure hibernation
+    when: "{{ vars.disable_hibernation != '' }}"
+    powershell:
+      check_script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_hibernation }}')
+        $powerKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Power'
+        $prop = Get-ItemProperty -LiteralPath $powerKey -Name HibernateEnabled -ErrorAction SilentlyContinue
+        $isEnabled = ($null -ne $prop -and $prop.HibernateEnabled -eq 1)
+        if ($disable) {
+          return ($isEnabled -eq $true)
+        }
+        return ($isEnabled -ne $true)
+      script: |
+        $disable = [System.Convert]::ToBoolean('{{ vars.disable_hibernation }}')
+        if ($disable) {
+          & powercfg.exe /h off
+          Write-Output 'Hibernation disabled and hiberfil.sys removed'
+        } else {
+          & powercfg.exe /h on
+          Write-Output 'Hibernation enabled'
         }
