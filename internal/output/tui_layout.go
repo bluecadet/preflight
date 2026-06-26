@@ -104,10 +104,6 @@ func tsRenderNotice(glyph string, style lipgloss.Style, message string, width in
 	return strings.Join(lines, "\n")
 }
 
-func activityKey(target, message string) string {
-	return fallbackTarget(target) + "\x00" + strings.TrimSpace(message)
-}
-
 func tsRenderSection(title, body string) string {
 	var parts []string
 	if title != "" {

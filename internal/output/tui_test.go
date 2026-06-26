@@ -60,8 +60,8 @@ func TestTUIModel_ApplyEvent_RunStart(t *testing.T) {
 		PlaybookName: "my-play",
 		Targets:      []string{"host-a"},
 	})
-	if m.playName != "my-play" {
-		t.Errorf("expected playName=my-play, got %q", m.playName)
+	if m.projection.PlayName != "my-play" {
+		t.Errorf("expected PlayName=my-play, got %q", m.projection.PlayName)
 	}
 }
 
@@ -76,11 +76,11 @@ func TestTUIModel_ApplyEvent_TaskOK(t *testing.T) {
 		ElapsedMs: 100,
 	})
 
-	if m.okCount != 1 {
-		t.Errorf("expected okCount=1, got %d", m.okCount)
+	if m.projection.OkCount != 1 {
+		t.Errorf("expected OkCount=1, got %d", m.projection.OkCount)
 	}
-	if m.changedCount != 0 {
-		t.Errorf("expected changedCount=0, got %d", m.changedCount)
+	if m.projection.ChangedCount != 0 {
+		t.Errorf("expected ChangedCount=0, got %d", m.projection.ChangedCount)
 	}
 }
 
@@ -99,17 +99,17 @@ func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 		Lines:  []string{"line1", "line2", "line3", "line4"},
 	})
 
-	at := m.hosts["host-a"]["task-1"]
-	if at == nil {
-		t.Fatal("expected active task to exist")
+	at := m.projection.OrderedRunningTasks()
+	if len(at) != 1 {
+		t.Fatalf("expected 1 active task, got %d", len(at))
 	}
-	if len(at.recentLines) != maxTaskPreviewLines {
-		t.Fatalf("expected %d preview lines, got %d", maxTaskPreviewLines, len(at.recentLines))
+	if len(at[0].recentLines) != maxTaskPreviewLines {
+		t.Fatalf("expected %d preview lines, got %d", maxTaskPreviewLines, len(at[0].recentLines))
 	}
 	want := []string{"line2", "line3", "line4"}
 	for i, line := range want {
-		if at.recentLines[i] != line {
-			t.Fatalf("recentLines[%d] = %q, want %q", i, at.recentLines[i], line)
+		if at[0].recentLines[i] != line {
+			t.Fatalf("recentLines[%d] = %q, want %q", i, at[0].recentLines[i], line)
 		}
 	}
 }

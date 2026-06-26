@@ -2,11 +2,7 @@ package output
 
 import "github.com/charmbracelet/lipgloss"
 
-// maxLiveLines is the threshold above which output previews are hidden (dense mode).
 const maxLiveLines = 8
-
-// maxTaskPreviewLines is the number of recent output lines shown for an active task.
-const maxTaskPreviewLines = 3
 
 var (
 	tsOK        = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "2", Dark: "10"})

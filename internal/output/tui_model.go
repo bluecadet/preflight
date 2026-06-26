@@ -3,7 +3,6 @@ package output
 import (
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"time"
 
@@ -11,70 +10,16 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// activeTask represents a task currently being executed.
-type activeTask struct {
-	id          string
-	name        string
-	actionPath  string
-	target      string
-	startAt     time.Time
-	updatedAt   time.Time
-	alert       bool
-	recentLines []string
-}
-
-type activeActivity struct {
-	key     string
-	message string
-	target  string
-	startAt time.Time
-}
-
-// targetOutcome tracks a completed target's result for footer display.
-type targetOutcome struct {
-	target string
-	failed bool
-}
-
-// failedTask captures a failed task's identity for the final summary.
-type failedTask struct {
-	target     string
-	actionPath string
-	name       string
-	message    string
-	output     []string
-}
-
 // tuiModel is the Bubble Tea model for the TUI renderer.
+// It delegates event folding to RunProjection and renders commit
+// descriptors to the scroll region.
 type tuiModel struct {
+	projection   *RunProjection
 	spinner      spinner.Model
 	width        int
 	events       chan Event
 	verbose      bool
 	maxFailLines int
-	mode         string
-	playName     string
-	playbook     string
-	targets      []string
-	startedAt    time.Time
-	playStarted  bool
-	runDir       string
-
-	hosts          map[string]map[string]*activeTask
-	hostOrder      []string
-	taskOrder      map[string][]string
-	activities     map[string]*activeActivity
-	activityOrder  []string
-	targetOutcomes []targetOutcome
-
-	okCount      int
-	changedCount int
-	failedCount  int
-	skippedCount int
-
-	failedTasks  []failedTask
-	warningCount int
-	hadActivity  bool
 	done         bool
 }
 
@@ -86,7 +31,6 @@ func newTUIModel(events chan Event) tuiModel {
 }
 
 func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
-	// When colors are disabled, strip foreground colors from all TUI styles.
 	colorMode := opts.Color
 	if colorMode == ColorAuto {
 		colorMode = DetectColor("", false, os.Stdout)
@@ -104,16 +48,12 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		maxFailLines = defaultFailureOutputLimit
 	}
 	return tuiModel{
+		projection:   NewRunProjectionWithOptions(opts),
 		spinner:      s,
 		events:       events,
 		verbose:      opts.Verbose,
 		maxFailLines: maxFailLines,
-		mode:         normalizeRunMode(opts.Mode),
-		runDir:       opts.RunDir,
 		width:        80,
-		hosts:        make(map[string]map[string]*activeTask),
-		taskOrder:    make(map[string][]string),
-		activities:   make(map[string]*activeActivity),
 	}
 }
 
@@ -155,258 +95,92 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
-	switch e := event.(type) {
-	case RunStartEvent:
-		return m.handleRunStart(e)
-	case TargetStartEvent:
-		return m, nil
-	case TargetCompleteEvent:
-		return m.handleTargetComplete(e)
-	case TaskStartedEvent:
-		return m.handleTaskStartedEvent(e)
-	case ActivityStartEvent:
-		return m.handleActivityStart(e)
-	case ActivityResultEvent:
-		return m.handleActivityResult(e)
-	case TaskOutputEvent:
-		return m.handleTaskOutput(e)
-	case TaskOKEvent:
-		return m.handleTaskOK(e)
-	case TaskChangedEvent:
-		return m.handleTaskChanged(e)
-	case TaskSkippedEvent:
-		return m.handleTaskSkipped(e)
-	case TaskFailedEvent:
-		return m.handleTaskFailed(e)
-	case RunSummaryEvent:
-		return m, nil
-	case WarningEvent:
-		m.warningCount++
-		return m, tea.Println(tsRenderNotice("!", tsChanged, "warning: "+e.Message, m.width))
-	case FactsEvent:
-		return m.handleFacts(e)
-	case PlanEvent:
-		return m.printStaticBlock(renderPlanCard(e))
-	case StateEvent:
-		return m.printStaticBlock(renderStateCard(e))
-	case ValidationEvent:
-		return m.printStaticBlock(renderValidationCard(e))
-	case ActionCatalogEvent:
-		return m.printStaticBlock(renderActionCatalogCard(e))
-	case ActionInfoEvent:
-		return m.printStaticBlock(renderActionInfoCard(e))
-	case ActionFetchEvent:
-		return m.printStaticBlock(renderActionFetchCard(e))
-	default:
+	descriptors := m.projection.Apply(event)
+
+	if len(descriptors) == 0 {
 		return m, nil
 	}
+
+	var cmds []tea.Cmd
+	for _, d := range descriptors {
+		switch desc := d.(type) {
+		case RunStartDescriptor:
+			cmds = append(cmds, m.renderRunStart(desc))
+		case TaskFinishedDescriptor:
+			cmds = append(cmds, m.renderTaskFinished(desc))
+		case CardDescriptor:
+			cmds = append(cmds, m.renderCard(desc))
+		case WarningDescriptor:
+			cmds = append(cmds, tea.Println(tsRenderNotice("!", tsChanged, "warning: "+desc.Message, m.width)))
+		}
+	}
+	return m, tea.Sequence(cmds...)
 }
 
-func (m tuiModel) handleRunStart(e RunStartEvent) (tuiModel, tea.Cmd) {
-	if m.playStarted {
-		return m, nil
-	}
-	m.playStarted = true
-	m.mode = normalizeRunMode(e.Mode)
-	m.playName = e.PlaybookName
-	m.playbook = e.PlaybookPath
-	m.targets = append([]string(nil), e.Targets...)
-	m.startedAt = time.Now()
-
+func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	var lines []string
-	lines = append(lines, tsBold.Render(titleRunMode(m.mode)))
-	if m.playbook != "" {
-		lines = append(lines, "playbook: "+m.playbook)
-	} else if m.playName != "" {
-		lines = append(lines, "playbook: "+m.playName)
+	lines = append(lines, tsBold.Render(titleRunMode(d.Mode)))
+	if d.PlaybookPath != "" {
+		lines = append(lines, "playbook: "+d.PlaybookPath)
+	} else if d.PlaybookName != "" {
+		lines = append(lines, "playbook: "+d.PlaybookName)
 	}
-	if m.playbook != "" && m.playName != "" {
-		lines = append(lines, "name: "+m.playName)
+	if d.PlaybookPath != "" && d.PlaybookName != "" {
+		lines = append(lines, "name: "+d.PlaybookName)
 	}
-	switch len(m.targets) {
+	switch len(d.Targets) {
 	case 1:
-		lines = append(lines, "target: "+m.targets[0])
+		lines = append(lines, "target: "+d.Targets[0])
 	default:
-		if len(m.targets) > 1 {
-			lines = append(lines, fmt.Sprintf("targets: %d", len(m.targets)))
-			if len(m.targets) <= 5 {
-				lines = append(lines, "  "+strings.Join(m.targets, ", "))
+		if len(d.Targets) > 1 {
+			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
+			if len(d.Targets) <= 5 {
+				lines = append(lines, "  "+strings.Join(d.Targets, ", "))
 			}
 		}
 	}
-	return m, tea.Println(strings.Join(lines, "\n") + "\n")
+	return tea.Println(strings.Join(lines, "\n") + "\n")
 }
 
-func (m tuiModel) handleTargetComplete(e TargetCompleteEvent) (tuiModel, tea.Cmd) {
-	m.targetOutcomes = append(m.targetOutcomes, targetOutcome{
-		target: e.Target,
-		failed: e.Outcome == "failed",
-	})
-	return m, nil
-}
-
-func (m tuiModel) handleTaskStartedEvent(e TaskStartedEvent) (tuiModel, tea.Cmd) {
-	if e.Target == "" {
-		return m, nil
-	}
-	if m.hosts[e.Target] == nil {
-		m.hosts[e.Target] = make(map[string]*activeTask)
-		m.hostOrder = append(m.hostOrder, e.Target)
-	}
-
-	m.hosts[e.Target][e.TaskID] = &activeTask{
-		id:         e.TaskID,
-		name:       e.TaskName,
-		actionPath: e.ActionPath,
-		target:     e.Target,
-		startAt:    time.Now(),
-		updatedAt:  time.Now(),
-	}
-	m.taskOrder[e.Target] = append(m.taskOrder[e.Target], e.TaskID)
-	return m, nil
-}
-
-func (m tuiModel) handleActivityStart(e ActivityStartEvent) (tuiModel, tea.Cmd) {
-	m.hadActivity = true
-	key := activityKey(e.Target, e.Message)
-	if _, ok := m.activities[key]; ok {
-		return m, nil
-	}
-
-	m.activities[key] = &activeActivity{
-		key:     key,
-		message: e.Message,
-		target:  fallbackTarget(e.Target),
-		startAt: time.Now(),
-	}
-	m.activityOrder = append(m.activityOrder, key)
-	return m, nil
-}
-
-func (m tuiModel) handleActivityResult(e ActivityResultEvent) (tuiModel, tea.Cmd) {
-	key := activityKey(e.Target, e.Message)
-	delete(m.activities, key)
-	m.activityOrder = removeOrderedValue(m.activityOrder, key)
-	return m, nil
-}
-
-func (m tuiModel) handleTaskOutput(e TaskOutputEvent) (tuiModel, tea.Cmd) {
-	if e.Target == "" || e.TaskID == "" {
-		return m, nil
-	}
-
-	host := m.hosts[e.Target]
-	if host == nil {
-		return m, nil
-	}
-	task := host[e.TaskID]
-	if task == nil {
-		return m, nil
-	}
-
-	task.recentLines = append(task.recentLines, e.Lines...)
-	task.updatedAt = time.Now()
-	for _, line := range e.Lines {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "warning") || strings.Contains(lower, "error") || strings.Contains(lower, "stderr") {
-			task.alert = true
-			break
-		}
-	}
-	if !m.verbose && len(task.recentLines) > maxTaskPreviewLines {
-		task.recentLines = task.recentLines[len(task.recentLines)-maxTaskPreviewLines:]
-	}
-	return m, nil
-}
-
-func (m tuiModel) handleTaskOK(e TaskOKEvent) (tuiModel, tea.Cmd) {
-	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "ok", "", nil, e.ElapsedMs)
-}
-
-func (m tuiModel) handleTaskChanged(e TaskChangedEvent) (tuiModel, tea.Cmd) {
-	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "changed", "", nil, e.ElapsedMs)
-}
-
-func (m tuiModel) handleTaskSkipped(e TaskSkippedEvent) (tuiModel, tea.Cmd) {
-	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "skipped", e.Reason, nil, 0)
-}
-
-func (m tuiModel) handleTaskFailed(e TaskFailedEvent) (tuiModel, tea.Cmd) {
-	m.failedTasks = append(m.failedTasks, failedTask{
-		target:     e.Target,
-		actionPath: "",
-		name:       e.TaskName,
-		message:    e.FailMessage,
-		output:     e.Output,
-	})
-	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "failed", e.FailMessage, e.Output, e.ElapsedMs)
-}
-
-func (m tuiModel) removeTaskAndCommit(target, taskID, taskName, status, message string, output []string, elapsedMs int64) (tuiModel, tea.Cmd) {
-	var elapsed time.Duration
-	if elapsedMs > 0 {
-		elapsed = time.Duration(elapsedMs) * time.Millisecond
-	}
-
-	if host := m.hosts[target]; host != nil {
-		if task := host[taskID]; task != nil {
-			if elapsed == 0 {
-				elapsed = time.Since(task.startAt)
-			}
-			delete(host, taskID)
-		}
-	}
-	m.taskOrder[target] = removeOrderedValue(m.taskOrder[target], taskID)
-
-	switch status {
-	case "ok":
-		m.okCount++
-	case "changed":
-		m.changedCount++
-	case "failed":
-		m.failedCount++
-	case "skipped":
-		m.skippedCount++
-	}
-
-	left := tsIconForMode(status, m.isCheckMode()) + " " + taskName
-	if m.shouldShowHostLabels() && target != "" {
-		left = "[" + m.displayTarget(target) + "] " + left
+func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
+	left := iconForStatus(d.Status, m.projection.IsCheckMode()) + " " + d.TaskName
+	if m.projection.ShouldShowHostLabels() && d.Target != "" {
+		left = "[" + m.projection.DisplayTarget(d.Target) + "] " + left
 	}
 	right := ""
-	if elapsed > 0 && status != "skipped" {
-		right = formatElapsed(elapsed)
+	if d.Elapsed > 0 && d.Status != "skipped" {
+		right = formatElapsed(d.Elapsed)
 	}
 	line := tsRow(padLine(left, right, m.width))
 
 	var detailLines []string
-	switch status {
+	switch d.Status {
 	case "failed":
-		msg := strings.TrimSpace(message)
+		msg := strings.TrimSpace(d.Message)
 		if msg == "" {
 			msg = "task failed"
 		}
 		detailLines = append(detailLines, tsOutputLines(2, "ERROR: "+msg, m.width)...)
-		if len(output) > 0 {
+		if len(d.Output) > 0 {
 			detailLines = append(detailLines, tsOutputLine(2, "output:"))
-			for _, l := range limitFailureOutput(m.maxFailLines, output) {
+			for _, l := range limitFailureOutput(m.maxFailLines, d.Output) {
 				detailLines = append(detailLines, tsOutputLines(4, l, m.width)...)
 			}
-			if len(output) > m.maxFailLines {
-				detailLines = append(detailLines, tsOutputLines(2, fmt.Sprintf("output truncated: showing last %d of %d lines", m.maxFailLines, len(output)), m.width)...)
+			if len(d.Output) > m.maxFailLines {
+				detailLines = append(detailLines, tsOutputLines(2, fmt.Sprintf("output truncated: showing last %d of %d lines", m.maxFailLines, len(d.Output)), m.width)...)
 			}
 		}
 		detailLines = append(detailLines, tsOutputLines(2, "target stopped: remaining tasks were not run", m.width)...)
 	case "skipped":
-		if message != "" {
-			detailLines = tsOutputLines(2, "reason: "+message, m.width)
+		if d.Message != "" {
+			detailLines = tsOutputLines(2, "reason: "+d.Message, m.width)
 		}
 	case "changed":
-		if detail := changedDetail(message, m.isCheckMode()); detail != "" {
+		if detail := changedDetail(d.Message, m.projection.IsCheckMode()); detail != "" {
 			detailLines = tsOutputLines(2, detail, m.width)
 		}
 	case "ok":
-		if detail := okDetail(message); detail != "" {
+		if detail := okDetail(d.Message); detail != "" {
 			detailLines = tsOutputLines(2, detail, m.width)
 		}
 	}
@@ -417,15 +191,45 @@ func (m tuiModel) removeTaskAndCommit(target, taskID, taskName, status, message 
 		b.WriteByte('\n')
 		b.WriteString(dl)
 	}
-	return m, tea.Println(b.String())
+	return tea.Println(b.String())
 }
 
-func (m tuiModel) handleFacts(e FactsEvent) (tuiModel, tea.Cmd) {
-	return m.printStaticBlock(renderFactsCard(e, m.width))
-}
-
-func (m tuiModel) printStaticBlock(block string) (tuiModel, tea.Cmd) {
-	return m, tea.Println("\n" + block)
+func (m tuiModel) renderCard(d CardDescriptor) tea.Cmd {
+	var block string
+	switch d.Kind {
+	case "facts":
+		if e, ok := d.Event.(FactsEvent); ok {
+			block = renderFactsCard(e, m.width)
+		}
+	case "plan":
+		if e, ok := d.Event.(PlanEvent); ok {
+			block = renderPlanCard(e)
+		}
+	case "state":
+		if e, ok := d.Event.(StateEvent); ok {
+			block = renderStateCard(e)
+		}
+	case "validate":
+		if e, ok := d.Event.(ValidationEvent); ok {
+			block = renderValidationCard(e)
+		}
+	case "action_catalog":
+		if e, ok := d.Event.(ActionCatalogEvent); ok {
+			block = renderActionCatalogCard(e)
+		}
+	case "action_info":
+		if e, ok := d.Event.(ActionInfoEvent); ok {
+			block = renderActionInfoCard(e)
+		}
+	case "action_fetch":
+		if e, ok := d.Event.(ActionFetchEvent); ok {
+			block = renderActionFetchCard(e)
+		}
+	}
+	if block == "" {
+		return nil
+	}
+	return tea.Println("\n" + block)
 }
 
 // View renders only the live zone (running tasks + footer).
@@ -434,13 +238,13 @@ func (m tuiModel) View() string {
 		return m.renderFinalSummary()
 	}
 
-	activities := m.orderedActivities()
-	running := m.orderedTasks()
-	if len(activities) == 0 && len(running) == 0 && m.total() == 0 {
+	activities := m.projection.OrderedActivities()
+	running := m.projection.OrderedRunningTasks()
+	if len(activities) == 0 && len(running) == 0 && m.projection.Total() == 0 {
 		return ""
 	}
 
-	if len(activities) > 0 && len(running) == 0 && m.total() == 0 {
+	if len(activities) > 0 && len(running) == 0 && m.projection.Total() == 0 {
 		var b strings.Builder
 		b.WriteString("In Progress\n")
 		for _, activity := range activities {
@@ -450,7 +254,7 @@ func (m tuiModel) View() string {
 		return strings.TrimRight(b.String(), "\n") + "\n"
 	}
 
-	runningTargets := activeTargetCount(activities, running)
+	runningTargets := m.projection.ActiveTargetCount()
 	dense := len(running)+len(activities) > maxLiveLines
 	visibleActivities, visibleRunning, hiddenCount := visibleLiveEntries(activities, running, maxLiveLines)
 	var b strings.Builder
@@ -475,45 +279,12 @@ func (m tuiModel) View() string {
 	return b.String()
 }
 
-func (m tuiModel) orderedActivities() []*activeActivity {
-	activities := make([]*activeActivity, 0, len(m.activityOrder))
-	for _, key := range m.activityOrder {
-		if activity := m.activities[key]; activity != nil {
-			activities = append(activities, activity)
-		}
-	}
-	return activities
-}
-
-func (m tuiModel) orderedTasks() []*activeTask {
-	var running []*activeTask
-	for _, host := range m.hostOrder {
-		for _, id := range m.taskOrder[host] {
-			if task := m.hosts[host][id]; task != nil {
-				running = append(running, task)
-			}
-		}
-	}
-	sort.SliceStable(running, func(i, j int) bool {
-		left := running[i]
-		right := running[j]
-		if left.alert != right.alert {
-			return left.alert
-		}
-		if !left.startAt.Equal(right.startAt) {
-			return left.startAt.Before(right.startAt)
-		}
-		return left.updatedAt.After(right.updatedAt)
-	})
-	return running
-}
-
 func (m tuiModel) renderActivity(activity *activeActivity) string {
 	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
 	timer := tsElapsed.Render(formatElapsed(time.Since(activity.startAt)))
 	message := strings.TrimSpace(activity.message)
-	if m.shouldShowHostLabels() && activity.target != "" {
-		message = "[" + m.displayTarget(activity.target) + "] " + message
+	if m.projection.ShouldShowHostLabels() && activity.target != "" {
+		message = "[" + m.projection.DisplayTarget(activity.target) + "] " + message
 	}
 	return tsRow(spin, tsMuted.Render(message), timer)
 }
@@ -525,8 +296,8 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 	var b strings.Builder
 	if task.actionPath != "" {
 		header := renderDisplayPath(task.actionPath)
-		if m.shouldShowHostLabels() && task.target != "" {
-			header = "[" + m.displayTarget(task.target) + "] " + header
+		if m.projection.ShouldShowHostLabels() && task.target != "" {
+			header = "[" + m.projection.DisplayTarget(task.target) + "] " + header
 		}
 		b.WriteString(header)
 		b.WriteByte('\n')
@@ -534,8 +305,8 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 		b.WriteString(tsRow(line))
 	} else {
 		left := spin + " " + task.name
-		if m.shouldShowHostLabels() && task.target != "" {
-			left = "[" + m.displayTarget(task.target) + "] " + left
+		if m.projection.ShouldShowHostLabels() && task.target != "" {
+			left = "[" + m.projection.DisplayTarget(task.target) + "] " + left
 		}
 		b.WriteString(tsRow(padLine(left, timer, m.width)))
 	}
@@ -552,11 +323,11 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 }
 
 func (m tuiModel) renderFinalSummary() string {
-	if len(m.failedTasks) == 0 && m.total() == 0 {
+	if len(m.projection.FailedTasks()) == 0 && m.projection.Total() == 0 {
 		return ""
 	}
 
-	totalElapsed := m.elapsed()
+	totalElapsed := m.projection.Elapsed()
 
 	var b strings.Builder
 	b.WriteByte('\n')
@@ -564,27 +335,27 @@ func (m tuiModel) renderFinalSummary() string {
 
 	overallIcon := tsOK.Render("✓")
 	statusWord := "complete"
-	if m.failedCount > 0 {
+	if m.projection.FailedCount > 0 {
 		overallIcon = tsFailed.Render("x")
 		statusWord = "failed"
 	}
-	b.WriteString(tsRow(overallIcon, tsBold.Render(titleRunMode(m.mode)+" "+statusWord), tsElapsed.Render(formatElapsed(totalElapsed))))
+	b.WriteString(tsRow(overallIcon, tsBold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), tsElapsed.Render(formatElapsed(totalElapsed))))
 	b.WriteByte('\n')
 
 	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
-		{ok: m.okCount, changed: m.changedCount, failed: m.failedCount, skipped: m.skippedCount},
+		{ok: m.projection.OkCount, changed: m.projection.ChangedCount, failed: m.projection.FailedCount, skipped: m.projection.SkippedCount},
 	})
-	b.WriteString("  tasks: " + renderTaskTotals(totals, m.isCheckMode(), m.warningCount) + "\n")
+	b.WriteString("  tasks: " + renderTaskTotals(totals, m.projection.IsCheckMode(), m.projection.WarningCount) + "\n")
 
-	if m.failedCount > 0 {
+	if m.projection.FailedCount > 0 {
 		b.WriteByte('\n')
 		b.WriteString("Needs attention\n")
-		for _, failed := range m.failedTasks {
+		for _, failed := range m.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			b.WriteString("  [" + m.displayTarget(failed.target) + "] " + path + "\n")
+			b.WriteString("  [" + m.projection.DisplayTarget(failed.target) + "] " + path + "\n")
 		}
-		if m.runDir != "" {
-			b.WriteString("  Run directory: " + m.runDir + "\n")
+		if m.projection.RunDir != "" {
+			b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
 		}
 	}
 	return b.String()
@@ -594,77 +365,58 @@ func (m tuiModel) renderDivider() string {
 	return tsDivider.Render(strings.Repeat("─", m.divWidth()))
 }
 
-func (m tuiModel) shouldShowHostLabels() bool {
-	if m.playStarted {
-		return len(m.targets) != 1
+func (m tuiModel) renderFooter(runningCount int) string {
+	if runningCount == 0 && m.projection.Total() == 0 {
+		return ""
 	}
-	return true
+	done, failed := m.projection.TargetCounts()
+	waiting := 0
+	if len(m.projection.Targets) > 0 {
+		waiting = max(len(m.projection.Targets)-done-failed-runningCount, 0)
+	}
+	line1 := fmt.Sprintf(
+		"%s %s   Phase %s",
+		titleRunMode(m.projection.Mode),
+		formatElapsed(m.projection.Elapsed()),
+		titleRunMode(m.projection.Mode),
+	)
+	switch {
+	case len(m.projection.Targets) == 1:
+		line1 += "   Target " + m.projection.Targets[0]
+	case len(m.projection.Targets) > 1:
+		line1 += fmt.Sprintf("   Targets %d   Done %d   Running %d   Waiting %d   Failed %d", len(m.projection.Targets), done, runningCount, waiting, failed)
+	default:
+		line1 += fmt.Sprintf("   Running %d", runningCount)
+	}
+
+	changedLabel := "Changed"
+	if m.projection.IsCheckMode() {
+		changedLabel = "Would change"
+	}
+	line2 := fmt.Sprintf(
+		"Tasks %d done   OK %d   %s %d   Skipped %d   Failed %d",
+		m.projection.Total(),
+		m.projection.OkCount,
+		changedLabel,
+		m.projection.ChangedCount,
+		m.projection.SkippedCount,
+		m.projection.FailedCount,
+	)
+	if m.projection.WarningCount > 0 {
+		line2 += fmt.Sprintf("   Warnings %d", m.projection.WarningCount)
+	}
+	return line1 + "\n" + line2
 }
 
-func (m tuiModel) displayTarget(target string) string {
-	if target == "" {
-		return "local"
+func (m tuiModel) divWidth() int {
+	if m.width <= 0 {
+		return 50
 	}
-	if len(m.targets) == 1 && m.targets[0] == "local" && target == "localhost" {
-		return "local"
-	}
-	return target
+	return min(m.width, 50)
 }
 
-func (m tuiModel) isCheckMode() bool {
-	return m.mode == "check"
-}
-
-func (m tuiModel) targetCounts() (done, failed int) {
-	for _, oc := range m.targetOutcomes {
-		if oc.failed {
-			failed++
-		} else {
-			done++
-		}
-	}
-	return done, failed
-}
-
-func activeTargetCount(activities []*activeActivity, tasks []*activeTask) int {
-	targets := make(map[string]struct{})
-	for _, activity := range activities {
-		targets[activity.target] = struct{}{}
-	}
-	for _, task := range tasks {
-		targets[task.target] = struct{}{}
-	}
-	return len(targets)
-}
-
-func visibleLiveEntries(activities []*activeActivity, tasks []*activeTask, limit int) ([]*activeActivity, []*activeTask, int) {
-	if limit <= 0 {
-		return activities, tasks, 0
-	}
-	remaining := limit
-	visibleActivities := activities
-	if len(visibleActivities) > remaining {
-		hidden := len(visibleActivities) - remaining + len(tasks)
-		return visibleActivities[:remaining], nil, hidden
-	}
-
-	remaining -= len(visibleActivities)
-	visibleTasks := tasks
-	if len(visibleTasks) > remaining {
-		hidden := len(visibleTasks) - remaining
-		return visibleActivities, visibleTasks[:remaining], hidden
-	}
-	return visibleActivities, visibleTasks, 0
-}
-
-func (m tuiModel) elapsed() time.Duration {
-	if m.startedAt.IsZero() {
-		return 0
-	}
-	return time.Since(m.startedAt)
-}
-
-func tsIconForMode(status string, checkMode bool) string {
+// iconForStatus returns the styled status icon for a task outcome.
+func iconForStatus(status string, checkMode bool) string {
 	switch status {
 	case "ok":
 		return tsOK.Render("✓")
@@ -680,67 +432,4 @@ func tsIconForMode(status string, checkMode bool) string {
 	default:
 		return " "
 	}
-}
-
-func (m tuiModel) renderFooter(runningCount int) string {
-	if runningCount == 0 && m.total() == 0 {
-		return ""
-	}
-	done, failed := m.targetCounts()
-	waiting := 0
-	if len(m.targets) > 0 {
-		waiting = max(len(m.targets)-done-failed-runningCount, 0)
-	}
-	line1 := fmt.Sprintf(
-		"%s %s   Phase %s",
-		titleRunMode(m.mode),
-		formatElapsed(m.elapsed()),
-		titleRunMode(m.mode),
-	)
-	switch {
-	case len(m.targets) == 1:
-		line1 += "   Target " + m.targets[0]
-	case len(m.targets) > 1:
-		line1 += fmt.Sprintf("   Targets %d   Done %d   Running %d   Waiting %d   Failed %d", len(m.targets), done, runningCount, waiting, failed)
-	default:
-		line1 += fmt.Sprintf("   Running %d", runningCount)
-	}
-
-	changedLabel := "Changed"
-	if m.isCheckMode() {
-		changedLabel = "Would change"
-	}
-	line2 := fmt.Sprintf(
-		"Tasks %d done   OK %d   %s %d   Skipped %d   Failed %d",
-		m.total(),
-		m.okCount,
-		changedLabel,
-		m.changedCount,
-		m.skippedCount,
-		m.failedCount,
-	)
-	if m.warningCount > 0 {
-		line2 += fmt.Sprintf("   Warnings %d", m.warningCount)
-	}
-	return line1 + "\n" + line2
-}
-
-func (m tuiModel) divWidth() int {
-	if m.width <= 0 {
-		return 50
-	}
-	return min(m.width, 50)
-}
-
-func (m tuiModel) total() int {
-	return m.okCount + m.changedCount + m.failedCount + m.skippedCount
-}
-
-func removeOrderedValue(values []string, target string) []string {
-	for i, value := range values {
-		if value == target {
-			return append(values[:i], values[i+1:]...)
-		}
-	}
-	return values
 }
