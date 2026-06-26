@@ -1,0 +1,6 @@
+Apply
+playbook: kiosk-provision.yml
+name: kiosk-provision
+target: kiosk-01
+
+✓ install display drivers                                                 0.0s

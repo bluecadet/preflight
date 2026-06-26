@@ -30,3 +30,25 @@ var (
 	tsCardTitleInset = lipgloss.NewStyle().PaddingLeft(2)
 	tsCardBodyInset  = lipgloss.NewStyle().PaddingLeft(2)
 )
+
+// noColorifyStyles replaces all foreground-bearing TUI styles with versions
+// that have no foreground color. Called once at model construction when the
+// color mode is Never.
+func noColorifyStyles() {
+	tsOK = tsOK.Foreground(lipgloss.NoColor{})
+	tsChanged = tsChanged.Foreground(lipgloss.NoColor{})
+	tsFailed = tsFailed.Foreground(lipgloss.NoColor{})
+	tsSkipped = tsSkipped.Foreground(lipgloss.NoColor{})
+	tsMuted = tsMuted.Foreground(lipgloss.NoColor{})
+	tsBold = tsBold.Foreground(lipgloss.NoColor{})
+	tsSpin = tsSpin.Foreground(lipgloss.NoColor{})
+	tsDivider = tsDivider.Foreground(lipgloss.NoColor{})
+	tsOutput = tsOutput.Foreground(lipgloss.NoColor{})
+	tsElapsed = tsElapsed.Foreground(lipgloss.NoColor{})
+	tsCardTitle = tsCardTitle.Foreground(lipgloss.NoColor{})
+	tsLabel = tsLabel.Foreground(lipgloss.NoColor{})
+	tsKey = tsKey.Foreground(lipgloss.NoColor{})
+	tsValue = tsValue.Foreground(lipgloss.NoColor{})
+	tsTableHead = tsTableHead.Foreground(lipgloss.NoColor{})
+	tsTableRule = tsTableRule.Foreground(lipgloss.NoColor{})
+}

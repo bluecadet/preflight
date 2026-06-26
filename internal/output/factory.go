@@ -20,6 +20,7 @@ type Options struct {
 	Mode         string
 	MaxFailLines int
 	RunDir       string
+	Color        ColorMode
 }
 
 // New returns a Renderer for the requested format writing to w.

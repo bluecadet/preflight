@@ -66,7 +66,10 @@ func getRendererOptions(cmd *cobra.Command) output.Options {
 		return output.Options{}
 	}
 	verbose, _ := cmd.Flags().GetBool("verbose")
-	opts := output.Options{Verbose: verbose, Mode: cmd.Name()}
+	colorFlag, _ := cmd.Flags().GetString("color")
+	noColorFlag, _ := cmd.Flags().GetBool("no-color")
+	color := output.DetectColor(colorFlag, noColorFlag, os.Stdout)
+	opts := output.Options{Verbose: verbose, Mode: cmd.Name(), Color: color}
 	if maxFail, err := cmd.Flags().GetInt("max-fail-lines"); err == nil {
 		opts.MaxFailLines = maxFail
 	}
