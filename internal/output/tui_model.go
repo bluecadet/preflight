@@ -30,13 +30,10 @@ type activeActivity struct {
 	startAt time.Time
 }
 
-// hostRecap stores the final counts emitted by EventPlayEnd for one host.
-type hostRecap struct {
-	target  string
-	ok      int
-	changed int
-	failed  int
-	skipped int
+// targetOutcome tracks a completed target's result for footer display.
+type targetOutcome struct {
+	target string
+	failed bool
 }
 
 // failedTask captures a failed task's identity for the final summary.
@@ -63,23 +60,22 @@ type tuiModel struct {
 	playStarted  bool
 	runDir       string
 
-	hosts         map[string]map[string]*activeTask
-	hostOrder     []string
-	taskOrder     map[string][]string
-	activities    map[string]*activeActivity
-	activityOrder []string
+	hosts          map[string]map[string]*activeTask
+	hostOrder      []string
+	taskOrder      map[string][]string
+	activities     map[string]*activeActivity
+	activityOrder  []string
+	targetOutcomes []targetOutcome
 
 	okCount      int
 	changedCount int
 	failedCount  int
 	skippedCount int
 
-	recaps             []hostRecap
-	failedTasks        []failedTask
-	warningCount       int
-	lastCommittedGroup string
-	hadActivity        bool
-	done               bool
+	failedTasks  []failedTask
+	warningCount int
+	hadActivity  bool
+	done         bool
 }
 
 type tuiEventMsg struct{ event Event }
@@ -162,27 +158,31 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	switch e := event.(type) {
 	case RunStartEvent:
 		return m.handleRunStart(e)
-	case PlayStartEvent:
-		return m.handlePlayStart(e)
-	case TaskStartEvent:
-		return m.handleTaskStart(e)
+	case TargetStartEvent:
+		return m, nil
+	case TargetCompleteEvent:
+		return m.handleTargetComplete(e)
+	case TaskStartedEvent:
+		return m.handleTaskStartedEvent(e)
 	case ActivityStartEvent:
 		return m.handleActivityStart(e)
 	case ActivityResultEvent:
 		return m.handleActivityResult(e)
 	case TaskOutputEvent:
 		return m.handleTaskOutput(e)
-	case TaskResultEvent:
-		return m.handleTaskResult(e)
-	case PlayEndEvent:
-		return m.handlePlayEnd(e)
+	case TaskOKEvent:
+		return m.handleTaskOK(e)
+	case TaskChangedEvent:
+		return m.handleTaskChanged(e)
+	case TaskSkippedEvent:
+		return m.handleTaskSkipped(e)
+	case TaskFailedEvent:
+		return m.handleTaskFailed(e)
+	case RunSummaryEvent:
+		return m, nil
 	case WarningEvent:
 		m.warningCount++
-		m.lastCommittedGroup = ""
 		return m, tea.Println(tsRenderNotice("!", tsChanged, "warning: "+e.Message, m.width))
-	case ErrorEvent:
-		m.lastCommittedGroup = ""
-		return m, tea.Println(tsRenderNotice("x", tsFailed, "ERROR: "+e.Message, m.width))
 	case FactsEvent:
 		return m.handleFacts(e)
 	case PlanEvent:
@@ -237,17 +237,15 @@ func (m tuiModel) handleRunStart(e RunStartEvent) (tuiModel, tea.Cmd) {
 	return m, tea.Println(strings.Join(lines, "\n") + "\n")
 }
 
-func (m tuiModel) handlePlayStart(e PlayStartEvent) (tuiModel, tea.Cmd) {
-	if m.playStarted {
-		return m, nil
-	}
-	return m.handleRunStart(RunStartEvent{
-		Mode:         m.mode,
-		PlaybookName: e.PlayName,
+func (m tuiModel) handleTargetComplete(e TargetCompleteEvent) (tuiModel, tea.Cmd) {
+	m.targetOutcomes = append(m.targetOutcomes, targetOutcome{
+		target: e.Target,
+		failed: e.Outcome == "failed",
 	})
+	return m, nil
 }
 
-func (m tuiModel) handleTaskStart(e TaskStartEvent) (tuiModel, tea.Cmd) {
+func (m tuiModel) handleTaskStartedEvent(e TaskStartedEvent) (tuiModel, tea.Cmd) {
 	if e.Target == "" {
 		return m, nil
 	}
@@ -321,55 +319,105 @@ func (m tuiModel) handleTaskOutput(e TaskOutputEvent) (tuiModel, tea.Cmd) {
 	return m, nil
 }
 
-func (m tuiModel) handleTaskResult(e TaskResultEvent) (tuiModel, tea.Cmd) {
-	var (
-		cmds    []tea.Cmd
-		elapsed time.Duration
-	)
-
-	if host := m.hosts[e.Target]; host != nil {
-		if task := host[e.TaskID]; task != nil {
-			elapsed = time.Since(task.startAt)
-			delete(host, e.TaskID)
-		}
-	}
-	m.taskOrder[e.Target] = removeOrderedValue(m.taskOrder[e.Target], e.TaskID)
-	m.recordTaskResult(e)
-
-	cmds = append(cmds, tea.Println(m.renderCommitted(e, elapsed)))
-
-	return m, tea.Sequence(cmds...)
+func (m tuiModel) handleTaskOK(e TaskOKEvent) (tuiModel, tea.Cmd) {
+	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "ok", "", nil, e.ElapsedMs)
 }
 
-func (m *tuiModel) recordTaskResult(e TaskResultEvent) {
-	switch e.Status {
+func (m tuiModel) handleTaskChanged(e TaskChangedEvent) (tuiModel, tea.Cmd) {
+	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "changed", "", nil, e.ElapsedMs)
+}
+
+func (m tuiModel) handleTaskSkipped(e TaskSkippedEvent) (tuiModel, tea.Cmd) {
+	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "skipped", e.Reason, nil, 0)
+}
+
+func (m tuiModel) handleTaskFailed(e TaskFailedEvent) (tuiModel, tea.Cmd) {
+	m.failedTasks = append(m.failedTasks, failedTask{
+		target:     e.Target,
+		actionPath: "",
+		name:       e.TaskName,
+		message:    e.FailMessage,
+		output:     e.Output,
+	})
+	return m.removeTaskAndCommit(e.Target, e.TaskID, e.TaskName, "failed", e.FailMessage, e.Output, e.ElapsedMs)
+}
+
+func (m tuiModel) removeTaskAndCommit(target, taskID, taskName, status, message string, output []string, elapsedMs int64) (tuiModel, tea.Cmd) {
+	var elapsed time.Duration
+	if elapsedMs > 0 {
+		elapsed = time.Duration(elapsedMs) * time.Millisecond
+	}
+
+	if host := m.hosts[target]; host != nil {
+		if task := host[taskID]; task != nil {
+			if elapsed == 0 {
+				elapsed = time.Since(task.startAt)
+			}
+			delete(host, taskID)
+		}
+	}
+	m.taskOrder[target] = removeOrderedValue(m.taskOrder[target], taskID)
+
+	switch status {
 	case "ok":
 		m.okCount++
 	case "changed":
 		m.changedCount++
 	case "failed":
 		m.failedCount++
-		m.failedTasks = append(m.failedTasks, failedTask{
-			target:     e.Target,
-			actionPath: e.ActionPath,
-			name:       e.TaskName,
-			message:    e.Message,
-			output:     e.Output,
-		})
 	case "skipped":
 		m.skippedCount++
 	}
-}
 
-func (m tuiModel) handlePlayEnd(e PlayEndEvent) (tuiModel, tea.Cmd) {
-	m.recaps = append(m.recaps, hostRecap{
-		target:  e.Target,
-		ok:      e.OKCount,
-		changed: e.ChangedCount,
-		failed:  e.FailedCount,
-		skipped: e.SkippedCount,
-	})
-	return m, nil
+	left := tsIconForMode(status, m.isCheckMode()) + " " + taskName
+	if m.shouldShowHostLabels() && target != "" {
+		left = "[" + m.displayTarget(target) + "] " + left
+	}
+	right := ""
+	if elapsed > 0 && status != "skipped" {
+		right = formatElapsed(elapsed)
+	}
+	line := tsRow(padLine(left, right, m.width))
+
+	var detailLines []string
+	switch status {
+	case "failed":
+		msg := strings.TrimSpace(message)
+		if msg == "" {
+			msg = "task failed"
+		}
+		detailLines = append(detailLines, tsOutputLines(2, "ERROR: "+msg, m.width)...)
+		if len(output) > 0 {
+			detailLines = append(detailLines, tsOutputLine(2, "output:"))
+			for _, l := range limitFailureOutput(m.maxFailLines, output) {
+				detailLines = append(detailLines, tsOutputLines(4, l, m.width)...)
+			}
+			if len(output) > m.maxFailLines {
+				detailLines = append(detailLines, tsOutputLines(2, fmt.Sprintf("output truncated: showing last %d of %d lines", m.maxFailLines, len(output)), m.width)...)
+			}
+		}
+		detailLines = append(detailLines, tsOutputLines(2, "target stopped: remaining tasks were not run", m.width)...)
+	case "skipped":
+		if message != "" {
+			detailLines = tsOutputLines(2, "reason: "+message, m.width)
+		}
+	case "changed":
+		if detail := changedDetail(message, m.isCheckMode()); detail != "" {
+			detailLines = tsOutputLines(2, detail, m.width)
+		}
+	case "ok":
+		if detail := okDetail(message); detail != "" {
+			detailLines = tsOutputLines(2, detail, m.width)
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(line)
+	for _, dl := range detailLines {
+		b.WriteByte('\n')
+		b.WriteString(dl)
+	}
+	return m, tea.Println(b.String())
 }
 
 func (m tuiModel) handleFacts(e FactsEvent) (tuiModel, tea.Cmd) {
@@ -476,7 +524,11 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 
 	var b strings.Builder
 	if task.actionPath != "" {
-		b.WriteString(m.groupHeader(task.target, task.actionPath))
+		header := renderDisplayPath(task.actionPath)
+		if m.shouldShowHostLabels() && task.target != "" {
+			header = "[" + m.displayTarget(task.target) + "] " + header
+		}
+		b.WriteString(header)
 		b.WriteByte('\n')
 		line := padLine("  "+spin+" "+task.name, timer, m.width)
 		b.WriteString(tsRow(line))
@@ -499,56 +551,12 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 	return b.String()
 }
 
-func (m *tuiModel) renderCommitted(e TaskResultEvent, elapsed time.Duration) string {
-	var b strings.Builder
-	groupKey := ""
-	if e.ActionPath != "" {
-		groupKey = taskGroupKey(e.Target, e.ActionPath)
-		if groupKey != m.lastCommittedGroup {
-			b.WriteString(m.groupHeader(e.Target, e.ActionPath))
-			b.WriteByte('\n')
-		}
-	}
-
-	left := tsIconForMode(e.Status, m.isCheckMode()) + " " + e.TaskName
-	if e.ActionPath == "" && m.shouldShowHostLabels() && e.Target != "" {
-		left = "[" + m.displayTarget(e.Target) + "] " + left
-	}
-	if e.ActionPath != "" {
-		left = "  " + left
-	}
-	right := ""
-	if elapsed > 0 && e.Status != "skipped" {
-		right = formatElapsed(elapsed)
-	}
-	b.WriteString(tsRow(padLine(left, right, m.width)))
-
-	for _, line := range m.committedDetailLines(e) {
-		b.WriteByte('\n')
-		b.WriteString(line)
-	}
-
-	if groupKey != "" {
-		m.lastCommittedGroup = groupKey
-	} else {
-		m.lastCommittedGroup = ""
-	}
-	return b.String()
-}
-
 func (m tuiModel) renderFinalSummary() string {
-	if len(m.recaps) == 0 {
+	if len(m.failedTasks) == 0 && m.total() == 0 {
 		return ""
 	}
 
 	totalElapsed := m.elapsed()
-	failedTargets := failedTargetCount(m.recaps)
-	totals := recapTotals(m.recaps)
-
-	failedByHost := make(map[string][]failedTask)
-	for _, task := range m.failedTasks {
-		failedByHost[task.target] = append(failedByHost[task.target], task)
-	}
 
 	var b strings.Builder
 	b.WriteByte('\n')
@@ -556,29 +564,24 @@ func (m tuiModel) renderFinalSummary() string {
 
 	overallIcon := tsOK.Render("✓")
 	statusWord := "complete"
-	if failedTargets > 0 {
+	if m.failedCount > 0 {
 		overallIcon = tsFailed.Render("x")
 		statusWord = "failed"
 	}
 	b.WriteString(tsRow(overallIcon, tsBold.Render(titleRunMode(m.mode)+" "+statusWord), tsElapsed.Render(formatElapsed(totalElapsed))))
 	b.WriteByte('\n')
-	if len(m.recaps) == 1 {
-		b.WriteString("  target: " + m.displayTarget(m.recaps[0].target) + "\n")
-	} else {
-		fmt.Fprintf(&b, "  targets: %d complete, %d failed\n", len(m.recaps)-failedTargets, failedTargets)
-	}
+
+	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
+		{ok: m.okCount, changed: m.changedCount, failed: m.failedCount, skipped: m.skippedCount},
+	})
 	b.WriteString("  tasks: " + renderTaskTotals(totals, m.isCheckMode(), m.warningCount) + "\n")
 
-	if failedTargets > 0 {
+	if m.failedCount > 0 {
 		b.WriteByte('\n')
 		b.WriteString("Needs attention\n")
-		for _, recap := range m.recaps {
-			if recap.failed == 0 {
-				continue
-			}
-			for _, failed := range failedByHost[recap.target] {
-				b.WriteString("  [" + m.displayTarget(recap.target) + "] " + renderTaskFailurePath(failed.actionPath, failed.name) + "\n")
-			}
+		for _, failed := range m.failedTasks {
+			path := renderTaskFailurePath(failed.actionPath, failed.name)
+			b.WriteString("  [" + m.displayTarget(failed.target) + "] " + path + "\n")
 		}
 		if m.runDir != "" {
 			b.WriteString("  Run directory: " + m.runDir + "\n")
@@ -589,63 +592,6 @@ func (m tuiModel) renderFinalSummary() string {
 
 func (m tuiModel) renderDivider() string {
 	return tsDivider.Render(strings.Repeat("─", m.divWidth()))
-}
-
-func (m tuiModel) committedDetailLines(e TaskResultEvent) []string {
-	indent := 2
-	if e.ActionPath != "" {
-		indent = 4
-	}
-
-	switch e.Status {
-	case "failed":
-		var lines []string
-		message := strings.TrimSpace(e.Message)
-		if message == "" {
-			message = "task failed"
-		}
-		lines = append(lines, tsOutputLines(indent, "ERROR: "+message, m.width)...)
-		if len(e.Output) > 0 {
-			lines = append(lines, tsOutputLine(indent, "output:"))
-			for _, line := range limitFailureOutput(m.maxFailLines, e.Output) {
-				lines = append(lines, tsOutputLines(indent+2, line, m.width)...)
-			}
-			if len(e.Output) > m.maxFailLines {
-				lines = append(lines, tsOutputLines(indent, fmt.Sprintf("output truncated: showing last %d of %d lines", m.maxFailLines, len(e.Output)), m.width)...)
-			}
-		}
-		lines = append(lines, tsOutputLines(indent, "target stopped: remaining tasks were not run", m.width)...)
-		return lines
-	case "changed":
-		if detail := changedDetail(e.Message, m.isCheckMode()); detail != "" {
-			return tsOutputLines(indent, detail, m.width)
-		}
-	case "ok":
-		if detail := okDetail(e.Message); detail != "" {
-			return tsOutputLines(indent, detail, m.width)
-		}
-	case "skipped":
-		if detail := skippedDetail(e.Message); detail != "" {
-			return tsOutputLines(indent, detail, m.width)
-		}
-	}
-
-	if m.verbose && len(e.Output) > 0 {
-		var lines []string
-		for _, line := range e.Output {
-			lines = append(lines, tsOutputLines(indent, line, m.width)...)
-		}
-		return lines
-	}
-	return nil
-}
-
-func (m tuiModel) groupHeader(target, actionPath string) string {
-	header := renderDisplayPath(actionPath)
-	if m.shouldShowHostLabels() && target != "" {
-		return "[" + m.displayTarget(target) + "] " + header
-	}
-	return header
 }
 
 func (m tuiModel) shouldShowHostLabels() bool {
@@ -670,12 +616,12 @@ func (m tuiModel) isCheckMode() bool {
 }
 
 func (m tuiModel) targetCounts() (done, failed int) {
-	for _, recap := range m.recaps {
-		if recap.failed > 0 {
+	for _, oc := range m.targetOutcomes {
+		if oc.failed {
 			failed++
-			continue
+		} else {
+			done++
 		}
-		done++
 	}
 	return done, failed
 }

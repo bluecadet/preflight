@@ -1,6 +1,0 @@
-Embedded actions (preflight/):
-  preflight/autologin
-  preflight/windows-machine
-
-Local actions (actions):
-  museum/bootstrap

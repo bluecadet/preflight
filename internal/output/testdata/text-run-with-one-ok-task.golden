@@ -3,4 +3,9 @@ playbook: kiosk-provision.yml
 name: kiosk-provision
 target: kiosk-01
 
+    Installing driver version 2.14
 ✓ install display drivers                                                 0.0s
+
+Recap
+✓ Apply complete
+  tasks: 1 ok, 0 changed, 0 skipped, 0 failed

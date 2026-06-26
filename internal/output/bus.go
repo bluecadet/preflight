@@ -61,10 +61,6 @@ func (b *Bus) scrubEvent(event Event, secrets []string) Event {
 	case TaskOutputEvent:
 		e.Lines = scrubStrings(e.Lines, secrets)
 		return e
-	case TaskResultEvent:
-		e.Message = scrubString(e.Message, secrets)
-		e.Output = scrubStrings(e.Output, secrets)
-		return e
 	case TaskFailedEvent:
 		e.FailMessage = scrubString(e.FailMessage, secrets)
 		e.Output = scrubStrings(e.Output, secrets)
@@ -74,9 +70,6 @@ func (b *Bus) scrubEvent(event Event, secrets []string) Event {
 		e.Detail = scrubString(e.Detail, secrets)
 		return e
 	case WarningEvent:
-		e.Message = scrubString(e.Message, secrets)
-		return e
-	case ErrorEvent:
 		e.Message = scrubString(e.Message, secrets)
 		return e
 	default:

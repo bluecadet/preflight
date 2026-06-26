@@ -84,17 +84,13 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		return err
 	}
 
-	if r.config.Renderer != nil {
-		r.config.Renderer.Emit(output.PlayStartEvent{PlayName: playbook.Name})
-	}
-
 	targetName := r.targetName()
 
 	if r.config.Phase == "plan" {
 		slog.Debug("starting phase", "phase", "plan")
 		_, err := r.Plan(ctx, playbook)
 		if err != nil {
-			r.emitError(fmt.Errorf("plan phase failed: %w", err))
+			slog.Error("plan phase failed", "error", err)
 		}
 		return err
 	}
@@ -102,7 +98,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	if !r.config.SkipFetch {
 		slog.Debug("starting phase", "phase", "fetch")
 		if err := r.Fetch(ctx, playbook); err != nil {
-			r.emitError(fmt.Errorf("fetch phase failed: %w", err))
+			slog.Error("fetch phase failed", "error", err)
 			return err
 		}
 	}
@@ -110,7 +106,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	slog.Debug("starting phase", "phase", "plan")
 	plan, err := r.Plan(ctx, playbook)
 	if err != nil {
-		r.emitError(fmt.Errorf("plan phase failed: %w", err))
+		slog.Error("plan phase failed", "error", err)
 		return err
 	}
 
@@ -122,7 +118,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		slog.Debug("starting phase", "phase", "stage")
 		err := r.stage(ctx, plan)
 		if err != nil {
-			r.emitError(fmt.Errorf("stage phase failed: %w", err))
+			slog.Error("stage phase failed", "error", err)
 		}
 		return err
 	}
@@ -146,7 +142,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	if applyErr != nil {
 		if !isApplyTaskFailureSummary(applyErr) {
-			r.emitError(fmt.Errorf("apply phase failed: %w", applyErr))
+			slog.Error("apply phase failed", "error", applyErr)
 		}
 		return applyErr
 	}
@@ -156,12 +152,6 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 func isApplyTaskFailureSummary(err error) bool {
 	return err != nil && strings.HasPrefix(err.Error(), "apply: ") && strings.Contains(err.Error(), " task(s) failed")
-}
-
-func (r *Runner) emitError(err error) {
-	if r.config.Renderer != nil {
-		r.config.Renderer.Emit(output.ErrorEvent{Message: err.Error()})
-	}
 }
 
 // emitTargetStart emits a target-level start event.
@@ -192,18 +182,6 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 		Target:    targetName,
 		Outcome:   outcome,
 		ElapsedMs: elapsedMs,
-	})
-}
-
-func (r *Runner) emitTaskStart(pt *PlanTask) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskStartEvent{
-		TaskID:     pt.ID,
-		TaskName:   pt.Name,
-		ActionPath: pt.ActionPath,
-		Target:     r.targetName(),
 	})
 }
 

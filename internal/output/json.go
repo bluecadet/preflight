@@ -79,9 +79,6 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.Type = EventRunStart
 		je.Mode, je.PlayName, je.PlaybookPath = e.Mode, e.PlaybookName, e.PlaybookPath
 		je.Targets = e.Targets
-	case PlayStartEvent:
-		je.Type = EventPlayStart
-		je.PlayName = e.PlayName
 	case TargetStartEvent:
 		je.Type = EventTargetStart
 		je.Target = e.Target
@@ -107,26 +104,12 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
 	case RunSummaryEvent:
 		je.Type = EventRunSummary
-	case TaskStartEvent:
-		je.Type = EventTaskStart
-		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
 	case TaskOutputEvent:
 		je.Type = EventTaskOutput
 		je.TaskID, je.Task, je.Target, je.Lines = e.TaskID, e.TaskName, e.Target, e.Lines
-	case TaskResultEvent:
-		je.Type = EventTaskResult
-		je.TaskID, je.Task, je.Target, je.Status, je.Message, je.Output = e.TaskID, e.TaskName, e.Target, e.Status, e.Message, e.Output
-	case PlayEndEvent:
-		je.Type = EventPlayEnd
-		je.Target = e.Target
-		okCount, changedCount, failedCount, skippedCount := e.OKCount, e.ChangedCount, e.FailedCount, e.SkippedCount
-		je.OKCount, je.ChangedCount, je.FailedCount, je.SkippedCount = &okCount, &changedCount, &failedCount, &skippedCount
 	case WarningEvent:
 		je.Type = EventWarning
 		je.Message = e.Message
-	case ErrorEvent:
-		je.Type = EventError
-		je.Error = e.Message
 	case ActivityStartEvent:
 		je.Type = EventActivityStart
 		je.Target, je.Message = e.Target, e.Message

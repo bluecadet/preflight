@@ -1,6 +1,0 @@
-↳ Fetched Actions
-──────────────────────────────────────────
-  REF                       SHA
-  ────────────────────────  ──────
-  github.com/acme/root@v1   abc123
-  github.com/acme/child@v2  def456

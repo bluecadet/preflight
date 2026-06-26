@@ -13,7 +13,7 @@ import (
 // logLevel returns the log level string for an event.
 func logLevel(event Event) string {
 	switch event.(type) {
-	case ErrorEvent, TaskFailedEvent, DiagnosticEvent:
+	case TaskFailedEvent, DiagnosticEvent:
 		return "error"
 	case WarningEvent:
 		return "warn"
@@ -62,13 +62,7 @@ func runLogMsg(event Event) string {
 		return e.Summary
 	case RunSummaryEvent:
 		return e.Status
-	case TaskResultEvent:
-		return fmt.Sprintf("%s %s (legacy)", e.TaskName, e.Status)
-	case PlayEndEvent:
-		return fmt.Sprintf("play recap: %d ok, %d changed, %d failed, %d skipped", e.OKCount, e.ChangedCount, e.FailedCount, e.SkippedCount)
 	case WarningEvent:
-		return e.Message
-	case ErrorEvent:
 		return e.Message
 	case ActivityStartEvent:
 		return e.Message
@@ -196,14 +190,8 @@ func (s *RunLogSink) extractIDs(event Event) (string, string) {
 		return e.Target, e.TaskID
 	case DiagnosticEvent:
 		return e.Target, e.TaskID
-	case TaskStartEvent:
-		return e.Target, e.TaskID
 	case TaskOutputEvent:
 		return e.Target, e.TaskID
-	case TaskResultEvent:
-		return e.Target, e.TaskID
-	case PlayEndEvent:
-		return e.Target, ""
 	case ActivityStartEvent:
 		return e.Target, ""
 	case ActivityResultEvent:
@@ -244,20 +232,10 @@ func (s *RunLogSink) eventType(event Event) string {
 		return "diagnostic"
 	case RunSummaryEvent:
 		return "run_summary"
-	case PlayStartEvent:
-		return "play_start"
-	case TaskStartEvent:
-		return "task_start"
 	case TaskOutputEvent:
 		return "task_output"
-	case TaskResultEvent:
-		return "task_result"
-	case PlayEndEvent:
-		return "play_end"
 	case WarningEvent:
 		return "warning"
-	case ErrorEvent:
-		return "error"
 	case ActivityStartEvent:
 		return "activity_start"
 	case ActivityResultEvent:
@@ -385,30 +363,10 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 			"skipped": e.SkippedCount,
 		}
 		m["elapsed_ms"] = e.ElapsedMs
-	case TaskStartEvent:
-		m["task_id"] = e.TaskID
-		m["task"] = e.TaskName
 	case TaskOutputEvent:
 		m["lines"] = e.Lines
-	case TaskResultEvent:
-		m["task_id"] = e.TaskID
-		m["task"] = e.TaskName
-		m["status"] = e.Status
-		if e.Message != "" {
-			m["message"] = e.Message
-		}
-		if len(e.Output) > 0 {
-			m["output"] = e.Output
-		}
-	case PlayEndEvent:
-		m["ok_count"] = e.OKCount
-		m["changed_count"] = e.ChangedCount
-		m["failed_count"] = e.FailedCount
-		m["skipped_count"] = e.SkippedCount
 	case WarningEvent:
 		m["message"] = e.Message
-	case ErrorEvent:
-		m["error"] = e.Message
 	case ActivityStartEvent:
 		m["message"] = e.Message
 	case ActivityResultEvent:

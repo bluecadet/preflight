@@ -6,13 +6,8 @@ type EventType string
 const (
 	EventVersion        EventType = "version"
 	EventRunStart       EventType = "run_start"
-	EventPlayStart      EventType = "play_start"
-	EventTaskStart      EventType = "task_start"
 	EventTaskOutput     EventType = "task_output"
-	EventTaskResult     EventType = "task_result"
-	EventPlayEnd        EventType = "play_end"
 	EventWarning        EventType = "warning"
-	EventError          EventType = "error"
 	EventFacts          EventType = "facts"
 	EventPlan           EventType = "plan"
 	EventState          EventType = "state"
@@ -57,16 +52,6 @@ type RunStartEvent struct {
 	SkipTags     []string
 }
 
-// PlayStartEvent signals the start of a play (legacy, use RunStartEvent instead).
-type PlayStartEvent struct{ PlayName string }
-
-type TaskStartEvent struct {
-	TaskName   string
-	TaskID     string
-	ActionPath string
-	Target     string
-}
-
 type TaskOutputEvent struct {
 	TaskName string
 	TaskID   string
@@ -74,28 +59,7 @@ type TaskOutputEvent struct {
 	Lines    []string
 }
 
-type TaskResultEvent struct {
-	TaskName   string
-	TaskID     string
-	ActionPath string
-	Target     string
-	Status     string
-	Message    string
-	Output     []string
-}
-
-// PlayEndEvent is the legacy per-target completion event.
-type PlayEndEvent struct {
-	Target       string
-	OKCount      int
-	ChangedCount int
-	FailedCount  int
-	SkippedCount int
-}
-
 type WarningEvent struct{ Message string }
-
-type ErrorEvent struct{ Message string }
 
 type ActivityStartEvent struct {
 	Target  string
@@ -228,8 +192,7 @@ type SecretListEvent struct {
 	Entries []SecretListEntry
 }
 
-func (RunStartEvent) isEvent()  {}
-func (PlayStartEvent) isEvent() {}
+func (RunStartEvent) isEvent() {}
 
 // TargetStartEvent signals the start of work on a single target.
 type TargetStartEvent struct {
@@ -331,12 +294,8 @@ func (TaskSkippedEvent) isEvent()    {}
 func (TaskFailedEvent) isEvent()     {}
 func (DiagnosticEvent) isEvent()     {}
 func (RunSummaryEvent) isEvent()     {}
-func (TaskStartEvent) isEvent()      {}
 func (TaskOutputEvent) isEvent()     {}
-func (TaskResultEvent) isEvent()     {}
-func (PlayEndEvent) isEvent()        {}
 func (WarningEvent) isEvent()        {}
-func (ErrorEvent) isEvent()          {}
 func (ActivityStartEvent) isEvent()  {}
 func (ActivityResultEvent) isEvent() {}
 func (FactsEvent) isEvent()          {}

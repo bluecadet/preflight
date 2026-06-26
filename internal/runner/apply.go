@@ -125,16 +125,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			}
 		}
 
-		if r.config.Renderer != nil {
-			r.config.Renderer.Emit(output.PlayEndEvent{
-				Target:       r.targetName(),
-				OKCount:      okCount,
-				ChangedCount: changedCount,
-				FailedCount:  failedCount,
-				SkippedCount: skippedCount,
-			})
-		}
-
 		if failedCount > 0 {
 			return fmt.Errorf("apply: %d task(s) failed", failedCount)
 		}
@@ -149,7 +139,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Tag filtering.
 		if !r.taskMatchesTags(pt) {
 			r.emitNewTaskSkipped(pt, "tag-filtered")
-			r.emitTaskResult(pt, target.StatusSkipped, "tag-filtered", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil))
 			skippedCount++
 			continue
@@ -169,7 +158,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if depFailed && !pt.IgnoreErrors {
 			r.emitNewTaskSkipped(pt, "dependency-failed")
-			r.emitTaskResult(pt, target.StatusSkipped, "dependency-failed", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil))
 			skippedCount++
 			continue
@@ -183,7 +171,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		}
 		if !whenOK {
 			r.emitNewTaskSkipped(pt, "when-condition-false")
-			r.emitTaskResult(pt, target.StatusSkipped, "when-condition-false", nil)
 			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
 			skippedCount++
 			continue
@@ -207,7 +194,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		// Execute the task against the target.
 		slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
 		r.emitNewTaskStarted(pt)
-		r.emitTaskStart(pt)
 		taskStartTime := time.Now()
 		var onOutput target.OutputFunc
 		if r.config.Renderer != nil {
@@ -226,7 +212,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			if !pt.IgnoreErrors {
 				r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
 				r.emitDiagnostic(pt, execErr.Error(), "", pt.Module)
-				r.emitTaskResult(pt, target.StatusFailed, execErr.Error(), result.Output)
 				state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
 				failedCount++
 				failed[pt.ID] = true
@@ -248,8 +233,6 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		case target.StatusSkipped:
 			r.emitNewTaskSkipped(pt, result.Message)
 		}
-		r.emitTaskResult(pt, result.Status, result.Message, result.Output)
-
 		switch result.Status {
 		case target.StatusOK:
 			okCount++
@@ -293,22 +276,6 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	}
 
 	return true
-}
-
-// emitTaskResult emits a task_result event to the renderer.
-func (r *Runner) emitTaskResult(pt *PlanTask, status target.Status, message string, taskOutput []string) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskResultEvent{
-		TaskID:     pt.ID,
-		TaskName:   pt.Name,
-		ActionPath: pt.ActionPath,
-		Target:     r.targetName(),
-		Status:     string(status),
-		Message:    message,
-		Output:     taskOutput,
-	})
 }
 
 func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {

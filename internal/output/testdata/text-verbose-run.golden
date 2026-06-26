@@ -7,3 +7,7 @@ target: kiosk-01
     Setting HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\
     AutoAdminLogon
 ~ configure autologin                                                       0.0s
+
+Recap
+✓ Apply complete
+  tasks: 0 ok, 1 changed, 0 skipped, 0 failed

@@ -37,69 +37,6 @@ func TestNewTUIRenderer_NoPanel(t *testing.T) {
 	}
 }
 
-func TestTUIRenderer_PlayStartTaskResultPlayEnd(t *testing.T) {
-	var buf bytes.Buffer
-	r := NewTUIRenderer(&buf)
-
-	r.Emit(PlayStartEvent{PlayName: "test-play"})
-	r.Emit(TaskResultEvent{
-		TaskName: "Configure firewall",
-		Target:   "test-host",
-		Status:   "ok",
-	})
-	r.Emit(PlayEndEvent{
-		Target:       "test-host",
-		OKCount:      1,
-		ChangedCount: 0,
-		FailedCount:  0,
-		SkippedCount: 0,
-	})
-
-	done := make(chan struct{})
-	go func() {
-		r.Close()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Error("TUIRenderer.Close() timed out after play_start+task_result+play_end")
-	}
-}
-
-func TestTUIRenderer_MultipleStatuses(t *testing.T) {
-	var buf bytes.Buffer
-	r := NewTUIRenderer(&buf)
-
-	statuses := []string{"ok", "changed", "failed", "skipped"}
-	for i, s := range statuses {
-		r.Emit(TaskResultEvent{
-			TaskName: "task-" + s,
-			Target:   "host",
-			Status:   s,
-		})
-		_ = i
-	}
-	r.Emit(PlayEndEvent{
-		Target:       "host",
-		OKCount:      1,
-		ChangedCount: 1,
-		FailedCount:  1,
-		SkippedCount: 1,
-	})
-
-	done := make(chan struct{})
-	go func() {
-		r.Close()
-		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Error("TUIRenderer.Close() timed out")
-	}
-}
-
 func TestAutoDetect_NonTTY(t *testing.T) {
 	var buf bytes.Buffer
 	f := AutoDetect(&buf)
@@ -109,7 +46,6 @@ func TestAutoDetect_NonTTY(t *testing.T) {
 }
 
 func TestAutoDetect_AnotherNonTTY(t *testing.T) {
-	// Any non-os.Stdout writer that is not a TTY should return FormatText.
 	w := &bytes.Buffer{}
 	got := AutoDetect(w)
 	if got != FormatText {
@@ -117,24 +53,27 @@ func TestAutoDetect_AnotherNonTTY(t *testing.T) {
 	}
 }
 
-func TestTUIModel_ApplyEvent_PlayStart(t *testing.T) {
+func TestTUIModel_ApplyEvent_RunStart(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
-	m, _ = m.applyEvent(PlayStartEvent{PlayName: "my-play"})
+	m, _ = m.applyEvent(RunStartEvent{
+		PlaybookName: "my-play",
+		Targets:      []string{"host-a"},
+	})
 	if m.playName != "my-play" {
 		t.Errorf("expected playName=my-play, got %q", m.playName)
 	}
 }
 
-func TestTUIModel_ApplyEvent_TaskResult(t *testing.T) {
+func TestTUIModel_ApplyEvent_TaskOK(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m, _ = m.applyEvent(TaskResultEvent{
+	m, _ = m.applyEvent(TaskOKEvent{
 		TaskName: "do-thing",
 		Target:   "host-a",
 		TaskID:   "task-1",
-		Status:   "ok",
+		ElapsedMs: 100,
 	})
 
 	if m.okCount != 1 {
@@ -145,37 +84,11 @@ func TestTUIModel_ApplyEvent_TaskResult(t *testing.T) {
 	}
 }
 
-func TestTUIModel_ApplyEvent_PlayEnd(t *testing.T) {
-	events := make(chan Event, 1)
-	m := newTUIModel(events)
-
-	m, _ = m.applyEvent(PlayEndEvent{
-		Target:       "host-a",
-		OKCount:      3,
-		ChangedCount: 2,
-		FailedCount:  1,
-		SkippedCount: 0,
-	})
-
-	if len(m.recaps) != 1 {
-		t.Fatalf("expected 1 recap, got %d", len(m.recaps))
-	}
-	if m.recaps[0].ok != 3 {
-		t.Errorf("expected recap.ok=3, got %d", m.recaps[0].ok)
-	}
-	if m.recaps[0].changed != 2 {
-		t.Errorf("expected recap.changed=2, got %d", m.recaps[0].changed)
-	}
-	if m.recaps[0].failed != 1 {
-		t.Errorf("expected recap.failed=1, got %d", m.recaps[0].failed)
-	}
-}
-
 func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 
-	m, _ = m.applyEvent(TaskStartEvent{
+	m, _ = m.applyEvent(TaskStartedEvent{
 		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "stream logs",
@@ -201,42 +114,21 @@ func TestTUIModel_TaskOutputKeepsLastThreeLines(t *testing.T) {
 	}
 }
 
-func TestTUIModel_VerboseCommitsOutputForSuccessfulTasks(t *testing.T) {
-	events := make(chan Event, 1)
-	m := newTUIModelWithOptions(events, Options{Verbose: true})
-	m, _ = m.applyEvent(TaskStartEvent{
-		Target:   "host-a",
-		TaskID:   "task-1",
-		TaskName: "stream logs",
-	})
-
-	_, cmd := m.applyEvent(TaskResultEvent{
-		Target:   "host-a",
-		TaskID:   "task-1",
-		TaskName: "stream logs",
-		Status:   "changed",
-		Output:   []string{"line1"},
-	})
-	if cmd == nil {
-		t.Fatal("expected verbose TUI to emit a committed output block")
-	}
-}
-
 func TestTUIModel_WrapsLongCommittedFailureOutput(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)
 	m.width = 48
-	m, _ = m.applyEvent(TaskResultEvent{
+	m, _ = m.applyEvent(TaskStartedEvent{
 		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
-		Status:   "failed",
-		Message:  strings.Repeat("failure-message ", 6),
-		Output:   []string{strings.Repeat("verbose-output ", 6)},
 	})
-	m, _ = m.applyEvent(PlayEndEvent{
+	m, _ = m.applyEvent(TaskFailedEvent{
 		Target:      "host-a",
-		FailedCount: 1,
+		TaskID:      "task-1",
+		TaskName:    "Run smoke test",
+		FailMessage: strings.Repeat("failure-message ", 6),
+		Output:      []string{strings.Repeat("verbose-output ", 6)},
 	})
 	m.done = true
 
@@ -289,5 +181,101 @@ func TestTUIModel_FactsPrintsAfterActivityCompletes(t *testing.T) {
 	}
 	if !strings.Contains(blocks[0], "remote-host") {
 		t.Fatalf("expected printed facts for remote host, got %q", blocks[0])
+	}
+}
+
+func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTUIRenderer(&buf)
+
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test-play",
+		Targets:      []string{"test-host"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "test-host",
+		TaskID:   "t1",
+		TaskName: "Configure firewall",
+	})
+	r.Emit(TaskOKEvent{
+		Target:   "test-host",
+		TaskID:   "t1",
+		TaskName: "Configure firewall",
+	})
+	r.Emit(RunSummaryEvent{
+		Status:        "success",
+		OKCount:       1,
+		ElapsedMs:     100,
+		TargetTallies: TargetCounts{OK: 1},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		r.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("TUIRenderer.Close() timed out after run_start+task_ok")
+	}
+}
+
+func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
+	var buf bytes.Buffer
+	r := NewTUIRenderer(&buf)
+
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test-play",
+		Targets:      []string{"host"},
+	})
+
+	statuses := []struct{ id, name, status string }{
+		{"t1", "task-ok", "ok"},
+		{"t2", "task-changed", "changed"},
+		{"t3", "task-failed", "failed"},
+		{"t4", "task-skipped", "skipped"},
+	}
+	for _, s := range statuses {
+		r.Emit(TaskStartedEvent{
+			Target:   "host",
+			TaskID:   s.id,
+			TaskName: s.name,
+		})
+		switch s.status {
+		case "ok":
+			r.Emit(TaskOKEvent{Target: "host", TaskID: s.id, TaskName: s.name})
+		case "changed":
+			r.Emit(TaskChangedEvent{Target: "host", TaskID: s.id, TaskName: s.name})
+		case "failed":
+			r.Emit(TaskFailedEvent{Target: "host", TaskID: s.id, TaskName: s.name, FailMessage: "error"})
+		case "skipped":
+			r.Emit(TaskSkippedEvent{Target: "host", TaskID: s.id, TaskName: s.name, Reason: "filtered"})
+		}
+	}
+
+	r.Emit(RunSummaryEvent{
+		Status:        "failed",
+		OKCount:       1,
+		ChangedCount:  1,
+		FailedCount:   1,
+		SkippedCount:  1,
+		ElapsedMs:     500,
+		TargetTallies: TargetCounts{Failed: 1},
+	})
+
+	done := make(chan struct{})
+	go func() {
+		r.Close()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("TUIRenderer.Close() timed out")
 	}
 }

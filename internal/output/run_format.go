@@ -147,7 +147,7 @@ func padLine(left, right string, width int) string {
 func indentWrapped(indent int, message string) []string {
 	prefix := strings.Repeat(" ", indent)
 	width := lineWidth - indent
-	wrapped := wrapTextLine(message, width)
+	wrapped := wrapFactValue(message, width)
 	lines := make([]string, 0, len(wrapped))
 	for _, line := range wrapped {
 		lines = append(lines, prefix+line)
@@ -158,7 +158,7 @@ func indentWrapped(indent int, message string) []string {
 func outputBlockLines(lines []string, indent int) []string {
 	var out []string
 	for _, line := range lines {
-		for _, wrapped := range wrapTextLine(line, lineWidth-indent) {
+		for _, wrapped := range wrapFactValue(line, lineWidth-indent) {
 			out = append(out, strings.Repeat(" ", indent)+wrapped)
 		}
 	}
@@ -172,7 +172,7 @@ func limitFailureOutput(limit int, lines []string) []string {
 	return lines[len(lines)-limit:]
 }
 
-func recapTotals(recaps []hostRecap) outcomeTotals {
+func recapTotals(recaps []struct{ ok, changed, failed, skipped int }) outcomeTotals {
 	var totals outcomeTotals
 	for _, recap := range recaps {
 		totals.ok += recap.ok
@@ -181,16 +181,6 @@ func recapTotals(recaps []hostRecap) outcomeTotals {
 		totals.skipped += recap.skipped
 	}
 	return totals
-}
-
-func failedTargetCount(recaps []hostRecap) int {
-	count := 0
-	for _, recap := range recaps {
-		if recap.failed > 0 {
-			count++
-		}
-	}
-	return count
 }
 
 func renderTaskTotals(t outcomeTotals, checkMode bool, warnings int) string {

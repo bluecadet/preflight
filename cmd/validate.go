@@ -72,7 +72,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 
 	if len(errs) > 0 {
 		for _, e := range errs {
-			renderer.Emit(output.ErrorEvent{Message: e.Error()})
+			renderer.Emit(output.WarningEvent{Message: e.Error()})
 		}
 		renderer.Emit(output.ValidationEvent{
 			PlaybookPath:    playbookPath,

@@ -11,26 +11,33 @@ import (
 // emit helpers
 
 func playStart(r output.Renderer, name string) {
-	r.Emit(output.PlayStartEvent{PlayName: name})
+	r.Emit(output.RunStartEvent{
+		PlaybookName: name,
+		Targets:      []string{"exhibit-pc-01"},
+	})
 }
 
 func taskStart(r output.Renderer, host, id, name string) {
-	r.Emit(output.TaskStartEvent{Target: host, TaskID: id, TaskName: name})
+	r.Emit(output.TaskStartedEvent{Target: host, TaskID: id, TaskName: name, Module: "command", ActionPath: ""})
 }
 
 func taskDone(r output.Renderer, host, id, name, status, msg string) {
-	taskDoneWithOutput(r, host, id, name, status, msg, nil)
+	taskDoneWithOutput(r, host, id, name, status, msg, nil, nil)
 }
 
-func taskDoneWithOutput(r output.Renderer, host, id, name, status, msg string, outputLines []string) {
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   id,
-		TaskName: name,
-		Status:   status,
-		Message:  msg,
-		Output:   outputLines,
-	})
+func taskDoneWithOutput(r output.Renderer, host, id, name, status, msg string, outputLines, liveLines []string) {
+	switch status {
+	case "ok":
+		r.Emit(output.TaskOKEvent{Target: host, TaskID: id, TaskName: name, ElapsedMs: 100})
+	case "changed":
+		r.Emit(output.TaskChangedEvent{Target: host, TaskID: id, TaskName: name, ElapsedMs: 100})
+	case "failed":
+		r.Emit(output.TaskFailedEvent{Target: host, TaskID: id, TaskName: name, ElapsedMs: 100, FailMessage: msg, Output: outputLines})
+	case "skipped":
+		r.Emit(output.TaskSkippedEvent{Target: host, TaskID: id, TaskName: name, Reason: msg})
+	default:
+		r.Emit(output.TaskOKEvent{Target: host, TaskID: id, TaskName: name, ElapsedMs: 100})
+	}
 }
 
 func taskOutput(r output.Renderer, host, id, name string, lines ...string) {
@@ -43,12 +50,18 @@ func taskOutput(r output.Renderer, host, id, name string, lines ...string) {
 }
 
 func playEnd(r output.Renderer, host string, ok, changed, failed, skipped int) {
-	r.Emit(output.PlayEndEvent{
+	outcome := "ok"
+	if failed > 0 {
+		outcome = "failed"
+	}
+	r.Emit(output.TargetCompleteEvent{
 		Target:       host,
+		Outcome:      outcome,
 		OKCount:      ok,
 		ChangedCount: changed,
 		FailedCount:  failed,
 		SkippedCount: skipped,
+		ElapsedMs:    1000,
 	})
 }
 
@@ -73,7 +86,7 @@ func runStreamingTask(r output.Renderer, host, id, name, status, msg string, liv
 	if outputLines == nil {
 		outputLines = append([]string(nil), liveLines...)
 	}
-	taskDoneWithOutput(r, host, id, name, status, msg, outputLines)
+	taskDoneWithOutput(r, host, id, name, status, msg, outputLines, liveLines)
 }
 
 // jitter returns delay scaled by a random factor in [low, high].
@@ -160,22 +173,8 @@ func runFailures(r output.Renderer, delay time.Duration) {
 	}, delay*2)
 
 	// dependent tasks get skipped
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   "start-service",
-		TaskName: "Start service",
-		Status:   "skipped",
-		Message:  "dependency-failed",
-	})
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   "smoke-test",
-		TaskName: "Smoke test",
-		Status:   "skipped",
-		Message:  "dependency-failed",
-	})
-
-	r.Emit(output.ErrorEvent{Message: "play aborted: 1 task failed"})
+	taskDone(r, host, "start-service", "Start service", "skipped", "dependency-failed")
+	taskDone(r, host, "smoke-test", "Smoke test", "skipped", "dependency-failed")
 
 	playEnd(r, host, 1, 1, 1, 2)
 }
@@ -238,30 +237,12 @@ func runSkipped(r output.Renderer, delay time.Duration) {
 
 	runTask(r, host, "check-os", "Check OS version", "ok", "", delay/2)
 
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   "install-directx",
-		TaskName: "Install DirectX",
-		Status:   "skipped",
-		Message:  "when-condition-false",
-	})
+	taskDone(r, host, "install-directx", "Install DirectX", "skipped", "when-condition-false")
 
 	runTask(r, host, "install-codec", "Install codec pack", "changed", "", delay)
 
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   "enable-gpu-debug",
-		TaskName: "Enable GPU debug layer",
-		Status:   "skipped",
-		Message:  "tag-filtered",
-	})
-	r.Emit(output.TaskResultEvent{
-		Target:   host,
-		TaskID:   "install-pix",
-		TaskName: "Install PIX profiler",
-		Status:   "skipped",
-		Message:  "tag-filtered",
-	})
+	taskDone(r, host, "enable-gpu-debug", "Enable GPU debug layer", "skipped", "tag-filtered")
+	taskDone(r, host, "install-pix", "Install PIX profiler", "skipped", "tag-filtered")
 
 	runTask(r, host, "configure-output", "Configure display output", "ok", "", delay)
 

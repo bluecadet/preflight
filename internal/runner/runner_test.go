@@ -1020,7 +1020,7 @@ func TestApplyStdlibWindowsMachineSkipsOptionalTasksWhenInputsOmitted(t *testing
 	}
 }
 
-func TestApplyEmitsTaskResultEvents(t *testing.T) {
+func TestApplyEmitsNewTaskEvents(t *testing.T) {
 	mt := &mockTarget{
 		results: []target.Result{{Status: target.StatusOK}},
 	}
@@ -1038,20 +1038,20 @@ func TestApplyEmitsTaskResultEvents(t *testing.T) {
 		t.Fatalf("Apply error: %v", err)
 	}
 
-	var taskResults, playEnds int
+	var taskOKs, taskStarted int
 	for _, e := range rec.events {
 		switch e.(type) {
-		case output.TaskResultEvent:
-			taskResults++
-		case output.PlayEndEvent:
-			playEnds++
+		case output.TaskOKEvent:
+			taskOKs++
+		case output.TaskStartedEvent:
+			taskStarted++
 		}
 	}
-	if taskResults != 1 {
-		t.Errorf("expected 1 task_result event, got %d", taskResults)
+	if taskOKs != 1 {
+		t.Errorf("expected 1 task_ok event, got %d", taskOKs)
 	}
-	if playEnds != 1 {
-		t.Errorf("expected 1 play_end event, got %d", playEnds)
+	if taskStarted != 1 {
+		t.Errorf("expected 1 task_started event, got %d", taskStarted)
 	}
 }
 

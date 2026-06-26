@@ -134,7 +134,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		SkipTags:     skipTags,
 	})
 	if err := runner.New(nil, session.Chain, runner.Config{}).Fetch(ctx, session.Playbook); err != nil {
-		bus.Emit(output.ErrorEvent{Message: fmt.Sprintf("fetch phase failed: %v", err)})
+		bus.Emit(output.WarningEvent{Message: fmt.Sprintf("fetch phase failed: %v", err)})
 		return err
 	}
 

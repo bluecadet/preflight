@@ -10,3 +10,10 @@ x install .NET runtime                                                      0.0s
     DISM.exe /Online /Add-Capability
     Error: source files not found
 x app-01 — failed (see above)
+
+Recap
+x Apply failed
+  tasks: 0 ok, 0 changed, 0 skipped, 1 failed
+
+Needs attention
+  [app-01] install .NET runtime

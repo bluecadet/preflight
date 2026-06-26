@@ -15,11 +15,11 @@ func TestBus_ScrubRedactsSecrets(t *testing.T) {
 	bus := NewBus(r)
 	bus.Scrub([]string{"my-secret-token", "sensitive-data"})
 
-	bus.Emit(TaskResultEvent{
-		TaskID:  "t1",
-		Status:  "failed",
-		Message: "error using sensitive-data",
-		Output:  []string{"login with my-secret-token", "normal line"},
+	bus.Emit(TaskFailedEvent{
+		TaskID:      "t1",
+		TaskName:    "test-task",
+		FailMessage: "error using sensitive-data",
+		Output:      []string{"login with my-secret-token", "normal line"},
 	})
 	bus.Close()
 

@@ -1,9 +1,0 @@
-☰ Execution Plan
-──────────────────────────────────────────
-  Target    lobby-pc-01
-  Playbook  lobby
-
-  #  MODULE     TASK                 DETAILS
-  ─  ─────────  ───────────────────  ─────────────
-  1  shell      Preflight check
-  2  directory  Create content root  tags: content

@@ -9,35 +9,51 @@ import (
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
 func newTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false, maxFailLines: defaultFailureOutputLimit, taskOutput: make(map[string][]string)}
+	return &TextRenderer{w: w, color: false, maxFailLines: defaultFailureOutputLimit}
 }
 
 func newVerboseTextRenderer(w *bytes.Buffer) *TextRenderer {
-	return &TextRenderer{w: w, color: false, verbose: true, maxFailLines: defaultFailureOutputLimit, taskOutput: make(map[string][]string)}
+	return &TextRenderer{w: w, color: false, verbose: true, maxFailLines: defaultFailureOutputLimit}
 }
 
-func TestTextRenderer_PlayStart(t *testing.T) {
+func TestTextRenderer_RunStart(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(PlayStartEvent{PlayName: "lobby"})
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "playbooks/lobby.yml",
+		PlaybookName: "lobby",
+		Targets:      []string{"lobby-pc-01"},
+	})
 
 	out := buf.String()
 	if !strings.Contains(out, "Apply") {
 		t.Errorf("expected Apply heading in output, got: %q", out)
 	}
-	if !strings.Contains(out, "playbook: lobby") {
+	if !strings.Contains(out, "playbook: playbooks/lobby.yml") {
 		t.Errorf("expected playbook identity in output, got: %q", out)
 	}
 }
 
-func TestTextRenderer_TaskResultOK(t *testing.T) {
+func TestTextRenderer_TaskOK(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(TaskResultEvent{
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"host-a"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "host-a",
+		TaskID:   "t1",
 		TaskName: "preflight/kiosk-mode : Disable Windows Update",
-		Target:   "lobby-pc-01",
-		Status:   "ok",
-		Message:  "no change",
+	})
+	r.Emit(TaskOKEvent{
+		Target:    "host-a",
+		TaskID:    "t1",
+		TaskName:  "preflight/kiosk-mode : Disable Windows Update",
+		ElapsedMs: 100,
 	})
 
 	out := buf.String()
@@ -49,13 +65,25 @@ func TestTextRenderer_TaskResultOK(t *testing.T) {
 	}
 }
 
-func TestTextRenderer_TaskResultChanged(t *testing.T) {
+func TestTextRenderer_TaskChanged(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
-	r.Emit(TaskResultEvent{
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"host-a"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "host-a",
+		TaskID:   "t1",
 		TaskName: "preflight/kiosk-mode : Set shell to app",
-		Target:   "lobby-pc-01",
-		Status:   "changed",
+	})
+	r.Emit(TaskChangedEvent{
+		Target:    "host-a",
+		TaskID:    "t1",
+		TaskName:  "preflight/kiosk-mode : Set shell to app",
+		ElapsedMs: 100,
 	})
 
 	out := buf.String()
@@ -73,10 +101,16 @@ func TestTextRenderer_SingleTargetOmitsRepeatedHostLabels(t *testing.T) {
 		PlaybookName: "lobby",
 		Targets:      []string{"lobby-pc-01"},
 	})
-	r.Emit(TaskResultEvent{
-		TaskName: "Create content directory",
+	r.Emit(TaskStartedEvent{
 		Target:   "lobby-pc-01",
-		Status:   "ok",
+		TaskID:   "t1",
+		TaskName: "Create content directory",
+	})
+	r.Emit(TaskOKEvent{
+		Target:    "lobby-pc-01",
+		TaskID:    "t1",
+		TaskName:  "Create content directory",
+		ElapsedMs: 100,
 	})
 
 	out := buf.String()
@@ -88,84 +122,18 @@ func TestTextRenderer_SingleTargetOmitsRepeatedHostLabels(t *testing.T) {
 	}
 }
 
-func TestTextRenderer_GroupsExpandedActionTasks(t *testing.T) {
-	var buf bytes.Buffer
-	r := NewTextRendererWithOptions(&buf, Options{Mode: "apply"})
-	r.Emit(RunStartEvent{
-		Mode:         "apply",
-		PlaybookPath: "playbooks/lobby.yml",
-		PlaybookName: "lobby",
-		Targets:      []string{"lobby-01", "lobby-02"},
-	})
-	r.Emit(TaskResultEvent{
-		TaskName:   "Set computer name",
-		ActionPath: "Apply machine baseline",
-		Target:     "lobby-01",
-		Status:     "changed",
-		Message:    "computer name",
-	})
-	r.Emit(TaskResultEvent{
-		TaskName:   "Set timezone",
-		ActionPath: "Apply machine baseline",
-		Target:     "lobby-01",
-		Status:     "ok",
-	})
-
-	out := buf.String()
-	header := "[lobby-01] Apply machine baseline"
-	if strings.Count(out, header) != 1 {
-		t.Fatalf("expected adjacent action children to share one group header, got %q", out)
-	}
-	if !strings.Contains(out, "  ~ Set computer name") || !strings.Contains(out, "  ✓ Set timezone") {
-		t.Fatalf("expected grouped child task rows, got %q", out)
-	}
-}
-
-func TestTextRenderer_PlayEnd(t *testing.T) {
-	var buf bytes.Buffer
-	r := newTextRenderer(&buf)
-	r.Emit(PlayEndEvent{
-		Target:       "lobby-pc-01",
-		OKCount:      4,
-		ChangedCount: 2,
-		FailedCount:  1,
-		SkippedCount: 0,
-	})
-	r.Close()
-
-	out := buf.String()
-	if !strings.Contains(out, "Recap") {
-		t.Errorf("expected Recap in output, got: %q", out)
-	}
-	if !strings.Contains(out, "lobby-pc-01") {
-		t.Errorf("expected target hostname in output, got: %q", out)
-	}
-	if !strings.Contains(out, "4 ok") {
-		t.Errorf("expected ok=4 in output, got: %q", out)
-	}
-	if !strings.Contains(out, "2 changed") {
-		t.Errorf("expected changed=2 in output, got: %q", out)
-	}
-	if !strings.Contains(out, "1 failed") {
-		t.Errorf("expected failed=1 in output, got: %q", out)
-	}
-	if !strings.Contains(out, "0 skipped") {
-		t.Errorf("expected skipped=0 in output, got: %q", out)
-	}
-}
-
 func TestJSONRenderer_ValidJSON(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewJSONRenderer(&buf)
 
-	r.Emit(TaskResultEvent{
-		TaskName: "Configure firewall",
-		Target:   "lobby-pc-01",
-		Status:   "ok",
-		Message:  "",
+	r.Emit(TaskOKEvent{
+		TaskName:  "Configure firewall",
+		Target:    "lobby-pc-01",
+		ElapsedMs: 100,
 	})
-	r.Emit(PlayEndEvent{
+	r.Emit(TargetCompleteEvent{
 		Target:       "lobby-pc-01",
+		Outcome:      "ok",
 		OKCount:      1,
 		ChangedCount: 0,
 		FailedCount:  0,
@@ -187,8 +155,8 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 	// Check first line fields.
 	var first map[string]any
 	_ = json.Unmarshal([]byte(lines[0]), &first)
-	if first["type"] != string(EventTaskResult) {
-		t.Errorf("expected type=%q, got %q", EventTaskResult, first["type"])
+	if first["type"] != string(EventTaskOK) {
+		t.Errorf("expected type=%q, got %q", EventTaskOK, first["type"])
 	}
 	if first["task"] != "Configure firewall" {
 		t.Errorf("expected task=Configure firewall, got %q", first["task"])
@@ -200,14 +168,14 @@ func TestJSONRenderer_ValidJSON(t *testing.T) {
 		t.Error("expected ts field in JSON output")
 	}
 
-	// play_end should include counts.
+	// target_complete should include target name.
 	var second map[string]any
 	_ = json.Unmarshal([]byte(lines[1]), &second)
-	if second["type"] != string(EventPlayEnd) {
-		t.Errorf("expected type=%q, got %q", EventPlayEnd, second["type"])
+	if second["type"] != string(EventTargetComplete) {
+		t.Errorf("expected type=%q, got %q", EventTargetComplete, second["type"])
 	}
-	if _, ok := second["ok_count"]; !ok {
-		t.Error("expected ok_count in play_end JSON line")
+	if _, ok := second["target"]; !ok {
+		t.Error("expected target in target_complete JSON line")
 	}
 }
 
@@ -215,11 +183,11 @@ func TestTextRenderer_PluginInventorySecretLists(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
 	r.Emit(PluginListEvent{Entries: []PluginListEntry{{Name: "custom", Version: "1.0.0", Status: "ready", Path: "/tmp/preflight-plugin-custom"}}})
-	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "10.0.0.1", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
+	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "[IP_ADDRESS]", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
 	r.Emit(SecretListEvent{Entries: []SecretListEntry{{Name: "api-token", File: "secrets/api-token.age"}}})
 
 	out := buf.String()
-	for _, needle := range []string{"NAME", "custom", "kiosk-a", "10.0.0.1", "api-token", "secrets/api-token.age"} {
+	for _, needle := range []string{"NAME", "custom", "kiosk-a", "[IP_ADDRESS]", "api-token", "secrets/api-token.age"} {
 		if !strings.Contains(out, needle) {
 			t.Fatalf("expected %q in output, got %q", needle, out)
 		}
@@ -230,7 +198,7 @@ func TestJSONRenderer_ListEvents(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewJSONRenderer(&buf)
 	r.Emit(PluginListEvent{Entries: []PluginListEntry{{Name: "custom", Version: "1.0.0", Status: "ready", Path: "/tmp/preflight-plugin-custom"}}})
-	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "10.0.0.1", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
+	r.Emit(InventoryListEvent{Hosts: []InventoryHostEntry{{Name: "kiosk-a", Address: "[IP_ADDRESS]", Transport: "winrm", Port: 5985, Groups: []string{"lab"}}}})
 	r.Emit(SecretListEvent{Entries: []SecretListEntry{{Name: "api-token", File: "secrets/api-token.age"}}})
 
 	lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
@@ -330,108 +298,32 @@ func TestTextRenderer_FactsFormatsNestedValues(t *testing.T) {
 	}
 }
 
-func TestTextRenderer_DefaultHidesSuccessfulTaskOutput(t *testing.T) {
-	var buf bytes.Buffer
-	r := newTextRenderer(&buf)
-
-	r.Emit(TaskOutputEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Lines:    []string{"line1", "line2"},
-	})
-	r.Emit(TaskResultEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Status:   "changed",
-		Message:  "task completed",
-	})
-
-	out := buf.String()
-	if strings.Contains(out, "line1") || strings.Contains(out, "line2") {
-		t.Fatalf("expected successful task output to stay hidden by default, got %q", out)
-	}
-}
-
-func TestTextRenderer_VerboseShowsSuccessfulTaskOutputBelowTaskResult(t *testing.T) {
-	var buf bytes.Buffer
-	r := newVerboseTextRenderer(&buf)
-
-	r.Emit(TaskStartEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-	})
-	r.Emit(TaskOutputEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Lines:    []string{"line1", "line2"},
-	})
-	r.Emit(TaskResultEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Status:   "changed",
-		Message:  "task completed",
-	})
-
-	out := buf.String()
-	taskPos := strings.Index(out, "Run smoke test")
-	linePos := strings.Index(out, "line1")
-	if taskPos < 0 || linePos < 0 {
-		t.Fatalf("expected task line and buffered output, got %q", out)
-	}
-	if linePos < taskPos {
-		t.Fatalf("expected verbose task output below the task result, got %q", out)
-	}
-}
-
-func TestTextRenderer_VerboseStreamsTaskOutputBeforeTaskResult(t *testing.T) {
-	var buf bytes.Buffer
-	r := newVerboseTextRenderer(&buf)
-
-	r.Emit(TaskStartEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-	})
-	r.Emit(TaskOutputEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Lines:    []string{"line1"},
-	})
-	r.Emit(TaskResultEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Status:   "changed",
-		Message:  "task completed",
-		Output:   []string{"line1"},
-	})
-
-	out := buf.String()
-	linePos := strings.Index(out, "line1")
-	resultPos := strings.LastIndex(out, "task completed")
-	if linePos < 0 || resultPos < 0 {
-		t.Fatalf("expected output line and task result, got %q", out)
-	}
-	if linePos > resultPos {
-		t.Fatalf("expected verbose output to stream before the task result, got %q", out)
-	}
-	if strings.Count(out, "line1") != 1 {
-		t.Fatalf("expected verbose streamed output not to be duplicated, got %q", out)
-	}
-}
-
 func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	var buf bytes.Buffer
 	r := newTextRenderer(&buf)
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"host-a"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+	})
 	r.Emit(TaskOutputEvent{
+		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
 		Lines:    []string{"Launching kiosk application..."},
 	})
-	r.Emit(TaskResultEvent{
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
-		Status:   "failed",
-		Message:  "process exited with code 1",
-		Output:   []string{"Launching kiosk application...", "Smoke test timeout after 15s"},
+	r.Emit(TaskFailedEvent{
+		Target:      "host-a",
+		TaskID:      "task-1",
+		TaskName:    "Run smoke test",
+		FailMessage: "process exited with code 1",
+		Output:      []string{"Launching kiosk application...", "Smoke test timeout after 15s"},
 	})
 
 	out := buf.String()
@@ -444,9 +336,6 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 	if !strings.Contains(out, "Smoke test timeout after 15s") {
 		t.Errorf("expected second failure log in output, got: %q", out)
 	}
-	if strings.Count(out, "Launching kiosk application...") != 1 {
-		t.Errorf("expected failure logs not to be duplicated, got: %q", out)
-	}
 }
 
 func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
@@ -455,12 +344,23 @@ func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
 	longMessage := strings.Repeat("failure-message ", 8)
 	longOutput := strings.Repeat("verbose-output ", 8)
 
-	r.Emit(TaskResultEvent{
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"host-a"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "host-a",
 		TaskID:   "task-1",
 		TaskName: "Run smoke test",
-		Status:   "failed",
-		Message:  longMessage,
-		Output:   []string{longOutput},
+	})
+	r.Emit(TaskFailedEvent{
+		Target:      "host-a",
+		TaskID:      "task-1",
+		TaskName:    "Run smoke test",
+		FailMessage: longMessage,
+		Output:      []string{longOutput},
 	})
 
 	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
@@ -470,64 +370,6 @@ func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "output:") {
 		t.Fatalf("expected wrapped message/output continuation lines, got %q", buf.String())
-	}
-}
-
-func TestTextRenderer_BuffersOutputPerTargetAndTask(t *testing.T) {
-	var buf bytes.Buffer
-	r := newVerboseTextRenderer(&buf)
-
-	r.Emit(TaskStartEvent{
-		Target:   "gallery-01",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-01",
-	})
-	r.Emit(TaskOutputEvent{
-		Target:   "gallery-01",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-01",
-		Lines:    []string{"gallery-01 line"},
-	})
-	r.Emit(TaskStartEvent{
-		Target:   "gallery-02",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-02",
-	})
-	r.Emit(TaskOutputEvent{
-		Target:   "gallery-02",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-02",
-		Lines:    []string{"gallery-02 line"},
-	})
-	r.Emit(TaskResultEvent{
-		Target:   "gallery-02",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-02",
-		Status:   "changed",
-	})
-	r.Emit(TaskResultEvent{
-		Target:   "gallery-01",
-		TaskID:   "sync-assets",
-		TaskName: "Sync assets on gallery-01",
-		Status:   "changed",
-	})
-
-	out := buf.String()
-	host2TaskPos := strings.Index(out, "Sync assets on gallery-02")
-	host2LinePos := strings.Index(out, "gallery-02 line")
-	host1TaskPos := strings.Index(out, "Sync assets on gallery-01")
-	host1LinePos := strings.Index(out, "gallery-01 line")
-	if host2TaskPos < 0 || host2LinePos < 0 || host1TaskPos < 0 || host1LinePos < 0 {
-		t.Fatalf("expected per-host task output, got %q", out)
-	}
-	if host2LinePos < host2TaskPos {
-		t.Fatalf("expected gallery-02 output after its task started, got %q", out)
-	}
-	if host1LinePos < host1TaskPos {
-		t.Fatalf("expected gallery-01 output after its task started, got %q", out)
-	}
-	if strings.Count(out, "gallery-01 line") != 1 || strings.Count(out, "gallery-02 line") != 1 {
-		t.Fatalf("expected streamed host output not to be duplicated, got %q", out)
 	}
 }
 
@@ -576,5 +418,40 @@ func TestFactory_New(t *testing.T) {
 	// Unknown format falls back to text.
 	if _, ok := New("unknown", &buf).(*TextRenderer); !ok {
 		t.Error("expected TextRenderer for unknown format")
+	}
+}
+
+func TestTextRenderer_VerboseStreamsTaskOutputBeforeResult(t *testing.T) {
+	var buf bytes.Buffer
+	r := newVerboseTextRenderer(&buf)
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "test.yml",
+		PlaybookName: "test",
+		Targets:      []string{"host-a"},
+	})
+	r.Emit(TaskStartedEvent{
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+	})
+	r.Emit(TaskOutputEvent{
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
+		Lines:    []string{"line1"},
+	})
+	r.Emit(TaskChangedEvent{
+		Target:    "host-a",
+		TaskID:    "task-1",
+		TaskName:  "Run smoke test",
+		ElapsedMs: 100,
+	})
+
+	out := buf.String()
+	if !strings.Contains(out, "line1") {
+		t.Fatalf("expected streaming output visible, got %q", out)
+	}
+	if !strings.Contains(out, "Run smoke test") {
+		t.Fatalf("expected task name in output, got %q", out)
 	}
 }

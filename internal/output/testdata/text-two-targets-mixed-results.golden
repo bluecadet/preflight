@@ -7,3 +7,7 @@ targets: 2
 ✓ sync artifacts                                                          0.0s
 - sync artifacts
   reason: when-condition-false
+
+Recap
+✓ Apply complete
+  tasks: 1 ok, 0 changed, 1 skipped, 0 failed

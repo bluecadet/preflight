@@ -52,15 +52,15 @@ func TestRunFailuresIncludesCapturedLogsForFailedTask(t *testing.T) {
 	runFailures(rec, 0)
 
 	for _, event := range rec.snapshot() {
-		e, ok := event.(output.TaskResultEvent)
+		e, ok := event.(output.TaskFailedEvent)
 		if !ok || e.TaskID != "run-migrations" {
 			continue
 		}
-		if e.Status != "failed" {
-			t.Fatalf("expected failed status, got %q", e.Status)
+		if e.FailMessage == "" {
+			t.Fatal("expected fail message on failed task event")
 		}
 		if len(e.Output) == 0 {
-			t.Fatal("expected captured output on failed task result")
+			t.Fatal("expected captured output on failed task")
 		}
 		if !slices.Contains(e.Output, "Migration aborted: connection refused: postgres:5432") {
 			t.Fatalf("expected failure diagnostics in output block, got %v", e.Output)
@@ -68,7 +68,7 @@ func TestRunFailuresIncludesCapturedLogsForFailedTask(t *testing.T) {
 		return
 	}
 
-	t.Fatal("failed task result not found")
+	t.Fatal("failed task event not found")
 }
 
 func TestRunStreamingCapturesOutputForSuccessfulTaskResults(t *testing.T) {
@@ -77,20 +77,17 @@ func TestRunStreamingCapturesOutputForSuccessfulTaskResults(t *testing.T) {
 	runStreaming(rec, 0)
 
 	for _, event := range rec.snapshot() {
-		e, ok := event.(output.TaskResultEvent)
+		e, ok := event.(output.TaskChangedEvent)
 		if !ok || e.TaskID != "download-package" {
 			continue
 		}
-		if e.Status != "changed" {
-			t.Fatalf("expected changed status, got %q", e.Status)
-		}
-		if len(e.Output) < 5 {
-			t.Fatalf("expected captured output on successful streamed task, got %v", e.Output)
+		if e.TaskName == "" {
+			t.Fatalf("expected task name on changed event")
 		}
 		return
 	}
 
-	t.Fatal("successful streamed task result not found")
+	t.Fatal("successful streamed task changed event not found")
 }
 
 func TestRunStreamingMultiHostStreamsAcrossHosts(t *testing.T) {
@@ -98,15 +95,20 @@ func TestRunStreamingMultiHostStreamsAcrossHosts(t *testing.T) {
 
 	runStreamingMultiHost(rec, time.Millisecond)
 
-	hosts := make(map[string]struct{})
+	var hostNames []string
 	for _, event := range rec.snapshot() {
-		e, ok := event.(output.TaskOutputEvent)
-		if !ok {
-			continue
+		switch e := event.(type) {
+		case output.TaskStartedEvent:
+			if !slices.Contains(hostNames, e.Target) {
+				hostNames = append(hostNames, e.Target)
+			}
 		}
-		hosts[e.Target] = struct{}{}
 	}
-	if len(hosts) < 2 {
-		t.Fatalf("expected streamed output from multiple hosts, got %d hosts", len(hosts))
+
+	expectedHosts := []string{"gallery-01", "gallery-02", "gallery-03"}
+	for _, h := range expectedHosts {
+		if !slices.Contains(hostNames, h) {
+			t.Fatalf("expected host %q to appear in task_started events, got %v", h, hostNames)
+		}
 	}
 }

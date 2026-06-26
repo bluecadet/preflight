@@ -1,9 +1,0 @@
-State diff for playbook: lobby
-Target: lobby-pc-01
-State file: state/targets/lobby-pc-01.json
-Last applied: 2026-04-09 12:00:00 UTC
-
-STATUS       TASK                         MODULE           RECORDED STATUS
------------- ---------------------------- ---------------- ---------------
-UNCHANGED    Preflight check              shell            ok
-CHANGED      Create content root          directory        changed
