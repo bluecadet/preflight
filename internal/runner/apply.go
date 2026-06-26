@@ -176,7 +176,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 			continue
 		}
 
-		bound, err := bindTask(pt, execCtx, false)
+		bound, err := bindTask(pt, execCtx, template.Bind)
 		if err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
 		}
@@ -313,16 +313,6 @@ type executionContext struct {
 	env    map[string]string
 }
 
-// taskEngine builds a template engine pre-loaded with the task's variables and
-// the execution context (target info, facts, environment). Used by all task
-// rendering functions to avoid repeating the same construction chain.
-func taskEngine(task *PlanTask, execCtx *executionContext) *template.Engine {
-	return template.New(task.TemplateVars).
-		WithTarget(execCtx.target).
-		WithFacts(execCtx.facts).
-		WithEnv(execCtx.env)
-}
-
 func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, error) {
 	targetVars := cloneMap(r.config.TargetVars)
 	r.emitActivityStart("connecting")
@@ -359,11 +349,10 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, 
 
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
-	preview.TemplateVars = cloneMap(task.TemplateVars)
 	preview.Params = cloneMap(task.Params)
 	preview.Become = cloneMap(task.Become)
 	execCtx := &executionContext{target: targetVars}
-	bound, err := bindTask(&preview, execCtx, true)
+	bound, err := bindTask(&preview, execCtx, template.BindPartial)
 	if err != nil {
 		return nil, err
 	}

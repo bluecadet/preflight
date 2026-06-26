@@ -14,6 +14,7 @@ import (
 	"github.com/bluecadet/preflight/internal/fsutil"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 const stateVersion2 = 2
@@ -184,7 +185,7 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
 	renderedTasks := make([]*BoundTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
-		bound, err := bindTask(task, execCtx, false)
+		bound, err := bindTask(task, execCtx, template.Bind)
 		if err != nil {
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}

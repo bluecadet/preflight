@@ -10,6 +10,7 @@ import (
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 func TestApplyWritesFileContentFromSecret(t *testing.T) {
@@ -38,7 +39,6 @@ func TestApplyWritesFileContentFromSecret(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "file-secret-test",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "write license",
@@ -47,6 +47,7 @@ func TestApplyWritesFileContentFromSecret(t *testing.T) {
 				"dest":    dest,
 				"content": "secret:license",
 			},
+			Scope: template.NewScope(),
 		}},
 	}
 
@@ -88,12 +89,11 @@ func TestApplyWritesFileContentTemplateWithSecret(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "file-secret-template-test",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
-			ID:           "task-0",
-			Name:         "write config",
-			Module:       "file",
-			TemplateVars: map[string]any{"app_user": "exhibit"},
+			ID:     "task-0",
+			Name:   "write config",
+			Module: "file",
+			Scope:  template.NewScope(map[string]any{"app_user": "exhibit"}),
 			Params: map[string]any{
 				"dest":             dest,
 				"content_template": "username={{ vars.app_user }}\npassword={{ secret(\"app-password\") }}\n",

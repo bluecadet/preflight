@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 func TestApplyStopsOnFirstNonIgnoredFailure(t *testing.T) {
@@ -17,19 +18,20 @@ func TestApplyStopsOnFirstNonIgnoredFailure(t *testing.T) {
 	r := New(mt, emptyResolver(), Config{})
 	plan := &ExecutionPlan{
 		PlaybookName: "fail-fast",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{
 			{
 				ID:     "task-0",
 				Name:   "first",
 				Module: "shell",
 				Params: map[string]any{"cmd": "echo"},
+				Scope:  template.NewScope(),
 			},
 			{
 				ID:     "task-1",
 				Name:   "second",
 				Module: "shell",
 				Params: map[string]any{"cmd": "echo"},
+				Scope:  template.NewScope(),
 			},
 		},
 	}
@@ -53,7 +55,6 @@ func TestApplyIgnoreErrorsContinuesToLaterTasks(t *testing.T) {
 	r := New(mt, emptyResolver(), Config{})
 	plan := &ExecutionPlan{
 		PlaybookName: "ignore-errors",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{
 			{
 				ID:           "task-0",
@@ -61,12 +62,14 @@ func TestApplyIgnoreErrorsContinuesToLaterTasks(t *testing.T) {
 				Module:       "shell",
 				Params:       map[string]any{"cmd": "echo"},
 				IgnoreErrors: true,
+				Scope:        template.NewScope(),
 			},
 			{
 				ID:     "task-1",
 				Name:   "second",
 				Module: "shell",
 				Params: map[string]any{"cmd": "echo"},
+				Scope:  template.NewScope(),
 			},
 		},
 	}

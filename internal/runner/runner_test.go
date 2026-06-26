@@ -19,6 +19,7 @@ import (
 	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/target/targettest"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 type mockTarget struct {
@@ -342,15 +343,14 @@ func TestApplyPassesRenderedExecutionOptionsToTarget(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "become",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{
 			{
-				ID:           "task-0",
-				Name:         "echo",
-				Ref:          "echo",
-				Module:       "shell",
-				TemplateVars: map[string]any{},
-				Params:       map[string]any{"cmd": "echo"},
+				ID:     "task-0",
+				Name:   "echo",
+				Ref:    "echo",
+				Module: "shell",
+				Scope:  template.NewScope(),
+				Params: map[string]any{"cmd": "echo"},
 				Become: map[string]any{
 					"user":   "{{ target.run_as }}",
 					"method": "sudo",
@@ -1197,11 +1197,11 @@ func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "secret-test",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "set secret",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd": "echo",
 				"env": map[string]any{
@@ -1350,11 +1350,11 @@ func TestBuildPlannedTaskStateRendersExecutionTimeTemplates(t *testing.T) {
 			ID:     "task-0",
 			Name:   "echo {{ target.name }} on {{ facts.os.name }}",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd":  "echo",
 				"args": []any{"{{ env.SITE }}", "{{ target.address }}", "{{ facts.os.build }}"},
 			},
-			TemplateVars: map[string]any{},
 		}},
 	}
 
@@ -1396,20 +1396,20 @@ func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
 		PlaybookName: "dep-state",
 		Tasks: []*PlanTask{
 			{
-				ID:           "task-0",
-				Name:         "prepare {{ target.name }}",
-				Ref:          "prepare",
-				Module:       "shell",
-				Params:       map[string]any{"cmd": "echo"},
-				TemplateVars: map[string]any{},
+				ID:     "task-0",
+				Name:   "prepare {{ target.name }}",
+				Ref:    "prepare",
+				Module: "shell",
+				Params: map[string]any{"cmd": "echo"},
+				Scope:  template.NewScope(),
 			},
 			{
-				ID:           "task-1",
-				Name:         "apply",
-				Module:       "shell",
-				DependsOn:    []string{"prepare"},
-				Params:       map[string]any{"cmd": "echo"},
-				TemplateVars: map[string]any{},
+				ID:        "task-1",
+				Name:      "apply",
+				Module:    "shell",
+				DependsOn: []string{"prepare"},
+				Params:    map[string]any{"cmd": "echo"},
+				Scope:     template.NewScope(),
 			},
 		},
 	}
@@ -1435,19 +1435,20 @@ func TestApplySavesStateWithStableDependsOnKeys(t *testing.T) {
 	r := New(mt, emptyResolver(), Config{StatePath: statePath})
 	plan := &ExecutionPlan{
 		PlaybookName: "state-save",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "prepare",
 			Ref:    "prepare",
 			Module: "shell",
 			Params: map[string]any{"cmd": "echo"},
+			Scope:  template.NewScope(),
 		}, {
 			ID:        "task-1",
 			Name:      "apply",
 			Module:    "shell",
 			DependsOn: []string{"prepare"},
 			Params:    map[string]any{"cmd": "echo"},
+			Scope:     template.NewScope(),
 		}},
 	}
 
@@ -1472,12 +1473,12 @@ func TestApplySavesStateWithParamHashes(t *testing.T) {
 	r := New(mt, emptyResolver(), Config{StatePath: statePath})
 	plan := &ExecutionPlan{
 		PlaybookName: "state-save",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "shell task",
 			Module: "shell",
 			Params: map[string]any{"cmd": "echo"},
+			Scope:  template.NewScope(),
 		}},
 	}
 
@@ -1552,11 +1553,11 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "bundle-secret",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "set env secret",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd": "echo",
 				"env": map[string]any{
@@ -1639,11 +1640,11 @@ func TestStageBundlesSecretsReferencedByFileContentTemplate(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "bundle-file-template-secret",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "write config",
 			Module: "file",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"dest":             "C:\\Exhibits\\app.ini",
 				"content_template": "password={{ secret(\"app-password\") }}\n",
@@ -1765,11 +1766,11 @@ func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "literal-secret",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "set literal secret",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd": "echo",
 				"env": map[string]any{
@@ -1793,11 +1794,11 @@ func TestStageAllowsEmptySecretishValues(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "empty-secretish",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "set empty secretish env",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd": "echo",
 				"env": map[string]any{
@@ -1844,11 +1845,11 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "plaintext-secret",
-		Vars:         map[string]any{},
 		Tasks: []*PlanTask{{
 			ID:     "task-0",
 			Name:   "set secret env",
 			Module: "shell",
+			Scope:  template.NewScope(),
 			Params: map[string]any{
 				"cmd": "echo",
 				"env": map[string]any{

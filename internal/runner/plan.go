@@ -16,7 +16,6 @@ import (
 type ExecutionPlan struct {
 	PlaybookName string
 	Tasks        []*PlanTask
-	Vars         map[string]any
 	dag          *DAG
 }
 
@@ -29,7 +28,7 @@ type PlanTask struct {
 	Module       string
 	Params       map[string]any
 	Become       map[string]any
-	TemplateVars map[string]any
+	Scope        *template.Scope
 	DependsOn    []string
 	When         string
 	Tags         []string
@@ -43,26 +42,27 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		return nil, err
 	}
 
-	varStore := template.NewVarStore()
-	varStore.SetMap(template.LayerProject, r.config.ProjectVars)
-	varStore.SetMap(template.LayerInventoryVars, r.config.InventoryVars)
-	varStore.Set(template.LayerProject, "preflight", map[string]any{
+	preflightVar := map[string]any{
 		"project":     r.config.ProjectName,
 		"environment": r.config.ProjectEnv,
-	})
-	varStore.SetMap(template.LayerPlaybook, playbook.Vars)
-	varStore.SetMap(template.LayerCLI, r.config.Vars)
-	vars := varStore.Merge()
+	}
+	rootScope := template.NewScope(
+		r.config.ProjectVars,
+		r.config.InventoryVars,
+		map[string]any{"preflight": preflightVar},
+		playbook.Vars,
+		r.config.Vars,
+	)
 
 	var planTasks []*PlanTask
-	scope := newExpansionScope()
+	counter := newLineageCounter()
 
 	for i := range playbook.Tasks {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, vars, &planTasks, scope, canonicalizeBecome(playbook.Defaults.Become), nil, nil, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, rootScope, &planTasks, counter, canonicalizeBecome(playbook.Defaults.Become), nil, nil, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -77,20 +77,19 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 	return &ExecutionPlan{
 		PlaybookName: playbook.Name,
 		Tasks:        planTasks,
-		Vars:         vars,
 		dag:          dag,
 	}, nil
 }
 
-type expansionScope struct {
+type lineageCounter struct {
 	counts map[string]int
 }
 
-func newExpansionScope() *expansionScope {
-	return &expansionScope{counts: make(map[string]int)}
+func newLineageCounter() *lineageCounter {
+	return &lineageCounter{counts: make(map[string]int)}
 }
 
-func (s *expansionScope) next(base string) string {
+func (s *lineageCounter) next(base string) string {
 	s.counts[base]++
 	count := s.counts[base]
 	if count == 1 {
@@ -99,7 +98,7 @@ func (s *expansionScope) next(base string) string {
 	return base + "-" + strconv.Itoa(count)
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[string]any, planTasks *[]*PlanTask, scope *expansionScope, inheritedBecome map[string]any, lineage []string, displayLineage []string, label string) error {
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *template.Scope, planTasks *[]*PlanTask, counter *lineageCounter, inheritedBecome map[string]any, lineage []string, displayLineage []string, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -108,14 +107,14 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
-	segment := scope.next(taskLineageSegment(task))
+	segment := counter.next(taskLineageSegment(task))
 	currentLineage := append(append([]string{}, lineage...), segment)
 	displaySegment := taskDisplaySegment(task)
 	currentDisplayLineage := append(append([]string{}, displayLineage...), displaySegment)
 	taskBecome := mergeBecome(inheritedBecome, task.Become)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, taskBecome, vars)
+		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, taskBecome, taskScope)
 		if err != nil {
 			return err
 		}
@@ -128,75 +127,79 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, vars map[str
 		return fmt.Errorf("resolve action %q: %w", task.Uses, err)
 	}
 
-	childVars, err := actionInputVars(task, resolved, vars)
+	childScope, err := deriveActionScope(task, resolved, taskScope)
 	if err != nil {
 		return fmt.Errorf("prepare action %q inputs: %w", task.Uses, err)
 	}
 
 	childBecome := mergeBecome(inheritedBecome, resolved.Defaults.Become)
 	childBecome = mergeBecome(childBecome, task.Become)
-	childScope := newExpansionScope()
+	childCounter := newLineageCounter()
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childVars, planTasks, childScope, childBecome, currentLineage, currentDisplayLineage, childLabel); err != nil {
+		if err := r.expandTask(ctx, at, childScope, planTasks, childCounter, childBecome, currentLineage, currentDisplayLineage, childLabel); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func actionInputVars(task *action.Task, resolved *action.Action, parentVars map[string]any) (map[string]any, error) {
-	childVars := make(map[string]any)
-	maps.Copy(childVars, parentVars)
+// deriveActionScope builds a derived scope for an action's child tasks.
+// The parent scope's vars are shallow-copied, action input defaults are
+// applied, and the task's With values (rendered against the parent scope) are
+// overlaid on top. Required input validation is preserved.
+func deriveActionScope(task *action.Task, resolved *action.Action, parent *template.Scope) (*template.Scope, error) {
+	overlay := make(map[string]any)
 	for name, input := range resolved.Inputs {
 		if input.Default != nil {
-			childVars[name] = input.Default
+			overlay[name] = input.Default
 		}
 	}
-	eng := template.New(parentVars).WithPreserveUnknown()
+	eng := parent.Engine(nil, template.BindPartial)
 	renderedWith, err := eng.RenderMap(task.With)
 	if err != nil {
 		return nil, err
 	}
-	maps.Copy(childVars, renderedWith)
+	maps.Copy(overlay, renderedWith)
+
+	childScope := template.NewDerivedScope(parent, overlay)
 	for name, input := range resolved.Inputs {
 		if !input.Required {
 			continue
 		}
-		if value, ok := childVars[name]; !ok || value == nil || value == "" {
+		if value, ok := childScope.Vars[name]; !ok || value == nil || value == "" {
 			return nil, fmt.Errorf("required input %q is missing", name)
 		}
 	}
-	return childVars, nil
+	return childScope, nil
 }
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, become map[string]any, vars map[string]any) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, become map[string]any, taskScope *template.Scope) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
-	scope := lineage[:max(len(lineage)-1, 0)]
+	ancestorLineage := lineage[:max(len(lineage)-1, 0)]
 	// ActionPath is the display lineage minus the leaf (the task's own name).
 	var actionPath string
 	if len(displayLineage) > 1 {
 		actionPath = strings.Join(displayLineage[:len(displayLineage)-1], "/")
 	}
 	rawParams := cloneMap(t.Params)
-	templateVars := cloneMap(vars)
 	dependsOn := make([]string, 0, len(t.DependsOn))
 	for _, dep := range t.DependsOn {
-		dependsOn = append(dependsOn, scopedDependencyRef(scope, dep))
+		dependsOn = append(dependsOn, lineageDependencyRef(ancestorLineage, dep))
 	}
 
 	return &PlanTask{
 		ID:           id,
 		Name:         t.Name,
-		Ref:          scopedDependencyRef(scope, t.Key()),
+		Ref:          lineageDependencyRef(ancestorLineage, t.Key()),
 		ActionPath:   actionPath,
 		Module:       t.Module,
 		Params:       rawParams,
 		Become:       cloneMap(become),
-		TemplateVars: templateVars,
+		Scope:        taskScope,
 		DependsOn:    dependsOn,
 		When:         t.When,
 		Tags:         t.Tags,
@@ -204,11 +207,11 @@ func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, be
 	}, nil
 }
 
-func scopedDependencyRef(scope []string, ref string) string {
-	if ref == "" || len(scope) == 0 {
+func lineageDependencyRef(lineage []string, ref string) string {
+	if ref == "" || len(lineage) == 0 {
 		return ref
 	}
-	return strings.Join(scope, "/") + "::" + ref
+	return strings.Join(lineage, "/") + "::" + ref
 }
 
 // taskDisplaySegment returns the human-readable label for a task in the display lineage.

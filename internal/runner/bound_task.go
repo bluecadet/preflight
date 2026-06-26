@@ -21,14 +21,20 @@ func evaluateTaskWhen(task *PlanTask, execCtx *executionContext) (bool, error) {
 	if task.When == "" {
 		return true, nil
 	}
-	return taskEngine(task, execCtx).RenderBool(task.When)
+	eng := task.Scope.Engine(&template.RuntimeContext{
+		Target: execCtx.target,
+		Facts:  execCtx.facts,
+		Env:    execCtx.env,
+	}, template.Bind)
+	return eng.RenderBool(task.When)
 }
 
-func bindTask(task *PlanTask, execCtx *executionContext, preserveUnknown bool) (*BoundTask, error) {
-	eng := taskEngine(task, execCtx)
-	if preserveUnknown {
-		eng = template.New(task.TemplateVars).WithTarget(execCtx.target).WithPreserveUnknown()
-	}
+func bindTask(task *PlanTask, execCtx *executionContext, bindMode template.BindMode) (*BoundTask, error) {
+	eng := task.Scope.Engine(&template.RuntimeContext{
+		Target: execCtx.target,
+		Facts:  execCtx.facts,
+		Env:    execCtx.env,
+	}, bindMode)
 	if module.PreservesSecretRefs(task.Module) {
 		eng = eng.WithPreserveSecretRefs()
 	}
