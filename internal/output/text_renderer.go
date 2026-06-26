@@ -406,5 +406,3 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 func (r *TextRenderer) Close() {
 	r.closed = true
 }
-
-

@@ -75,21 +75,6 @@ func okDetail(message string) string {
 	return "ok: " + message
 }
 
-func skippedDetail(message string) string {
-	switch strings.TrimSpace(message) {
-	case "":
-		return "skipped"
-	case "tag-filtered":
-		return "reason: tag filtered"
-	case "dependency-failed":
-		return "dependency failed"
-	case "when-condition-false":
-		return "when: condition was false"
-	default:
-		return "reason: " + message
-	}
-}
-
 func renderDisplayPath(actionPath string) string {
 	segments := strings.Split(strings.Trim(actionPath, "/"), "/")
 	parts := make([]string, 0, len(segments))
@@ -111,10 +96,6 @@ func renderTaskFailurePath(actionPath, taskName string) string {
 		return path
 	}
 	return path + " > " + taskName
-}
-
-func taskGroupKey(target, actionPath string) string {
-	return fallbackTarget(target) + "\x00" + strings.TrimSpace(actionPath)
 }
 
 func formatElapsed(d time.Duration) string {

@@ -97,8 +97,7 @@ func TestRunStreamingMultiHostStreamsAcrossHosts(t *testing.T) {
 
 	var hostNames []string
 	for _, event := range rec.snapshot() {
-		switch e := event.(type) {
-		case output.TaskStartedEvent:
+		if e, ok := event.(output.TaskStartedEvent); ok {
 			if !slices.Contains(hostNames, e.Target) {
 				hostNames = append(hostNames, e.Target)
 			}

@@ -70,9 +70,9 @@ func TestTUIModel_ApplyEvent_TaskOK(t *testing.T) {
 	m := newTUIModel(events)
 
 	m, _ = m.applyEvent(TaskOKEvent{
-		TaskName: "do-thing",
-		Target:   "host-a",
-		TaskID:   "task-1",
+		TaskName:  "do-thing",
+		Target:    "host-a",
+		TaskID:    "task-1",
 		ElapsedMs: 100,
 	})
 

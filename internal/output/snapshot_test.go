@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 
@@ -293,26 +292,6 @@ func normalizeSnapshot(s string) string {
 		lines[i] = strings.TrimRight(line, " \t")
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")) + "\n"
-}
-
-var (
-	durationRE = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ms|s|m|h)\b`)
-)
-
-func renderTUISnapshot(tc snapshotCase) string {
-	model := newTUIModelWithOptions(make(chan Event), tc.opts)
-	var blocks []string
-	for _, event := range tc.events {
-		next, cmd := model.applyEvent(event)
-		model = next
-		blocks = append(blocks, collectPrintedBlocks(cmd)...)
-	}
-	model.done = true
-	final := strings.TrimSpace(model.View())
-	if final != "" {
-		blocks = append(blocks, final)
-	}
-	return strings.Join(blocks, "\n")
 }
 
 func collectPrintedBlocks(cmd tea.Cmd) []string {
