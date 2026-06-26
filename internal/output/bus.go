@@ -51,30 +51,12 @@ func (b *Bus) Emit(event Event) {
 }
 
 // scrubEvent returns a copy of the event with secret values redacted
-// from all text fields (msg, Lines, Output, Message, FailMessage).
+// from all text and map fields.
 func (b *Bus) scrubEvent(event Event, secrets []string) Event {
 	if len(secrets) == 0 {
 		return event
 	}
-
-	switch e := event.(type) {
-	case TaskOutputEvent:
-		e.Lines = scrubStrings(e.Lines, secrets)
-		return e
-	case TaskFailedEvent:
-		e.FailMessage = scrubString(e.FailMessage, secrets)
-		e.Output = scrubStrings(e.Output, secrets)
-		return e
-	case DiagnosticEvent:
-		e.Summary = scrubString(e.Summary, secrets)
-		e.Detail = scrubString(e.Detail, secrets)
-		return e
-	case WarningEvent:
-		e.Message = scrubString(e.Message, secrets)
-		return e
-	default:
-		return event
-	}
+	return event.Redact(secrets)
 }
 
 func scrubStrings(lines []string, secrets []string) []string {
@@ -92,6 +74,47 @@ func scrubString(s string, secrets []string) string {
 		}
 	}
 	return s
+}
+
+// deepScrubMap recursively walks a map[string]any and scrubs all string values,
+// string elements within slices and nested maps, and string keys.
+func deepScrubMap(m map[string]any, secrets []string) map[string]any {
+	if len(secrets) == 0 || len(m) == 0 {
+		return m
+	}
+	result := make(map[string]any, len(m))
+	for k, v := range m {
+		scrubbedKey := scrubString(k, secrets)
+		switch val := v.(type) {
+		case string:
+			result[scrubbedKey] = scrubString(val, secrets)
+		case map[string]any:
+			result[scrubbedKey] = deepScrubMap(val, secrets)
+		case []any:
+			result[scrubbedKey] = deepScrubSlice(val, secrets)
+		default:
+			result[scrubbedKey] = v
+		}
+	}
+	return result
+}
+
+// deepScrubSlice recursively scrubs string values in a []any.
+func deepScrubSlice(s []any, secrets []string) []any {
+	result := make([]any, len(s))
+	for i, v := range s {
+		switch val := v.(type) {
+		case string:
+			result[i] = scrubString(val, secrets)
+		case map[string]any:
+			result[i] = deepScrubMap(val, secrets)
+		case []any:
+			result[i] = deepScrubSlice(val, secrets)
+		default:
+			result[i] = v
+		}
+	}
+	return result
 }
 
 // Close closes all sinks.

@@ -12,65 +12,18 @@ import (
 
 // logLevel returns the log level string for an event.
 func logLevel(event Event) string {
-	switch event.(type) {
-	case TaskFailedEvent, DiagnosticEvent:
-		return "error"
-	case WarningEvent:
-		return "warn"
-	default:
-		return "info"
+	if l, ok := event.(Leveled); ok {
+		return l.Level()
 	}
+	return "info"
 }
 
 // runLogMsg returns a short human-readable summary for the event.
 func runLogMsg(event Event) string {
-	switch e := event.(type) {
-	case VersionEvent:
-		if e.PreflightVersion != "" {
-			return "preflight " + e.PreflightVersion
-		}
-		return "preflight"
-	case RunStartEvent:
-		if len(e.Targets) == 1 {
-			return "1 target"
-		}
-		return fmt.Sprintf("%d targets", len(e.Targets))
-	case TargetStartEvent:
-		return "connecting"
-	case TargetCompleteEvent:
-		switch e.Outcome {
-		case "ok":
-			return "ok"
-		case "failed":
-			return "failed"
-		case "unreachable":
-			return "unreachable"
-		default:
-			return e.Outcome
-		}
-	case TaskStartedEvent:
-		return e.TaskName
-	case TaskOKEvent:
-		return e.TaskName + " ok"
-	case TaskChangedEvent:
-		return e.TaskName + " changed"
-	case TaskSkippedEvent:
-		return e.TaskName + " skipped"
-	case TaskFailedEvent:
-		return e.TaskName + " failed"
-	case DiagnosticEvent:
-		return e.Summary
-	case RunSummaryEvent:
-		return e.Status
-	case WarningEvent:
-		return e.Message
-	case ActivityStartEvent:
-		return e.Message
-	case ActivityResultEvent:
-		return e.Message
-	default:
-		return ""
+	if s, ok := event.(Summarizable); ok {
+		return s.LogMessage()
 	}
+	return ""
 }
 
 // runLogEnvelope builds the standard envelope fields for a run-log JSON line.
@@ -123,8 +76,11 @@ func (s *RunLogSink) Emit(event Event) {
 	}
 
 	// Extract target and task_id from the event.
-	target, taskID := s.extractIDs(event)
-	eventType := s.eventType(event)
+	target, taskID := "", ""
+	if c, ok := event.(Correlatable); ok {
+		target, taskID = c.CorrelationIDs()
+	}
+	eventTypeStr := string(event.Type())
 	msg := runLogMsg(event)
 	level := logLevel(event)
 
@@ -132,7 +88,7 @@ func (s *RunLogSink) Emit(event Event) {
 	env := runLogEnvelope{
 		Seq:    s.seq,
 		TS:     ts,
-		Type:   eventType,
+		Type:   eventTypeStr,
 		Level:  level,
 		RunID:  s.runID,
 		Target: nullableString(target),
@@ -171,101 +127,7 @@ func (s *RunLogSink) writeRunJSON() error {
 	return os.Rename(tmpPath, path)
 }
 
-// extractIDs returns the target name and task id from the event.
-func (s *RunLogSink) extractIDs(event Event) (string, string) {
-	switch e := event.(type) {
-	case TargetStartEvent:
-		return e.Target, ""
-	case TargetCompleteEvent:
-		return e.Target, ""
-	case TaskStartedEvent:
-		return e.Target, e.TaskID
-	case TaskOKEvent:
-		return e.Target, e.TaskID
-	case TaskChangedEvent:
-		return e.Target, e.TaskID
-	case TaskSkippedEvent:
-		return e.Target, e.TaskID
-	case TaskFailedEvent:
-		return e.Target, e.TaskID
-	case DiagnosticEvent:
-		return e.Target, e.TaskID
-	case TaskOutputEvent:
-		return e.Target, e.TaskID
-	case ActivityStartEvent:
-		return e.Target, ""
-	case ActivityResultEvent:
-		return e.Target, ""
-	case FactsEvent:
-		return e.Target, ""
-	case PlanEvent:
-		return e.Target, ""
-	case StateEvent:
-		return e.Target, ""
-	default:
-		return "", ""
-	}
-}
-
-// eventType returns the type string for the event.
-func (s *RunLogSink) eventType(event Event) string {
-	switch event.(type) {
-	case VersionEvent:
-		return "version"
-	case RunStartEvent:
-		return "run_start"
-	case TargetStartEvent:
-		return "target_start"
-	case TargetCompleteEvent:
-		return "target_complete"
-	case TaskStartedEvent:
-		return "task_started"
-	case TaskOKEvent:
-		return "task_ok"
-	case TaskChangedEvent:
-		return "task_changed"
-	case TaskSkippedEvent:
-		return "task_skipped"
-	case TaskFailedEvent:
-		return "task_failed"
-	case DiagnosticEvent:
-		return "diagnostic"
-	case RunSummaryEvent:
-		return "run_summary"
-	case TaskOutputEvent:
-		return "task_output"
-	case WarningEvent:
-		return "warning"
-	case ActivityStartEvent:
-		return "activity_start"
-	case ActivityResultEvent:
-		return "activity_result"
-	case FactsEvent:
-		return "facts"
-	case PlanEvent:
-		return "plan"
-	case StateEvent:
-		return "state"
-	case ValidationEvent:
-		return "validate"
-	case ActionCatalogEvent:
-		return "action_list"
-	case ActionInfoEvent:
-		return "action_info"
-	case ActionFetchEvent:
-		return "action_fetch"
-	case PluginListEvent:
-		return "plugin_list"
-	case InventoryListEvent:
-		return "inventory_list"
-	case SecretListEvent:
-		return "secret_list"
-	default:
-		return "unknown"
-	}
-}
-
-// buildJSON merges the envelope with type-specific fields into a flat map.
+// buildJSON merges the envelope with type-specific fields into a flat map. map.
 func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 	m := map[string]any{
 		"seq":    env.Seq,

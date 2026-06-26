@@ -3,7 +3,9 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -164,5 +166,128 @@ func TestRunLogSink_WritesJSONL(t *testing.T) {
 	}
 	if first["schema_version"] != "1.0" {
 		t.Errorf("schema_version=%q, want %q", first["schema_version"], "1.0")
+	}
+}
+
+// allEventTypes returns a zero-value instance of every Event implementation.
+func allEventTypes() []Event {
+	return []Event{
+		VersionEvent{},
+		RunStartEvent{},
+		TaskOutputEvent{},
+		WarningEvent{},
+		ActivityStartEvent{},
+		ActivityResultEvent{},
+		FactsEvent{},
+		PlanEvent{},
+		StateEvent{},
+		ValidationEvent{},
+		ActionCatalogEvent{},
+		ActionInfoEvent{},
+		ActionFetchEvent{},
+		PluginListEvent{},
+		InventoryListEvent{},
+		SecretListEvent{},
+		TargetStartEvent{},
+		TargetCompleteEvent{},
+		TaskStartedEvent{},
+		TaskOKEvent{},
+		TaskChangedEvent{},
+		TaskSkippedEvent{},
+		TaskFailedEvent{},
+		DiagnosticEvent{},
+		RunSummaryEvent{},
+	}
+}
+
+// TestEventRedact_NoSentinelSurvives creates every event type with a sentinel
+// secret planted in every string, []string, and map[string]any field, then
+// asserts that Redact scrubs all occurrences.
+func TestEventRedact_NoSentinelSurvives(t *testing.T) {
+	sentinel := "SENTINEL_SECRET_XYZ"
+
+	for _, e := range allEventTypes() {
+		t.Run(fmt.Sprintf("%T", e), func(t *testing.T) {
+			seeded := seedSentinel(e, sentinel)
+			redacted := seeded.Redact([]string{sentinel})
+
+			// Walk the redacted event's fields ensuring no sentinel survives.
+			checkNoSentinel(t, "", reflect.ValueOf(redacted), sentinel)
+		})
+	}
+}
+
+// seedSentinel sets every string field to sentinel, every []string element to sentinel,
+// and every map[string]any field to map[sentinel]sentinel.
+func seedSentinel(e Event, sentinel string) Event {
+	v := reflect.ValueOf(e)
+	if v.Kind() == reflect.Ptr {
+		v = v.Elem()
+	}
+	// Create a settable copy
+	copy := reflect.New(v.Type()).Elem()
+	copy.Set(v)
+
+	for i := 0; i < v.NumField(); i++ {
+		f := copy.Field(i)
+		if !f.CanSet() {
+			continue
+		}
+		switch f.Kind() {
+		case reflect.String:
+			f.SetString(sentinel)
+		case reflect.Slice:
+			if f.Type().Elem().Kind() == reflect.String {
+				// []string slice
+				s := make([]string, f.Len())
+				for j := 0; j < f.Len(); j++ {
+					s[j] = sentinel
+				}
+				f.Set(reflect.ValueOf(s))
+			}
+		case reflect.Map:
+			if f.Type() == reflect.TypeFor[map[string]any]() {
+				f.Set(reflect.ValueOf(map[string]any{sentinel: sentinel}))
+			}
+		}
+	}
+	return copy.Interface().(Event)
+}
+
+// checkNoSentinel walks a reflect.Value and fails if sentinel is found.
+func checkNoSentinel(t *testing.T, prefix string, v reflect.Value, sentinel string) {
+	t.Helper()
+
+	switch v.Kind() {
+	case reflect.String:
+		if v.String() == sentinel {
+			t.Errorf("%s: sentinel %q survived redaction", prefix, sentinel)
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			item := v.Index(i)
+			if item.Kind() == reflect.String && item.String() == sentinel {
+				t.Errorf("%s[%d]: sentinel %q survived redaction", prefix, i, sentinel)
+			}
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			val := v.MapIndex(key)
+			if key.String() == sentinel {
+				t.Errorf("%s[%q]: map key sentinel %q survived redaction", prefix, key.String(), sentinel)
+			}
+			if val.Kind() == reflect.String && val.String() == sentinel {
+				t.Errorf("%s[%q]: sentinel %q survived redaction", prefix, key.String(), sentinel)
+			}
+			// Recurse into nested map values.
+			if val.Kind() == reflect.Map || val.Kind() == reflect.Slice {
+				checkNoSentinel(t, fmt.Sprintf("%s[%q]", prefix, key.String()), val, sentinel)
+			}
+		}
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			field := v.Type().Field(i)
+			checkNoSentinel(t, fmt.Sprintf("%s.%s", prefix, field.Name), v.Field(i), sentinel)
+		}
 	}
 }

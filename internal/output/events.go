@@ -1,5 +1,7 @@
 package output
 
+import "fmt"
+
 // EventType identifies the kind of output event.
 type EventType string
 
@@ -31,8 +33,34 @@ const (
 	EventRunSummary     EventType = "run_summary"
 )
 
-// Event is the sealed interface implemented by all renderer event types.
-type Event interface{ isEvent() }
+// Correlatable is an optional capability interface for events that carry
+// a target host and/or task identifier. Sinks type-assert to extract them.
+type Correlatable interface {
+	CorrelationIDs() (target, taskID string)
+}
+
+// Leveled is an optional capability interface for events that carry
+// a severity level ("error", "warn", "info"). Sinks type-assert with
+// a fallback to "info".
+type Leveled interface{ Level() string }
+
+// Summarizable is an optional capability interface for events that carry
+// a human-readable summary message for the run log. Sinks type-assert with a fallback
+// to the empty string.
+type Summarizable interface{ LogMessage() string }
+
+// Event is the interface implemented by all renderer event types.
+// Every event must expose its type via Type() and a redacted copy via Redact().
+// The isEvent() marker seals the interface to this package.
+type Event interface {
+	Type() EventType
+	// Redact returns a copy of the event with the given secrets scrubbed
+	// from all text and map fields. Implementations must explicitly consider
+	// whether the event carries secret-bearing fields and either redact or
+	// return the receiver unchanged. There is no default implementation.
+	Redact(secrets []string) Event
+	isEvent()
+}
 
 // VersionEvent is the first event in every run log.
 type VersionEvent struct {
@@ -192,7 +220,297 @@ type SecretListEvent struct {
 	Entries []SecretListEntry
 }
 
-func (RunStartEvent) isEvent() {}
+// Type returns the EventType for each event.
+
+func (VersionEvent) Type() EventType        { return EventVersion }
+func (RunStartEvent) Type() EventType       { return EventRunStart }
+func (TaskOutputEvent) Type() EventType     { return EventTaskOutput }
+func (WarningEvent) Type() EventType        { return EventWarning }
+func (ActivityStartEvent) Type() EventType  { return EventActivityStart }
+func (ActivityResultEvent) Type() EventType { return EventActivityResult }
+func (FactsEvent) Type() EventType          { return EventFacts }
+func (PlanEvent) Type() EventType           { return EventPlan }
+func (StateEvent) Type() EventType          { return EventState }
+func (ValidationEvent) Type() EventType     { return EventValidate }
+func (ActionCatalogEvent) Type() EventType  { return EventActionList }
+func (ActionInfoEvent) Type() EventType     { return EventActionInfo }
+func (ActionFetchEvent) Type() EventType    { return EventActionFetch }
+func (PluginListEvent) Type() EventType     { return EventPluginList }
+func (InventoryListEvent) Type() EventType  { return EventInventoryList }
+func (SecretListEvent) Type() EventType     { return EventSecretList }
+func (TargetStartEvent) Type() EventType    { return EventTargetStart }
+func (TargetCompleteEvent) Type() EventType { return EventTargetComplete }
+func (TaskStartedEvent) Type() EventType    { return EventTaskStarted }
+func (TaskOKEvent) Type() EventType         { return EventTaskOK }
+func (TaskChangedEvent) Type() EventType    { return EventTaskChanged }
+func (TaskSkippedEvent) Type() EventType    { return EventTaskSkipped }
+func (TaskFailedEvent) Type() EventType     { return EventTaskFailed }
+func (DiagnosticEvent) Type() EventType     { return EventDiagnostic }
+func (RunSummaryEvent) Type() EventType     { return EventRunSummary }
+
+// Correlatable implementations.
+
+func (e TargetStartEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
+func (e TargetCompleteEvent) CorrelationIDs() (string, string) { return e.Target, "" }
+func (e TaskStartedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
+func (e TaskOKEvent) CorrelationIDs() (string, string)         { return e.Target, e.TaskID }
+func (e TaskChangedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
+func (e TaskSkippedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
+func (e TaskFailedEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
+func (e DiagnosticEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
+func (e TaskOutputEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
+func (e ActivityStartEvent) CorrelationIDs() (string, string)  { return e.Target, "" }
+func (e ActivityResultEvent) CorrelationIDs() (string, string) { return e.Target, "" }
+func (e FactsEvent) CorrelationIDs() (string, string)          { return e.Target, "" }
+func (e PlanEvent) CorrelationIDs() (string, string)           { return e.Target, "" }
+func (e StateEvent) CorrelationIDs() (string, string)          { return e.Target, "" }
+
+// Leveled implementations.
+
+func (TaskFailedEvent) Level() string { return "error" }
+func (DiagnosticEvent) Level() string { return "error" }
+func (WarningEvent) Level() string    { return "warn" }
+
+// Summarizable implementations.
+
+func (e VersionEvent) LogMessage() string {
+	if e.PreflightVersion != "" {
+		return "preflight " + e.PreflightVersion
+	}
+	return "preflight"
+}
+
+func (e RunStartEvent) LogMessage() string {
+	if len(e.Targets) == 1 {
+		return "1 target"
+	}
+	return fmt.Sprintf("%d targets", len(e.Targets))
+}
+
+func (TargetStartEvent) LogMessage() string   { return "connecting" }
+func (e TaskStartedEvent) LogMessage() string { return e.TaskName }
+func (TaskOutputEvent) LogMessage() string    { return "" }
+
+func (e TargetCompleteEvent) LogMessage() string {
+	switch e.Outcome {
+	case "ok":
+		return "ok"
+	case "failed":
+		return "failed"
+	case "unreachable":
+		return "unreachable"
+	default:
+		return e.Outcome
+	}
+}
+
+func (e TaskOKEvent) LogMessage() string      { return e.TaskName + " ok" }
+func (e TaskChangedEvent) LogMessage() string { return e.TaskName + " changed" }
+func (e TaskSkippedEvent) LogMessage() string { return e.TaskName + " skipped" }
+
+func (e TaskFailedEvent) LogMessage() string { return e.TaskName + " failed" }
+
+func (e DiagnosticEvent) LogMessage() string { return e.Summary }
+func (e RunSummaryEvent) LogMessage() string { return e.Status }
+func (e WarningEvent) LogMessage() string    { return e.Message }
+
+func (e ActivityStartEvent) LogMessage() string  { return e.Message }
+func (e ActivityResultEvent) LogMessage() string { return e.Message }
+func (e FactsEvent) LogMessage() string          { return "" }
+func (e PlanEvent) LogMessage() string           { return "" }
+func (e StateEvent) LogMessage() string          { return "" }
+func (e ValidationEvent) LogMessage() string     { return "" }
+func (e ActionCatalogEvent) LogMessage() string  { return "" }
+func (e ActionInfoEvent) LogMessage() string     { return "" }
+func (e ActionFetchEvent) LogMessage() string    { return "" }
+func (e PluginListEvent) LogMessage() string     { return "" }
+func (e InventoryListEvent) LogMessage() string  { return "" }
+func (e SecretListEvent) LogMessage() string     { return "" }
+
+// Redact implementations.
+
+// Redact implementations.
+// Each event explicitly scrubs its own string, []string, and map[string]any fields.
+
+func (e VersionEvent) Redact(secrets []string) Event {
+	e.SchemaVersion = scrubString(e.SchemaVersion, secrets)
+	e.PreflightVersion = scrubString(e.PreflightVersion, secrets)
+	e.PlaybookName = scrubString(e.PlaybookName, secrets)
+	return e
+}
+
+func (e RunStartEvent) Redact(secrets []string) Event {
+	e.Mode = scrubString(e.Mode, secrets)
+	e.PlaybookPath = scrubString(e.PlaybookPath, secrets)
+	e.PlaybookName = scrubString(e.PlaybookName, secrets)
+	e.Targets = scrubStrings(e.Targets, secrets)
+	e.Tags = scrubStrings(e.Tags, secrets)
+	e.SkipTags = scrubStrings(e.SkipTags, secrets)
+	return e
+}
+
+func (e TaskOutputEvent) Redact(secrets []string) Event {
+	e.TaskName = scrubString(e.TaskName, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.Target = scrubString(e.Target, secrets)
+	e.Lines = scrubStrings(e.Lines, secrets)
+	return e
+}
+
+func (e WarningEvent) Redact(secrets []string) Event {
+	e.Message = scrubString(e.Message, secrets)
+	return e
+}
+
+func (e ActivityStartEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.Message = scrubString(e.Message, secrets)
+	return e
+}
+
+func (e ActivityResultEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.Message = scrubString(e.Message, secrets)
+	e.Status = scrubString(e.Status, secrets)
+	return e
+}
+
+func (e FactsEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	if len(secrets) > 0 {
+		e.Facts = deepScrubMap(e.Facts, secrets)
+	}
+	return e
+}
+
+func (e PlanEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.PlaybookName = scrubString(e.PlaybookName, secrets)
+	// Tasks []PlanTaskEntry is a struct slice — its fields are not individually scrubbed.
+	return e
+}
+
+func (e StateEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.PlaybookName = scrubString(e.PlaybookName, secrets)
+	e.StatePath = scrubString(e.StatePath, secrets)
+	e.LastApplied = scrubString(e.LastApplied, secrets)
+	// Comparisons []StateComparison is a struct slice.
+	return e
+}
+
+func (e ValidationEvent) Redact(secrets []string) Event {
+	e.PlaybookPath = scrubString(e.PlaybookPath, secrets)
+	e.PlaybookName = scrubString(e.PlaybookName, secrets)
+	e.ResolvedRefs = scrubStrings(e.ResolvedRefs, secrets)
+	return e
+}
+
+func (e ActionCatalogEvent) Redact(secrets []string) Event {
+	e.EmbeddedNamespace = scrubString(e.EmbeddedNamespace, secrets)
+	e.EmbeddedRefs = scrubStrings(e.EmbeddedRefs, secrets)
+	e.LocalDir = scrubString(e.LocalDir, secrets)
+	e.LocalRefs = scrubStrings(e.LocalRefs, secrets)
+	return e
+}
+
+func (e ActionInfoEvent) Redact(secrets []string) Event {
+	e.Ref = scrubString(e.Ref, secrets)
+	e.Name = scrubString(e.Name, secrets)
+	e.Version = scrubString(e.Version, secrets)
+	e.Description = scrubString(e.Description, secrets)
+	e.Author = scrubString(e.Author, secrets)
+	e.TaskNames = scrubStrings(e.TaskNames, secrets)
+	// Inputs []ActionInputEntry is a struct slice.
+	return e
+}
+
+func (e ActionFetchEvent) Redact(secrets []string) Event {
+	// Entries []ActionFetchEntry is a struct slice.
+	return e
+}
+
+func (e PluginListEvent) Redact(secrets []string) Event {
+	// Entries []PluginListEntry is a struct slice.
+	return e
+}
+
+func (e InventoryListEvent) Redact(secrets []string) Event {
+	// Hosts []InventoryHostEntry is a struct slice.
+	return e
+}
+
+func (e SecretListEvent) Redact(secrets []string) Event {
+	// Entries []SecretListEntry is a struct slice.
+	return e
+}
+
+func (e TargetStartEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.Transport = scrubString(e.Transport, secrets)
+	e.Address = scrubString(e.Address, secrets)
+	return e
+}
+
+func (e TargetCompleteEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.Outcome = scrubString(e.Outcome, secrets)
+	return e
+}
+
+func (e TaskStartedEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.TaskName = scrubString(e.TaskName, secrets)
+	e.Module = scrubString(e.Module, secrets)
+	e.ActionPath = scrubString(e.ActionPath, secrets)
+	return e
+}
+
+func (e TaskOKEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.TaskName = scrubString(e.TaskName, secrets)
+	return e
+}
+
+func (e TaskChangedEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.TaskName = scrubString(e.TaskName, secrets)
+	return e
+}
+
+func (e TaskSkippedEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.TaskName = scrubString(e.TaskName, secrets)
+	e.Reason = scrubString(e.Reason, secrets)
+	return e
+}
+
+func (e TaskFailedEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.TaskName = scrubString(e.TaskName, secrets)
+	e.FailMessage = scrubString(e.FailMessage, secrets)
+	e.Output = scrubStrings(e.Output, secrets)
+	return e
+}
+
+func (e DiagnosticEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.TaskID = scrubString(e.TaskID, secrets)
+	e.Summary = scrubString(e.Summary, secrets)
+	e.Detail = scrubString(e.Detail, secrets)
+	e.Source = scrubString(e.Source, secrets)
+	return e
+}
+
+func (e RunSummaryEvent) Redact(secrets []string) Event {
+	e.Status = scrubString(e.Status, secrets)
+	return e
+}
 
 // TargetStartEvent signals the start of work on a single target.
 type TargetStartEvent struct {
@@ -285,6 +603,7 @@ type RunSummaryEvent struct {
 }
 
 func (VersionEvent) isEvent()        {}
+func (RunStartEvent) isEvent()       {}
 func (TargetStartEvent) isEvent()    {}
 func (TargetCompleteEvent) isEvent() {}
 func (TaskStartedEvent) isEvent()    {}
