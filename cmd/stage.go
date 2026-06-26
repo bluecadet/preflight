@@ -14,6 +14,7 @@ func init() {
 	addVarFlags(stageCmd)
 	addTagFlags(stageCmd)
 	addOutputFlags(stageCmd)
+	addRunFlags(stageCmd)
 	addConcurrencyFlag(stageCmd)
 	addTimeoutFlag(stageCmd)
 	stageCmd.Flags().String("bundle-output-dir", "", "directory for staged bundle zips")

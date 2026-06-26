@@ -3,8 +3,10 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -284,4 +286,53 @@ func hasProjectMarker(dir string) bool {
 		}
 	}
 	return false
+}
+
+// pruneOldRuns removes older completed run directories under .preflight/runs/,
+// keeping at most keep the most recent ones. Failed/partial run directories
+// (those missing run.json) are never pruned.
+func pruneOldRuns(projectDir string, keep int) {
+	runsDir := filepath.Join(projectDir, ".preflight", "runs")
+	entries, err := os.ReadDir(runsDir)
+	if err != nil {
+		// No runs directory is not an error.
+		return
+	}
+
+	// Collect completed runs (those with a run.json) sorted by name
+	// (the name is the run ID which sorts lexicographically by time).
+	type runEntry struct {
+		name string
+		info os.DirEntry
+	}
+	var runs []runEntry
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		// Check for run.json — its presence indicates a completed run.
+		statusPath := filepath.Join(runsDir, entry.Name(), "run.json")
+		if _, err := os.Stat(statusPath); err != nil {
+			// Failed/partial run — never prune.
+			continue
+		}
+		runs = append(runs, runEntry{name: entry.Name(), info: entry})
+	}
+
+	if len(runs) <= keep {
+		return
+	}
+
+	// Sort by name ascending (oldest first) and remove the excess.
+	sort.Slice(runs, func(i, j int) bool {
+		return runs[i].name < runs[j].name
+	})
+
+	toRemove := runs[:len(runs)-keep]
+	for _, r := range toRemove {
+		path := filepath.Join(runsDir, r.name)
+		if err := os.RemoveAll(path); err != nil {
+			slog.Warn("failed to prune old run directory", "path", path, "error", err)
+		}
+	}
 }

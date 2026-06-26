@@ -586,6 +586,9 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("secret-identity", "", "")
 	cmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "")
 	cmd.Flags().String("state-file", "", "")
+	cmd.Flags().Bool("fail-fast", false, "")
+	cmd.Flags().String("run-id", "", "")
+	cmd.Flags().Int("keep-runs", 20, "")
 	cmd.SetContext(context.Background())
 	return cmd
 }

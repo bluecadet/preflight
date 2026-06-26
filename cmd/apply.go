@@ -30,6 +30,7 @@ func init() {
 	addVarFlags(applyCmd)
 	addTagFlags(applyCmd)
 	addOutputFlags(applyCmd)
+	addRunFlags(applyCmd)
 	addConcurrencyFlag(applyCmd)
 	addTimeoutFlag(applyCmd)
 	applyCmd.Flags().String("bundle", "", "apply from a staged bundle zip")
@@ -73,6 +74,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return err
 	}
 
+	failFast, _ := cmd.Flags().GetBool("fail-fast")
 	ctx, cancel, err := commandContext(cmd)
 	if err != nil {
 		return err
@@ -99,8 +101,11 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return err
 	}
 
-	// Set up the fan-out bus: terminal renderer + disk run log.
+	// Determine run ID, overriding with --run-id if provided.
 	runID := output.RunID()
+	if customRunID, _ := cmd.Flags().GetString("run-id"); customRunID != "" {
+		runID = customRunID
+	}
 	runDir := filepath.Join(session.ProjectDir, output.RunDir(runID))
 	runLogPath := filepath.Join(runDir, "run.jsonl")
 	runLogSink, err := output.NewRunLogSink(runID, runLogPath)
@@ -171,6 +176,9 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 
 		r := runner.New(host.Target, session.Chain, cfg)
 		if err := r.Run(runCtx, session.Playbook); err != nil {
+			if failFast {
+				cancel()
+			}
 			action := "apply"
 			if opts.stageOnly {
 				action = "stage"
@@ -193,6 +201,11 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 
 	// Write run status files.
 	_ = output.WriteStatusFile(runDir, runStatus(hostErrors), runExitCode(hostErrors))
+
+	// Prune old runs per --keep-runs.
+	if keepRuns, _ := cmd.Flags().GetInt("keep-runs"); keepRuns > 0 {
+		pruneOldRuns(session.ProjectDir, keepRuns)
+	}
 
 	return hostErrors
 }

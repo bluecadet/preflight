@@ -19,6 +19,7 @@ func init() {
 	addVarFlags(checkCmd)
 	addTagFlags(checkCmd)
 	addOutputFlags(checkCmd)
+	addRunFlags(checkCmd)
 	addConcurrencyFlag(checkCmd)
 	addTimeoutFlag(checkCmd)
 	rootCmd.AddCommand(checkCmd)

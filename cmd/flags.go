@@ -23,6 +23,12 @@ func addOutputFlags(cmd *cobra.Command) {
 	cmd.Flags().String("color", "auto", "color output: auto, always, or never")
 }
 
+func addRunFlags(cmd *cobra.Command) {
+	cmd.Flags().Bool("fail-fast", false, "stop all targets on the first failure")
+	cmd.Flags().String("run-id", "", "override the auto-generated run identifier")
+	cmd.Flags().Int("keep-runs", 20, "number of recent successful run directories to retain")
+}
+
 func addConcurrencyFlag(cmd *cobra.Command) {
 	cmd.Flags().Int("concurrency", 0, "max number of targets to operate on in parallel (0 = unlimited)")
 }
