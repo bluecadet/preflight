@@ -101,18 +101,18 @@ func TestRunLogSink_WritesJSONL(t *testing.T) {
 		ElapsedMs: 500,
 	})
 	sink.Emit(TargetCompleteEvent{
-		Target:        "kiosk-01",
-		Outcome:       "ok",
-		OKCount:       1,
-		ChangedCount:  0,
-		FailedCount:   0,
-		SkippedCount:  0,
-		ElapsedMs:     5000,
+		Target:       "kiosk-01",
+		Outcome:      "ok",
+		OKCount:      1,
+		ChangedCount: 0,
+		FailedCount:  0,
+		SkippedCount: 0,
+		ElapsedMs:    5000,
 	})
 	sink.Emit(RunSummaryEvent{
-		Status:   "success",
-		OKCount:  1,
-		ElapsedMs: 5000,
+		Status:        "success",
+		OKCount:       1,
+		ElapsedMs:     5000,
 		TargetTallies: TargetCounts{OK: 1},
 	})
 	sink.Close()
@@ -156,7 +156,9 @@ func TestRunLogSink_WritesJSONL(t *testing.T) {
 
 	// First line is version.
 	var first map[string]any
-	json.Unmarshal([]byte(lines[0]), &first)
+	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
+		t.Fatalf("unmarshal first line: %v", err)
+	}
 	if first["type"] != "version" {
 		t.Errorf("first line type=%q, want %q", first["type"], "version")
 	}
@@ -164,4 +166,3 @@ func TestRunLogSink_WritesJSONL(t *testing.T) {
 		t.Errorf("schema_version=%q, want %q", first["schema_version"], "1.0")
 	}
 }
-

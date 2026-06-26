@@ -81,26 +81,26 @@ func runLogMsg(event Event) string {
 
 // runLogEnvelope builds the standard envelope fields for a run-log JSON line.
 type runLogEnvelope struct {
-	Seq     int64  `json:"seq"`
-	TS      string `json:"ts"`
-	Type    string `json:"type"`
-	Level   string `json:"level"`
-	RunID   string `json:"run_id"`
-	Target  *string `json:"target"`
-	TaskID  *string `json:"task_id"`
-	Msg     string `json:"msg"`
+	Seq    int64   `json:"seq"`
+	TS     string  `json:"ts"`
+	Type   string  `json:"type"`
+	Level  string  `json:"level"`
+	RunID  string  `json:"run_id"`
+	Target *string `json:"target"`
+	TaskID *string `json:"task_id"`
+	Msg    string  `json:"msg"`
 }
 
 // RunLogSink writes a sequential JSONL run log to disk.
 // It implements the Renderer interface.
 type RunLogSink struct {
-	f        io.WriteCloser
-	enc      *json.Encoder
-	seq      int64
-	runID    string
-	dir      string
-	summary  *RunSummaryEvent
-	now      func() time.Time
+	f       io.WriteCloser
+	enc     *json.Encoder
+	seq     int64
+	runID   string
+	dir     string
+	summary *RunSummaryEvent
+	now     func() time.Time
 }
 
 // NewRunLogSink creates a RunLogSink that writes to the given file path.
@@ -467,18 +467,18 @@ func nullableString(s string) *string {
 // buildRunJSON creates the final summary JSON from the captured RunSummaryEvent.
 func (s *RunLogSink) buildRunJSON(e *RunSummaryEvent) map[string]any {
 	m := map[string]any{
-		"status":       e.Status,
-		"elapsed_ms":   e.ElapsedMs,
-		"ok":           e.OKCount,
-		"changed":      e.ChangedCount,
-		"failed":       e.FailedCount,
-		"skipped":      e.SkippedCount,
-		"run_id":       s.runID,
+		"status":     e.Status,
+		"elapsed_ms": e.ElapsedMs,
+		"ok":         e.OKCount,
+		"changed":    e.ChangedCount,
+		"failed":     e.FailedCount,
+		"skipped":    e.SkippedCount,
+		"run_id":     s.runID,
 	}
 	// Target tallies.
 	m["tallies"] = map[string]int{
-		"ok":         e.TargetTallies.OK,
-		"failed":     e.TargetTallies.Failed,
+		"ok":          e.TargetTallies.OK,
+		"failed":      e.TargetTallies.Failed,
 		"unreachable": e.TargetTallies.Unreachable,
 	}
 	return m
@@ -489,5 +489,5 @@ func WriteStatusFile(runDir, status string, rc int) error {
 	if err := os.WriteFile(filepath.Join(runDir, "status"), []byte(strings.TrimSpace(status)+"\n"), 0644); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(runDir, "rc"), []byte(fmt.Sprintf("%d\n", rc)), 0644)
+	return os.WriteFile(filepath.Join(runDir, "rc"), fmt.Appendf(nil, "%d\n", rc), 0644)
 }

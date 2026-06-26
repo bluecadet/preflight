@@ -18,7 +18,7 @@ const (
 )
 
 const (
-	lineWidth                = 80
+	lineWidth                 = 80
 	defaultFailureOutputLimit = 80
 )
 
@@ -43,7 +43,6 @@ type TextRenderer struct {
 	warningCount       int
 	okCount            int
 	changedCount       int
-	failedCount        int
 	skippedCount       int
 	runSummary         RunSummaryEvent
 	closed             bool
