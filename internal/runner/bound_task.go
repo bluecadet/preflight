@@ -10,6 +10,7 @@ import (
 	"github.com/bluecadet/preflight/internal/template"
 )
 
+// BoundTask holds the template-rendered task fields before secret resolution.
 type BoundTask struct {
 	Name   string
 	When   string
@@ -17,24 +18,29 @@ type BoundTask struct {
 	Become map[string]any
 }
 
-func evaluateTaskWhen(task *PlanTask, execCtx *executionContext) (bool, error) {
+// BoundTaskResult is the output of the consolidated bind pipeline: a fully
+// resolved task ready to execute, plus pre-resolution copies for state hashing.
+type BoundTaskResult struct {
+	Name         string
+	Params       map[string]any
+	Become       map[string]any
+	SourceParams map[string]any // pre-secret-resolution copy for state
+	SourceBecome map[string]any // pre-secret-resolution copy for state
+	ExecOpts     target.ExecutionOptions
+}
+
+// evaluateTaskWhen renders the task's when condition against the RuntimeContext.
+func evaluateTaskWhen(task *PlanTask, rt *template.RuntimeContext) (bool, error) {
 	if task.When == "" {
 		return true, nil
 	}
-	eng := task.Scope.Engine(&template.RuntimeContext{
-		Target: execCtx.target,
-		Facts:  execCtx.facts,
-		Env:    execCtx.env,
-	}, template.Bind)
+	eng := task.Scope.Engine(rt, template.Bind)
 	return eng.RenderBool(task.When)
 }
 
-func bindTask(task *PlanTask, execCtx *executionContext, bindMode template.BindMode) (*BoundTask, error) {
-	eng := task.Scope.Engine(&template.RuntimeContext{
-		Target: execCtx.target,
-		Facts:  execCtx.facts,
-		Env:    execCtx.env,
-	}, bindMode)
+// bindTask renders template expressions in the task against the RuntimeContext.
+func bindTask(task *PlanTask, rt *template.RuntimeContext, bindMode template.BindMode) (*BoundTask, error) {
+	eng := task.Scope.Engine(rt, bindMode)
 	if module.PreservesSecretRefs(task.Module) {
 		eng = eng.WithPreserveSecretRefs()
 	}
@@ -65,6 +71,37 @@ func bindTask(task *PlanTask, execCtx *executionContext, bindMode template.BindM
 		}
 	}
 	return &BoundTask{Name: name, When: when, Params: params, Become: become}, nil
+}
+
+// bindAndResolveTask consolidates the bind-time pipeline: template rendering,
+// secret resolution, file-content_template rendering, and execution-option
+// normalization — all in one call.
+func bindAndResolveTask(ctx context.Context, task *PlanTask, rt *template.RuntimeContext, resolver *secrets.Resolver) (*BoundTaskResult, error) {
+	bound, err := bindTask(task, rt, template.Bind)
+	if err != nil {
+		return nil, err
+	}
+
+	sourceParams := cloneMap(bound.Params)
+	sourceBecome := cloneMap(bound.Become)
+
+	if err := bound.resolveSecrets(ctx, resolver); err != nil {
+		return nil, err
+	}
+	resolvedBecome := cloneMap(bound.Become)
+	_, execOpts, err := bound.executionOptions()
+	if err != nil {
+		return nil, err
+	}
+
+	return &BoundTaskResult{
+		Name:         bound.Name,
+		Params:       bound.Params,
+		Become:       resolvedBecome,
+		SourceParams: sourceParams,
+		SourceBecome: sourceBecome,
+		ExecOpts:     execOpts,
+	}, nil
 }
 
 func (b *BoundTask) resolveSecrets(ctx context.Context, resolver *secrets.Resolver) error {

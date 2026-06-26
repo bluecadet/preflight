@@ -91,7 +91,8 @@ func (r *Runner) emitDiagnostic(pt *PlanTask, summary, detail, source string) {
 	})
 }
 
-// apply executes the task graph against the target.
+// apply executes the task graph against the target. It acquires the runtime
+// context from the live target, then delegates to the pure applyResolved loop.
 func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -102,154 +103,189 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("apply: build DAG: %w", err)
 	}
 
-	ordered := dag.TopologicalOrder()
-	execCtx, err := r.buildExecutionContext(ctx)
+	rt, err := r.buildExecutionContext(ctx)
 	if err != nil {
 		return err
 	}
 
-	state := &State{
-		Tasks: make(map[string]TaskSnapshot),
+	return r.applyResolved(ctx, dag, rt)
+}
+
+// applyResolved is the pure orchestration loop. It receives an already-built
+// RuntimeContext and sequences tasks through the DAG, handling tag filtering,
+// dependency checks, when-condition evaluation, binding, execution, and state
+// accumulation. The loop is self-contained so tests can inject a fake target
+// and a synthetic RuntimeContext without a live connection.
+func (r *Runner) applyResolved(ctx context.Context, dag *DAG, rt *template.RuntimeContext) error {
+	ordered := dag.TopologicalOrder()
+	acc := newApplyAccumulator()
+
+	for _, pt := range ordered {
+		if err := r.executeTask(ctx, pt, rt, dag, acc); err != nil {
+			if err == errHalt {
+				return r.finalizeApply(acc)
+			}
+			return err
+		}
+	}
+	return r.finalizeApply(acc)
+}
+
+// errHalt is a sentinel signalling a non-ignored task failure — the loop
+// should break but finalizeApply must still save state.
+var errHalt = fmt.Errorf("halt apply loop")
+
+// applyAccumulator tracks per-task outcome counts and the state map during
+// apply. It is distinct from the TUI's RunProjection.
+type applyAccumulator struct {
+	okCount      int
+	changedCount int
+	failedCount  int
+	skippedCount int
+	state        *State
+	failed       map[string]bool
+}
+
+func newApplyAccumulator() *applyAccumulator {
+	return &applyAccumulator{
+		state:  &State{Tasks: make(map[string]TaskSnapshot)},
+		failed: make(map[string]bool),
+	}
+}
+
+func (acc *applyAccumulator) recordTask(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) {
+	acc.state.RecordTask(newTaskSnapshot(pt, taskName, sourceParams, params, sourceBecome, become, status, message, dag))
+	switch status {
+	case target.StatusOK:
+		acc.okCount++
+	case target.StatusChanged:
+		acc.changedCount++
+	case target.StatusFailed:
+		acc.failedCount++
+	case target.StatusSkipped:
+		acc.skippedCount++
+	}
+}
+
+func (r *Runner) finalizeApply(acc *applyAccumulator) error {
+	acc.state.LastApplied = time.Now()
+	if !r.config.DryRun && r.config.StatePath != "" {
+		if err := acc.state.Save(r.config.StatePath); err != nil {
+			return fmt.Errorf("apply: save state: %w", err)
+		}
+	}
+	if acc.failedCount > 0 {
+		return fmt.Errorf("apply: %d task(s) failed", acc.failedCount)
+	}
+	return nil
+}
+
+// executeTask handles one task's full lifecycle: tag filtering, dependency
+// gating, when-condition evaluation, template binding + secret resolution,
+// target execution, state recording, and event emission.
+//
+// Returns:
+//   - nil: task completed (or was legitimately skipped); continue the loop.
+//   - errHalt: non-ignored task failure; state was recorded, caller should
+//     finalize (save state) and return.
+//   - any other error: unrecoverable — binding, when, or context failure;
+//     caller should return immediately without saving state.
+func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.RuntimeContext, dag *DAG, acc *applyAccumulator) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
-	// Track outcome counts for the play recap.
-	var okCount, changedCount, failedCount, skippedCount int
-
-	failed := make(map[string]bool)
-
-	finishApply := func() error {
-		state.LastApplied = time.Now()
-		if !r.config.DryRun && r.config.StatePath != "" {
-			if err := state.Save(r.config.StatePath); err != nil {
-				return fmt.Errorf("apply: save state: %w", err)
-			}
-		}
-
-		if failedCount > 0 {
-			return fmt.Errorf("apply: %d task(s) failed", failedCount)
-		}
+	// Tag filtering.
+	if !r.taskMatchesTags(pt) {
+		r.emitNewTaskSkipped(pt, "tag-filtered")
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil)
 		return nil
 	}
 
-	for _, pt := range ordered {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		// Tag filtering.
-		if !r.taskMatchesTags(pt) {
-			r.emitNewTaskSkipped(pt, "tag-filtered")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil))
-			skippedCount++
-			continue
-		}
-
-		// Dependency check: skip if any dependency failed (unless ignore_errors).
-		depFailed := false
-		depIDs, err := dag.DependencyIDs(pt)
-		if err != nil {
-			return fmt.Errorf("apply: %w", err)
-		}
-		for _, depID := range depIDs {
-			if failed[depID] {
-				depFailed = true
-				break
-			}
-		}
-		if depFailed && !pt.IgnoreErrors {
-			r.emitNewTaskSkipped(pt, "dependency-failed")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil))
-			skippedCount++
-			continue
-		}
-
-		// Evaluate when before rendering params/become so skipped tasks do not fail
-		// on unrelated template expansion errors.
-		whenOK, err := evaluateTaskWhen(pt, execCtx)
-		if err != nil {
-			return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
-		}
-		if !whenOK {
-			r.emitNewTaskSkipped(pt, "when-condition-false")
-			state.RecordTask(newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil))
-			skippedCount++
-			continue
-		}
-
-		bound, err := bindTask(pt, execCtx, template.Bind)
-		if err != nil {
-			return fmt.Errorf("task %q: %w", pt.Name, err)
-		}
-		stateSource := cloneMap(bound.Params)
-		sourceBecome := cloneMap(bound.Become)
-		if err := bound.resolveSecrets(ctx, r.config.Secrets); err != nil {
-			return fmt.Errorf("apply: task %q: %w", pt.Name, err)
-		}
-		resolvedBecome := cloneMap(bound.Become)
-		_, execOpts, err := bound.executionOptions()
-		if err != nil {
-			return fmt.Errorf("task %q: %w", pt.Name, err)
-		}
-
-		// Execute the task against the target.
-		slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
-		r.emitNewTaskStarted(pt)
-		taskStartTime := time.Now()
-		var onOutput target.OutputFunc
-		if r.config.Renderer != nil {
-			onOutput = func(line string) {
-				r.config.Renderer.Emit(output.TaskOutputEvent{
-					TaskID:   pt.ID,
-					TaskName: bound.Name,
-					Target:   r.targetName(),
-					Lines:    []string{line},
-				})
-			}
-		}
-		result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, execOpts, r.config.DryRun, onOutput)
-		elapsedMs := time.Since(taskStartTime).Milliseconds()
-		if execErr != nil {
-			if !pt.IgnoreErrors {
-				r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
-				r.emitDiagnostic(pt, execErr.Error(), "", pt.Module)
-				state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, target.StatusFailed, execErr.Error(), dag))
-				failedCount++
-				failed[pt.ID] = true
-				return finishApply()
-			}
-			result = target.Result{Status: target.StatusOK, Message: execErr.Error(), Output: result.Output}
-		}
-
-		state.RecordTask(newTaskSnapshot(pt, bound.Name, stateSource, bound.Params, sourceBecome, resolvedBecome, result.Status, result.Message, dag))
-
-		switch result.Status {
-		case target.StatusOK:
-			r.emitNewTaskOK(pt, elapsedMs)
-		case target.StatusChanged:
-			r.emitNewTaskChanged(pt, elapsedMs)
-		case target.StatusFailed:
-			r.emitNewTaskFailed(pt, result.Message, 0, result.Output, elapsedMs)
-			r.emitDiagnostic(pt, result.Message, "", pt.Module)
-		case target.StatusSkipped:
-			r.emitNewTaskSkipped(pt, result.Message)
-		}
-		switch result.Status {
-		case target.StatusOK:
-			okCount++
-		case target.StatusChanged:
-			changedCount++
-		case target.StatusFailed:
-			failedCount++
-			if !pt.IgnoreErrors {
-				failed[pt.ID] = true
-				return finishApply()
-			}
-		case target.StatusSkipped:
-			skippedCount++
+	// Dependency check: skip if any dependency failed (unless ignore_errors).
+	depFailed := false
+	depIDs, err := dag.DependencyIDs(pt)
+	if err != nil {
+		return fmt.Errorf("apply: %w", err)
+	}
+	for _, depID := range depIDs {
+		if acc.failed[depID] {
+			depFailed = true
+			break
 		}
 	}
+	if depFailed && !pt.IgnoreErrors {
+		r.emitNewTaskSkipped(pt, "dependency-failed")
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil)
+		return nil
+	}
 
-	return finishApply()
+	// Evaluate when before rendering params/become so skipped tasks do not fail
+	// on unrelated template expansion errors.
+	whenOK, err := evaluateTaskWhen(pt, rt)
+	if err != nil {
+		return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
+	}
+	if !whenOK {
+		r.emitNewTaskSkipped(pt, "when-condition-false")
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil)
+		return nil
+	}
+
+	// Bind + resolve secrets + execution options in one consolidated step.
+	bound, err := bindAndResolveTask(ctx, pt, rt, r.config.Secrets)
+	if err != nil {
+		return fmt.Errorf("task %q: %w", pt.Name, err)
+	}
+
+	// Execute the task against the target.
+	slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
+	r.emitNewTaskStarted(pt)
+	taskStartTime := time.Now()
+	var onOutput target.OutputFunc
+	if r.config.Renderer != nil {
+		onOutput = func(line string) {
+			r.config.Renderer.Emit(output.TaskOutputEvent{
+				TaskID:   pt.ID,
+				TaskName: bound.Name,
+				Target:   r.targetName(),
+				Lines:    []string{line},
+			})
+		}
+	}
+	result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, bound.ExecOpts, r.config.DryRun, onOutput)
+	elapsedMs := time.Since(taskStartTime).Milliseconds()
+	if execErr != nil {
+		if !pt.IgnoreErrors {
+			r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
+			r.emitDiagnostic(pt, execErr.Error(), "", pt.Module)
+			acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, bound.SourceBecome, bound.Become, target.StatusFailed, execErr.Error(), dag)
+			acc.failed[pt.ID] = true
+			return errHalt
+		}
+		result = target.Result{Status: target.StatusOK, Message: execErr.Error(), Output: result.Output}
+	}
+
+	acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, bound.SourceBecome, bound.Become, result.Status, result.Message, dag)
+
+	switch result.Status {
+	case target.StatusOK:
+		r.emitNewTaskOK(pt, elapsedMs)
+	case target.StatusChanged:
+		r.emitNewTaskChanged(pt, elapsedMs)
+	case target.StatusFailed:
+		r.emitNewTaskFailed(pt, result.Message, 0, result.Output, elapsedMs)
+		r.emitDiagnostic(pt, result.Message, "", pt.Module)
+	case target.StatusSkipped:
+		r.emitNewTaskSkipped(pt, result.Message)
+	}
+
+	if result.Status == target.StatusFailed && !pt.IgnoreErrors {
+		acc.failed[pt.ID] = true
+		return errHalt
+	}
+
+	return nil
 }
 
 // taskMatchesTags returns true if the task should run given the tag config.
@@ -307,13 +343,10 @@ func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[str
 	}
 }
 
-type executionContext struct {
-	target map[string]any
-	facts  map[string]any
-	env    map[string]string
-}
-
-func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, error) {
+// buildExecutionContext connects to the live target, gathers facts, and
+// returns a RuntimeContext for template binding. This is the only apply step
+// that requires a real target connection.
+func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeContext, error) {
 	targetVars := cloneMap(r.config.TargetVars)
 	r.emitActivityStart("connecting")
 	info, err := r.target.Info(ctx)
@@ -340,19 +373,22 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*executionContext, 
 	}
 	r.emitActivityResult("connecting", "ok")
 
-	return &executionContext{
-		target: targetVars,
-		facts:  collected.AsMap(),
-		env:    collected.Env,
+	return &template.RuntimeContext{
+		Target: targetVars,
+		Facts:  collected.AsMap(),
+		Env:    collected.Env,
 	}, nil
 }
 
+// PreviewTask renders a single PlanTask against the given target vars using
+// BindPartial, preserving unknown references. Used for plan previews and
+// staged-bundle analysis.
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
 	preview.Params = cloneMap(task.Params)
 	preview.Become = cloneMap(task.Become)
-	execCtx := &executionContext{target: targetVars}
-	bound, err := bindTask(&preview, execCtx, template.BindPartial)
+	rt := &template.RuntimeContext{Target: targetVars}
+	bound, err := bindTask(&preview, rt, template.BindPartial)
 	if err != nil {
 		return nil, err
 	}

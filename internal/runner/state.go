@@ -167,15 +167,15 @@ func ParamHash(params map[string]any) string {
 	return hashValue(params)
 }
 
-func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *executionContext, resolver *secrets.Resolver) ([]PlannedTaskState, error) {
+func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, rt *template.RuntimeContext, resolver *secrets.Resolver) ([]PlannedTaskState, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	if plan == nil {
 		return nil, fmt.Errorf("state: nil execution plan")
 	}
-	if execCtx == nil {
-		execCtx = &executionContext{}
+	if rt == nil {
+		rt = &template.RuntimeContext{}
 	}
 	dag, err := plan.DAG()
 	if err != nil {
@@ -185,7 +185,7 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, execCtx *ex
 	tasks := make([]PlannedTaskState, 0, len(plan.Tasks))
 	renderedTasks := make([]*BoundTask, 0, len(plan.Tasks))
 	for _, task := range plan.Tasks {
-		bound, err := bindTask(task, execCtx, template.Bind)
+		bound, err := bindTask(task, rt, template.Bind)
 		if err != nil {
 			return nil, fmt.Errorf("state: task %q: %w", task.Name, err)
 		}

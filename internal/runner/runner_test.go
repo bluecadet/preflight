@@ -1358,18 +1358,18 @@ func TestBuildPlannedTaskStateRendersExecutionTimeTemplates(t *testing.T) {
 		}},
 	}
 
-	planned, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{
-		target: map[string]any{
+	planned, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{
+		Target: map[string]any{
 			"name":    "kiosk-a",
 			"address": "10.0.0.1",
 		},
-		facts: map[string]any{
+		Facts: map[string]any{
 			"os": map[string]any{
 				"name":  "Windows 11",
 				"build": 22631,
 			},
 		},
-		env: map[string]string{
+		Env: map[string]string{
 			"SITE": "lobby",
 		},
 	}, nil)
@@ -1414,8 +1414,8 @@ func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
 		},
 	}
 
-	planned, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{
-		target: map[string]any{"name": "kiosk-a"},
+	planned, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{
+		Target: map[string]any{"name": "kiosk-a"},
 	}, nil)
 	if err != nil {
 		t.Fatalf("BuildPlannedTaskState returned error: %v", err)

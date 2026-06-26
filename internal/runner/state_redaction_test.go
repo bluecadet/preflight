@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/action"
+	"github.com/bluecadet/preflight/internal/template"
 )
 
 func TestSummarizeParamsDoesNotRedactOrdinaryPathValues(t *testing.T) {
@@ -131,7 +132,7 @@ func TestBuildPlannedTaskStateKeepsBecomeSummaryUnwrapped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	states, err := BuildPlannedTaskState(context.Background(), plan, &executionContext{}, nil)
+	states, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{}, nil)
 	if err != nil {
 		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
 	}
