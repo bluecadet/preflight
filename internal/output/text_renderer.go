@@ -35,12 +35,7 @@ type TextRenderer struct {
 	playbookName string
 	targets      []string
 	activeTasks  map[string]time.Time
-	warningCount int
-	okCount      int
-	changedCount int
-	skippedCount int
-	failedCount  int
-	failedTasks  []failedTask
+	projection   *RunProjection
 	closed       bool
 }
 
@@ -63,6 +58,7 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 		mode:         normalizeRunMode(opts.Mode),
 		runDir:       opts.RunDir,
 		activeTasks:  make(map[string]time.Time),
+		projection:   NewRunProjectionWithOptions(opts),
 	}
 	if r.maxFailLines <= 0 {
 		r.maxFailLines = defaultFailureOutputLimit
@@ -89,6 +85,9 @@ func (r *TextRenderer) colorize(code, text string) string {
 
 func (r *TextRenderer) Emit(event Event) {
 	r.ensureState()
+	// Feed the event into the shared projection so all counters and run
+	// state are folded once, regardless of how many sinks consume the stream.
+	r.projection.Apply(event)
 	switch e := event.(type) {
 	case VersionEvent:
 		// Version event is only written to the run log; no terminal output.
@@ -115,7 +114,6 @@ func (r *TextRenderer) Emit(event Event) {
 	case TaskOutputEvent:
 		r.emitTaskOutput(e)
 	case WarningEvent:
-		r.warningCount++
 		r.writeLine(r.colorize(ansiYellow, "WARNING: "+e.Message))
 	case ActivityStartEvent:
 		r.emitActivityStart(e)
@@ -162,13 +160,12 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("ok", r.isCheckMode()) + " " + e.TaskName
+	left := statusGlyph("ok", r.projection.IsCheckMode()) + " " + e.TaskName
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
 	}
 	r.writeLine(padLine(left, right, lineWidth))
-	r.okCount++
 }
 
 func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
@@ -176,27 +173,25 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("changed", r.isCheckMode()) + " " + e.TaskName
+	left := statusGlyph("changed", r.projection.IsCheckMode()) + " " + e.TaskName
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
 	}
 	r.writeLine(padLine(left, right, lineWidth))
-	r.changedCount++
 }
 
 func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("skipped", r.isCheckMode()) + " " + e.TaskName
+	left := statusGlyph("skipped", r.projection.IsCheckMode()) + " " + e.TaskName
 	r.writeLine(padLine(left, "", lineWidth))
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
 			r.writeLine(line)
 		}
 	}
-	r.skippedCount++
 }
 
 func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
@@ -204,16 +199,7 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	r.failedCount++
-	r.failedTasks = append(r.failedTasks, failedTask{
-		target:     e.Target,
-		actionPath: "",
-		name:       e.TaskName,
-		message:    e.FailMessage,
-		output:     e.Output,
-	})
-
-	left := statusGlyph("failed", r.isCheckMode()) + " " + e.TaskName
+	left := statusGlyph("failed", r.projection.IsCheckMode()) + " " + e.TaskName
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -315,24 +301,11 @@ func (r *TextRenderer) emitActivityResult(e ActivityResultEvent) {
 }
 
 func (r *TextRenderer) shouldShowHostLabels() bool {
-	if r.runStarted {
-		return len(r.targets) != 1
-	}
-	return true
+	return r.projection.ShouldShowHostLabels()
 }
 
 func (r *TextRenderer) displayTarget(target string) string {
-	if target == "" {
-		return "local"
-	}
-	if len(r.targets) == 1 && r.targets[0] == "local" && target == "localhost" {
-		return "local"
-	}
-	return target
-}
-
-func (r *TextRenderer) isCheckMode() bool {
-	return r.mode == "check"
+	return r.projection.DisplayTarget(target)
 }
 
 func (r *TextRenderer) writeLine(line string) {
@@ -371,10 +344,10 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 		return
 	}
 
-	modeTitle := titleRunMode(r.mode)
+	modeTitle := titleRunMode(r.projection.Mode)
 	statusGlyph := r.colorize(ansiGreen, "✓")
 	statusWord := "complete"
-	if r.failedCount > 0 {
+	if r.projection.FailedCount > 0 {
 		statusGlyph = r.colorize(ansiRed, "x")
 		statusWord = "failed"
 	}
@@ -383,18 +356,17 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 	r.writeLine("Recap")
 	r.writeLine(fmt.Sprintf("%s %s %s", statusGlyph, modeTitle, statusWord))
 
-	// Use the counter fields directly (same source RunSummaryEvent carries).
 	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
-		{ok: r.okCount, changed: r.changedCount, failed: r.failedCount, skipped: r.skippedCount},
+		{ok: r.projection.OkCount, changed: r.projection.ChangedCount, failed: r.projection.FailedCount, skipped: r.projection.SkippedCount},
 	})
-	r.writeLine("  tasks: " + renderTaskTotals(totals, r.isCheckMode(), r.warningCount))
+	r.writeLine("  tasks: " + renderTaskTotals(totals, r.projection.IsCheckMode(), r.projection.WarningCount))
 
-	if r.failedCount > 0 {
+	if r.projection.FailedCount > 0 {
 		r.writeLine("")
 		r.writeLine("Needs attention")
-		for _, failed := range r.failedTasks {
+		for _, failed := range r.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			r.writeLine("  [" + r.displayTarget(failed.target) + "] " + path)
+			r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
 		}
 		if r.runDir != "" {
 			r.writeLine("  Run directory: " + r.runDir)
