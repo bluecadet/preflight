@@ -1,4 +1,4 @@
-.PHONY: all build-windows-amd64 build-windows-arm64 build-local test vet install
+.PHONY: all build-windows-amd64 build-windows-arm64 build-local test vet install verify
 
 windows: build-windows-amd64 build-windows-arm64
 
@@ -22,3 +22,5 @@ vet:
 
 lint:
 	golangci-lint run
+
+verify: test lint vet
