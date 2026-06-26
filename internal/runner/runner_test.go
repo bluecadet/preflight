@@ -481,8 +481,8 @@ func TestPlanStdlibWindowsPowerRendersTemplatedSettingsLists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Plan returned error: %v", err)
 	}
-	if len(plan.Tasks) != 2 {
-		t.Fatalf("expected 2 expanded tasks, got %d", len(plan.Tasks))
+	if len(plan.Tasks) != 3 {
+		t.Fatalf("expected 3 expanded tasks, got %d", len(plan.Tasks))
 	}
 
 	previewPlan, err := PreviewTask(plan.Tasks[0], nil)

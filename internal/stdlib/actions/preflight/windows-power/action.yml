@@ -149,7 +149,7 @@ tasks:
         }
 
   - name: Configure hibernation
-    when: "{{ vars.disable_hibernation != '' }}"
+    when: "{{ vars.disable_hibernation }}"
     powershell:
       check_script: |
         $disable = [System.Convert]::ToBoolean('{{ vars.disable_hibernation }}')
