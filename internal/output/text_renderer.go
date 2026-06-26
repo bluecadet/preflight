@@ -28,14 +28,9 @@ type TextRenderer struct {
 	color        bool
 	verbose      bool
 	maxFailLines int
-	mode         string
-	runDir       string
-	runStarted   bool
-	playbookPath string
-	playbookName string
-	targets      []string
 	activeTasks  map[string]time.Time
 	projection   *RunProjection
+	runStarted   bool
 	closed       bool
 }
 
@@ -55,8 +50,6 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 		color:        colorMode.UseColor(),
 		verbose:      opts.Verbose,
 		maxFailLines: opts.MaxFailLines,
-		mode:         normalizeRunMode(opts.Mode),
-		runDir:       opts.RunDir,
 		activeTasks:  make(map[string]time.Time),
 		projection:   NewRunProjectionWithOptions(opts),
 	}
@@ -70,9 +63,6 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 func (r *TextRenderer) ensureState() {
 	if r.activeTasks == nil {
 		r.activeTasks = make(map[string]time.Time)
-	}
-	if r.mode == "" {
-		r.mode = "apply"
 	}
 }
 
@@ -236,34 +226,30 @@ func (r *TextRenderer) emitRunStart(e RunStartEvent) {
 		return
 	}
 	r.runStarted = true
-	r.mode = normalizeRunMode(e.Mode)
-	r.playbookPath = strings.TrimSpace(e.PlaybookPath)
-	r.playbookName = strings.TrimSpace(e.PlaybookName)
-	r.targets = append([]string(nil), e.Targets...)
 
-	r.writeLine(r.colorize(ansiBold, titleRunMode(r.mode)))
-	if r.playbookPath != "" {
-		r.writeLine("playbook: " + r.playbookPath)
-	} else if r.playbookName != "" {
-		r.writeLine("playbook: " + r.playbookName)
+	r.writeLine(r.colorize(ansiBold, titleRunMode(r.projection.Mode)))
+	if r.projection.Playbook != "" {
+		r.writeLine("playbook: " + r.projection.Playbook)
+	} else if r.projection.PlayName != "" {
+		r.writeLine("playbook: " + r.projection.PlayName)
 	}
-	if r.playbookPath != "" && r.playbookName != "" {
-		r.writeLine("name: " + r.playbookName)
+	if r.projection.Playbook != "" && r.projection.PlayName != "" {
+		r.writeLine("name: " + r.projection.PlayName)
 	}
 	r.writeTargetIntro()
 	r.writeBlank()
 }
 
 func (r *TextRenderer) writeTargetIntro() {
-	switch len(r.targets) {
+	switch len(r.projection.Targets) {
 	case 0:
 		return
 	case 1:
-		r.writeLine("target: " + r.targets[0])
+		r.writeLine("target: " + r.projection.Targets[0])
 	default:
-		r.writeLine(fmt.Sprintf("targets: %d", len(r.targets)))
-		if len(r.targets) <= 5 {
-			r.writeLine("  " + strings.Join(r.targets, ", "))
+		r.writeLine(fmt.Sprintf("targets: %d", len(r.projection.Targets)))
+		if len(r.projection.Targets) <= 5 {
+			r.writeLine("  " + strings.Join(r.projection.Targets, ", "))
 		}
 	}
 }
@@ -280,7 +266,7 @@ func (r *TextRenderer) emitTargetComplete(e TargetCompleteEvent) {
 	if target == "" {
 		target = "local"
 	}
-	if len(r.targets) == 1 && r.targets[0] == "local" && target == "localhost" {
+	if len(r.projection.Targets) == 1 && r.projection.Targets[0] == "local" && target == "localhost" {
 		target = "local"
 	}
 	r.writeLine(r.colorize(ansiRed, "x "+target+" — failed (see above)"))
@@ -368,8 +354,8 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
 			r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
 		}
-		if r.runDir != "" {
-			r.writeLine("  Run directory: " + r.runDir)
+		if r.projection.RunDir != "" {
+			r.writeLine("  Run directory: " + r.projection.RunDir)
 		}
 	}
 }

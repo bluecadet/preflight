@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newTextRenderer creates a TextRenderer with color disabled (non-TTY writer).
@@ -13,6 +14,7 @@ func newTextRenderer(w *bytes.Buffer) *TextRenderer {
 		w:            w,
 		color:        false,
 		maxFailLines: defaultFailureOutputLimit,
+		activeTasks:  make(map[string]time.Time),
 		projection:   NewRunProjection(),
 	}
 }
@@ -23,6 +25,7 @@ func newVerboseTextRenderer(w *bytes.Buffer) *TextRenderer {
 		color:        false,
 		verbose:      true,
 		maxFailLines: defaultFailureOutputLimit,
+		activeTasks:  make(map[string]time.Time),
 		projection:   NewRunProjection(),
 	}
 }
