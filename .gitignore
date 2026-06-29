@@ -3,3 +3,6 @@ state/
 *.exe
 /sim
 !internal/target/
+
+# Local Windows integration test credentials (never commit)
+.env.test
