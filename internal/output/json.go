@@ -8,49 +8,50 @@ import (
 
 // jsonEvent is the serializable form of an Event.
 type jsonEvent struct {
-	Type          EventType            `json:"type"`
-	SchemaVersion string               `json:"schema_version,omitempty"`
-	Mode          string               `json:"mode,omitempty"`
-	PlayName      string               `json:"play,omitempty"`
-	PlaybookPath  string               `json:"playbook_path,omitempty"`
-	Name          string               `json:"name,omitempty"`
-	Namespace     string               `json:"namespace,omitempty"`
-	Ref           string               `json:"ref,omitempty"`
-	TaskID        string               `json:"task_id,omitempty"`
-	Task          string               `json:"task,omitempty"`
-	Target        string               `json:"target,omitempty"`
-	Status        string               `json:"status,omitempty"`
-	Message       string               `json:"message,omitempty"`
-	Error         string               `json:"error,omitempty"`
-	TaskCount     int                  `json:"task_count,omitempty"`
-	OKCount       *int                 `json:"ok_count,omitempty"`
-	ChangedCount  *int                 `json:"changed_count,omitempty"`
-	FailedCount   *int                 `json:"failed_count,omitempty"`
-	SkippedCount  *int                 `json:"skipped_count,omitempty"`
-	Lines         []string             `json:"lines,omitempty"`
-	Output        []string             `json:"output,omitempty"`
-	Facts         map[string]any       `json:"facts,omitempty"`
-	Tasks         []PlanTaskEntry      `json:"tasks,omitempty"`
-	StatePath     string               `json:"state_path,omitempty"`
-	LastApplied   string               `json:"last_applied,omitempty"`
-	Comparisons   []StateComparison    `json:"comparisons,omitempty"`
-	Targets       []string             `json:"targets,omitempty"`
-	VisitedRefs   int                  `json:"visited_refs,omitempty"`
-	ResolvedRefs  []string             `json:"resolved_refs,omitempty"`
-	ErrorCount    int                  `json:"error_count,omitempty"`
-	EmbeddedRefs  []string             `json:"embedded_refs,omitempty"`
-	LocalDir      string               `json:"local_dir,omitempty"`
-	LocalRefs     []string             `json:"local_refs,omitempty"`
-	Version       string               `json:"version,omitempty"`
-	Description   string               `json:"description,omitempty"`
-	Author        string               `json:"author,omitempty"`
-	Inputs        []ActionInputEntry   `json:"inputs,omitempty"`
-	TaskNames     []string             `json:"task_names,omitempty"`
-	Entries       []ActionFetchEntry   `json:"entries,omitempty"`
-	Plugins       []PluginListEntry    `json:"plugins,omitempty"`
-	Hosts         []InventoryHostEntry `json:"hosts,omitempty"`
-	Secrets       []SecretListEntry    `json:"secrets,omitempty"`
-	TS            string               `json:"ts"`
+	Type            EventType            `json:"type"`
+	SchemaVersion   string               `json:"schema_version,omitempty"`
+	Mode            string               `json:"mode,omitempty"`
+	PlayName        string               `json:"play,omitempty"`
+	PlaybookPath    string               `json:"playbook_path,omitempty"`
+	Name            string               `json:"name,omitempty"`
+	Namespace       string               `json:"namespace,omitempty"`
+	Ref             string               `json:"ref,omitempty"`
+	TaskID          string               `json:"task_id,omitempty"`
+	Task            string               `json:"task,omitempty"`
+	Target          string               `json:"target,omitempty"`
+	Status          string               `json:"status,omitempty"`
+	Message         string               `json:"message,omitempty"`
+	Error           string               `json:"error,omitempty"`
+	TaskCount       int                  `json:"task_count,omitempty"`
+	OKCount         *int                 `json:"ok_count,omitempty"`
+	ChangedCount    *int                 `json:"changed_count,omitempty"`
+	FailedCount     *int                 `json:"failed_count,omitempty"`
+	SkippedCount    *int                 `json:"skipped_count,omitempty"`
+	Lines           []string             `json:"lines,omitempty"`
+	Output          []string             `json:"output,omitempty"`
+	Facts           map[string]any       `json:"facts,omitempty"`
+	Tasks           []PlanTaskEntry      `json:"tasks,omitempty"`
+	StatePath       string               `json:"state_path,omitempty"`
+	LastApplied     string               `json:"last_applied,omitempty"`
+	Comparisons     []StateComparison    `json:"comparisons,omitempty"`
+	Targets         []string             `json:"targets,omitempty"`
+	VisitedRefs     int                  `json:"visited_refs,omitempty"`
+	ResolvedRefs    []string             `json:"resolved_refs,omitempty"`
+	ErrorCount      int                  `json:"error_count,omitempty"`
+	EmbeddedRefs    []string             `json:"embedded_refs,omitempty"`
+	LocalDir        string               `json:"local_dir,omitempty"`
+	LocalRefs       []string             `json:"local_refs,omitempty"`
+	Version         string               `json:"version,omitempty"`
+	Description     string               `json:"description,omitempty"`
+	Author          string               `json:"author,omitempty"`
+	Inputs          []ActionInputEntry   `json:"inputs,omitempty"`
+	TaskNames       []string             `json:"task_names,omitempty"`
+	Entries         []ActionFetchEntry   `json:"entries,omitempty"`
+	Plugins         []PluginListEntry    `json:"plugins,omitempty"`
+	Hosts           []InventoryHostEntry `json:"hosts,omitempty"`
+	Secrets         []SecretListEntry    `json:"secrets,omitempty"`
+	WinRMRoundTrips int64                `json:"winrm_round_trips,omitempty"`
+	TS              string               `json:"ts"`
 }
 
 // JSONRenderer writes newline-delimited JSON events to an io.Writer.
@@ -87,6 +88,7 @@ func (r *JSONRenderer) Emit(event Event) {
 		je.Target = e.Target
 		okCount, changedCount, failedCount, skippedCount := e.OKCount, e.ChangedCount, e.FailedCount, e.SkippedCount
 		je.OKCount, je.ChangedCount, je.FailedCount, je.SkippedCount = &okCount, &changedCount, &failedCount, &skippedCount
+		je.WinRMRoundTrips = e.WinRMRoundTrips
 	case TaskStartedEvent:
 		je.Type = EventTaskStarted
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target

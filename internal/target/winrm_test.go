@@ -1223,3 +1223,88 @@ func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 }
+
+func TestWinRMTarget_RoundTripCount(t *testing.T) {
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	callCount := 0
+	tgt.client = &fakeWinRMClient{
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			callCount++
+			// Info (third call: RunPowerShellScript call 1, Reachable call 2, Info call 3)
+			// needs a valid JSON response from Get-CimInstance.
+			if callCount == 3 {
+				return `{"hostname":"kiosk-a","version":"10.0.19045","build":"19045","arch":"64-bit"}`, "", 0, nil
+			}
+			return "ok", "", 0, nil
+		},
+		runCmd: func(_ context.Context, command string) (string, string, int, error) {
+			callCount++
+			return "ok", "", 0, nil
+		},
+	}
+
+	// Initially zero.
+	if got := tgt.RoundTripCount(); got != 0 {
+		t.Fatalf("initial count = %d, want 0", got)
+	}
+
+	// RunPowerShellScript → 1 round-trip (via runPSLegacy → RunPSWithContext).
+	_, err := tgt.RunPowerShellScript(context.Background(), "Write-Output 'hi'")
+	if err != nil {
+		t.Fatalf("RunPowerShellScript: %v", err)
+	}
+	if got := tgt.RoundTripCount(); got != 1 {
+		t.Fatalf("after RunPowerShellScript: count = %d, want 1", got)
+	}
+
+	// Reachable → 1 round-trip (via runCmd → RunCmdWithContext).
+	_, err = tgt.Reachable(context.Background())
+	if err != nil {
+		t.Fatalf("Reachable: %v", err)
+	}
+	if got := tgt.RoundTripCount(); got != 2 {
+		t.Fatalf("after Reachable: count = %d, want 2", got)
+	}
+
+	// Info → 1 round-trip (via runPS → runPSLegacy → RunPSWithContext).
+	_, err = tgt.Info(context.Background())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if got := tgt.RoundTripCount(); got != 3 {
+		t.Fatalf("after Info: count = %d, want 3", got)
+	}
+
+	// Verify RoundTripCounter interface is satisfied.
+	var _ RoundTripCounter = tgt
+}
+
+func TestWinRMTarget_RoundTripCountWithPersistentSession(t *testing.T) {
+	// Verify that CreateShell (even when it fails) is counted as a round-trip,
+	// and that the legacy fallback also gets counted. After the session creation
+	// error, execution falls back to runPSLegacy which adds another count.
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt.client = &fakeWinRMShellClient{
+		createShell: func() (*winrm.Shell, error) {
+			return nil, errors.New("shell unavailable")
+		},
+		fakeWinRMClient: fakeWinRMClient{
+			runPS: func(ctx context.Context, _ string) (string, string, int, error) {
+				return "ok", "", 0, nil
+			},
+		},
+	}
+
+	if got := tgt.RoundTripCount(); got != 0 {
+		t.Fatalf("initial count = %d, want 0", got)
+	}
+
+	_, err := tgt.RunPowerShellScript(context.Background(), "Write-Output 'hi'")
+	if err != nil {
+		t.Fatalf("RunPowerShellScript: %v", err)
+	}
+	// CreateShell (1) + legacy RunPSWithContext (1) = 2
+	if got := tgt.RoundTripCount(); got != 2 {
+		t.Fatalf("after RunPowerShellScript with failed session: count = %d, want 2", got)
+	}
+}

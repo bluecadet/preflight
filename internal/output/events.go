@@ -521,13 +521,14 @@ type TargetStartEvent struct {
 
 // TargetCompleteEvent signals all tasks for a target have completed.
 type TargetCompleteEvent struct {
-	Target       string
-	Outcome      string
-	OKCount      int
-	ChangedCount int
-	FailedCount  int
-	SkippedCount int
-	ElapsedMs    int64
+	Target          string
+	Outcome         string
+	OKCount         int
+	ChangedCount    int
+	FailedCount     int
+	SkippedCount    int
+	ElapsedMs       int64
+	WinRMRoundTrips int64
 }
 
 // TaskStartedEvent signals the start of a single task.

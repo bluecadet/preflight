@@ -178,10 +178,15 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 	if hasFailure {
 		outcome = "failed"
 	}
+	var winrmRoundTrips int64
+	if counter, ok := r.target.(target.RoundTripCounter); ok {
+		winrmRoundTrips = counter.RoundTripCount()
+	}
 	r.config.Renderer.Emit(output.TargetCompleteEvent{
-		Target:    targetName,
-		Outcome:   outcome,
-		ElapsedMs: elapsedMs,
+		Target:          targetName,
+		Outcome:         outcome,
+		ElapsedMs:       elapsedMs,
+		WinRMRoundTrips: winrmRoundTrips,
 	})
 }
 

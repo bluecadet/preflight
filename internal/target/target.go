@@ -153,3 +153,10 @@ type Target interface {
 type PowerShellRunner interface {
 	RunPowerShell(ctx context.Context, script string) (string, error)
 }
+
+// RoundTripCounter is optionally implemented by targets that can report the
+// number of transport round-trips made during execution. The count is surfaced
+// in the run log and under -v as a performance-tuning observable.
+type RoundTripCounter interface {
+	RoundTripCount() int64
+}
