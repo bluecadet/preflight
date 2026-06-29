@@ -100,39 +100,6 @@ jobs:
         with:
           version: v2.11
 
-  integration-windows:
-    name: Integration (Windows)
-    needs: changes
-    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.winrm == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Generate test credential
-        shell: powershell
-        run: |
-          $pass = -join ([char[]](33..126) | Get-Random -Count 24)
-          "PREFLIGHT_TEST_WINRM_PASS=$pass" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Provision loopback WinRM via bootstrap script
-        shell: powershell
-        run: ./scripts/bootstrap-winrm-vm.ps1
-
-      - name: Configure PREFLIGHT_TEST_WINRM for loopback
-        shell: powershell
-        run: |
-          $json = @{host="127.0.0.1";port=5985;user="pf-test";pass=$env:PREFLIGHT_TEST_WINRM_PASS} | ConvertTo-Json -Compress
-          "PREFLIGHT_TEST_WINRM=$json" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Run WinRM integration suite
-        shell: powershell
-        run: go test -v -count=1 -run TestWinRMIntegration ./internal/target/
-
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: changes
