@@ -32,9 +32,10 @@ type ShortcutParams struct {
 
 // UserParams are the typed parameters for the user module.
 type UserParams struct {
-	Name     string `param:"name,required"`
-	Ensure   string `param:"ensure" default:"present"`
-	Password string `param:"password"`
+	Name     string   `param:"name,required"`
+	Ensure   string   `param:"ensure" default:"present"`
+	Password string   `param:"password"`
+	Groups   []string `param:"groups"`
 }
 
 // FirewallRuleParams are the typed parameters for the firewall_rule module.
