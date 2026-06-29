@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/masterzen/winrm"
@@ -65,6 +66,14 @@ type WinRMTarget struct {
 	client        winRMClient
 	psSessionMu   sync.Mutex
 	psSession     *winRMPersistentPS
+	roundTrips    atomic.Int64
+}
+
+// RoundTripCount returns the number of WinRM round-trips made so far. It is
+// safe to call concurrently and can be queried at any point during or after
+// execution.
+func (t *WinRMTarget) RoundTripCount() int64 {
+	return t.roundTrips.Load()
 }
 
 // winRMPersistentPS holds a single long-running PowerShell process started
@@ -274,11 +283,13 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 		return nil, nil // client doesn't support raw shells; use legacy path
 	}
 
+	t.roundTrips.Add(1)
 	shell, err := creator.CreateShell()
 	if err != nil {
 		return nil, wrapWinRMTargetError("create persistent shell", err)
 	}
 
+	t.roundTrips.Add(1)
 	cmd, err := shell.ExecuteWithContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "-")
 	if err != nil {
 		_ = shell.Close()
@@ -394,6 +405,7 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 		}
 		sw := &lineStreamWriter{out: out}
 		var errBuf bytes.Buffer
+		t.roundTrips.Add(1)
 		code, err := streamer.RunWithContextWithInput(ctx, encoded, sw, &errBuf, nil)
 		sw.flush()
 		if err != nil {
@@ -414,6 +426,7 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 		return sw.all.String(), nil
 	}
 
+	t.roundTrips.Add(1)
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
 		return "", wrapWinRMTargetError("powershell failed", err)
@@ -438,6 +451,7 @@ func (t *WinRMTarget) runCmd(ctx context.Context, command string) (string, error
 	if err != nil {
 		return "", err
 	}
+	t.roundTrips.Add(1)
 	stdout, stderr, code, err := client.RunCmdWithContext(ctx, command)
 	if err != nil {
 		return "", wrapWinRMTargetError("command failed", err)
@@ -497,6 +511,7 @@ func (t *WinRMTarget) runPSDirect(ctx context.Context, script string) (string, e
 	if err != nil {
 		return "", err
 	}
+	t.roundTrips.Add(1)
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
 		return "", wrapWinRMTargetError("powershell failed", err)

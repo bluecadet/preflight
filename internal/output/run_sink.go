@@ -182,6 +182,9 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 			"failed":  e.FailedCount,
 			"skipped": e.SkippedCount,
 		}
+		if e.WinRMRoundTrips > 0 {
+			m["winrm_round_trips"] = e.WinRMRoundTrips
+		}
 	case TaskStartedEvent:
 		m["name"] = e.TaskName
 		if e.Module != "" {

@@ -259,17 +259,19 @@ func (r *TextRenderer) emitTaskOutput(e TaskOutputEvent) {
 }
 
 func (r *TextRenderer) emitTargetComplete(e TargetCompleteEvent) {
-	if e.Outcome != "failed" {
-		return
+	if e.Outcome == "failed" {
+		target := e.Target
+		if target == "" {
+			target = "local"
+		}
+		if len(r.projection.Targets) == 1 && r.projection.Targets[0] == "local" && target == "localhost" {
+			target = "local"
+		}
+		r.writeLine(r.colorize(ansiRed, "x "+target+" — failed (see above)"))
 	}
-	target := e.Target
-	if target == "" {
-		target = "local"
+	if r.verbose && e.WinRMRoundTrips > 0 {
+		r.writeLine(fmt.Sprintf("  %s", formatActivityLine(r.displayTarget(e.Target), fmt.Sprintf("winrm: %d round trips", e.WinRMRoundTrips))))
 	}
-	if len(r.projection.Targets) == 1 && r.projection.Targets[0] == "local" && target == "localhost" {
-		target = "local"
-	}
-	r.writeLine(r.colorize(ansiRed, "x "+target+" — failed (see above)"))
 }
 
 func (r *TextRenderer) emitActivityStart(e ActivityStartEvent) {
