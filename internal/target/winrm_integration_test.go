@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -966,4 +967,76 @@ Write-Output ''
 		t.Fatalf("getNamedSchemeGUIDOracle failed: %v", err)
 	}
 	return strings.TrimSpace(out)
+}
+
+// TestWinRMIntegration_Streaming exercises the output streaming path over a
+// live WinRM connection. It runs a multi-line PowerShell command through the
+// powershell module and asserts that each line arrives individually through
+// the onOutput callback rather than being batched until the command completes.
+//
+// Gated by PREFLIGHT_TEST_WINRM and the sacrificial sentinel.
+func TestWinRMIntegration_Streaming(t *testing.T) {
+	cfg, ok := getWinRMConfigFromEnv()
+	if !ok {
+		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+	}
+
+	tgt := NewWinRMTarget(*cfg)
+
+	// ---- Sacrificial-target guard ----
+	assertSacrificialSentinel(t, tgt)
+
+	ctx := context.Background()
+
+	// The script produces multiple lines over ~500ms. On a real WinRM connection
+	// the powershell module's ensure path runs through runPSLegacy, which uses
+	// RunWithContextWithInput + lineStreamWriter — output chunks arrive as they
+	// are produced rather than in one final batch.
+	var (
+		mu       sync.Mutex
+		gotLines []string
+	)
+
+	result, err := tgt.Execute(ctx, "streaming-test", "powershell", map[string]any{
+		"check_script": "return $true",
+		"script": `$lines = @('chunk-one','chunk-two','chunk-three','chunk-four','chunk-five')
+foreach ($l in $lines) { Write-Output $l; Start-Sleep -Milliseconds 100 }
+Write-Output 'done'`,
+	}, ExecutionOptions{}, false, func(line string) {
+		mu.Lock()
+		gotLines = append(gotLines, line)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusChanged {
+		t.Fatalf("expected StatusChanged, got %q: %s", result.Status, result.Message)
+	}
+
+	// The ensure path holds back the final "changed" marker, so onOutput should
+	// receive only the user script output lines.
+	want := []string{"chunk-one", "chunk-two", "chunk-three", "chunk-four", "chunk-five", "done"}
+	mu.Lock()
+	if len(gotLines) != len(want) {
+		mu.Unlock()
+		t.Fatalf("got %d lines via onOutput, want %d: %v", len(gotLines), len(want), gotLines)
+	}
+	for i := range want {
+		if gotLines[i] != want[i] {
+			t.Fatalf("onOutput line %d: got %q, want %q", i, gotLines[i], want[i])
+		}
+	}
+	mu.Unlock()
+
+	// result.Output should also contain the captured lines (via executeModule's
+	// internal capture wrapper that wraps onOutput).
+	if len(result.Output) < len(want) {
+		t.Fatalf("result.Output has %d entries, want at least %d: %v", len(result.Output), len(want), result.Output)
+	}
+	for i := range want {
+		if result.Output[i] != want[i] {
+			t.Fatalf("result.Output[%d]: got %q, want %q", i, result.Output[i], want[i])
+		}
+	}
 }
