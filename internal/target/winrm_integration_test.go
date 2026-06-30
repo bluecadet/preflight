@@ -1007,7 +1007,7 @@ func TestWinRMIntegration_WindowsFeature(t *testing.T) {
 		switch origState {
 		case "Enabled":
 			_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-				`Enable-WindowsOptionalFeature -Online -FeatureName "%s" -NoRestart | Out-Null`,
+				`Enable-WindowsOptionalFeature -Online -FeatureName "%s" -LimitAccess -NoRestart | Out-Null`,
 				featureName,
 			))
 			if err != nil {

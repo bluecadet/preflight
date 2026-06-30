@@ -33,5 +33,5 @@ if ($ensure -eq 'absent') {
   Disable-WindowsOptionalFeature -Online -FeatureName $name -NoRestart | Out-Null
   exit 0
 }
-Enable-WindowsOptionalFeature -Online -FeatureName $name -NoRestart | Out-Null
+Enable-WindowsOptionalFeature -Online -FeatureName $name -LimitAccess -NoRestart | Out-Null
 `
