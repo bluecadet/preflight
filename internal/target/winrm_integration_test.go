@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,7 +42,7 @@ func loadDotEnvTest() {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -107,7 +108,16 @@ func getWinRMConfigFromEnv() (*WinRMConfig, bool) {
 	host := os.Getenv("PREFLIGHT_TEST_WINRM_HOST")
 	user := os.Getenv("PREFLIGHT_TEST_WINRM_USER")
 	pass := os.Getenv("PREFLIGHT_TEST_WINRM_PASS")
+	fmt.Fprintf(os.Stderr, "DEBUG getWinRMConfigFromEnv: host=%q user=%q pass=%q\n", host, user, pass)
 	if host == "" || user == "" || pass == "" {
+		return nil, false
+	}
+	// Verify the host resolves before attempting a WinRM connection. This
+	// prevents tests from hanging when .env.test contains placeholder values
+	// (e.g. [IP_ADDRESS]) that are not valid, resolvable hostnames.
+	resolverCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if addrs, err := net.DefaultResolver.LookupHost(resolverCtx, host); err != nil || len(addrs) == 0 {
 		return nil, false
 	}
 	port := 5985
@@ -783,7 +793,7 @@ $group = "%s"
 $user = Get-LocalUser -Name $name -ErrorAction SilentlyContinue
 if ($null -eq $user) { Write-Output 'false'; exit 0 }
 $members = Get-LocalGroupMember -Group $group -ErrorAction SilentlyContinue
-$member = $members | Where-Object { $_.Name -match ("(^|\\\\)" + [regex]::Escape($name) + "$") }
+$member = $members | Where-Object { $_.Name -match ("(^|\\)" + [regex]::Escape($name) + "$") }
 if ($null -eq $member) { Write-Output 'false'; exit 0 }
 Write-Output 'true'
 `, username, group))

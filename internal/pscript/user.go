@@ -26,7 +26,7 @@ if ($params.groups) {
       if ($inMembers) {
         $trimmed = $_.Trim()
         if ($trimmed -match 'completed successfully') { break }
-        if ($trimmed -match "(^|\\\\)$([regex]::Escape($name))$") { $isMember = $true; break }
+        if ($trimmed -match "^\*?$([regex]::Escape($name))$") { $isMember = $true; break }
       }
     }
     if (-not $isMember) { $needs = $true; break }
