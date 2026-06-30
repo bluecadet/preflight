@@ -29,8 +29,9 @@ func TestIntegration_Registry(t *testing.T) {
 		nsProvider := `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\` + runKey
 
 		// ---- Cleanup: remove the per-run key ----
+		// NOTE: forEachTransport already registers t.Cleanup to close tgt,
+		// so we only remove the registry key here.
 		t.Cleanup(func() {
-			tgt.Close()
 			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
 				`Remove-Item -LiteralPath "%s" -Recurse -Force -ErrorAction SilentlyContinue`,
 				nsProvider,
