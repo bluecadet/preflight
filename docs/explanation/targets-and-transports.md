@@ -43,6 +43,20 @@ This is the right transport for:
 - Windows feature management
 - PowerShell-heavy configuration
 
+### WinRM Session Limitations
+
+The WinRM transport authenticates with NTLM/Negotiate and runs each operation under a non-interactive network logon. Some Windows operations require privileges or a user profile that this kind of session does not provide, so they cannot be performed over WinRM today regardless of the module used:
+
+- **`windows_feature` (DISM online servicing)** — enabling or disabling an optional feature fails with *"The symbolic link cannot be followed because its type is disabled."* DISM follows symlinks in the component store (WinSxS), and a network-logon token is not permitted to follow them. Reading feature state works; changing it does not.
+- **`remove_appx_packages` with all-users scope** — `Remove-AppxPackage -AllUsers` fails with HRESULT `0x80073D19` (*"An error occurred because a user was logged off."*). All-users AppX removal needs an interactive session context.
+- **Incremental output streaming** — over WinRM, the WS-Man channel buffers a command's stdout and delivers it in a single batch when the command completes. Output from the `powershell` module is still delivered correctly and in order; it just does not arrive line-by-line as it is produced.
+
+These are properties of the WinRM session, not defects in the modules, so preflight cannot work around them in PowerShell. There is no CredSSP option in the WinRM transport. When you need these operations:
+
+- run them with the **local target** or a **staged bundle** executed on the box, or
+- use an **interactive/elevated context** (for example a scheduled task), or
+- for live streaming specifically, use **Windows-over-SSH**, where output is delivered incrementally.
+
 ## SSH Target
 
 SSH now auto-detects one of two runtimes on the remote host:

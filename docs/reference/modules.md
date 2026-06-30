@@ -52,16 +52,17 @@ or as explicit modules:
 | `service` | Windows only | Yes | Windows-over-SSH only |
 | `package` | Windows only | Yes | Windows-over-SSH only |
 | `winget_package` | Windows only | Yes | Windows-over-SSH only |
-| `remove_appx_packages` | Windows only | Yes | Windows-over-SSH only |
+| `remove_appx_packages` | Windows only | Yes* | Windows-over-SSH only |
 | `shortcut` | Windows only | Yes | Windows-over-SSH only |
 | `scheduled_task` | Windows only | Yes | Windows-over-SSH only |
 | `user` | Windows only | Yes | Windows-over-SSH only |
 | `power_plan` | Windows only | Yes | Windows-over-SSH only |
-| `windows_feature` | Windows only | Yes | Windows-over-SSH only |
+| `windows_feature` | Windows only | Yes* | Windows-over-SSH only |
 | `firewall_rule` | Windows only | Yes | Windows-over-SSH only |
 
 Notes:
 
+- \*`windows_feature` and `remove_appx_packages` are registered over WinRM but cannot complete their changes over a basic WinRM session (DISM symlink restriction; AppX all-users removal returns `0x80073D19`). See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations). Use the local target, a staged bundle, or Windows-over-SSH for these.
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
