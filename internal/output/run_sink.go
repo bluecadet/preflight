@@ -212,9 +212,6 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 		}
 	case DiagnosticEvent:
 		m["summary"] = e.Summary
-		if e.Detail != "" {
-			m["detail"] = e.Detail
-		}
 		if e.Source != "" {
 			m["source"] = e.Source
 		}

@@ -12,19 +12,7 @@ import (
 
 func TestWindowsOnlyModulesUseNonWindowsStubs(t *testing.T) {
 	reg := module.Registry()
-	for _, name := range []string{
-		"registry",
-		"service",
-		"package",
-		"shortcut",
-		"scheduled_task",
-		"user",
-		"winget_package",
-		"remove_appx_packages",
-		"power_plan",
-		"windows_feature",
-		"firewall_rule",
-	} {
+	for _, name := range module.WindowsModuleNames {
 		mod, ok := reg[name]
 		if !ok {
 			t.Fatalf("expected module %q in registry", name)

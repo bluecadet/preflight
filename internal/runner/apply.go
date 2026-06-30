@@ -14,81 +14,12 @@ import (
 	"github.com/bluecadet/preflight/internal/template"
 )
 
-func (r *Runner) emitNewTaskStarted(pt *PlanTask) {
+// emit dispatches a renderer event, guarding against a nil renderer.
+func (r *Runner) emit(evt output.Event) {
 	if r.config.Renderer == nil {
 		return
 	}
-	r.config.Renderer.Emit(output.TaskStartedEvent{
-		Target:     r.targetName(),
-		TaskID:     pt.ID,
-		TaskName:   pt.Name,
-		Module:     pt.Module,
-		ActionPath: pt.ActionPath,
-	})
-}
-
-func (r *Runner) emitNewTaskSkipped(pt *PlanTask, reason string) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskSkippedEvent{
-		Target:   r.targetName(),
-		TaskID:   pt.ID,
-		TaskName: pt.Name,
-		Reason:   reason,
-	})
-}
-
-func (r *Runner) emitNewTaskOK(pt *PlanTask, elapsedMs int64) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskOKEvent{
-		Target:    r.targetName(),
-		TaskID:    pt.ID,
-		TaskName:  pt.Name,
-		ElapsedMs: elapsedMs,
-	})
-}
-
-func (r *Runner) emitNewTaskChanged(pt *PlanTask, elapsedMs int64) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskChangedEvent{
-		Target:    r.targetName(),
-		TaskID:    pt.ID,
-		TaskName:  pt.Name,
-		ElapsedMs: elapsedMs,
-	})
-}
-
-func (r *Runner) emitNewTaskFailed(pt *PlanTask, message string, exitCode int, outputLines []string, elapsedMs int64) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.TaskFailedEvent{
-		Target:      r.targetName(),
-		TaskID:      pt.ID,
-		TaskName:    pt.Name,
-		ElapsedMs:   elapsedMs,
-		ExitCode:    exitCode,
-		Output:      outputLines,
-		FailMessage: message,
-	})
-}
-
-func (r *Runner) emitDiagnostic(pt *PlanTask, summary, detail, source string) {
-	if r.config.Renderer == nil {
-		return
-	}
-	r.config.Renderer.Emit(output.DiagnosticEvent{
-		Target:  r.targetName(),
-		TaskID:  pt.ID,
-		Summary: summary,
-		Detail:  detail,
-		Source:  source,
-	})
+	r.config.Renderer.Emit(evt)
 }
 
 // apply executes the task graph against the target. It acquires the runtime
@@ -197,7 +128,12 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 
 	// Tag filtering.
 	if !r.taskMatchesTags(pt) {
-		r.emitNewTaskSkipped(pt, "tag-filtered")
+		r.emit(output.TaskSkippedEvent{
+			Target:   r.targetName(),
+			TaskID:   pt.ID,
+			TaskName: pt.Name,
+			Reason:   "tag-filtered",
+		})
 		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil)
 		return nil
 	}
@@ -215,7 +151,12 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 		}
 	}
 	if depFailed && !pt.IgnoreErrors {
-		r.emitNewTaskSkipped(pt, "dependency-failed")
+		r.emit(output.TaskSkippedEvent{
+			Target:   r.targetName(),
+			TaskID:   pt.ID,
+			TaskName: pt.Name,
+			Reason:   "dependency-failed",
+		})
 		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil)
 		return nil
 	}
@@ -227,7 +168,12 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 		return fmt.Errorf("apply: task %q: evaluate when condition: %w", pt.Name, err)
 	}
 	if !whenOK {
-		r.emitNewTaskSkipped(pt, "when-condition-false")
+		r.emit(output.TaskSkippedEvent{
+			Target:   r.targetName(),
+			TaskID:   pt.ID,
+			TaskName: pt.Name,
+			Reason:   "when-condition-false",
+		})
 		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil)
 		return nil
 	}
@@ -240,7 +186,13 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 
 	// Execute the task against the target.
 	slog.Debug("executing task", "task", pt.Name, "module", pt.Module, "id", pt.ID)
-	r.emitNewTaskStarted(pt)
+	r.emit(output.TaskStartedEvent{
+		Target:     r.targetName(),
+		TaskID:     pt.ID,
+		TaskName:   pt.Name,
+		Module:     pt.Module,
+		ActionPath: pt.ActionPath,
+	})
 	taskStartTime := time.Now()
 	var onOutput target.OutputFunc
 	if r.config.Renderer != nil {
@@ -257,8 +209,21 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 	elapsedMs := time.Since(taskStartTime).Milliseconds()
 	if execErr != nil {
 		if !pt.IgnoreErrors {
-			r.emitNewTaskFailed(pt, execErr.Error(), 0, result.Output, elapsedMs)
-			r.emitDiagnostic(pt, execErr.Error(), "", pt.Module)
+			r.emit(output.TaskFailedEvent{
+				Target:      r.targetName(),
+				TaskID:      pt.ID,
+				TaskName:    pt.Name,
+				ElapsedMs:   elapsedMs,
+				ExitCode:    0,
+				Output:      result.Output,
+				FailMessage: execErr.Error(),
+			})
+			r.emit(output.DiagnosticEvent{
+				Target:  r.targetName(),
+				TaskID:  pt.ID,
+				Summary: execErr.Error(),
+				Source:  pt.Module,
+			})
 			acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, bound.SourceBecome, bound.Become, target.StatusFailed, execErr.Error(), dag)
 			acc.failed[pt.ID] = true
 			return errHalt
@@ -270,14 +235,42 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 
 	switch result.Status {
 	case target.StatusOK:
-		r.emitNewTaskOK(pt, elapsedMs)
+		r.emit(output.TaskOKEvent{
+			Target:    r.targetName(),
+			TaskID:    pt.ID,
+			TaskName:  pt.Name,
+			ElapsedMs: elapsedMs,
+		})
 	case target.StatusChanged:
-		r.emitNewTaskChanged(pt, elapsedMs)
+		r.emit(output.TaskChangedEvent{
+			Target:    r.targetName(),
+			TaskID:    pt.ID,
+			TaskName:  pt.Name,
+			ElapsedMs: elapsedMs,
+		})
 	case target.StatusFailed:
-		r.emitNewTaskFailed(pt, result.Message, 0, result.Output, elapsedMs)
-		r.emitDiagnostic(pt, result.Message, "", pt.Module)
+		r.emit(output.TaskFailedEvent{
+			Target:      r.targetName(),
+			TaskID:      pt.ID,
+			TaskName:    pt.Name,
+			ElapsedMs:   elapsedMs,
+			ExitCode:    0,
+			Output:      result.Output,
+			FailMessage: result.Message,
+		})
+		r.emit(output.DiagnosticEvent{
+			Target:  r.targetName(),
+			TaskID:  pt.ID,
+			Summary: result.Message,
+			Source:  pt.Module,
+		})
 	case target.StatusSkipped:
-		r.emitNewTaskSkipped(pt, result.Message)
+		r.emit(output.TaskSkippedEvent{
+			Target:   r.targetName(),
+			TaskID:   pt.ID,
+			TaskName: pt.Name,
+			Reason:   result.Message,
+		})
 	}
 
 	if result.Status == target.StatusFailed && !pt.IgnoreErrors {

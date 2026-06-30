@@ -154,7 +154,6 @@ func runLogFixtureFailure() []Event {
 			Target:  "kiosk-01",
 			TaskID:  "install-drivers",
 			Summary: "DISM.exe failed: 0x800f0954",
-			Detail:  "source files could not be downloaded",
 			Source:  "command",
 		},
 		TargetCompleteEvent{

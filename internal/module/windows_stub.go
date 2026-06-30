@@ -10,22 +10,8 @@ import (
 	"github.com/bluecadet/preflight/internal/target"
 )
 
-var windowsModuleNames = []string{
-	"registry",
-	"service",
-	"package",
-	"shortcut",
-	"scheduled_task",
-	"user",
-	"winget_package",
-	"remove_appx_packages",
-	"power_plan",
-	"windows_feature",
-	"firewall_rule",
-}
-
 func addWindowsModules(reg target.ModuleRegistry) {
-	for _, name := range windowsModuleNames {
+	for _, name := range WindowsModuleNames {
 		n := name
 		reg[n] = &windowsStubModule{name: n}
 	}
