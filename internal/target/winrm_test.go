@@ -763,7 +763,7 @@ func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 			case 1:
 				for _, fragment := range []string{
 					"if ($params.password)",
-					"Get-LocalGroupMember -Group ([string]$group)",
+					"net localgroup ([string]$group) 2>$null",
 					"[regex]::Escape($name)",
 				} {
 					if !strings.Contains(command, fragment) {
@@ -775,7 +775,7 @@ func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 				for _, fragment := range []string{
 					"New-LocalUser -Name $name -NoPassword",
 					"Set-LocalUser -Password $securePassword",
-					"Add-LocalGroupMember -Group ([string]$group) -Member $name",
+					"net localgroup ([string]$group) $name /add",
 				} {
 					if !strings.Contains(command, fragment) {
 						t.Fatalf("expected user apply script to contain %q, got:\n%s", fragment, command)
