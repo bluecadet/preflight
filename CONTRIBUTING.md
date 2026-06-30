@@ -165,9 +165,20 @@ PREFLIGHT_TEST_WINRM_HOST=192.168.x.x
 PREFLIGHT_TEST_WINRM_PORT=5985
 PREFLIGHT_TEST_WINRM_USER=pf-test
 PREFLIGHT_TEST_WINRM_PASS=password
+
+# Optional: SSH-to-Windows (requires OpenSSH Server on the VM)
+PREFLIGHT_TEST_SSH_HOST=192.168.x.x
+PREFLIGHT_TEST_SSH_PORT=22
+PREFLIGHT_TEST_SSH_USER=pf-test
+PREFLIGHT_TEST_SSH_PASS=password
+# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa  # optional, defaults to password auth
 ```
 
-`PREFLIGHT_TEST_WINRM_PORT` is optional and defaults to 5985. The other three are required. The test runner loads this file automatically at startup — no `source`, `set -a`, or direnv wrapper needed. Variables already exported in the environment take precedence over the file, so CI can override them cleanly.
+Each transport is independently optional — set only the vars for the
+transports you want to test. The test runner loads `.env.test` automatically
+at startup — no `source`, `set -a`, or direnv wrapper needed. Variables
+already exported in the environment take precedence over the file, so CI can
+override them cleanly.
 
 ### Running the suite
 
@@ -183,7 +194,13 @@ The build tag is required — without `-tags integration` the files do not compi
 go test -tags integration ./internal/target/ -run TestWinRMIntegration_Registry -v
 ```
 
-To run the streaming test alone:
+To run only the registry test over all configured transports:
+
+```bash
+go test ./internal/target/ -run TestIntegration_Registry -v
+```
+
+To run a WinRM-only test (e.g. streaming):
 
 ```bash
 go test -tags integration ./internal/target/ -run TestWinRMIntegration_Streaming -v

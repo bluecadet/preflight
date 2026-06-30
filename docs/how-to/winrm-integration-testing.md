@@ -1,16 +1,18 @@
-# Run The WinRM Integration Test Suite
+# Run The Integration Test Suite
 
-Use this guide when you want to run Preflight's live WinRM integration tests
+Use this guide when you want to run Preflight's live integration tests
 against a real Windows VM. The suite exercises the full end-to-end execution
-path — bootstrap, auth, guard, oracle, cleanup, and idempotency — through a
-single module (registry) as the proving slice.
+path — bootstrap, auth, transport, guard, oracle, cleanup, and idempotency —
+through a single module (registry) as the proving slice, repeated over every
+configured transport (WinRM and/or SSH-to-Windows).
 
 ## Prerequisites
 
 - A Windows VM on the same network as your dev machine (or otherwise reachable)
 - The `preflight` repository checked out on your dev machine
 - Go 1.21+ on your dev machine
-- Network connectivity from your dev machine to the VM on port 5985
+- Network connectivity from your dev machine to the VM on port 5985 (WinRM)
+  and/or port 22 (SSH)
 
 ## 1. Get A Windows VM
 
@@ -78,81 +80,115 @@ The script will:
 3. Open the Windows Firewall for inbound WinRM traffic
 4. Write the sacrificial sentinel to the registry
 
-At the end, the script prints the exact `PREFLIGHT_TEST_WINRM` environment
-variable value to set on your dev machine.
+At the end, the script prints instructions for setting the connection vars
+on your dev machine.
 
-## 3. Set The Environment Variable
+## 3. Set The Environment Variables
 
-On your **dev machine** (macOS or Linux), set the env var using the JSON blob
-printed by the bootstrap script:
+The test harness reads individual `KEY=VALUE` pairs from the environment or
+from a `.env.test` file. Create `.env.test` at the **repo root** (gitignored;
+never commit it):
 
-```bash
-export PREFLIGHT_TEST_WINRM='{"host":"192.168.x.x","port":5985,"user":"pf-test","pass":"YourStrongPassword123!"}'
+```
+PREFLIGHT_TEST_WINRM_HOST=192.168.x.x
+PREFLIGHT_TEST_WINRM_PORT=5985
+PREFLIGHT_TEST_WINRM_USER=pf-test
+PREFLIGHT_TEST_WINRM_PASS=YourStrongPassword123!
+
+# Optional: SSH-to-Windows for the same VM (requires OpenSSH Server)
+PREFLIGHT_TEST_SSH_HOST=192.168.x.x
+PREFLIGHT_TEST_SSH_PORT=22
+PREFLIGHT_TEST_SSH_USER=pf-test
+PREFLIGHT_TEST_SSH_PASS=YourStrongPassword123!
+# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa  # optional, password auth is default
 ```
 
-Or add it to `.env.test` in the repo root (gitignored) for persistence:
+`PREFLIGHT_TEST_WINRM_PORT` and `PREFLIGHT_TEST_SSH_PORT` default to 5985
+and 22 respectively when omitted. Each transport is independently optional —
+set only the vars for the transports you want to test.
 
-```bash
-echo 'PREFLIGHT_TEST_WINRM={"host":"192.168.x.x","port":5985,"user":"pf-test","pass":"YourStrongPassword123!"}' >> .env.test
-```
-
-> **Security note**: The password appears in the env var in plain text because
+> **Security note**: The password appears in the file in plain text because
 > the WinRM transport sends it as Basic auth. Only use this against disposable
-> VMs. Never point `PREFLIGHT_TEST_WINRM` at a production machine.
+> VMs. Never point these vars at a production machine.
 
 ## 4. Run The Test
 
+The test runner loads `.env.test` automatically — no `source` or `direnv` needed.
+Variables already exported in your shell take precedence over the file.
+
 ```bash
 cd preflight
-go test -v -run TestWinRMIntegration ./internal/target/
+go test -v -run TestIntegration_Registry ./internal/target/
 ```
 
-Expected output (abbreviated):
+Expected output when both WinRM and SSH are configured:
 
 ```
-=== RUN   TestWinRMIntegration_Registry
---- PASS: TestWinRMIntegration_Registry (XX.XXs)
+=== RUN   TestIntegration_Registry
+=== RUN   TestIntegration_Registry/winrm
+--- PASS: TestIntegration_Registry/winrm (XX.XXs)
+=== RUN   TestIntegration_Registry/ssh
+--- PASS: TestIntegration_Registry/ssh (XX.XXs)
+--- PASS: TestIntegration_Registry (XX.XXs)
+```
+
+To run all integration tests (both the multi-transport registry test and the
+WinRM-only tests for other modules):
+
+```bash
+go test -v -run 'TestIntegration|TestWinRMIntegration' ./internal/target/
 ```
 
 ### Skipping behaviour
 
-When `PREFLIGHT_TEST_WINRM` is unset, the test skips with a clear message:
+Each transport is independently opt-in. When the env vars for a transport are
+unset, its subtest skips cleanly:
 
 ```
-=== RUN   TestWinRMIntegration_Registry
-    integration_registry_test.go:XX: PREFLIGHT_TEST_WINRM is not set; skipping ...
---- SKIP: TestWinRMIntegration_Registry (0.00s)
+=== RUN   TestIntegration_Registry
+=== RUN   TestIntegration_Registry/winrm
+    integration_registry_test.go:XX: PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS not set
+--- SKIP: TestIntegration_Registry/winrm (0.00s)
+=== RUN   TestIntegration_Registry/ssh
+    integration_registry_test.go:XX: PREFLIGHT_TEST_SSH_HOST / _USER / _PASS not set
+--- SKIP: TestIntegration_Registry/ssh (0.00s)
+--- SKIP: TestIntegration_Registry (0.00s)
 ```
 
-This means the Ubuntu CI job stays green and all existing workflows are
-unaffected.
+When no transports are configured, the parent test also skips. CI jobs stay
+green without any configuration changes.
 
 ### Sentinel guard
 
-If `PREFLIGHT_TEST_WINRM` points at a machine that is missing the sacrificial
-sentinel, the test hard-skips with a loud message instead of mutating the
-target:
+If a transport points at a machine that is missing the sacrificial sentinel,
+the test hard-skips with a loud message instead of mutating the target:
 
 ```
-=== RUN   TestWinRMIntegration_Registry
-    integration_registry_test.go:XX: sacrificial sentinel not found on target ...
---- SKIP: TestWinRMIntegration_Registry (0.00s)
+=== RUN   TestIntegration_Registry
+=== RUN   TestIntegration_Registry/winrm
+    winrm_integration_harness_test.go:XX: sacrificial sentinel not found on target ...
+--- SKIP: TestIntegration_Registry/winrm (0.00s)
 ```
 
 ## Test Anatomy
 
-The `TestWinRMIntegration_Registry` test:
+`TestIntegration_Registry` is wrapped in `forEachTransport`, which runs the
+same body function once per configured transport:
 
-1. **Gate**: Skips if `PREFLIGHT_TEST_WINRM` is unset
-2. **Guard**: Asserts the sacrificial sentinel exists on the target
-3. **Apply**: Creates a DWORD value under `HKLM\SOFTWARE\PreflightTest\IntegrationTest`
-4. **Oracle**: Verifies the value via a standalone PowerShell `Get-ItemProperty` call
-5. **Idempotency**: Re-runs Check (expects no change) and Apply (expects no-op)
-6. **Multi-value**: Applies a string alongside the DWORD and verifies both
-7. **Removal**: Removes a value and asserts absence via the oracle
-8. **Ensure absent**: Removes the entire key and confirms via the oracle
-9. **Cleanup**: Removes the entire test namespace via `t.Cleanup`, robust to
-   mid-test failure
+1. **Gate per transport**: Skips the transport subtest when its env vars are
+   unset (HOST/USER/PASS independently per transport)
+2. **Sentinel guard**: Asserts `HKLM\SOFTWARE\PreflightTest\IsSacrificial=1`
+   via the `PowerShellRunner` interface
+3. **Cleanup**: `t.Cleanup` removes the per-run registry key regardless of
+   how far the test gets
+4. **Present**: Creates a DWORD value, verifies via independent oracle
+5. **Idempotent**: Re-check and re-apply both return `StatusOK`
+6. **Dry-run**: Check-only with a different value predicts `StatusChanged`;
+   oracle confirms the actual value was not mutated
+7. **Drift**: Mutates the value behind the module's back via PowerShell,
+   asserts Check detects it and Apply converges back
+8. **Absent**: Removes the value, then removes the entire key; oracle
+   confirms both, then asserts idempotent re-check returns `StatusOK`
 
 The independent oracle is load-bearing: asserting only through the module's
 own `Check()` would pass a module whose `Check` and `Apply` share a bug.
@@ -161,23 +197,29 @@ own `Check()` would pass a module whose `Check` and `Apply` share a bug.
 
 To add a new module to the integration suite:
 
-1. Add a `TestWinRMIntegration_<Module>` function in the same file
-2. Call `getWinRMConfigFromEnv()` and `assertSacrificialSentinel()` as guards
-3. Register cleanup via `t.Cleanup`
-4. Write an independent oracle that reads state without using the module's
+1. Add a `TestIntegration_<Module>` function that calls `forEachTransport`
+2. Register cleanup via `t.Cleanup` (use the `PowerShellRunner` interface)
+3. Write an independent oracle that reads state without using the module's
    Check method
+4. Use `mustExecute` for every Execute step (collapses err+status assertion)
 5. Assert both correctness (oracle matches expectation) and idempotency
-   (rerun Check/Apply produce no change)
+   (rerun Check/Apply produce `StatusOK`)
+6. For coverage completeness, include dry-run and drift branches (see the
+   registry test for the pattern)
+
+When a module cannot operate over a given transport (e.g. WinRM symlink
+limitation for `windows_feature`), gate the operation with a capability check
+and `t.Skip` with a clear reason rather than `t.Fatal`.
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|--------------|
-| `connection refused` | WinRM not enabled on the VM, or wrong IP/port |
+| `connection refused` | WinRM/SSH not enabled on the VM, or wrong IP/port |
 | `401 Unauthorized` | WinRM Basic auth not enabled, or wrong username/password |
 | `sentinel not found` | Bootstrap not run on this VM, or sentinel was removed |
-| `timeout` | Firewall blocking port 5985, or VM unreachable |
-| Test skips on CI | Expected — `PREFLIGHT_TEST_WINRM` is not set in CI |
+| `timeout` | Firewall blocking the port, or VM unreachable |
+| Test skips on CI | Expected — env vars are not set in CI |
 
 Re-run the bootstrap script on the VM if you suspect the WinRM configuration
 has drifted. For a completely fresh start, revert the VM to a snapshot or

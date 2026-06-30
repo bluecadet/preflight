@@ -9,164 +9,127 @@ import (
 	"testing"
 )
 
-// TestWinRMIntegration_Registry exercises the registry module against a real
-// Windows endpoint over WinRM. It is gated by PREFLIGHT_TEST_WINRM and the
-// sacrificial sentinel, so it is inert on CI and on any dev machine without
-// a configured VM.
+// TestIntegration_Registry exercises the registry module against a real
+// Windows endpoint over every configured transport (WinRM and/or SSH-to-Windows).
+// Each transport gets its own subtest and is independently skipped when its
+// env vars are unset.
 //
-// The test uses an independent PowerShell oracle (Get-ItemProperty) to assert
-// correctness rather than relying on the module's own Check().
-func TestWinRMIntegration_Registry(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// Coverage template (per transport):
+//   - present:     initial apply, verify via oracle
+//   - idempotent:  re-check and re-apply both return StatusOK
+//   - dry-run:     check-only predicts Changed, oracle confirms no mutation
+//   - drift:       value-data change converges back to desired state
+//   - absent:      value removal, key removal, idempotent re-check
+func TestIntegration_Registry(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
+		runKey := "IntegrationTest-" + testRunID()[:12]
+		ns := `HKLM\SOFTWARE\PreflightTest\` + runKey
+		nsProvider := `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\` + runKey
 
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
+		// ---- Cleanup: remove the per-run key ----
+		t.Cleanup(func() {
+			tgt.Close()
+			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+				`Remove-Item -LiteralPath "%s" -Recurse -Force -ErrorAction SilentlyContinue`,
+				nsProvider,
+			))
+			if err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		})
 
-	ctx := context.Background()
+		desiredParams := map[string]any{
+			"path": ns,
+			"values": []any{
+				map[string]any{
+					"name": "TestDword",
+					"type": "dword",
+					"data": 42,
+				},
+			},
+		}
 
-	// The namespace under which all test mutations happen. The run ID is
-	// embedded in the key name (not as a sub-level) so concurrent `go test`
-	// runs against the same VM don't collide. The key nests under
-	// PreflightTest — one level deep — so the sentinel at IsSacrificial is
-	// never touched and the module only creates one new key.
-	runKey := "IntegrationTest-" + testRunID()[:12]
-	ns := `HKLM\SOFTWARE\PreflightTest\` + runKey
-	nsProvider := `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\` + runKey
+		// ================================================================
+		// Branch: present — initial apply creates the key and value
+		// ================================================================
+		mustExecute(t, tgt, "registry-present", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
 
-	// ---- Cleanup: remove the per-run key ----
-	t.Cleanup(func() {
-		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-			`Remove-Item -LiteralPath "%s" -Recurse -Force -ErrorAction SilentlyContinue`,
+		// ================================================================
+		// Branch: idempotent — re-check returns OK, re-apply is a no-op
+		// ================================================================
+		mustExecute(t, tgt, "registry-idemp-check", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "registry-idemp-apply", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation occurred
+		// ================================================================
+		dryRunParams := map[string]any{
+			"path": ns,
+			"values": []any{
+				map[string]any{
+					"name": "TestDword",
+					"type": "dword",
+					"data": 99, // different from current 42
+				},
+			},
+		}
+		mustExecute(t, tgt, "registry-dryrun", "registry", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		// Oracle confirms value is still 42 — the dry run must not mutate.
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
+
+		// ================================================================
+		// Branch: drift — mutate behind the module's back, then verify
+		// that Check detects the change and Apply converges back
+		// ================================================================
+		_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+			`Set-ItemProperty -LiteralPath "%s" -Name "TestDword" -Value 99 -Type DWord`,
 			nsProvider,
 		))
 		if err != nil {
-			t.Logf("cleanup: %v", err)
+			t.Fatalf("drift setup: Set-ItemProperty failed: %v", err)
 		}
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "99")
+
+		// Check detects the drift (NeedsChange = true → StatusChanged)
+		mustExecute(t, tgt, "registry-drift-check", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Apply converges back to the desired state
+		mustExecute(t, tgt, "registry-drift-apply", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
+
+		// Confirm idempotence after convergence
+		mustExecute(t, tgt, "registry-drift-idemp", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: absent — remove a value, then remove the entire key
+		// ================================================================
+		absentValueParams := map[string]any{
+			"path": ns,
+			"values": []any{
+				map[string]any{
+					"name":   "TestDword",
+					"ensure": "absent",
+				},
+			},
+		}
+		mustExecute(t, tgt, "registry-absent-value", "registry", absentValueParams, ExecutionOptions{}, false, StatusChanged)
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "")
+
+		absentKeyParams := map[string]any{
+			"path":   ns,
+			"ensure": "absent",
+		}
+		mustExecute(t, tgt, "registry-absent-key", "registry", absentKeyParams, ExecutionOptions{}, false, StatusChanged)
+		mustMatchOracle(t, runner, nsProvider, "TestDword", "missing")
+
+		// Idempotent absent — re-check returns OK (already absent)
+		mustExecute(t, tgt, "registry-absent-idemp", "registry", absentKeyParams, ExecutionOptions{}, false, StatusOK)
 	})
-
-	// ---- Step 1: Apply a DWORD value ----
-	params := map[string]any{
-		"path": ns,
-		"values": []any{
-			map[string]any{
-				"name": "TestDword",
-				"type": "dword",
-				"data": 42,
-			},
-		},
-	}
-
-	result, err := tgt.Execute(ctx, "registry-apply", "registry", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("registry apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 2: Verify via independent oracle ----
-	got := readRegistryOracle(t, tgt, nsProvider, "TestDword")
-	if got != "42" {
-		t.Fatalf("independent oracle: expected 42, got %q", got)
-	}
-
-	// ---- Step 3: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "registry-recheck", "registry", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("registry re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 4: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "registry-reapply", "registry", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("registry re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Apply a string value to the same key, verify ----
-	params = map[string]any{
-		"path": ns,
-		"values": []any{
-			map[string]any{
-				"name": "TestDword",
-				"type": "dword",
-				"data": 42,
-			},
-			map[string]any{
-				"name": "TestString",
-				"type": "string",
-				"data": "hello-preflight",
-			},
-		},
-	}
-
-	result, err = tgt.Execute(ctx, "registry-apply-string", "registry", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry apply (string): %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("registry apply (string): expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	gotStr := readRegistryOracle(t, tgt, nsProvider, "TestString")
-	if gotStr != "hello-preflight" {
-		t.Fatalf("independent oracle (string): expected 'hello-preflight', got %q", gotStr)
-	}
-
-	// ---- Step 6: Remove a value ----
-	params = map[string]any{
-		"path": ns,
-		"values": []any{
-			map[string]any{
-				"name":   "TestString",
-				"ensure": "absent",
-			},
-		},
-	}
-
-	result, err = tgt.Execute(ctx, "registry-remove-value", "registry", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry remove value: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("registry remove value: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	oracleOut := readRegistryOracle(t, tgt, nsProvider, "TestString")
-	if oracleOut != "" {
-		t.Fatalf("independent oracle: expected TestString to be absent, got %q", oracleOut)
-	}
-
-	// ---- Step 7: Ensure absent removes the entire key ----
-	absentParams := map[string]any{
-		"path":   ns,
-		"ensure": "absent",
-	}
-
-	result, err = tgt.Execute(ctx, "registry-absent", "registry", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("registry absent: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("registry absent: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// Verify via oracle that path no longer exists
-	absentOracle := readRegistryOracle(t, tgt, nsProvider, "TestDword")
-	if absentOracle != "missing" {
-		t.Fatalf("independent oracle: expected path to be absent, oracle reports %q", absentOracle)
-	}
 }
 
 // readRegistryOracle is an independent PowerShell oracle that reads a registry
