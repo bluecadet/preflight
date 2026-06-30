@@ -1,4 +1,4 @@
-.PHONY: all build-windows-amd64 build-windows-arm64 build-local test vet install verify
+.PHONY: all build-windows-amd64 build-windows-arm64 build-local test test-integration vet install verify
 
 windows: build-windows-amd64 build-windows-arm64
 
@@ -16,6 +16,13 @@ install: build-local
 
 test:
 	go test ./...
+
+# Live tests against a real Windows endpoint over WinRM/SSH. Gated behind the
+# `integration` build tag so they stay out of the default `test` target, and
+# additionally skip at runtime when PREFLIGHT_TEST_WINRM_* is unset. Requires a
+# sacrificial VM (see CONTRIBUTING.md) and a .env.test with connection details.
+test-integration:
+	go test -tags integration -count=1 ./internal/target/
 
 vet:
 	go vet ./...
