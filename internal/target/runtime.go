@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-
-	"github.com/bluecadet/preflight/internal/modulecatalog"
 )
 
 // ErrEnsureNotHandled is returned by EnsureModule.Ensure to signal that it
@@ -21,9 +19,9 @@ const (
 	RuntimeKindPOSIXShell        RuntimeKind = "posix-shell"
 )
 
-var knownRemoteModules = modulecatalog.Names(modulecatalog.CapabilityRemote)
+var knownRemoteModules = CatalogNames(CapabilityRemote)
 
-var knownRemoteModuleSet = modulecatalog.Set(modulecatalog.CapabilityRemote)
+var knownRemoteModuleSet = CatalogSet(CapabilityRemote)
 
 // moduleFuncs lets a Module be registered via function literals rather than
 // a concrete type. Used heavily by the remote runtime registries

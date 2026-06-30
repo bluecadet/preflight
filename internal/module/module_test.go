@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/module"
-	"github.com/bluecadet/preflight/internal/modulecatalog"
 	"github.com/bluecadet/preflight/internal/target"
 )
 
@@ -31,12 +30,12 @@ func TestRegistry_CoreModulesPresent(t *testing.T) {
 
 func TestRegistry_MatchesCatalog(t *testing.T) {
 	reg := module.Registry()
-	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinCommon) {
+	for _, name := range target.CatalogNames(target.CapabilityBuiltinCommon) {
 		if _, ok := reg[name]; !ok {
 			t.Fatalf("expected common catalog module %q in registry", name)
 		}
 	}
-	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinWindows) {
+	for _, name := range target.CatalogNames(target.CapabilityBuiltinWindows) {
 		if _, ok := reg[name]; !ok {
 			t.Fatalf("expected windows catalog module %q in registry", name)
 		}
@@ -50,7 +49,7 @@ func TestRegistry_MatchesCatalog(t *testing.T) {
 
 var targetModules = func() map[string]struct{} {
 	all := make(map[string]struct{})
-	for _, name := range modulecatalog.Names(modulecatalog.CapabilityBuiltinCommon | modulecatalog.CapabilityBuiltinWindows) {
+	for _, name := range target.CatalogNames(target.CapabilityBuiltinCommon | target.CapabilityBuiltinWindows) {
 		all[name] = struct{}{}
 	}
 	return all
