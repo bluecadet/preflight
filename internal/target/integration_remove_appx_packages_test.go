@@ -9,53 +9,36 @@ import (
 	"testing"
 )
 
-// TestWinRMIntegration_RemoveAppxPackages exercises the remove_appx_packages
-// module against a real Windows endpoint over WinRM. It is gated by
-// PREFLIGHT_TEST_WINRM and the sacrificial sentinel, so it is inert on CI
-// and on any dev machine without a configured VM.
+// TestIntegration_RemoveAppxPackages exercises the remove_appx_packages module
+// against a real Windows endpoint over every configured transport (WinRM and/or
+// SSH-to-Windows). Each transport gets its own subtest and is independently
+// skipped when its env vars are unset.
 //
-// The test finds a benign throwaway AppX package on the target (matching
-// known safe patterns like VCLibs, UI.Xaml, .NET Native, WinJS), removes it
-// via the module, and asserts correctness via an independent Get-AppxPackage
-// oracle. In cleanup it makes a best-effort attempt to re-register the package.
-func TestWinRMIntegration_RemoveAppxPackages(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// Coverage template (per transport):
+//   - dry-run:  check-only predicts Changed, oracle confirms no mutation
+//   - absent:   initial apply removes the package, oracle confirms absent
+//   - idempotent: re-check and re-apply both return StatusOK
+//   - drift:    re-add the package via RegisterByFamilyName, Check detects
+//               the change, Apply removes it again
+func TestIntegration_RemoveAppxPackages(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
-
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
-
-	ctx := context.Background()
-
-	// ---- Find a benign AppX fixture on the target ----
-	fixtureName, fixtureFamilyName := findAppxFixture(t, tgt)
-	if fixtureName == "" {
-		t.Skip("no suitable AppX test fixture found on target; " +
-			"target has no packages matching known-benign patterns (VCLibs, UI.Xaml, .NET Native, WinJS)")
-	}
-	t.Logf("using AppX fixture: Name=%s FamilyName=%s", fixtureName, fixtureFamilyName)
-
-	// ---- Cleanup: best-effort re-registration of the removed package ----
-	// Removing AppX packages is destructive. After the test completes we
-	// attempt to re-register the package via its manifest in WindowsApps
-	// (which persists after removal). If re-registration fails the VM state
-	// is left altered, which is acceptable for the sacrificial target.
-	t.Cleanup(func() {
-		// First check if the package auto-restored.
-		if appxPackageOracle(t, tgt, fixtureName) == "present" {
-			return
+		// ---- Find a benign AppX fixture on the target ----
+		fixtureName, fixtureFamilyName := findAppxFixture(t, runner)
+		if fixtureName == "" {
+			t.Skip("no suitable AppX test fixture found on target; " +
+				"target has no packages matching known-benign patterns (VCLibs, UI.Xaml, .NET Native, WinJS)")
 		}
-		// When we have the family name, try RegisterByFamilyName (available
-		// on Windows 10 1809+). This re-adds the package from the cached
-		// payload in ProgramFiles\WindowsApps without requiring the
-		// original .appxbundle.
-		if fixtureFamilyName != "" {
-			_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(`
+		t.Logf("using AppX fixture: Name=%s FamilyName=%s", fixtureName, fixtureFamilyName)
+
+		// ---- Cleanup: best-effort re-registration of the removed package ----
+		t.Cleanup(func() {
+			if appxPackageOracle(t, runner, fixtureName) == "present" {
+				return
+			}
+			if fixtureFamilyName != "" {
+				_, err := runner.RunPowerShell(ctx, fmt.Sprintf(`
 $familyName = '%s'
 try {
   Add-AppxPackage -RegisterByFamilyName -MainPackageFamilyName $familyName -ErrorAction Stop | Out-Null
@@ -64,66 +47,102 @@ try {
   Write-Output ("warn: RegisterByFamilyName failed: " + $_.Exception.Message)
 }
 `, fixtureFamilyName))
-			if err != nil {
-				t.Logf("cleanup RegisterByFamilyName: %v", err)
+				if err != nil {
+					t.Logf("cleanup RegisterByFamilyName: %v", err)
+				}
 			}
+		})
+
+		// ---- Verify fixture exists via independent oracle ----
+		status := appxPackageOracle(t, runner, fixtureName)
+		if status != "present" {
+			t.Fatalf("independent oracle: fixture package %q is %q before test (expected present)", fixtureName, status)
+		}
+
+		params := map[string]any{
+			"name":  fixtureName,
+			"scope": "all_users",
+		}
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation occurred (package is still present)
+		// ================================================================
+		mustExecute(t, tgt, "appx-dryrun", "remove_appx_packages", params, ExecutionOptions{}, true, StatusChanged)
+		status = appxPackageOracle(t, runner, fixtureName)
+		if status != "present" {
+			t.Fatalf("dry-run: oracle reports %q after dry-run (expected present — dry-run must not mutate)", status)
+		}
+		t.Log("dry-run: oracle confirms package was not mutated")
+
+		// ================================================================
+		// Branch: absent — apply removes the package
+		// ================================================================
+		mustExecute(t, tgt, "appx-remove", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+
+		status = appxPackageOracle(t, runner, fixtureName)
+		if status == "present" {
+			if reason := appxRemovalBlockedReason(t, runner, fixtureName); reason != "" {
+				t.Skipf("AppX all-users removal is unsupported over this transport "+
+					"(requires an interactive logon): %s", reason)
+			}
+			t.Fatal("independent oracle: package still present after removal (expected absent)")
+		}
+		t.Log("oracle confirms package removed")
+
+		// ================================================================
+		// Branch: idempotent — re-check returns StatusOK, re-apply is no-op
+		// ================================================================
+		mustExecute(t, tgt, "appx-recheck", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "appx-reapply", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: drift — re-register the package behind the module's
+		// back, then verify Check detects the change and Apply converges
+		// ================================================================
+		if fixtureFamilyName != "" {
+			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(`
+$familyName = '%s'
+try {
+  Add-AppxPackage -RegisterByFamilyName -MainPackageFamilyName $familyName -ErrorAction Stop | Out-Null
+  Write-Output "ok"
+} catch {
+  Write-Output ("fail: " + $_.Exception.Message)
+}
+`, fixtureFamilyName))
+			driftRegistered := err == nil
+			if driftRegistered {
+				// Verify re-registration succeeded via oracle
+				status := appxPackageOracle(t, runner, fixtureName)
+				if status == "present" {
+					// Check detects the drift
+					mustExecute(t, tgt, "appx-drift-check", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+
+					// Apply converges back
+					mustExecute(t, tgt, "appx-drift-apply", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+
+					status = appxPackageOracle(t, runner, fixtureName)
+					if status == "present" {
+						if reason := appxRemovalBlockedReason(t, runner, fixtureName); reason != "" {
+							t.Logf("drift: removal blocked after convergence: %s", reason)
+						} else {
+							t.Fatal("drift: oracle confirms package still present after convergence")
+						}
+					}
+					t.Log("drift: oracle confirms package re-removed after convergence")
+
+					// Idempotent after convergence
+					mustExecute(t, tgt, "appx-drift-idemp", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
+				} else {
+					t.Logf("drift: oracle reports package %q after RegisterByFamilyName (expected present), skipping drift branch", status)
+				}
+			} else {
+				t.Logf("drift: RegisterByFamilyName failed, skipping drift branch: %v", err)
+			}
+		} else {
+			t.Log("drift: no family name available, skipping drift branch")
 		}
 	})
-
-	// ---- Step 1: Verify fixture exists via independent oracle ----
-	status := appxPackageOracle(t, tgt, fixtureName)
-	if status != "present" {
-		t.Fatalf("independent oracle: fixture package %q is %q before test (expected present)", fixtureName, status)
-	}
-
-	// ---- Step 2: Apply — remove the package ----
-	params := map[string]any{
-		"name":  fixtureName,
-		"scope": "all_users",
-	}
-
-	result, err := tgt.Execute(ctx, "appx-remove", "remove_appx_packages", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("remove_appx_packages apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("remove_appx_packages apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 3: Verify removal via independent oracle ----
-	status = appxPackageOracle(t, tgt, fixtureName)
-	if status == "present" {
-		// The module reports StatusChanged because Check saw the package and
-		// the removal command ran, but Remove-AppxPackage -AllUsers swallows
-		// failures as warnings. Probe the underlying error to tell an
-		// environment limitation apart from a real module defect: all-users
-		// AppX removal fails with 0x80073D19 ("a user was logged off") in a
-		// non-interactive WinRM session. That is a session property, so skip.
-		if reason := appxRemovalBlockedReason(t, tgt, fixtureName); reason != "" {
-			t.Skipf("AppX all-users removal is unsupported over this WinRM session "+
-				"(requires an interactive logon): %s", reason)
-		}
-		t.Fatal("independent oracle: package still present after removal (expected absent)")
-	}
-	t.Logf("oracle confirms package removed: %s", status)
-
-	// ---- Step 4: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "appx-recheck", "remove_appx_packages", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("remove_appx_packages re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("remove_appx_packages re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "appx-reapply", "remove_appx_packages", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("remove_appx_packages re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("remove_appx_packages re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
 }
 
 // appxPackageOracle is an independent PowerShell oracle that checks whether an
