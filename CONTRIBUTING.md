@@ -118,6 +118,83 @@ CI runs tests, linting, and build jobs. Fixing failures locally is usually much 
 
 ---
 
+## Windows Integration Tests
+
+The `internal/target` package includes a live-WinRM integration suite that runs real Check/Apply/Check cycles against a Windows endpoint. Each test is skipped automatically when no endpoint is configured, so the suite is inert on CI and on dev machines without a VM.
+
+### Setting up a disposable Windows VM
+
+You need a Windows 10 or 11 VM that you are willing to sacrifice — the suite will create and delete real registry keys, services, users, firewall rules, and scheduled tasks. A host-only or NAT network adapter is sufficient.
+
+Run the following in an elevated PowerShell session on the VM to prepare it:
+
+```powershell
+# Enable WinRM with HTTP + Basic auth (adequate for a loopback/host-only VM).
+Enable-PSRemoting -Force
+Set-Item WSMan:\localhost\Service\Auth\Basic $true
+Set-Item WSMan:\localhost\Service\AllowUnencrypted $true
+winrm set winrm/config/client/auth '@{Basic="true"}'
+
+# Create a throwaway admin account for the test suite.
+$pass = ConvertTo-SecureString "password" -AsPlainText -Force
+New-LocalUser "pf-test" -Password $pass -PasswordNeverExpires
+Add-LocalGroupMember -Group "Administrators" -Member "pf-test"
+
+# Allow remote token elevation (required for WinRM admin sessions).
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+  -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force
+
+# Open the WinRM HTTP port.
+New-NetFirewallRule -DisplayName "WinRM HTTP (pf-test)" -Direction Inbound `
+  -Protocol TCP -LocalPort 5985 -Action Allow
+
+# Write the sacrificial sentinel — the suite refuses to run without this.
+New-Item -Path "HKLM:\SOFTWARE\PreflightTest" -Force | Out-Null
+New-ItemProperty -Path "HKLM:\SOFTWARE\PreflightTest" `
+  -Name IsSacrificial -Value 1 -PropertyType DWord -Force
+```
+
+Do not commit bootstrap scripts — the four-var connection contract accepts any host/port/user, so the snippet above is the only setup artifact you need.
+
+### Configuring the connection
+
+Create a `.env.test` file at the **repo root** (it is git-ignored; never commit it):
+
+```
+PREFLIGHT_TEST_WINRM_HOST=192.168.x.x
+PREFLIGHT_TEST_WINRM_PORT=5985
+PREFLIGHT_TEST_WINRM_USER=pf-test
+PREFLIGHT_TEST_WINRM_PASS=password
+```
+
+`PREFLIGHT_TEST_WINRM_PORT` is optional and defaults to 5985. The other three are required. The test runner loads this file automatically at startup — no `source`, `set -a`, or direnv wrapper needed. Variables already exported in the environment take precedence over the file, so CI can override them cleanly.
+
+### Running the suite
+
+```bash
+go test ./internal/target/ -run TestWinRMIntegration
+```
+
+To run a specific module:
+
+```bash
+go test ./internal/target/ -run TestWinRMIntegration_Registry -v
+```
+
+To run the streaming test alone:
+
+```bash
+go test ./internal/target/ -run TestWinRMIntegration_Streaming -v
+```
+
+**Important:** `TestWinRMIntegration_WindowsFeature` toggles a Windows optional feature (TelnetClient). Although TelnetClient itself does not require a reboot, DISM operations can occasionally trigger one on some Windows editions. Run this test alone or last so a surprise reboot does not kill other in-flight tests:
+
+```bash
+go test ./internal/target/ -run TestWinRMIntegration_WindowsFeature -v -timeout 5m
+```
+
+---
+
 ## Architecture
 
 The three-layer model — **Modules → Actions → Playbooks** — is central to every design decision. When adding a feature, identify which layer it belongs to before writing any code.

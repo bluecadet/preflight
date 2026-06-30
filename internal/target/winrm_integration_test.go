@@ -1,45 +1,150 @@
 package target
 
 import (
+	"bufio"
 	"context"
-	"encoding/json"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// getWinRMConfigFromEnv parses PREFLIGHT_TEST_WINRM as a JSON blob with
-// host, port, user, and pass fields. Returns nil + false when unset so
+// TestMain loads .env.test from the module root before any test runs, then
+// delegates to the standard test runner. Variables already set in the
+// environment (e.g. from CI or a manual export) are never overwritten.
+func TestMain(m *testing.M) {
+	loadDotEnvTest()
+	os.Exit(m.Run())
+}
+
+// loadDotEnvTest walks up from the test working directory to find .env.test
+// (stopping at the directory containing go.mod or .git) and loads KEY=VALUE
+// pairs into the process environment. It is a no-op when the file is absent.
+// Variables already present in the environment are never overwritten so CI
+// exports and manual exports take precedence.
+func loadDotEnvTest() {
+	dir, err := os.Getwd()
+	if err != nil {
+		return
+	}
+	envFile := findEnvTestFile(dir)
+	if envFile == "" {
+		return
+	}
+	f, err := os.Open(envFile)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.TrimSpace(val)
+		// Strip optional surrounding single or double quotes.
+		if len(val) >= 2 {
+			if (val[0] == '"' && val[len(val)-1] == '"') ||
+				(val[0] == '\'' && val[len(val)-1] == '\'') {
+				val = val[1 : len(val)-1]
+			}
+		}
+		// Do not override variables already present in the environment.
+		if os.Getenv(key) == "" {
+			os.Setenv(key, val) //nolint:errcheck
+		}
+	}
+}
+
+// findEnvTestFile walks up from dir looking for .env.test, stopping when it
+// finds a directory that contains go.mod or .git. Returns the path to
+// .env.test if found, or an empty string if absent.
+func findEnvTestFile(dir string) string {
+	for {
+		candidate := filepath.Join(dir, ".env.test")
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate
+		}
+		// Stop at the module/repo root.
+		for _, marker := range []string{"go.mod", ".git"} {
+			if _, err := os.Stat(filepath.Join(dir, marker)); err == nil {
+				return ""
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
+}
+
+// getWinRMConfigFromEnv reads four separate env vars to build the WinRM
+// connection config. Returns nil + false when any required var is missing so
 // callers can t.Skip cleanly.
+//
+// Required vars:
+//   - PREFLIGHT_TEST_WINRM_HOST
+//   - PREFLIGHT_TEST_WINRM_USER
+//   - PREFLIGHT_TEST_WINRM_PASS
+//
+// Optional vars:
+//   - PREFLIGHT_TEST_WINRM_PORT (default 5985)
 func getWinRMConfigFromEnv() (*WinRMConfig, bool) {
-	raw := os.Getenv("PREFLIGHT_TEST_WINRM")
-	if raw == "" {
+	host := os.Getenv("PREFLIGHT_TEST_WINRM_HOST")
+	user := os.Getenv("PREFLIGHT_TEST_WINRM_USER")
+	pass := os.Getenv("PREFLIGHT_TEST_WINRM_PASS")
+	if host == "" || user == "" || pass == "" {
 		return nil, false
 	}
-	var cfg struct {
-		Host     string `json:"host"`
-		Port     int    `json:"port"`
-		Username string `json:"user"`
-		Password string `json:"pass"`
-	}
-	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
-		return nil, false
-	}
-	if cfg.Host == "" {
-		return nil, false
-	}
-	if cfg.Port == 0 {
-		cfg.Port = 5985
+	port := 5985
+	if raw := os.Getenv("PREFLIGHT_TEST_WINRM_PORT"); raw != "" {
+		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
+			port = p
+		}
 	}
 	return &WinRMConfig{
-		Host:     cfg.Host,
-		Port:     cfg.Port,
-		Username: cfg.Username,
-		Password: cfg.Password,
+		Host:     host,
+		Port:     port,
+		Username: user,
+		Password: pass,
 		Timeout:  60 * time.Second,
 	}, true
+}
+
+var (
+	runIDOnce sync.Once
+	runID     string
+)
+
+// testRunID returns a stable unique token for this test process. It is derived
+// from the current Unix nanosecond timestamp plus 4 random bytes, giving
+// enough entropy to avoid collisions across concurrent `go test` runs against
+// the same VM. The value is computed once and reused for all tests in the run.
+func testRunID() string {
+	runIDOnce.Do(func() {
+		b := make([]byte, 4)
+		if _, err := rand.Read(b); err != nil {
+			// Fall back to time-only if crypto/rand is unavailable.
+			runID = fmt.Sprintf("%x", time.Now().UnixNano())
+			return
+		}
+		runID = fmt.Sprintf("%x%s", time.Now().UnixNano(), hex.EncodeToString(b))
+	})
+	return runID
 }
 
 // TestWinRMIntegration_Registry exercises the registry module against a real
@@ -52,7 +157,7 @@ func getWinRMConfigFromEnv() (*WinRMConfig, bool) {
 func TestWinRMIntegration_Registry(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -62,13 +167,16 @@ func TestWinRMIntegration_Registry(t *testing.T) {
 
 	ctx := context.Background()
 
-	// The namespace under which all test mutations happen. It sits under the
-	// sacrificial parent tree (HKLM\SOFTWARE\PreflightTest) so cleanup is
-	// scoped and the sentinel at IsSacrificial is never touched.
-	ns := `HKLM\SOFTWARE\PreflightTest\IntegrationTest`
-	nsProvider := `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\IntegrationTest`
+	// The namespace under which all test mutations happen. The run ID is
+	// embedded in the key name (not as a sub-level) so concurrent `go test`
+	// runs against the same VM don't collide. The key nests under
+	// PreflightTest — one level deep — so the sentinel at IsSacrificial is
+	// never touched and the module only creates one new key.
+	runKey := "IntegrationTest-" + testRunID()[:12]
+	ns := `HKLM\SOFTWARE\PreflightTest\` + runKey
+	nsProvider := `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\` + runKey
 
-	// ---- Cleanup: remove the entire test namespace ----
+	// ---- Cleanup: remove the per-run key ----
 	t.Cleanup(func() {
 		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
 			`Remove-Item -LiteralPath "%s" -Recurse -Force -ErrorAction SilentlyContinue`,
@@ -207,7 +315,7 @@ func TestWinRMIntegration_Registry(t *testing.T) {
 func TestWinRMIntegration_User(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -217,9 +325,9 @@ func TestWinRMIntegration_User(t *testing.T) {
 
 	ctx := context.Background()
 	// The sacrificial namespace for user names follows pf-test-* so the test
-	// never touches non-test users. A timestamp suffix ensures uniqueness
-	// across parallel runs.
-	testName := fmt.Sprintf("pf-test-int-%d", time.Now().UnixNano())
+	// never touches non-test users. The shared run ID ensures uniqueness
+	// across parallel runs without each test maintaining its own timestamp.
+	testName := fmt.Sprintf("pf-test-%s", testRunID()[:12])
 
 	// ---- Cleanup: remove the test user via raw PowerShell ----
 	// Using a direct Remove-LocalUser command rather than the module under
@@ -310,7 +418,7 @@ func TestWinRMIntegration_User(t *testing.T) {
 func TestWinRMIntegration_ScheduledTask(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -321,9 +429,10 @@ func TestWinRMIntegration_ScheduledTask(t *testing.T) {
 	ctx := context.Background()
 
 	// Test task lives under \PreflightTest\ so cleanup is scoped and the
-	// sentinel at IsSacrificial is never touched.
+	// sentinel at IsSacrificial is never touched. The run ID suffix prevents
+	// collisions when multiple `go test` processes share the same VM.
 	taskPath := `\PreflightTest\`
-	taskName := `pf-test-integration`
+	taskName := fmt.Sprintf("pf-test-%s", testRunID()[:12])
 	execute := `powershell.exe`
 	arguments := `-NoProfile -NonInteractive -Command exit 0`
 
@@ -439,8 +548,8 @@ Write-Output ('unexpected:' + $props.IsSacrificial)
 	out = strings.TrimSpace(out)
 	if out != "present" {
 		t.Skipf("sacrificial sentinel not found on target (response: %q). "+
-			"Run scripts/bootstrap-winrm-vm.ps1 on the VM, or point PREFLIGHT_TEST_WINRM "+
-			"at a properly bootstrapped VM.", out)
+			"Ensure HKLM\\SOFTWARE\\PreflightTest\\IsSacrificial=1 is set on the VM "+
+			"(see the 'Windows Integration Tests' section of CONTRIBUTING.md).", out)
 	}
 }
 
@@ -453,7 +562,7 @@ Write-Output ('unexpected:' + $props.IsSacrificial)
 func TestWinRMIntegration_FirewallRule(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -464,12 +573,16 @@ func TestWinRMIntegration_FirewallRule(t *testing.T) {
 	ctx := context.Background()
 
 	// All test rules use the pf-test-* naming convention so they are easy to
-	// identify and never conflict with real rules.
-	ruleName := "pf-test-integration-tcp443"
+	// identify and never conflict with real rules. The run ID suffix prevents
+	// collisions when multiple `go test` processes share the same VM.
+	ruleName := fmt.Sprintf("pf-test-%s-tcp443", testRunID()[:12])
 
-	// ---- Cleanup: remove all pf-test-* rules ----
+	// ---- Cleanup: remove this run's test rule by exact name ----
 	t.Cleanup(func() {
-		_, err := tgt.RunPowerShell(ctx, `Get-NetFirewallRule -DisplayName "pf-test-*" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`)
+		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
+			`Get-NetFirewallRule -DisplayName "%s" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
+			ruleName,
+		))
 		if err != nil {
 			t.Logf("cleanup: %v", err)
 		}
@@ -738,7 +851,7 @@ Write-Output ([string]$value)
 func TestWinRMIntegration_PowerPlan(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -748,7 +861,9 @@ func TestWinRMIntegration_PowerPlan(t *testing.T) {
 
 	ctx := context.Background()
 
-	testName := "preflight-integration-test"
+	// The run ID suffix prevents collisions when multiple `go test` processes
+	// share the same VM.
+	testName := fmt.Sprintf("pf-test-%s-pp", testRunID()[:12])
 
 	// ---- Capture the original active scheme so we can restore it later ----
 	origGUID := getActivePowerSchemeOracle(t, tgt)
@@ -868,7 +983,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 func TestWinRMIntegration_WindowsFeature(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -1041,7 +1156,7 @@ Write-Output $feature.State.ToString()
 func TestWinRMIntegration_WingetPackage(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -1198,7 +1313,7 @@ func isWingetPackageInstalledOracle(t *testing.T, tgt *WinRMTarget, pkgID string
 func TestWinRMIntegration_Service(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -1208,7 +1323,9 @@ func TestWinRMIntegration_Service(t *testing.T) {
 
 	ctx := context.Background()
 
-	serviceName := "pf-test-integration-svc"
+	// The run ID suffix prevents collisions when multiple `go test` processes
+	// share the same VM.
+	serviceName := fmt.Sprintf("pf-test-%s-svc", testRunID()[:12])
 
 	// ---- Setup: create the test service if it does not already exist ----
 	_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(`
@@ -1443,7 +1560,7 @@ Write-Output ''
 func TestWinRMIntegration_Streaming(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -1534,7 +1651,7 @@ Write-Output 'done'`
 func TestWinRMIntegration_Shortcut(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
@@ -1544,8 +1661,10 @@ func TestWinRMIntegration_Shortcut(t *testing.T) {
 
 	ctx := context.Background()
 
-	// The namespace under which all test shortcuts are created.
-	nsDir := `$env:TEMP\PreflightTest\ShortcutTest`
+	// The namespace under which all test shortcuts are created. The run ID
+	// suffix prevents collisions when multiple `go test` processes share the
+	// same VM.
+	nsDir := `$env:TEMP\PreflightTest\ShortcutTest-` + testRunID()[:12]
 	lnkPath := nsDir + `\test.lnk`
 
 	// ---- Cleanup: remove the entire test namespace ----
@@ -1650,7 +1769,7 @@ func TestWinRMIntegration_Shortcut(t *testing.T) {
 func TestWinRMIntegration_RemoveAppxPackages(t *testing.T) {
 	cfg, ok := getWinRMConfigFromEnv()
 	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM is not set; skipping Windows WinRM integration test")
+		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
 	}
 
 	tgt := NewWinRMTarget(*cfg)
