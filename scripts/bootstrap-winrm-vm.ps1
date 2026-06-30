@@ -55,20 +55,21 @@ if (-not (Test-Path $sentinelPath)) {
 New-ItemProperty -LiteralPath $sentinelPath -Name 'IsSacrificial' -Value 1 -PropertyType DWord -Force | Out-Null
 
 Write-Host ""
-Write-Host "================================================================"
-Write-Host " Bootstrap complete.  Set this environment variable on the"
-Write-Host " controller machine to run the integration suite:"
-Write-Host "================================================================"
+Write-Host "==============================================================="
+Write-Host " Bootstrap complete.  Add these variables to your .env.test"
+Write-Host " file or export them in your shell:"
+Write-Host "==============================================================="
 Write-Host ""
 $ip = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' }).IPAddress[0].IPAddress
-$json = @{
-    host = $ip
-    port = 5985
-    user = 'pf-test'
-    pass = $winrmPass
-} | ConvertTo-Json -Compress
-Write-Host 'export PREFLIGHT_TEST_WINRM=''' + $json + ''''
+Write-Host "PREFLIGHT_TEST_WINRM_HOST=$ip"
+Write-Host "PREFLIGHT_TEST_WINRM_PORT=5985"
+Write-Host "PREFLIGHT_TEST_WINRM_USER=pf-test"
+Write-Host "PREFLIGHT_TEST_WINRM_PASS=$winrmPass"
 Write-Host ""
-Write-Host "(PowerShell: `$env:PREFLIGHT_TEST_WINRM = '$json')"
+Write-Host "If OpenSSH Server is running on this VM, add these too:"
+Write-Host "PREFLIGHT_TEST_SSH_HOST=$ip"
+Write-Host "PREFLIGHT_TEST_SSH_PORT=22"
+Write-Host "PREFLIGHT_TEST_SSH_USER=pf-test"
+Write-Host "PREFLIGHT_TEST_SSH_PASS=$winrmPass"
 Write-Host ""
-Write-Host "Then run: cd preflight && go test -v -run TestWinRMIntegration ./internal/target/"
+Write-Host "Then run: cd preflight && go test -v -run TestIntegration_Registry ./internal/target/"

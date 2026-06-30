@@ -186,3 +186,109 @@ Write-Output ('unexpected:' + $props.IsSacrificial)
 			"(see the 'Windows Integration Tests' section of CONTRIBUTING.md).", out)
 	}
 }
+
+// getSSHConfigFromEnv reads four env vars to build the SSH connection config.
+// Returns nil + false when any required var is missing so callers can t.Skip
+// cleanly. Mirrors the WinRM four-var contract.
+//
+// Required vars:
+//   - PREFLIGHT_TEST_SSH_HOST
+//   - PREFLIGHT_TEST_SSH_USER
+//   - PREFLIGHT_TEST_SSH_PASS
+//
+// Optional vars:
+//   - PREFLIGHT_TEST_SSH_PORT (default 22)
+//   - PREFLIGHT_TEST_SSH_KEY   (path to a private key file; password auth is
+//     always attempted when PREFLIGHT_TEST_SSH_PASS is set)
+func getSSHConfigFromEnv() (*SSHConfig, bool) {
+	host := os.Getenv("PREFLIGHT_TEST_SSH_HOST")
+	user := os.Getenv("PREFLIGHT_TEST_SSH_USER")
+	pass := os.Getenv("PREFLIGHT_TEST_SSH_PASS")
+	if host == "" || user == "" || pass == "" {
+		return nil, false
+	}
+	// Verify the host resolves before attempting an SSH connection. This
+	// prevents tests from hanging when .env.test contains placeholder values
+	// (e.g. [IP_ADDRESS]) that are not valid, resolvable hostnames.
+	resolverCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if addrs, err := net.DefaultResolver.LookupHost(resolverCtx, host); err != nil || len(addrs) == 0 {
+		return nil, false
+	}
+	port := 22
+	if raw := os.Getenv("PREFLIGHT_TEST_SSH_PORT"); raw != "" {
+		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
+			port = p
+		}
+	}
+	cfg := &SSHConfig{
+		Host:     host,
+		Port:     port,
+		Username: user,
+		Password: pass,
+	}
+	if key := os.Getenv("PREFLIGHT_TEST_SSH_KEY"); key != "" {
+		cfg.PrivateKey = key
+	}
+	return cfg, true
+}
+
+// forEachTransport builds a target for each configured transport, asserts the
+// sacrificial sentinel, and runs fn as a per-transport subtest. Transports
+// whose env vars are unset are independently skipped — opt-in per transport.
+//
+// The fn callback receives a PowerShellRunner (for oracles and cleanup) and
+// a Target (for Execute). Both may be the same concrete value.
+func forEachTransport(t *testing.T, fn func(t *testing.T, runner PowerShellRunner, tgt Target)) {
+	t.Helper()
+
+	t.Run("winrm", func(t *testing.T) {
+		cfg, ok := getWinRMConfigFromEnv()
+		if !ok {
+			t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS not set")
+		}
+		tgt := NewWinRMTarget(*cfg)
+		t.Cleanup(func() { _ = tgt.Close() })
+		assertSacrificialSentinel(t, tgt)
+		fn(t, tgt, tgt)
+	})
+
+	t.Run("ssh", func(t *testing.T) {
+		cfg, ok := getSSHConfigFromEnv()
+		if !ok {
+			t.Skip("PREFLIGHT_TEST_SSH_HOST / _USER / _PASS not set")
+		}
+		tgt := NewSSHTarget(*cfg, nil)
+		t.Cleanup(func() { _ = tgt.Close() })
+		assertSacrificialSentinel(t, tgt)
+		fn(t, tgt, tgt)
+	})
+}
+
+// mustExecute collapses the Execute+err+status assertion ceremony into a
+// single call. It fails the test if Execute returns an error or the result
+// status does not match expectedStatus. Explicitly NOT a declarative
+// lifecycle driver — it is a simple step helper for integration tests.
+func mustExecute(t *testing.T, tgt Target, taskID, module string, params map[string]any, opts ExecutionOptions, dryRun bool, expectedStatus Status) Result {
+	t.Helper()
+	ctx := context.Background()
+	result, err := tgt.Execute(ctx, taskID, module, params, opts, dryRun, nil)
+	if err != nil {
+		t.Fatalf("%s: Execute failed: %v", taskID, err)
+	}
+	if result.Status != expectedStatus {
+		t.Fatalf("%s: expected status %q, got %q: %s", taskID, expectedStatus, result.Status, result.Message)
+	}
+	return result
+}
+
+// mustMatchOracle asserts that the independent registry oracle returns the
+// expected value for the given provider-qualified registry path and value
+// name. It fails the test if the oracle's output does not match.
+func mustMatchOracle(t *testing.T, runner PowerShellRunner, providerPath, valueName, expected string) {
+	t.Helper()
+	got := readRegistryOracle(t, runner, providerPath, valueName)
+	if got != expected {
+		t.Fatalf("independent oracle: expected %q, got %q (path=%q, value=%q)", expected, got, providerPath, valueName)
+	}
+}
