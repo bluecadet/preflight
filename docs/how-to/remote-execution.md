@@ -209,7 +209,7 @@ A few Windows operations cannot complete over a basic WinRM session because it r
 - `remove_appx_packages` with all-users scope fails with HRESULT `0x80073D19` (*"a user was logged off"*).
 - `powershell` output is delivered all at once at completion rather than streamed line-by-line.
 
-These are WinRM session limitations, not module bugs, and there is no CredSSP option in the transport. Run these operations with the local target, a staged bundle executed on the box, or an interactive context (for example a scheduled task); live streaming works over Windows-over-SSH. See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations) for details.
+These are WinRM session limitations, not module bugs, and there is no CredSSP option in the transport. An interactive logon (for example CredSSP) would fix the DISM restriction but would **not** fix the AppX all-users restriction (which needs SYSTEM-level access to other user profiles) or the streaming limitation (WS-Man buffers output regardless of auth). Run these operations with the local target, a staged bundle executed on the box, or an interactive context (for example a scheduled task); live streaming works over Windows-over-SSH. See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations) for details.
 
 ### I expected one shared state file
 
