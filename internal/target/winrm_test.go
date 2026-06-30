@@ -679,9 +679,9 @@ func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T
 			switch call {
 			case 1:
 				for _, fragment := range []string{
-					"$shortcut.TargetPath -ne [string]$params.target",
+					"$shortcut.TargetPath -ne $target",
 					"$shortcut.Arguments -ne $args",
-					"$shortcut.IconLocation -ne $icon",
+					"if ($params.icon)",
 				} {
 					if !strings.Contains(command, fragment) {
 						t.Fatalf("expected shortcut check script to contain %q, got:\n%s", fragment, command)
@@ -692,7 +692,7 @@ func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T
 				for _, fragment := range []string{
 					"New-Item -ItemType Directory -Path $parent -Force",
 					"$shortcut.Arguments = if ($params.args)",
-					"$shortcut.IconLocation = if ($params.icon)",
+					"if ($params.icon) { $shortcut.IconLocation",
 				} {
 					if !strings.Contains(command, fragment) {
 						t.Fatalf("expected shortcut apply script to contain %q, got:\n%s", fragment, command)
