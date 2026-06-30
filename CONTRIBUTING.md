@@ -120,7 +120,7 @@ CI runs tests, linting, and build jobs. Fixing failures locally is usually much 
 
 ## Windows Integration Tests
 
-The `internal/target` package includes a live-WinRM integration suite that runs real Check/Apply/Check cycles against a Windows endpoint. The suite is guarded two ways: it is behind the `integration` build tag, so it is excluded from the default `go test ./...` / `make test` run entirely, and each test additionally skips at runtime when no endpoint is configured. The result is that `make test` stays fast and the live suite only runs when you ask for it via `make test-integration`.
+The `internal/target` package includes a multi-transport integration suite that runs real Check/Apply/Check cycles against a Windows endpoint over WinRM and/or SSH-to-Windows. The suite is guarded two ways: it is behind the `integration` build tag, so it is excluded from the default `go test ./...` / `make test` run entirely, and each test additionally skips at runtime when no endpoint is configured. The result is that `make test` stays fast and the live suite only runs when you ask for it via `make test-integration`.
 
 ### Setting up a disposable Windows VM
 
@@ -140,6 +140,13 @@ $pass = ConvertTo-SecureString "password" -AsPlainText -Force
 New-LocalUser "pf-test" -Password $pass -PasswordNeverExpires
 Add-LocalGroupMember -Group "Administrators" -Member "pf-test"
 
+# Create a second throwaway admin account for become tests. The become
+# integration tests exercise credential delegation to a non-connecting user,
+# which requires a separate OS account on the target.
+$pass2 = ConvertTo-SecureString "password" -AsPlainText -Force
+New-LocalUser "pf-become" -Password $pass2 -PasswordNeverExpires
+Add-LocalGroupMember -Group "Administrators" -Member "pf-become"
+
 # Allow remote token elevation (required for WinRM admin sessions).
 New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
   -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force
@@ -154,8 +161,6 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\PreflightTest" `
   -Name IsSacrificial -Value 1 -PropertyType DWord -Force
 ```
 
-Do not commit bootstrap scripts — the four-var connection contract accepts any host/port/user, so the snippet above is the only setup artifact you need.
-
 ### Configuring the connection
 
 Create a `.env.test` file at the **repo root** (it is git-ignored; never commit it):
@@ -166,19 +171,26 @@ PREFLIGHT_TEST_WINRM_PORT=5985
 PREFLIGHT_TEST_WINRM_USER=pf-test
 PREFLIGHT_TEST_WINRM_PASS=password
 
-# Optional: SSH-to-Windows (requires OpenSSH Server on the VM)
+# SSH-to-Windows (requires OpenSSH Server on the VM).
+# Four-var contract: HOST, PORT (default 22), USER, PASS.
+# SSH key authentication is optional — omit _KEY for password-only auth.
 PREFLIGHT_TEST_SSH_HOST=192.168.x.x
 PREFLIGHT_TEST_SSH_PORT=22
 PREFLIGHT_TEST_SSH_USER=pf-test
 PREFLIGHT_TEST_SSH_PASS=password
-# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa  # optional, defaults to password auth
+# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa
 ```
 
-Each transport is independently optional — set only the vars for the
-transports you want to test. The test runner loads `.env.test` automatically
-at startup — no `source`, `set -a`, or direnv wrapper needed. Variables
-already exported in the environment take precedence over the file, so CI can
-override them cleanly.
+Each transport follows the same four-var contract (`HOST`, `PORT`, `USER`,
+`PASS`) and is independently optional — set only the vars for the transports
+you want to test. `PREFLIGHT_TEST_SSH_PORT` defaults to 22 and
+`PREFLIGHT_TEST_WINRM_PORT` defaults to 5985. When `PREFLIGHT_TEST_SSH_PASS`
+is set the suite always attempts password authentication first; setting
+`PREFLIGHT_TEST_SSH_KEY` adds a private-key fallback.
+
+The test runner loads `.env.test` automatically at startup — no `source`,
+`set -a`, or direnv wrapper needed. Variables already exported in the
+environment take precedence over the file, so CI can override them cleanly.
 
 ### Running the suite
 
@@ -188,19 +200,33 @@ The whole suite, via the Makefile target (adds the build tag for you):
 make test-integration
 ```
 
-The build tag is required — without `-tags integration` the files do not compile in, so a plain `go test` will report no integration tests. To run a specific module:
+The build tag is required — without `-tags integration` the files do not compile in, so a plain `go test` will report no integration tests.
+
+#### Multi-transport tests (`TestIntegration_*`)
+
+Tests named `TestIntegration_*` exercise every configured transport (WinRM **and**
+SSH-to-Windows). Each transport runs as a subtest, so you can filter by
+transport name (`/winrm` or `/ssh`):
 
 ```bash
-go test -tags integration ./internal/target/ -run TestWinRMIntegration_Registry -v
+# Run the registry test over every configured transport.
+go test -tags integration ./internal/target/ -run TestIntegration_Registry -v
+
+# Run the registry test via SSH only.
+go test -tags integration ./internal/target/ -run TestIntegration_Registry/ssh -v
+
+# Run the registry test via WinRM only.
+go test -tags integration ./internal/target/ -run TestIntegration_Registry/winrm -v
+
+# Run all multi-transport tests on the SSH transport.
+go test -tags integration ./internal/target/ -run 'TestIntegration_.*/ssh' -v
 ```
 
-To run only the registry test over all configured transports:
+#### WinRM-only tests (`TestWinRMIntegration_*`)
 
-```bash
-go test ./internal/target/ -run TestIntegration_Registry -v
-```
-
-To run a WinRM-only test (e.g. streaming):
+Tests prefixed `TestWinRMIntegration_*` connect via WinRM directly and are not
+wrapped in per-transport subtests. They run only when
+`PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS` are set:
 
 ```bash
 go test -tags integration ./internal/target/ -run TestWinRMIntegration_Streaming -v
