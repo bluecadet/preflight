@@ -9,47 +9,48 @@ import (
 	"testing"
 )
 
-// TestWinRMIntegration_ScheduledTask exercises the scheduled_task module against a real
-// Windows endpoint over WinRM. It is gated by PREFLIGHT_TEST_WINRM and the
-// sacrificial sentinel, so it is inert on CI and on any dev machine without
-// a configured VM.
+// TestIntegration_ScheduledTask exercises the scheduled_task module against a real
+// Windows endpoint over every configured transport (WinRM and/or SSH-to-Windows).
+// Each transport gets its own subtest and is independently skipped when its
+// env vars are unset.
 //
-// The test uses an independent PowerShell oracle (Get-ScheduledTask) to assert
-// correctness rather than relying on the module's own Check().
-func TestWinRMIntegration_ScheduledTask(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// Uses an independent PowerShell oracle (Get-ScheduledTask) to assert correctness
+// rather than relying on the module's own Check().
+//
+// Coverage template (per transport):
+//   - present:     initial apply creates the task, verify via oracle
+//   - idempotent:  re-check and re-apply both return StatusOK
+//   - dry-run:     check-only predicts Changed, oracle confirms no mutation
+//   - drift:       modify execute/arguments behind module's back, check detects,
+//                  apply converges back
+//   - absent:      remove the task, verify via oracle
+//
+// MUST run exclusively — never co-scheduled with other live-VM tests
+// (per ADR-0015).
+func TestIntegration_ScheduledTask(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
+		// Test task lives under \PreflightTest\ so cleanup is scoped and the
+		// sentinel at IsSacrificial is never touched. The run ID suffix prevents
+		// collisions when multiple `go test` processes share the same VM.
+		taskPath := `\PreflightTest\`
+		taskName := fmt.Sprintf("pf-test-%s", testRunID()[:12])
+		execute := `powershell.exe`
+		arguments := `-NoProfile -NonInteractive -Command exit 0`
 
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
+		// ---- Cleanup: remove the test task and its parent folder ----
+		t.Cleanup(func() {
+			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+				`Unregister-ScheduledTask -TaskPath "%s" -TaskName "%s" -Confirm:$false -ErrorAction SilentlyContinue`,
+				taskPath, taskName,
+			))
+			if err != nil {
+				t.Logf("cleanup (unregister task): %v", err)
+			}
 
-	ctx := context.Background()
-
-	// Test task lives under \PreflightTest\ so cleanup is scoped and the
-	// sentinel at IsSacrificial is never touched. The run ID suffix prevents
-	// collisions when multiple `go test` processes share the same VM.
-	taskPath := `\PreflightTest\`
-	taskName := fmt.Sprintf("pf-test-%s", testRunID()[:12])
-	execute := `powershell.exe`
-	arguments := `-NoProfile -NonInteractive -Command exit 0`
-
-	// ---- Cleanup: remove the test task and its parent folder ----
-	t.Cleanup(func() {
-		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-			`Unregister-ScheduledTask -TaskPath "%s" -TaskName "%s" -Confirm:$false -ErrorAction SilentlyContinue`,
-			taskPath, taskName,
-		))
-		if err != nil {
-			t.Logf("cleanup (unregister task): %v", err)
-		}
-
-		// Remove the PreflightTest task folder via COM.
-		_, err = tgt.RunPowerShell(ctx, `
+			// Remove the PreflightTest task folder via COM.
+			_, err = runner.RunPowerShell(ctx, `
 $service = New-Object -ComObject 'Schedule.Service'
 $service.Connect()
 try {
@@ -57,73 +58,111 @@ try {
   $parent.DeleteFolder('PreflightTest', $null)
 } catch { }
 `)
-		if err != nil {
-			t.Logf("cleanup (delete folder): %v", err)
+			if err != nil {
+				t.Logf("cleanup (delete folder): %v", err)
+			}
+		})
+
+		desiredParams := map[string]any{
+			"path":      taskPath,
+			"name":      taskName,
+			"execute":   execute,
+			"arguments": arguments,
+			"trigger":   "startup",
+			"ensure":    "present",
 		}
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation (task does not exist yet)
+		// ================================================================
+		mustExecute(t, tgt, "scheduled-task-dryrun", "scheduled_task", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		got := readScheduledTaskOracle(t, runner, taskPath, taskName)
+		if got != "absent" {
+			t.Fatalf("dry-run: oracle expected task to be absent, got %q", got)
+		}
+		t.Log("dry-run: oracle confirms task was not created")
+
+		// ================================================================
+		// Branch: present — initial apply creates the scheduled task
+		// ================================================================
+		mustExecute(t, tgt, "scheduled-task-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Verify via independent oracle
+		expected := fmt.Sprintf("exists|%s|%s|%s|%s", taskName, taskPath, execute, arguments)
+		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
+		if got != expected {
+			t.Fatalf("independent oracle: expected %q, got %q", expected, got)
+		}
+
+		// ================================================================
+		// Branch: idempotent — re-check and re-apply both return StatusOK
+		// ================================================================
+		mustExecute(t, tgt, "scheduled-task-idemp-check", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "scheduled-task-idemp-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: drift — modify execute/arguments behind the module's
+		// back, then verify Check detects the change and Apply converges
+		// back to the desired state
+		// ================================================================
+		driftExecute := `cmd.exe`
+		driftArguments := `/c echo drifted`
+		_, err := runner.RunPowerShell(ctx, fmt.Sprintf(`
+$tp = "%s"
+$tn = "%s"
+$task = Get-ScheduledTask -TaskPath $tp -TaskName $tn -ErrorAction Stop
+$action = $task.Actions | Select-Object -First 1
+$action.Execute = '%s'
+$action.Arguments = '%s'
+$task | Set-ScheduledTask -ErrorAction Stop | Out-Null
+`, taskPath, taskName, driftExecute, driftArguments))
+		if err != nil {
+			t.Fatalf("drift setup: failed to modify task: %v", err)
+		}
+
+		// Oracle confirms the drift took effect
+		driftedExpected := fmt.Sprintf("exists|%s|%s|%s|%s", taskName, taskPath, driftExecute, driftArguments)
+		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
+		if got != driftedExpected {
+			t.Fatalf("drift oracle: expected %q, got %q", driftedExpected, got)
+		}
+
+		// Check detects the drift (NeedsChange = true → StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-drift-check", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Apply converges back to the desired state
+		mustExecute(t, tgt, "scheduled-task-drift-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Oracle confirms convergence
+		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
+		if got != expected {
+			t.Fatalf("drift convergence oracle: expected %q, got %q", expected, got)
+		}
+
+		// Confirm idempotence after convergence
+		mustExecute(t, tgt, "scheduled-task-drift-idemp", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: absent — remove the scheduled task entirely
+		// ================================================================
+		absentParams := map[string]any{
+			"path":   taskPath,
+			"name":   taskName,
+			"ensure": "absent",
+		}
+
+		mustExecute(t, tgt, "scheduled-task-absent", "scheduled_task", absentParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Verify via oracle that task is gone
+		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
+		if got != "absent" {
+			t.Fatalf("independent oracle: expected task to be absent, got %q", got)
+		}
+
+		// Idempotent absent — re-check returns OK (already absent)
+		mustExecute(t, tgt, "scheduled-task-absent-idemp", "scheduled_task", absentParams, ExecutionOptions{}, false, StatusOK)
 	})
-
-	// ---- Step 1: Apply - create a scheduled task ----
-	params := map[string]any{
-		"path":      taskPath,
-		"name":      taskName,
-		"execute":   execute,
-		"arguments": arguments,
-		"trigger":   "startup",
-	}
-
-	result, err := tgt.Execute(ctx, "scheduled-task-apply", "scheduled_task", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("scheduled_task apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("scheduled_task apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 2: Verify via independent oracle ----
-	got := readScheduledTaskOracle(t, tgt, taskPath, taskName)
-	expected := fmt.Sprintf("exists|%s|%s|%s|%s", taskName, taskPath, execute, arguments)
-	if got != expected {
-		t.Fatalf("independent oracle: expected %q, got %q", expected, got)
-	}
-
-	// ---- Step 3: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "scheduled-task-recheck", "scheduled_task", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("scheduled_task re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("scheduled_task re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 4: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "scheduled-task-reapply", "scheduled_task", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("scheduled_task re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("scheduled_task re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Ensure absent removes the task ----
-	absentParams := map[string]any{
-		"path":   taskPath,
-		"name":   taskName,
-		"ensure": "absent",
-	}
-
-	result, err = tgt.Execute(ctx, "scheduled-task-absent", "scheduled_task", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("scheduled_task absent: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("scheduled_task absent: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// Verify via oracle that task is gone
-	got = readScheduledTaskOracle(t, tgt, taskPath, taskName)
-	if got != "absent" {
-		t.Fatalf("independent oracle: expected task to be absent, got %q", got)
-	}
 }
 
 // readScheduledTaskOracle is an independent PowerShell oracle that reads a
