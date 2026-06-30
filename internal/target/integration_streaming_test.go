@@ -16,9 +16,10 @@ import (
 // arrive incrementally rather than in a single batch at completion.
 //
 // Incremental delivery is a capability of the underlying WinRM session, not of
-// preflight: the WS-Man Receive channel on a basic (NTLM/Negotiate) session
-// buffers a command's stdout and hands it over in one piece when the command
-// finishes, regardless of [Console]::Out flushing or session reuse. The
+// preflight: the WS-Man Receive channel buffers a command's stdout in the
+// WinRM service's internal pipe buffer and delivers it in batches when the
+// command finishes, regardless of authentication method (NTLM, Kerberos, or
+// CredSSP) or [Console]::Out flushing. The
 // script sleeps 100ms between each of five chunks, so genuinely streamed
 // output spreads over ~400ms while batched output collapses to ~0. The test
 // stamps each callback; if the spread shows the session batched, it skips the

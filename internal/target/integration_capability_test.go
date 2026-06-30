@@ -11,19 +11,21 @@ import (
 
 // isWinRMServicingUnsupported reports whether a windows_feature (DISM) error is
 // the well-known component-store symlink restriction that surfaces when online
-// servicing runs under a basic WinRM network-logon token. The operation works
-// under CredSSP or an interactive logon, so callers treat this as an
-// environment limitation and skip rather than fail.
+// servicing runs under a basic WinRM network-logon token (LogonType 3). The
+// operation works under an interactive logon (LogonType 2, e.g. CredSSP),
+// so callers treat this as an environment limitation and skip rather than fail.
 func isWinRMServicingUnsupported(msg string) bool {
 	return strings.Contains(strings.ToLower(msg), "symbolic link cannot be followed")
 }
 
 // appxRemovalBlockedReason attempts a direct all-users removal of name and
 // returns the captured error message when it is the non-interactive-session
-// limitation (HRESULT 0x80073D19 / "a user was logged off"). It returns an
-// empty string when removal is not blocked for that reason — in which case a
-// still-present package after the module ran is a genuine defect, not an
-// environment limitation.
+// limitation (HRESULT 0x80073D19 / "a user was logged off"). Unlike the DISM
+// symlink restriction, CredSSP does NOT lift this — the problem is not the
+// connecting user's session type but the inability to load profiles for OTHER
+// users who are not logged in. It returns an empty string when removal is not
+// blocked for that reason — in which case a still-present package after the
+// module ran is a genuine defect, not an environment limitation.
 func appxRemovalBlockedReason(t *testing.T, tgt PowerShellRunner, name string) string {
 	t.Helper()
 	ctx := context.Background()

@@ -57,6 +57,16 @@ These are properties of the WinRM session, not defects in the modules, so prefli
 - use an **interactive/elevated context** (for example a scheduled task), or
 - for live streaming specifically, use **Windows-over-SSH**, where output is delivered incrementally.
 
+#### Would CredSSP Help?
+
+CredSSP authentication (which preflight does not currently support) creates an interactive logon session on the target rather than a network logon. The following analysis explains whether adding CredSSP to the transport would lift each limitation:
+
+- **DISM online servicing — YES, CredSSP would fix this.** The symlink restriction is a direct consequence of the network-logon session class (LogonType 3). An interactive logon (LogonType 2, which CredSSP provides) has broader reparse-point traversal rights and can follow the WinSxS component-store symlinks that DISM needs to access. This is well-documented in Microsoft enterprise deployment guidance.
+
+- **`remove_appx_packages` with all-users scope — NO, CredSSP does not fix this.** CredSSP gives the *connecting user* an interactive session, but `-AllUsers` needs to access AppX package state in every user profile on the machine. Profiles for users who are not logged in cannot be reliably loaded, regardless of how the connecting user authenticated. The proper solution is running as the SYSTEM account (for example via a scheduled task) or using per-user package operations.
+
+- **Incremental output streaming — NO, WS-Man buffering is auth-independent.** The WS-Management protocol delivers command output through a `Receive` operation that returns whatever the WinRM service has accumulated in its internal buffer. This buffer is filled by a pipe-reading loop deep in the WinRM service implementation — well below the authentication layer. The authentication mechanism (NTLM, Kerberos, or CredSSP) cannot change this. The CRT stdout buffering mode differs slightly between interactive and network logons (line-buffered vs fully buffered), but the WinRM service still accumulates output server-side and delivers it on the next `Receive` call. **Real-time output streaming is not achievable over WS-Man regardless of authentication method.** Windows-over-SSH is the correct path for incremental output.
+
 ## SSH Target
 
 SSH now auto-detects one of two runtimes on the remote host:

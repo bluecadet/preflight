@@ -88,7 +88,7 @@ func TestWinRMIntegration_WindowsFeature(t *testing.T) {
 		// session, not of the module, so skip rather than fail.
 		if isWinRMServicingUnsupported(err.Error()) {
 			t.Skipf("DISM online servicing is unsupported over this WinRM session "+
-				"(requires CredSSP or an interactive logon): %v", err)
+				"(requires an interactive logon, e.g. CredSSP): %v", err)
 		}
 		t.Fatalf("windows_feature apply: %v", err)
 	}
