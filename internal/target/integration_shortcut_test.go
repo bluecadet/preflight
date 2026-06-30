@@ -16,120 +16,168 @@ type shortcutOracleResult struct {
 	Arguments  string
 }
 
-// TestWinRMIntegration_Shortcut exercises the shortcut (.LNK creation) module
-// against a real Windows endpoint over WinRM. It is gated by PREFLIGHT_TEST_WINRM
-// and the sacrificial sentinel.
+// TestIntegration_Shortcut exercises the shortcut (.LNK creation) module against
+// a real Windows endpoint over every configured transport (WinRM and/or
+// SSH-to-Windows). Each transport gets its own subtest and is independently
+// skipped when its env vars are unset.
+//
+// Coverage template (per transport):
+//   - present:     initial apply (create shortcut), verify via oracle
+//   - idempotent:  re-check and re-apply both return StatusOK
+//   - dry-run:     check-only predicts Changed, oracle confirms no mutation
+//   - drift:       target/args change converges back to desired state
+//   - absent:      shortcut removal, idempotent re-check
 //
 // The test uses an independent PowerShell oracle (WScript.Shell) to assert
-// correctness of TargetPath, Arguments, and WorkingDirectory rather than
-// relying on the module's own Check().
-func TestWinRMIntegration_Shortcut(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// correctness of TargetPath and Arguments rather than relying on the module's
+// own Check().
+func TestIntegration_Shortcut(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
+		// The namespace under which all test shortcuts are created. The run
+		// ID suffix prevents collisions when multiple `go test` processes
+		// share the same VM.
+		nsDir := `%TEMP%\PreflightTest\ShortcutTest-` + testRunID()[:12]
+		lnkPath := nsDir + `\test.lnk`
+		targetExe := `C:\Windows\System32\notepad.exe`
+		targetArgs := `/A readme.txt`
 
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
+		// ---- Cleanup: remove the entire test namespace ----
+		t.Cleanup(func() {
+			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+				`Remove-Item -LiteralPath ([System.Environment]::ExpandEnvironmentVariables("%s")) -Recurse -Force -ErrorAction SilentlyContinue`,
+				nsDir,
+			))
+			if err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		})
 
-	ctx := context.Background()
-
-	// The namespace under which all test shortcuts are created. The run ID
-	// suffix prevents collisions when multiple `go test` processes share the
-	// same VM.
-	nsDir := `%TEMP%\PreflightTest\ShortcutTest-` + testRunID()[:12]
-	lnkPath := nsDir + `\test.lnk`
-
-	// ---- Cleanup: remove the entire test namespace ----
-	t.Cleanup(func() {
-		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-			`Remove-Item -LiteralPath ([System.Environment]::ExpandEnvironmentVariables("%s")) -Recurse -Force -ErrorAction SilentlyContinue`,
-			nsDir,
-		))
-		if err != nil {
-			t.Logf("cleanup: %v", err)
+		desiredParams := map[string]any{
+			"destination": lnkPath,
+			"target":      targetExe,
+			"args":        targetArgs,
+			"ensure":      "present",
 		}
+
+		// ================================================================
+		// Branch: present — initial apply creates the shortcut
+		// ================================================================
+		mustExecute(t, tgt, "shortcut-present", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Verify via independent oracle
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present:    true,
+			TargetPath: targetExe,
+			Arguments:  targetArgs,
+		})
+
+		// ================================================================
+		// Branch: idempotent — re-check returns OK, re-apply is a no-op
+		// ================================================================
+		mustExecute(t, tgt, "shortcut-idemp-check", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "shortcut-idemp-apply", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present:    true,
+			TargetPath: targetExe,
+			Arguments:  targetArgs,
+		})
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation occurred
+		// ================================================================
+		dryRunTarget := `C:\Windows\System32\calc.exe`
+		dryRunArgs := `/DryRun`
+		dryRunParams := map[string]any{
+			"destination": lnkPath,
+			"target":      dryRunTarget,
+			"args":        dryRunArgs,
+			"ensure":      "present",
+		}
+		mustExecute(t, tgt, "shortcut-dryrun", "shortcut", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		// Oracle confirms the shortcut was NOT changed by the dry run
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present:    true,
+			TargetPath: targetExe,
+			Arguments:  targetArgs,
+		})
+
+		// ================================================================
+		// Branch: drift — mutate behind the module's back, then verify
+		// that Check detects the change and Apply converges back
+		// ================================================================
+		driftTarget := `C:\Windows\System32\calc.exe`
+		driftArgs := `/Drifted`
+		_, err := runner.RunPowerShell(ctx, fmt.Sprintf(`
+$path = [System.Environment]::ExpandEnvironmentVariables("%s")
+$shell = New-Object -ComObject WScript.Shell
+$shortcut = $shell.CreateShortcut($path)
+$shortcut.TargetPath = "%s"
+$shortcut.Arguments = "%s"
+$shortcut.Save()
+`, lnkPath, driftTarget, driftArgs))
+		if err != nil {
+			t.Fatalf("drift setup: PowerShell drift mutation failed: %v", err)
+		}
+		// Oracle confirms the shortcut was mutated
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present:    true,
+			TargetPath: driftTarget,
+			Arguments:  driftArgs,
+		})
+
+		// Check detects the drift (NeedsChange = true → StatusChanged)
+		mustExecute(t, tgt, "shortcut-drift-check", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Apply converges back to the desired state
+		mustExecute(t, tgt, "shortcut-drift-apply", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present:    true,
+			TargetPath: targetExe,
+			Arguments:  targetArgs,
+		})
+
+		// Confirm idempotence after convergence
+		mustExecute(t, tgt, "shortcut-drift-idemp", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: absent — remove the shortcut, verify via oracle,
+		// then confirm idempotent re-check
+		// ================================================================
+		absentParams := map[string]any{
+			"destination": lnkPath,
+			"ensure":      "absent",
+		}
+		mustExecute(t, tgt, "shortcut-absent", "shortcut", absentParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Verify via oracle that shortcut is gone
+		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
+			Present: false,
+		})
+
+		// Idempotent absent — re-check returns OK (already absent)
+		mustExecute(t, tgt, "shortcut-absent-idemp", "shortcut", absentParams, ExecutionOptions{}, false, StatusOK)
 	})
+}
 
-	targetExe := `C:\Windows\System32\notepad.exe`
-	targetArgs := `/A readme.txt`
-
-	// ---- Step 1: Apply - create a shortcut ----
-	params := map[string]any{
-		"destination": lnkPath,
-		"target":      targetExe,
-		"args":        targetArgs,
-		"ensure":      "present",
+// mustMatchShortcutOracle asserts that the independent WScript.Shell oracle
+// returns the expected shortcut properties for the given .lnk path. It fails
+// the test if any field does not match.
+func mustMatchShortcutOracle(t *testing.T, runner PowerShellRunner, lnkPath string, expected shortcutOracleResult) {
+	t.Helper()
+	got := readShortcutOracle(t, runner, lnkPath)
+	if got.Present != expected.Present {
+		t.Fatalf("independent oracle: expected Present=%v, got %v (path=%q)", expected.Present, got.Present, lnkPath)
 	}
-
-	result, err := tgt.Execute(ctx, "shortcut-apply", "shortcut", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("shortcut apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("shortcut apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 2: Verify via independent oracle ----
-	o := readShortcutOracle(t, tgt, lnkPath)
-	if !o.Present {
-		t.Fatal("independent oracle: shortcut file does not exist")
-	}
-	if o.TargetPath != targetExe {
-		t.Fatalf("independent oracle: expected TargetPath=%q, got %q", targetExe, o.TargetPath)
-	}
-	if o.Arguments != targetArgs {
-		t.Fatalf("independent oracle: expected Arguments=%q, got %q", targetArgs, o.Arguments)
-	}
-
-	// ---- Step 3: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "shortcut-recheck", "shortcut", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("shortcut re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("shortcut re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 4: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "shortcut-reapply", "shortcut", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("shortcut re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("shortcut re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Ensure absent removes the shortcut ----
-	absentParams := map[string]any{
-		"destination": lnkPath,
-		"ensure":      "absent",
-	}
-
-	result, err = tgt.Execute(ctx, "shortcut-absent", "shortcut", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("shortcut absent: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("shortcut absent: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// Verify via oracle that shortcut is gone
-	o = readShortcutOracle(t, tgt, lnkPath)
-	if o.Present {
-		t.Fatal("independent oracle: expected shortcut to be absent, but it still exists")
-	}
-
-	// ---- Step 6: Ensure absent is idempotent ----
-	result, err = tgt.Execute(ctx, "shortcut-absent-idempotent", "shortcut", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("shortcut absent (idempotent): %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("shortcut absent (idempotent): expected StatusOK, got %q: %s", result.Status, result.Message)
+	if expected.Present {
+		if got.TargetPath != expected.TargetPath {
+			t.Fatalf("independent oracle: expected TargetPath=%q, got %q (path=%q)", expected.TargetPath, got.TargetPath, lnkPath)
+		}
+		if got.Arguments != expected.Arguments {
+			t.Fatalf("independent oracle: expected Arguments=%q, got %q (path=%q)", expected.Arguments, got.Arguments, lnkPath)
+		}
 	}
 }
 
