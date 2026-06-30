@@ -296,6 +296,17 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 		return nil, wrapWinRMTargetError("start persistent powershell", err)
 	}
 
+	// Continuously drain stderr. The winrm library's single fetchOutput loop
+	// writes each slurp's stdout and then its stderr to unbuffered io.Pipes; a
+	// stderr write blocks until something reads it. Nothing here ever reads
+	// cmd.Stderr, so the first script that emits any stderr would block that
+	// loop forever — stalling delivery of every later command's stdout and
+	// wedging the *next* run() for winRMPersistentPSReadTimeout. Draining stderr
+	// keeps the loop moving. The copy unblocks when close() shuts the command.
+	go func() {
+		_, _ = io.Copy(io.Discard, cmd.Stderr)
+	}()
+
 	t.psSession = &winRMPersistentPS{shell: shell, cmd: cmd, reader: bufio.NewReader(cmd.Stdout)}
 	return t.psSession, nil
 }
