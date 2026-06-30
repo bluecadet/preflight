@@ -12,9 +12,9 @@ import (
 type PowerPlanModule struct{}
 
 func (m *PowerPlanModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
-	return runValidatedWindowsCheck[PowerPlanParams](ctx, params, out, pscript.PowerPlanModuleCheckScript, nil)
+	return runValidatedWindowsCheck[PowerPlanParams](ctx, params, out, pscript.PowerPlanCheckScript, nil)
 }
 
 func (m *PowerPlanModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
-	return runValidatedWindowsApply[PowerPlanParams](ctx, params, out, pscript.PowerPlanModuleApplyScript, nil)
+	return runValidatedWindowsApply[PowerPlanParams](ctx, params, out, pscript.PowerPlanApplyScript, nil)
 }

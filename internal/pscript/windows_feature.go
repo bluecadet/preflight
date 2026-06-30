@@ -1,6 +1,6 @@
 package pscript
 
-const WindowsFeatureModuleCheckScript = `
+const WindowsFeatureCheckScript = `
 $name = [string]$params.name
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 $feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction SilentlyContinue
@@ -12,18 +12,6 @@ if ($ensure -eq 'absent') {
   exit 0
 }
 Write-Output ($feature.State -ne 'Enabled')
-`
-
-const WindowsFeatureCheckScript = `
-$name = [string]$params.name
-$ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
-$feature = Get-WindowsOptionalFeature -Online -FeatureName $name -ErrorAction SilentlyContinue
-if (-not $feature) { throw "windows feature not found: $name" }
-if ($ensure -eq 'absent') {
-  Write-Output ([bool]($feature.State -ne 'Disabled'))
-  exit 0
-}
-Write-Output ([bool]($feature.State -ne 'Enabled'))
 `
 
 const WindowsFeatureApplyScript = `
