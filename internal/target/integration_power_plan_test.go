@@ -23,6 +23,7 @@ func TestWinRMIntegration_PowerPlan(t *testing.T) {
 	}
 
 	tgt := NewWinRMTarget(*cfg)
+	t.Cleanup(func() { _ = tgt.Close() })
 
 	// ---- Sacrificial-target guard ----
 	assertSacrificialSentinel(t, tgt)
