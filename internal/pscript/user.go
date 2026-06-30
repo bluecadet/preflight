@@ -14,7 +14,13 @@ if ($null -eq $user) {
 }
 $needs = $false
 if ($params.password) {
-  $needs = $true
+  try {
+    Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+    $ctx = New-Object System.DirectoryServices.AccountManagement.PrincipalContext('Machine')
+    if (-not $ctx.ValidateCredentials($name, [string]$params.password)) { $needs = $true }
+  } catch {
+    $needs = $true
+  }
 }
 if ($params.groups) {
   foreach ($group in $params.groups) {
