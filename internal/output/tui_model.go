@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
 // tuiModel is the Bubble Tea model for the TUI renderer.
@@ -143,7 +144,7 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
-	left := iconForStatus(d.Status, m.projection.IsCheckMode()) + " " + d.TaskName
+	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + d.TaskName
 	if m.projection.ShouldShowHostLabels() && d.Target != "" {
 		left = "[" + m.projection.DisplayTarget(d.Target) + "] " + left
 	}
@@ -415,21 +416,18 @@ func (m tuiModel) divWidth() int {
 	return min(m.width, 50)
 }
 
-// iconForStatus returns the styled status icon for a task outcome.
-func iconForStatus(status string, checkMode bool) string {
+// statusStyle returns the styled glyph for a task outcome based on status.
+func statusStyle(status string) lipgloss.Style {
 	switch status {
 	case "ok":
-		return tsOK.Render("✓")
+		return tsOK
 	case "changed":
-		if checkMode {
-			return tsChanged.Render("!")
-		}
-		return tsChanged.Render("~")
+		return tsChanged
 	case "failed":
-		return tsFailed.Render("x")
+		return tsFailed
 	case "skipped":
-		return tsSkipped.Render("-")
+		return tsSkipped
 	default:
-		return " "
+		return lipgloss.NewStyle()
 	}
 }
