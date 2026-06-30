@@ -32,28 +32,71 @@ func uppercaseFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-func normalizeFactValue(value any) any {
+// factFormat controls how fact values are rendered for a specific output sink.
+type factFormat struct {
+	label  func(string, bool) string             // label rendering (bool = topLevel)
+	muted  func(string) string                   // structural text rendering
+	value  func(string) string                   // scalar value rendering
+	scalar func(string, string, string) []string // optional: word-wrap hook for "label: value" lines
+}
+
+// renderFactValueLines traverses a fact value and returns formatted lines.
+func renderFactValueLines(label string, value any, indent int, topLevel bool, ff *factFormat) []string {
+	prefix := strings.Repeat(" ", indent)
+	labelText := ff.label(label, topLevel)
 	switch v := value.(type) {
-	case map[string]string:
-		m := make(map[string]any, len(v))
-		for key, item := range v {
-			m[key] = item
+	case map[string]any:
+		if len(v) == 0 {
+			return []string{prefix + labelText + ff.muted(": {}")}
 		}
-		return m
-	case []map[string]any:
-		items := make([]any, len(v))
-		for i, item := range v {
-			items[i] = item
+		lines := []string{prefix + labelText + ff.muted(":")}
+		for _, key := range sortedFactKeys(v) {
+			lines = append(lines, renderFactValueLines(key, v[key], indent+2, false, ff)...)
 		}
-		return items
-	case []string:
-		items := make([]any, len(v))
-		for i, item := range v {
-			items[i] = item
+		return lines
+	case []any:
+		if len(v) == 0 {
+			return []string{prefix + labelText + ff.muted(": []")}
 		}
-		return items
+		lines := []string{prefix + labelText + ff.muted(":")}
+		for _, item := range v {
+			lines = append(lines, renderFactListItemLines(item, indent+2, ff)...)
+		}
+		return lines
 	default:
-		return value
+		if ff.scalar != nil {
+			return ff.scalar(prefix, labelText, formatFactScalar(v))
+		}
+		return []string{prefix + labelText + ff.muted(": ") + ff.value(formatFactScalar(v))}
+	}
+}
+
+// renderFactListItemLines formats a list item (scalar, map, or sub-array).
+func renderFactListItemLines(value any, indent int, ff *factFormat) []string {
+	prefix := strings.Repeat(" ", indent)
+	switch v := value.(type) {
+	case map[string]any:
+		if len(v) == 0 {
+			return []string{prefix + ff.muted("-") + " " + ff.muted("{}")}
+		}
+		keys := sortedFactKeys(v)
+		inline := prefix + ff.muted("- ") + ff.label(keys[0], false) + ff.muted(": ") + ff.value(formatFactInlineValue(v[keys[0]]))
+		lines := []string{inline}
+		for _, key := range keys[1:] {
+			lines = append(lines, renderFactValueLines(key, v[key], indent+2, false, ff)...)
+		}
+		return lines
+	case []any:
+		if len(v) == 0 {
+			return []string{prefix + ff.muted("-") + " " + ff.muted("[]")}
+		}
+		lines := []string{prefix + ff.muted("-")}
+		for _, item := range v {
+			lines = append(lines, renderFactListItemLines(item, indent+2, ff)...)
+		}
+		return lines
+	default:
+		return []string{prefix + ff.muted("- ") + ff.value(formatFactScalar(v))}
 	}
 }
 
@@ -83,7 +126,7 @@ func sortedFactKeys(values map[string]any) []string {
 }
 
 func formatFactInlineValue(value any) string {
-	switch v := normalizeFactValue(value).(type) {
+	switch v := value.(type) {
 	case map[string]any:
 		return "{...}"
 	case []any:

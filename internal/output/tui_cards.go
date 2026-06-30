@@ -10,9 +10,37 @@ import (
 
 func renderFactsCard(e FactsEvent, width int) string {
 	card := newTUICard("◌ Facts")
+	cw := factsContentWidth(width)
+	ff := &factFormat{
+		label: func(s string, topLevel bool) string {
+			if topLevel {
+				return tsLabel.Render(s)
+			}
+			return tsKey.Render(s)
+		},
+		muted: func(s string) string { return tsMuted.Render(s) },
+		value: func(s string) string { return tsValue.Render(s) },
+		scalar: func(prefix, labelText, value string) []string {
+			labelWithColon := labelText + tsMuted.Render(":")
+			firstPrefix := prefix + labelWithColon + " "
+			available := max(cw-lipgloss.Width(firstPrefix), 16)
+			parts := wrapFactValue(value, available)
+			if len(parts) == 1 {
+				return []string{firstPrefix + tsValue.Render(parts[0])}
+			}
+			lines := []string{prefix + labelWithColon}
+			continuationPrefix := prefix + "  "
+			for _, part := range parts {
+				lines = append(lines, continuationPrefix+tsValue.Render(part))
+			}
+			return lines
+		},
+	}
 	target := fallbackTarget(e.Target)
-	lines := tsRenderFactValueLines("Target", target, 0, factsContentWidth(width), true)
-	lines = append(lines, tsRenderFactsMap(e.Facts, 0, factsContentWidth(width), true)...)
+	lines := renderFactValueLines("Target", target, 0, true, ff)
+	for _, key := range sortedFactKeys(e.Facts) {
+		lines = append(lines, renderFactValueLines(key, e.Facts[key], 0, true, ff)...)
+	}
 	card.add(strings.Join(lines, "\n"))
 	return card.render()
 }
@@ -184,100 +212,4 @@ func renderActionFetchCard(e ActionFetchEvent) string {
 	}
 	card.add(tsRenderSimpleTable([]string{"REF", "SHA"}, rows))
 	return card.render()
-}
-
-func tsRenderFactsMap(values map[string]any, indent, width int, topLevel bool) []string {
-	keys := sortedFactKeys(values)
-	lines := make([]string, 0, len(keys))
-	for _, key := range keys {
-		lines = append(lines, tsRenderFactValueLines(key, values[key], indent, width, topLevel)...)
-	}
-	return lines
-}
-
-func tsRenderFactValueLines(label string, value any, indent, width int, topLevel bool) []string {
-	prefix := strings.Repeat(" ", indent)
-	labelStyle := tsKey
-	if topLevel {
-		labelStyle = tsLabel
-	}
-
-	switch v := normalizeFactValue(value).(type) {
-	case map[string]any:
-		if len(v) == 0 {
-			return []string{prefix + labelStyle.Render(label) + tsMuted.Render(": {}")}
-		}
-		lines := []string{prefix + labelStyle.Render(label) + tsMuted.Render(":")}
-		lines = append(lines, tsRenderFactsMap(v, indent+2, width, false)...)
-		return lines
-	case []any:
-		if len(v) == 0 {
-			return []string{prefix + labelStyle.Render(label) + tsMuted.Render(": []")}
-		}
-		lines := []string{prefix + labelStyle.Render(label) + tsMuted.Render(":")}
-		for _, item := range v {
-			lines = append(lines, tsRenderFactListItemLines(item, indent+2, width)...)
-		}
-		return lines
-	default:
-		return tsRenderFactScalarLines(prefix, labelStyle, label, formatFactScalar(v), width)
-	}
-}
-
-func tsRenderFactListItemLines(value any, indent, width int) []string {
-	prefix := strings.Repeat(" ", indent)
-	switch v := normalizeFactValue(value).(type) {
-	case map[string]any:
-		if len(v) == 0 {
-			return []string{prefix + tsMuted.Render("-") + " " + tsMuted.Render("{}")}
-		}
-		keys := sortedFactKeys(v)
-		lines := append([]string{}, tsRenderFactScalarLines(
-			prefix+tsMuted.Render("-")+" ",
-			tsKey,
-			keys[0],
-			formatFactInlineScalar(v[keys[0]]),
-			width,
-		)...)
-		for _, key := range keys[1:] {
-			lines = append(lines, tsRenderFactValueLines(key, v[key], indent+2, width, false)...)
-		}
-		return lines
-	case []any:
-		lines := []string{prefix + tsMuted.Render("-")}
-		for _, item := range v {
-			lines = append(lines, tsRenderFactListItemLines(item, indent+2, width)...)
-		}
-		return lines
-	default:
-		return []string{prefix + tsMuted.Render("-") + " " + tsValue.Render(formatFactScalar(v))}
-	}
-}
-
-func tsRenderFactScalarLines(prefix string, labelStyle lipgloss.Style, label, value string, width int) []string {
-	labelText := labelStyle.Render(label) + tsMuted.Render(":")
-	firstPrefix := prefix + labelText + " "
-	available := max(width-lipgloss.Width(firstPrefix), 16)
-	parts := wrapFactValue(value, available)
-	if len(parts) == 1 {
-		return []string{firstPrefix + tsValue.Render(parts[0])}
-	}
-
-	lines := []string{prefix + labelText}
-	continuationPrefix := prefix + "  "
-	for _, part := range parts {
-		lines = append(lines, continuationPrefix+tsValue.Render(part))
-	}
-	return lines
-}
-
-func formatFactInlineScalar(value any) string {
-	switch v := normalizeFactValue(value).(type) {
-	case map[string]any:
-		return "{...}"
-	case []any:
-		return "[...]"
-	default:
-		return formatFactScalar(v)
-	}
 }

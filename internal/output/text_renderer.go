@@ -56,14 +56,7 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	if r.maxFailLines <= 0 {
 		r.maxFailLines = defaultFailureOutputLimit
 	}
-	r.activeTasks = make(map[string]time.Time)
 	return r
-}
-
-func (r *TextRenderer) ensureState() {
-	if r.activeTasks == nil {
-		r.activeTasks = make(map[string]time.Time)
-	}
 }
 
 func (r *TextRenderer) colorize(code, text string) string {
@@ -74,7 +67,6 @@ func (r *TextRenderer) colorize(code, text string) string {
 }
 
 func (r *TextRenderer) Emit(event Event) {
-	r.ensureState()
 	// Feed the event into the shared projection so all counters and run
 	// state are folded once, regardless of how many sinks consume the stream.
 	r.projection.Apply(event)
