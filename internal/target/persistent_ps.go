@@ -106,6 +106,7 @@ func buildPSStdinLine(script, id string) string {
 	// marker regardless of outcome.
 	wrapped := `$ErrorActionPreference='Continue'
 $ProgressPreference='SilentlyContinue'
+[Console]::Out.AutoFlush = $true
 $__pf_err=$null
 function __pf_run{
 ` + script + `

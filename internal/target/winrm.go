@@ -398,8 +398,14 @@ func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out Output
 	// use RunWithContextWithInput so lines reach out as they arrive. Fall back
 	// to the batch RunPSWithContext path for test fakes that only implement the
 	// minimal winRMClient interface.
+	//
+	// Prepend [Console]::Out.AutoFlush = $true so PowerShell flushes stdout
+	// after every Write-Output rather than buffering until the process exits.
+	// Without this, streaming is defeated because small writes accumulate in
+	// .NET's StreamWriter buffer (~4 KB) and only arrive when the buffer is
+	// full or powershell.exe terminates.
 	if streamer, ok := client.(winRMStreamRunner); ok && out != nil {
-		encoded := winrm.Powershell(script)
+		encoded := winrm.Powershell("[Console]::Out.AutoFlush = $true;" + script)
 		if encoded == "" {
 			return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("cannot encode script"))
 		}
