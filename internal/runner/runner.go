@@ -156,14 +156,11 @@ func isApplyTaskFailureSummary(err error) bool {
 
 // emitTargetStart emits a target-level start event.
 func (r *Runner) emitTargetStart(targetName string) {
-	if r.config.Renderer == nil {
-		return
-	}
 	transport := "local"
 	if r.target != nil {
 		transport = string(r.target.Transport())
 	}
-	r.config.Renderer.Emit(output.TargetStartEvent{
+	r.emit(output.TargetStartEvent{
 		Target:    targetName,
 		Transport: transport,
 	})
@@ -171,9 +168,6 @@ func (r *Runner) emitTargetStart(targetName string) {
 
 // emitTargetComplete emits a target-level complete event.
 func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool) {
-	if r.config.Renderer == nil {
-		return
-	}
 	outcome := "ok"
 	if hasFailure {
 		outcome = "failed"
@@ -182,7 +176,7 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 	if counter, ok := r.target.(target.RoundTripCounter); ok {
 		winrmRoundTrips = counter.RoundTripCount()
 	}
-	r.config.Renderer.Emit(output.TargetCompleteEvent{
+	r.emit(output.TargetCompleteEvent{
 		Target:          targetName,
 		Outcome:         outcome,
 		ElapsedMs:       elapsedMs,
@@ -191,26 +185,26 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 }
 
 func (r *Runner) emitWarning(message string) {
-	if r.config.Renderer != nil && message != "" {
-		r.config.Renderer.Emit(output.WarningEvent{Message: message})
+	if message != "" {
+		r.emit(output.WarningEvent{Message: message})
 	}
 }
 
 func (r *Runner) emitActivityStart(message string) {
-	if r.config.Renderer == nil || !r.isRemoteTarget() {
+	if !r.isRemoteTarget() {
 		return
 	}
-	r.config.Renderer.Emit(output.ActivityStartEvent{
+	r.emit(output.ActivityStartEvent{
 		Target:  r.targetName(),
 		Message: message,
 	})
 }
 
 func (r *Runner) emitActivityResult(message, status string) {
-	if r.config.Renderer == nil || !r.isRemoteTarget() {
+	if !r.isRemoteTarget() {
 		return
 	}
-	r.config.Renderer.Emit(output.ActivityResultEvent{
+	r.emit(output.ActivityResultEvent{
 		Target:  r.targetName(),
 		Message: message,
 		Status:  status,

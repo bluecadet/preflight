@@ -502,7 +502,6 @@ func (e DiagnosticEvent) Redact(secrets []string) Event {
 	e.Target = scrubString(e.Target, secrets)
 	e.TaskID = scrubString(e.TaskID, secrets)
 	e.Summary = scrubString(e.Summary, secrets)
-	e.Detail = scrubString(e.Detail, secrets)
 	e.Source = scrubString(e.Source, secrets)
 	return e
 }
@@ -581,7 +580,6 @@ type DiagnosticEvent struct {
 	Target  string
 	TaskID  string
 	Summary string
-	Detail  string
 	Source  string
 }
 
