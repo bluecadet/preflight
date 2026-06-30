@@ -18,11 +18,18 @@ if ($params.password) {
 }
 if ($params.groups) {
   foreach ($group in $params.groups) {
-    $members = Get-LocalGroupMember -Group ([string]$group) -ErrorAction SilentlyContinue
-    if (-not ($members | Where-Object { $_.Name -match ("(^|\\\\)" + [regex]::Escape($name) + "$") })) {
-      $needs = $true
-      break
+    $members = net localgroup ([string]$group) 2>$null
+    $inMembers = $false
+    $isMember = $false
+    foreach ($_ in $members) {
+      if ($_ -match '^-{5,}') { $inMembers = $true; continue }
+      if ($inMembers) {
+        $trimmed = $_.Trim()
+        if ($trimmed -match 'completed successfully') { break }
+        if ($trimmed -match "(^|\\\\)$([regex]::Escape($name))$") { $isMember = $true; break }
+      }
     }
+    if (-not $isMember) { $needs = $true; break }
   }
 }
 Write-Output $needs
@@ -52,7 +59,7 @@ if ($null -eq $user) {
 }
 if ($params.groups) {
   foreach ($group in $params.groups) {
-    Add-LocalGroupMember -Group ([string]$group) -Member $name -ErrorAction SilentlyContinue
+    net localgroup ([string]$group) $name /add 2>$null
   }
 }
 `
