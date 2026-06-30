@@ -120,7 +120,7 @@ When `PREFLIGHT_TEST_WINRM` is unset, the test skips with a clear message:
 
 ```
 === RUN   TestWinRMIntegration_Registry
-    winrm_integration_test.go:XX: PREFLIGHT_TEST_WINRM is not set; skipping ...
+    integration_registry_test.go:XX: PREFLIGHT_TEST_WINRM is not set; skipping ...
 --- SKIP: TestWinRMIntegration_Registry (0.00s)
 ```
 
@@ -135,7 +135,7 @@ target:
 
 ```
 === RUN   TestWinRMIntegration_Registry
-    winrm_integration_test.go:XX: sacrificial sentinel not found on target ...
+    integration_registry_test.go:XX: sacrificial sentinel not found on target ...
 --- SKIP: TestWinRMIntegration_Registry (0.00s)
 ```
 
