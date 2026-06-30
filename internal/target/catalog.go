@@ -1,20 +1,22 @@
-package modulecatalog
+package target
 
+// Capability describes which runtimes and environments a built-in module
+// can execute in.
 type Capability uint8
 
 const (
-	CapabilityInline Capability = 1 << iota
-	CapabilityRemote
-	CapabilityBuiltinCommon
-	CapabilityBuiltinWindows
+	CapabilityInline         Capability = 1 << iota // usable as an inline YAML field in a task
+	CapabilityRemote                                // usable over a remote transport (SSH, WinRM)
+	CapabilityBuiltinCommon                         // available on any platform
+	CapabilityBuiltinWindows                        // Windows-only
 )
 
-type Module struct {
+type catalogModule struct {
 	Name       string
 	Capability Capability
 }
 
-var modules = []Module{
+var catalogModules = []catalogModule{
 	{Name: "registry", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "service", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "file", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
@@ -35,19 +37,22 @@ var modules = []Module{
 	{Name: "wait", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 }
 
-func Names(cap Capability) []string {
-	out := make([]string, 0, len(modules))
-	for _, module := range modules {
-		if module.Capability&cap != 0 {
-			out = append(out, module.Name)
+// CatalogNames returns module names whose capability includes the given mask.
+func CatalogNames(cap Capability) []string {
+	out := make([]string, 0, len(catalogModules))
+	for _, m := range catalogModules {
+		if m.Capability&cap != 0 {
+			out = append(out, m.Name)
 		}
 	}
 	return out
 }
 
-func Set(cap Capability) map[string]struct{} {
-	set := make(map[string]struct{}, len(modules))
-	for _, name := range Names(cap) {
+// CatalogSet returns a set of module names whose capability includes the given
+// mask.
+func CatalogSet(cap Capability) map[string]struct{} {
+	set := make(map[string]struct{}, len(catalogModules))
+	for _, name := range CatalogNames(cap) {
 		set[name] = struct{}{}
 	}
 	return set

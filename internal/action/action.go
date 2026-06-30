@@ -6,7 +6,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/bluecadet/preflight/internal/modulecatalog"
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // Input describes a typed input parameter for an action.
@@ -22,9 +22,9 @@ type TaskDefaults struct {
 	Become map[string]any `yaml:"become" json:"become,omitempty"`
 }
 
-var knownInlineModules = modulecatalog.Names(modulecatalog.CapabilityInline)
+var knownInlineModules = target.CatalogNames(target.CapabilityInline)
 
-var knownInlineModuleSet = modulecatalog.Set(modulecatalog.CapabilityInline)
+var knownInlineModuleSet = target.CatalogSet(target.CapabilityInline)
 
 // Task is a single step inside an action or playbook.
 //

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bluecadet/preflight/internal/fsutil"
+	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
@@ -111,7 +111,7 @@ func (s *State) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("state: mkdir %q: %w", filepath.Dir(path), err)
 	}
-	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
+	if err := action.WriteFileAtomically(path, data, 0o644); err != nil {
 		return fmt.Errorf("state: write %q: %w", path, err)
 	}
 	return nil

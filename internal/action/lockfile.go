@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"github.com/bluecadet/preflight/internal/fsutil"
 )
 
 // LockEntry records a pinned action reference.
@@ -51,7 +49,7 @@ func (l *Lockfile) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("lockfile: mkdir %q: %w", filepath.Dir(path), err)
 	}
-	if err := fsutil.WriteFileAtomic(path, data, 0o644); err != nil {
+	if err := WriteFileAtomically(path, data, 0o644); err != nil {
 		return fmt.Errorf("lockfile: write %q: %w", path, err)
 	}
 	return nil

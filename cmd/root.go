@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/spf13/cobra"
 
-	"github.com/bluecadet/preflight/internal/logging"
 	"github.com/bluecadet/preflight/internal/winutil"
 )
 
@@ -23,7 +23,7 @@ compiles to a single static binary with no runtime dependencies.`,
 		if flag := cmd.Flags().Lookup("verbose"); flag != nil {
 			verbose, _ = cmd.Flags().GetBool("verbose")
 		}
-		logging.Init(verbose)
+		initLogger(verbose)
 		return nil
 	},
 }
@@ -45,6 +45,20 @@ func Execute(version, commit, date string) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+// initLogger configures the default slog logger. When verbose is true, the level is
+// set to Debug; otherwise it is Warn (suppressing Info-level noise during
+// normal operation).
+func initLogger(verbose bool) {
+	level := slog.LevelWarn
+	if verbose {
+		level = slog.LevelDebug
+	}
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: level,
+	})
+	slog.SetDefault(slog.New(handler))
 }
 
 func init() {
