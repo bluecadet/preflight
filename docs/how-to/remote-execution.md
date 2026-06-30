@@ -201,6 +201,16 @@ That usually means the playbook is hitting a runtime-specific limit. SSH now aut
 
 If the target is Windows but does not expose a usable PowerShell runtime over SSH, use WinRM or a staged bundle instead.
 
+### A WinRM task fails with a symbolic-link or 0x80073D19 error
+
+A few Windows operations cannot complete over a basic WinRM session because it runs under a non-interactive network logon:
+
+- `windows_feature` enabling/disabling fails with *"The symbolic link cannot be followed because its type is disabled"* (DISM cannot follow component-store symlinks).
+- `remove_appx_packages` with all-users scope fails with HRESULT `0x80073D19` (*"a user was logged off"*).
+- `powershell` output is delivered all at once at completion rather than streamed line-by-line.
+
+These are WinRM session limitations, not module bugs, and there is no CredSSP option in the transport. Run these operations with the local target, a staged bundle executed on the box, or an interactive context (for example a scheduled task); live streaming works over Windows-over-SSH. See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations) for details.
+
 ### I expected one shared state file
 
 Inventory-backed applies write `state/targets/<host>.json` so each host has its own recorded task snapshot. Local runs still default to `state/provision.json`.
