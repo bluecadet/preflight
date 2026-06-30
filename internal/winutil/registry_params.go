@@ -2,6 +2,7 @@ package winutil
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"sort"
 	"strings"
@@ -59,7 +60,7 @@ func normalizeRegistryProviderPath(path string) string {
 // NormalizeRegistryParams canonicalizes registry value specs into a list form
 // that is easy for PowerShell scripts to consume.
 func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
-	cloned := CloneParams(params)
+	cloned := maps.Clone(params)
 	if rawPath, ok := cloned["path"]; ok && rawPath != nil {
 		path, ok := rawPath.(string)
 		if !ok {

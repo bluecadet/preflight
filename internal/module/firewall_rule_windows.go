@@ -4,10 +4,10 @@ package module
 
 import (
 	"context"
+	"maps"
 
 	"github.com/bluecadet/preflight/internal/pscript"
 	"github.com/bluecadet/preflight/internal/target"
-	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 type FirewallRuleModule struct{}
@@ -25,7 +25,7 @@ func normalizeFirewallRuleParams(params map[string]any) (map[string]any, error) 
 	if err != nil {
 		return nil, err
 	}
-	normalized := winutil.CloneParams(params)
+	normalized := maps.Clone(params)
 	normalized["ports"] = ports
 	return normalized, nil
 }

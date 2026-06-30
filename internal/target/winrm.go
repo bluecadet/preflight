@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -647,7 +648,7 @@ func normalizeEnvScope(scope string) string {
 }
 
 func normalizeFirewallRuleParams(params map[string]any) (map[string]any, error) {
-	normalized := winutil.CloneParams(params)
+	normalized := maps.Clone(params)
 	ports, err := winutil.NormalizeFirewallPorts(normalized["ports"])
 	if err != nil {
 		return nil, fmt.Errorf("firewall_rule: %w", err)
