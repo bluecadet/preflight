@@ -7,7 +7,7 @@ import (
 
 func TestRegistryScriptsSupportBinaryPatch(t *testing.T) {
 	for name, script := range map[string]string{
-		"check":  RegistryModuleCheckScript,
+		"check":  RegistryCheckScript,
 		"apply":  RegistryApplyScript,
 		"ensure": RegistryEnsureScript,
 	} {
@@ -22,7 +22,7 @@ func TestRegistryScriptsSupportBinaryPatch(t *testing.T) {
 		})
 	}
 	for name, script := range map[string]string{
-		"check":  RegistryModuleCheckScript,
+		"check":  RegistryCheckScript,
 		"ensure": RegistryEnsureScript,
 	} {
 		t.Run(name+" check", func(t *testing.T) {

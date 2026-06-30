@@ -39,7 +39,7 @@ const registryApplyScript = pscript.RegistryApplyScript
 // be injected by the caller before $params.
 const registryEnsureScript = pscript.RegistryEnsureScript
 
-const removeAppxPackagesCheckScript = pscript.RemoveAppxCheckScriptWithOutput
+const removeAppxPackagesCheckScript = pscript.RemoveAppxCheckScript
 
 const removeAppxPackagesApplyScript = pscript.RemoveAppxApplyScript
 

@@ -12,7 +12,7 @@ import (
 type WindowsFeatureModule struct{}
 
 func (m *WindowsFeatureModule) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
-	return runValidatedWindowsCheck[WindowsFeatureParams](ctx, params, out, pscript.WindowsFeatureModuleCheckScript, nil)
+	return runValidatedWindowsCheck[WindowsFeatureParams](ctx, params, out, pscript.WindowsFeatureCheckScript, nil)
 }
 
 func (m *WindowsFeatureModule) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
