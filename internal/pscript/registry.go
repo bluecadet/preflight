@@ -6,7 +6,7 @@ $user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not $user) { return $path }
-  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+  if (-not ($path -match '(?i)^(Registry::HKEY_CURRENT_USER|HKCU:|HKEY_CURRENT_USER\\)')) {
     throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
   }
   $account = New-Object System.Security.Principal.NTAccount($user)
@@ -15,7 +15,7 @@ function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not (Test-Path -LiteralPath $root)) {
     throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
   }
-  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  $subPath = $path -replace '(?i)^(Registry::HKEY_CURRENT_USER\\?|HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
   if ($subPath) { return (Join-Path $root $subPath) }
   return $root
 }
@@ -135,7 +135,7 @@ $user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not $user) { return $path }
-  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+  if (-not ($path -match '(?i)^(Registry::HKEY_CURRENT_USER|HKCU:|HKEY_CURRENT_USER\\)')) {
     throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
   }
   $account = New-Object System.Security.Principal.NTAccount($user)
@@ -144,7 +144,7 @@ function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not (Test-Path -LiteralPath $root)) {
     throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
   }
-  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  $subPath = $path -replace '(?i)^(Registry::HKEY_CURRENT_USER\\?|HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
   if ($subPath) { return (Join-Path $root $subPath) }
   return $root
 }
@@ -260,7 +260,7 @@ $user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not $user) { return $path }
-  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+  if (-not ($path -match '(?i)^(Registry::HKEY_CURRENT_USER|HKCU:|HKEY_CURRENT_USER\\)')) {
     throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
   }
   $account = New-Object System.Security.Principal.NTAccount($user)
@@ -269,7 +269,7 @@ function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not (Test-Path -LiteralPath $root)) {
     throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
   }
-  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  $subPath = $path -replace '(?i)^(Registry::HKEY_CURRENT_USER\\?|HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
   if ($subPath) { return (Join-Path $root $subPath) }
   return $root
 }
@@ -279,7 +279,7 @@ if ($ensure -eq 'absent') {
   exit 0
 }
 if (-not (Test-Path -LiteralPath $path)) {
-  New-Item -Path $path -Force | Out-Null
+  New-Item -Path $path -Force -ErrorAction Stop | Out-Null
 }
 if ($params.values) {
   foreach ($spec in $params.values) {
@@ -308,7 +308,7 @@ if ($params.values) {
         $value[$offset] = [byte][int]$patch.data
       }
       Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
-      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force | Out-Null
+      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force -ErrorAction Stop | Out-Null
       continue
     }
     $kindMap = @{
@@ -327,7 +327,7 @@ if ($params.values) {
       default { $spec.data }
     }
     Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
-    New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force | Out-Null
+    New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force -ErrorAction Stop | Out-Null
   }
 }
 `
@@ -341,7 +341,7 @@ $user = if ($params.user) { [string]$params.user } else { '' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
 function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not $user) { return $path }
-  if (-not ($path -match '(?i)^(HKCU:|HKEY_CURRENT_USER\\)')) {
+  if (-not ($path -match '(?i)^(Registry::HKEY_CURRENT_USER|HKCU:|HKEY_CURRENT_USER\\)')) {
     throw 'registry: user can only be used with HKCU/HKEY_CURRENT_USER paths'
   }
   $account = New-Object System.Security.Principal.NTAccount($user)
@@ -350,7 +350,7 @@ function Resolve-RegistryPath([string]$path, [string]$user) {
   if (-not (Test-Path -LiteralPath $root)) {
     throw ("registry: profile hive is not loaded for user " + $user + "; sign in once before applying user-scoped registry settings")
   }
-  $subPath = $path -replace '(?i)^(HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
+  $subPath = $path -replace '(?i)^(Registry::HKEY_CURRENT_USER\\?|HKCU:\\?|HKEY_CURRENT_USER\\?)', ''
   if ($subPath) { return (Join-Path $root $subPath) }
   return $root
 }
@@ -428,7 +428,7 @@ if ($ensure -eq 'absent') {
   Remove-Item -LiteralPath $path -Recurse -Force -ErrorAction SilentlyContinue
 } else {
   if (-not (Test-Path -LiteralPath $path)) {
-    New-Item -Path $path -Force | Out-Null
+    New-Item -Path $path -Force -ErrorAction Stop | Out-Null
   }
   if ($params.values) {
     foreach ($spec in $params.values) {
@@ -457,7 +457,7 @@ if ($ensure -eq 'absent') {
           $value[$offset] = [byte][int]$patch.data
         }
         Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
-        New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force | Out-Null
+        New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType Binary -Force -ErrorAction Stop | Out-Null
         continue
       }
       $kindMap = @{
@@ -472,7 +472,7 @@ if ($ensure -eq 'absent') {
         default        { $spec.data }
       }
       Remove-ItemProperty -LiteralPath $path -Name $name -Force -ErrorAction SilentlyContinue
-      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force | Out-Null
+      New-ItemProperty -LiteralPath $path -Name $name -Value $value -PropertyType $kindMap[[string]$spec.type] -Force -ErrorAction Stop | Out-Null
     }
   }
 }

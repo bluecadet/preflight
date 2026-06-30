@@ -203,6 +203,55 @@ func TestNormalizeRegistryParams_BinaryPatchValidation(t *testing.T) {
 	}
 }
 
+func TestNormalizeRegistryProviderPath(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "short HKLM no colon", in: `HKLM\SOFTWARE\PreflightTest\Run`, want: `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\Run`},
+		{name: "short HKLM with colon", in: `HKLM:\SOFTWARE\App`, want: `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\App`},
+		{name: "long hive no provider", in: `HKEY_LOCAL_MACHINE\SOFTWARE\App`, want: `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\App`},
+		{name: "HKCU with colon", in: `HKCU:\Software\Example`, want: `Registry::HKEY_CURRENT_USER\Software\Example`},
+		{name: "HKU short", in: `HKU:\S-1-5-21\Software`, want: `Registry::HKEY_USERS\S-1-5-21\Software`},
+		{name: "HKCR short", in: `HKCR\.txt`, want: `Registry::HKEY_CLASSES_ROOT\.txt`},
+		{name: "HKCC short", in: `HKCC`, want: `Registry::HKEY_CURRENT_CONFIG`},
+		{name: "hive only no subpath", in: `HKLM`, want: `Registry::HKEY_LOCAL_MACHINE`},
+		{name: "already provider qualified", in: `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\App`, want: `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\App`},
+		{name: "case-insensitive prefix", in: `hklm:\Software\App`, want: `Registry::HKEY_LOCAL_MACHINE\Software\App`},
+		{name: "unknown prefix untouched", in: `C:\Temp\file`, want: `C:\Temp\file`},
+		{name: "empty untouched", in: ``, want: ``},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := normalizeRegistryProviderPath(tc.in); got != tc.want {
+				t.Fatalf("normalizeRegistryProviderPath(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeRegistryParams_NormalizesPath(t *testing.T) {
+	params, err := NormalizeRegistryParams(map[string]any{
+		"path": `HKLM\SOFTWARE\PreflightTest\Run`,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if params["path"] != `Registry::HKEY_LOCAL_MACHINE\SOFTWARE\PreflightTest\Run` {
+		t.Fatalf("expected provider-qualified path, got %#v", params["path"])
+	}
+}
+
+func TestNormalizeRegistryParams_PathMustBeString(t *testing.T) {
+	_, err := NormalizeRegistryParams(map[string]any{
+		"path": 123,
+	})
+	if err == nil || !strings.Contains(err.Error(), "registry path must be a string") {
+		t.Fatalf("expected path type error, got %v", err)
+	}
+}
+
 func TestNormalizeRegistryParams_TrimsUser(t *testing.T) {
 	params, err := NormalizeRegistryParams(map[string]any{
 		"path": `HKCU:\Software\Example`,

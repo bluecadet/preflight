@@ -7,10 +7,66 @@ import (
 	"strings"
 )
 
+// registryHiveAliases maps every accepted hive prefix (short PSDrive names,
+// with or without the trailing colon, and the long HKEY_* names) to the
+// provider-qualified hive that PowerShell's *-Item cmdlets accept uniformly.
+var registryHiveAliases = map[string]string{
+	"HKLM":                "HKEY_LOCAL_MACHINE",
+	"HKEY_LOCAL_MACHINE":  "HKEY_LOCAL_MACHINE",
+	"HKCU":                "HKEY_CURRENT_USER",
+	"HKEY_CURRENT_USER":   "HKEY_CURRENT_USER",
+	"HKCR":                "HKEY_CLASSES_ROOT",
+	"HKEY_CLASSES_ROOT":   "HKEY_CLASSES_ROOT",
+	"HKU":                 "HKEY_USERS",
+	"HKEY_USERS":          "HKEY_USERS",
+	"HKCC":                "HKEY_CURRENT_CONFIG",
+	"HKEY_CURRENT_CONFIG": "HKEY_CURRENT_CONFIG",
+}
+
+// normalizeRegistryProviderPath rewrites a registry path with any recognised
+// hive prefix into the provider-qualified form ("Registry::HKEY_*\..."). That
+// form is the only one PowerShell's *-Item cmdlets accept reliably with
+// -LiteralPath: a bare "HKLM\Foo" (no colon) is treated as a *relative
+// filesystem* path and silently creates junk instead of a registry key, which
+// is how an apply could report success while the value was never written.
+//
+// Paths already provider-qualified, or carrying an unrecognised prefix, are
+// returned unchanged.
+func normalizeRegistryProviderPath(path string) string {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return path
+	}
+	if strings.HasPrefix(strings.ToUpper(trimmed), "REGISTRY::") {
+		return trimmed
+	}
+
+	hive := trimmed
+	rest := ""
+	if idx := strings.IndexByte(trimmed, '\\'); idx >= 0 {
+		hive = trimmed[:idx]
+		rest = trimmed[idx:]
+	}
+	hive = strings.TrimSuffix(hive, ":")
+
+	full, ok := registryHiveAliases[strings.ToUpper(hive)]
+	if !ok {
+		return path
+	}
+	return "Registry::" + full + rest
+}
+
 // NormalizeRegistryParams canonicalizes registry value specs into a list form
 // that is easy for PowerShell scripts to consume.
 func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
 	cloned := CloneParams(params)
+	if rawPath, ok := cloned["path"]; ok && rawPath != nil {
+		path, ok := rawPath.(string)
+		if !ok {
+			return nil, fmt.Errorf("registry path must be a string, got %T", rawPath)
+		}
+		cloned["path"] = normalizeRegistryProviderPath(path)
+	}
 	if rawUser, ok := cloned["user"]; ok && rawUser != nil {
 		user, ok := rawUser.(string)
 		if !ok {
