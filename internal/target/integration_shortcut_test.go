@@ -37,13 +37,13 @@ func TestWinRMIntegration_Shortcut(t *testing.T) {
 	// The namespace under which all test shortcuts are created. The run ID
 	// suffix prevents collisions when multiple `go test` processes share the
 	// same VM.
-	nsDir := `$env:TEMP\PreflightTest\ShortcutTest-` + testRunID()[:12]
+	nsDir := `%TEMP%\PreflightTest\ShortcutTest-` + testRunID()[:12]
 	lnkPath := nsDir + `\test.lnk`
 
 	// ---- Cleanup: remove the entire test namespace ----
 	t.Cleanup(func() {
 		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-			`Remove-Item -LiteralPath "%s" -Recurse -Force -ErrorAction SilentlyContinue`,
+			`Remove-Item -LiteralPath ([System.Environment]::ExpandEnvironmentVariables("%s")) -Recurse -Force -ErrorAction SilentlyContinue`,
 			nsDir,
 		))
 		if err != nil {
@@ -138,7 +138,7 @@ func readShortcutOracle(t *testing.T, tgt PowerShellRunner, lnkPath string) shor
 	ctx := context.Background()
 
 	out, err := tgt.RunPowerShell(ctx, fmt.Sprintf(`
-$path = "%s"
+$path = [System.Environment]::ExpandEnvironmentVariables("%s")
 if (-not (Test-Path -LiteralPath $path)) {
   Write-Output "absent||"
   exit 0
