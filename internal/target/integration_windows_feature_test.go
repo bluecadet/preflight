@@ -9,167 +9,216 @@ import (
 	"testing"
 )
 
-// TestWinRMIntegration_WindowsFeature exercises the windows_feature (DISM) module
-// against a real Windows endpoint over WinRM. It uses TelnetClient as a
-// lightweight feature — Enable/Disable-WindowsOptionalFeature on TelnetClient
-// is fast, does not require reboot, and is available on virtually all Windows
-// editions.
+// TestIntegration_WindowsFeature exercises the windows_feature (DISM) module
+// against a real Windows endpoint over every configured transport (WinRM
+// and/or SSH-to-Windows). Each transport gets its own subtest and is
+// independently skipped when its env vars are unset.
 //
-// Gated by PREFLIGHT_TEST_WINRM and the sacrificial sentinel.
+// Uses TelnetClient as a lightweight feature — Enable/Disable-WindowsOptionalFeature
+// on TelnetClient is fast, does not require reboot, and is available on
+// virtually all Windows editions.
 //
-// The test captures the original feature state before making changes and
-// restores it in t.Cleanup. Correctness is asserted via an independent
-// Get-WindowsOptionalFeature oracle rather than the module's own Check().
-func TestWinRMIntegration_WindowsFeature(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// Coverage template (per transport):
+//   - present/absent: initial apply, verify via oracle
+//   - idempotent:     re-check and re-apply both return StatusOK
+//   - dry-run:        check-only predicts Changed, oracle confirms no mutation
+//   - drift:          manual toggle, check detects, apply converges back
+//   - restore:        toggle back to original state, verify, idempotent
+//
+// MUST run exclusively — never co-scheduled with other live-VM tests
+// (per ADR-0015).
+func TestIntegration_WindowsFeature(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
+		featureName := "TelnetClient"
 
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
+		// ---- Capture the original feature state ----
+		origState := readWindowsFeatureOracle(t, runner, featureName)
+		t.Logf("original state of %s: %s", featureName, origState)
 
-	ctx := context.Background()
-
-	// TelnetClient is a well-known lightweight Windows optional feature that
-	// is available on most editions and does not require a reboot or source
-	// media when enabling/disabling.
-	featureName := "TelnetClient"
-
-	// ---- Capture the original feature state ----
-	origState := readWindowsFeatureOracle(t, tgt, featureName)
-	t.Logf("original state of %s: %s", featureName, origState)
-
-	// ---- Cleanup: restore original feature state ----
-	t.Cleanup(func() {
-		switch origState {
-		case "Enabled":
-			_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-				`Enable-WindowsOptionalFeature -Online -FeatureName "%s" -LimitAccess -NoRestart | Out-Null`,
-				featureName,
-			))
-			if err != nil {
-				t.Logf("cleanup enable %s: %v", featureName, err)
+		// ---- Cleanup: restore original feature state ----
+		t.Cleanup(func() {
+			switch origState {
+			case "Enabled":
+				_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+					`Enable-WindowsOptionalFeature -Online -FeatureName "%s" -LimitAccess -NoRestart | Out-Null`,
+					featureName,
+				))
+				if err != nil {
+					t.Logf("cleanup enable %s: %v", featureName, err)
+				}
+			default: // "Disabled" or unknown — safe to disable
+				_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+					`Disable-WindowsOptionalFeature -Online -FeatureName "%s" -NoRestart | Out-Null`,
+					featureName,
+				))
+				if err != nil {
+					t.Logf("cleanup disable %s: %v", featureName, err)
+				}
 			}
-		default: // "Disabled" or unknown — safe to disable
-			_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
+		})
+
+		// Determine which direction counts as a change. If the feature is already
+		// enabled we disable it; if it's disabled we enable it.
+		targetEnsure := "present"
+		if origState == "Enabled" {
+			targetEnsure = "absent"
+		}
+
+		desiredParams := map[string]any{
+			"name":   featureName,
+			"ensure": targetEnsure,
+		}
+
+		// ================================================================
+		// Branch: present/absent — initial apply toggles the feature
+		// ================================================================
+		// The initial apply must handle the WinRM DISM servicing limitation
+		// (symlink restriction under a network logon token).
+		result, err := tgt.Execute(ctx, "windows-feature-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, nil)
+		if err != nil {
+			if tgt.Transport() == TransportWinRM && isWinRMServicingUnsupported(err.Error()) {
+				t.Skipf("DISM online servicing is unsupported over this WinRM session "+
+					"(requires an interactive logon, e.g. CredSSP): %v", err)
+			}
+			t.Fatalf("windows_feature apply: %v", err)
+		}
+		if result.Status != StatusChanged {
+			t.Fatalf("windows_feature apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
+		}
+
+		// Verify via independent oracle
+		gotState := readWindowsFeatureOracle(t, runner, featureName)
+		if targetEnsure == "present" && gotState != "Enabled" {
+			t.Fatalf("independent oracle: expected feature to be Enabled, got %q", gotState)
+		}
+		if targetEnsure == "absent" && gotState != "Disabled" {
+			t.Fatalf("independent oracle: expected feature to be Disabled, got %q", gotState)
+		}
+
+		// ================================================================
+		// Branch: idempotent — re-check and re-apply both return StatusOK
+		// ================================================================
+		mustExecute(t, tgt, "windows-feature-idemp-check", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-idemp-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation occurred
+		// ================================================================
+		// The dry-run uses the restore params (the direction opposite to the
+		// desired state). Since the feature is now in the desired toggled state,
+		// check-only with the restore params should predict a change but not
+		// actually mutate.
+		restoreEnsure := "absent"
+		if origState == "Enabled" {
+			restoreEnsure = "present"
+		}
+		dryRunParams := map[string]any{
+			"name":   featureName,
+			"ensure": restoreEnsure,
+		}
+		mustExecute(t, tgt, "windows-feature-dryrun", "windows_feature", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		// Oracle confirms the feature is still in the desired toggled state.
+		gotState = readWindowsFeatureOracle(t, runner, featureName)
+		if targetEnsure == "present" && gotState != "Enabled" {
+			t.Fatalf("dry-run oracle: expected feature to still be Enabled, got %q", gotState)
+		}
+		if targetEnsure == "absent" && gotState != "Disabled" {
+			t.Fatalf("dry-run oracle: expected feature to still be Disabled, got %q", gotState)
+		}
+
+		// ================================================================
+		// Branch: drift — mutate behind the module's back, then verify
+		// that Check detects the change and Apply converges back
+		// ================================================================
+		// Manually toggle the feature via PowerShell
+		if targetEnsure == "present" {
+			// Feature is Enabled, manually disable it
+			_, err = runner.RunPowerShell(ctx, fmt.Sprintf(
 				`Disable-WindowsOptionalFeature -Online -FeatureName "%s" -NoRestart | Out-Null`,
 				featureName,
 			))
-			if err != nil {
-				t.Logf("cleanup disable %s: %v", featureName, err)
+		} else {
+			// Feature is Disabled, manually enable it
+			_, err = runner.RunPowerShell(ctx, fmt.Sprintf(
+				`Enable-WindowsOptionalFeature -Online -FeatureName "%s" -LimitAccess -NoRestart | Out-Null`,
+				featureName,
+			))
+		}
+		if err != nil {
+			if tgt.Transport() == TransportWinRM && isWinRMServicingUnsupported(err.Error()) {
+				t.Skipf("DISM drift setup unsupported over this WinRM session: %v", err)
 			}
+			t.Fatalf("drift setup: PowerShell toggle failed: %v", err)
 		}
+
+		// Verify drift via oracle
+		driftedState := readWindowsFeatureOracle(t, runner, featureName)
+		if targetEnsure == "absent" && driftedState != "Enabled" {
+			t.Fatalf("drift oracle: expected feature to be Enabled (drifted), got %q", driftedState)
+		}
+		if targetEnsure == "present" && driftedState != "Disabled" {
+			t.Fatalf("drift oracle: expected feature to be Disabled (drifted), got %q", driftedState)
+		}
+
+		// Check detects the drift (NeedsChange = true → StatusChanged)
+		mustExecute(t, tgt, "windows-feature-drift-check", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// Apply converges back to the desired state
+		result, err = tgt.Execute(ctx, "windows-feature-drift-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, nil)
+		if err != nil {
+			if tgt.Transport() == TransportWinRM && isWinRMServicingUnsupported(err.Error()) {
+				t.Skipf("DISM drift apply unsupported over this WinRM session: %v", err)
+			}
+			t.Fatalf("windows_feature drift apply: %v", err)
+		}
+		if result.Status != StatusChanged {
+			t.Fatalf("windows_feature drift apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
+		}
+
+		// Oracle confirms convergence
+		gotState = readWindowsFeatureOracle(t, runner, featureName)
+		if targetEnsure == "present" && gotState != "Enabled" {
+			t.Fatalf("drift convergence oracle: expected feature to be Enabled, got %q", gotState)
+		}
+		if targetEnsure == "absent" && gotState != "Disabled" {
+			t.Fatalf("drift convergence oracle: expected feature to be Disabled, got %q", gotState)
+		}
+
+		// Confirm idempotence after convergence
+		mustExecute(t, tgt, "windows-feature-drift-idemp", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		// ================================================================
+		// Branch: restore — toggle the feature back to its original state
+		// ================================================================
+		restoreParams := map[string]any{
+			"name":   featureName,
+			"ensure": restoreEnsure,
+		}
+		result, err = tgt.Execute(ctx, "windows-feature-restore", "windows_feature", restoreParams, ExecutionOptions{}, false, nil)
+		if err != nil {
+			t.Fatalf("windows_feature restore: %v", err)
+		}
+		if result.Status != StatusChanged {
+			t.Fatalf("windows_feature restore: expected StatusChanged, got %q: %s", result.Status, result.Message)
+		}
+
+		// Verify via oracle
+		gotState = readWindowsFeatureOracle(t, runner, featureName)
+		if restoreEnsure == "present" && gotState != "Enabled" {
+			t.Fatalf("restore oracle: expected feature to be Enabled, got %q", gotState)
+		}
+		if restoreEnsure == "absent" && gotState != "Disabled" {
+			t.Fatalf("restore oracle: expected feature to be Disabled, got %q", gotState)
+		}
+
+		// Idempotent re-check after restore
+		mustExecute(t, tgt, "windows-feature-restore-idemp-check", "windows_feature", restoreParams, ExecutionOptions{}, false, StatusOK)
+		// Idempotent re-apply after restore
+		mustExecute(t, tgt, "windows-feature-restore-idemp-apply", "windows_feature", restoreParams, ExecutionOptions{}, false, StatusOK)
 	})
-
-	// Determine which direction counts as a change. If the feature is already
-	// enabled we disable it; if it's disabled we enable it.
-	targetEnsure := "present"
-	if origState == "Enabled" {
-		targetEnsure = "absent"
-	}
-
-	// ---- Step 1: Apply (toggle feature state) ----
-	params := map[string]any{
-		"name":   featureName,
-		"ensure": targetEnsure,
-	}
-
-	result, err := tgt.Execute(ctx, "windows-feature-apply", "windows_feature", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		// DISM online servicing relies on following symlinks in the component
-		// store. A basic WinRM (NTLM/Negotiate) session runs under a network
-		// logon whose token cannot follow those links, so Enable/Disable-
-		// WindowsOptionalFeature fails with "The symbolic link cannot be
-		// followed because its type is disabled." That is a property of the
-		// session, not of the module, so skip rather than fail.
-		if isWinRMServicingUnsupported(err.Error()) {
-			t.Skipf("DISM online servicing is unsupported over this WinRM session "+
-				"(requires an interactive logon, e.g. CredSSP): %v", err)
-		}
-		t.Fatalf("windows_feature apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("windows_feature apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 2: Verify via independent oracle ----
-	gotState := readWindowsFeatureOracle(t, tgt, featureName)
-	if targetEnsure == "present" && gotState != "Enabled" {
-		t.Fatalf("independent oracle: expected feature to be Enabled, got %q", gotState)
-	}
-	if targetEnsure == "absent" && gotState != "Disabled" {
-		t.Fatalf("independent oracle: expected feature to be Disabled, got %q", gotState)
-	}
-
-	// ---- Step 3: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "windows-feature-recheck", "windows_feature", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("windows_feature re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("windows_feature re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 4: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "windows-feature-reapply", "windows_feature", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("windows_feature re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("windows_feature re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Toggle back to the original state ----
-	// If the feature was originally Enabled we need ensure=present to restore it.
-	// If it was originally Disabled (or unknown) we need ensure=absent.
-	originalEnsure := "absent"
-	if origState == "Enabled" {
-		originalEnsure = "present"
-	}
-
-	restoreParams := map[string]any{
-		"name":   featureName,
-		"ensure": originalEnsure,
-	}
-
-	result, err = tgt.Execute(ctx, "windows-feature-restore", "windows_feature", restoreParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("windows_feature restore: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("windows_feature restore: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 6: Verify via oracle ----
-	gotState = readWindowsFeatureOracle(t, tgt, featureName)
-	if originalEnsure == "present" && gotState != "Enabled" {
-		t.Fatalf("independent oracle after restore: expected feature to be Enabled, got %q", gotState)
-	}
-	if originalEnsure == "absent" && gotState != "Disabled" {
-		t.Fatalf("independent oracle after restore: expected feature to be Disabled, got %q", gotState)
-	}
-
-	// ---- Step 7: Idempotency — re-check on restored state ----
-	result, err = tgt.Execute(ctx, "windows-feature-restore-recheck", "windows_feature", restoreParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("windows_feature restore re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("windows_feature restore re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 8: Idempotency — re-apply on restored state ----
-	result, err = tgt.Execute(ctx, "windows-feature-restore-reapply", "windows_feature", restoreParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("windows_feature restore re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("windows_feature restore re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
 }
 
 // readWindowsFeatureOracle is an independent PowerShell oracle that reads a
