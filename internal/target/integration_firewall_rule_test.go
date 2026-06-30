@@ -19,143 +19,133 @@ type firewallRuleOracleResult struct {
 	LocalPort string
 }
 
-// TestWinRMIntegration_FirewallRule exercises the firewall_rule module against a real
-// Windows endpoint over WinRM. It creates, checks, updates, and removes firewall
-// rules using the pf-test-* naming convention and verifies correctness via an
-// independent Get-NetFirewallRule oracle.
+// TestIntegration_FirewallRule exercises the firewall_rule module against a real
+// Windows endpoint over every configured transport (WinRM and/or SSH-to-Windows).
+// Each transport gets its own subtest and is independently skipped when its
+// env vars are unset.
 //
-// Gated by PREFLIGHT_TEST_WINRM and the sacrificial sentinel.
-func TestWinRMIntegration_FirewallRule(t *testing.T) {
-	cfg, ok := getWinRMConfigFromEnv()
-	if !ok {
-		t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS are not set; skipping Windows WinRM integration test")
-	}
+// Coverage template (per transport):
+//   - present:     create rule, verify via oracle
+//   - idempotent:  re-check and re-apply both return StatusOK
+//   - dry-run:     check-only predicts Changed, oracle confirms no mutation
+//   - drift/update: port change converges to desired state
+//   - absent:      ensure rule is removed, idempotent re-check
+func TestIntegration_FirewallRule(t *testing.T) {
+	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
+		ctx := context.Background()
 
-	tgt := NewWinRMTarget(*cfg)
-	t.Cleanup(func() { _ = tgt.Close() })
+		// All test rules use the pf-test-* naming convention so they are easy to
+		// identify and never conflict with real rules. The run ID suffix prevents
+		// collisions when multiple `go test` processes share the same VM.
+		ruleName := fmt.Sprintf("pf-test-%s-tcp443", testRunID()[:12])
 
-	// ---- Sacrificial-target guard ----
-	assertSacrificialSentinel(t, tgt)
+		// ---- Cleanup: remove this run's test rule by exact name ----
+		// NOTE: forEachTransport already registers t.Cleanup to close tgt,
+		// so we only remove the firewall rule here.
+		t.Cleanup(func() {
+			_, err := runner.RunPowerShell(ctx, fmt.Sprintf(
+				`Get-NetFirewallRule -DisplayName "%s" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
+				ruleName,
+			))
+			if err != nil {
+				t.Logf("cleanup: %v", err)
+			}
+		})
 
-	ctx := context.Background()
-
-	// All test rules use the pf-test-* naming convention so they are easy to
-	// identify and never conflict with real rules. The run ID suffix prevents
-	// collisions when multiple `go test` processes share the same VM.
-	ruleName := fmt.Sprintf("pf-test-%s-tcp443", testRunID()[:12])
-
-	// ---- Cleanup: remove this run's test rule by exact name ----
-	t.Cleanup(func() {
-		_, err := tgt.RunPowerShell(ctx, fmt.Sprintf(
-			`Get-NetFirewallRule -DisplayName "%s" -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue`,
-			ruleName,
-		))
-		if err != nil {
-			t.Logf("cleanup: %v", err)
+		// ================================================================
+		// Branch: present — apply a TCP allow inbound rule on port 443
+		// ================================================================
+		desiredParams := map[string]any{
+			"name":      ruleName,
+			"direction": "inbound",
+			"action":    "allow",
+			"protocol":  "tcp",
+			"ports":     "443",
 		}
+
+		mustExecute(t, tgt, "fwrule-present", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusChanged)
+
+		// ---- Verify via independent oracle ----
+		r := readFirewallRuleOracle(t, runner, ruleName)
+		if r.Direction != "Inbound" {
+			t.Fatalf("independent oracle: expected Direction=Inbound, got %q", r.Direction)
+		}
+		if r.Action != "Allow" {
+			t.Fatalf("independent oracle: expected Action=Allow, got %q", r.Action)
+		}
+		if r.Protocol != "TCP" {
+			t.Fatalf("independent oracle: expected Protocol=TCP, got %q", r.Protocol)
+		}
+		if r.LocalPort != "443" {
+			t.Fatalf("independent oracle: expected LocalPort=443, got %q", r.LocalPort)
+		}
+
+		// ================================================================
+		// Branch: idempotent — re-check returns OK, re-apply is a no-op
+		// ================================================================
+		mustExecute(t, tgt, "fwrule-idemp-check", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "fwrule-idemp-apply", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusOK)
+
+		r = readFirewallRuleOracle(t, runner, ruleName)
+		if r.LocalPort != "443" {
+			t.Fatalf("independent oracle after idempotent: expected LocalPort=443, got %q", r.LocalPort)
+		}
+
+		// ================================================================
+		// Branch: dry-run — check-only predicts Changed, oracle confirms
+		// no mutation occurred
+		// ================================================================
+		dryRunParams := map[string]any{
+			"name":      ruleName,
+			"direction": "inbound",
+			"action":    "allow",
+			"protocol":  "tcp",
+			"ports":     "8443", // different from current 443
+		}
+		mustExecute(t, tgt, "fwrule-dryrun", "firewall_rule", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		// Oracle confirms the port is still 443 — the dry run must not mutate
+		r = readFirewallRuleOracle(t, runner, ruleName)
+		if r.LocalPort != "443" {
+			t.Fatalf("independent oracle after dry-run: expected LocalPort=443 (no mutation), got %q", r.LocalPort)
+		}
+
+		// ================================================================
+		// Branch: drift/update — change port from 443 to 8443
+		// ================================================================
+		updateParams := map[string]any{
+			"name":      ruleName,
+			"direction": "inbound",
+			"action":    "allow",
+			"protocol":  "tcp",
+			"ports":     "8443",
+		}
+		mustExecute(t, tgt, "fwrule-update", "firewall_rule", updateParams, ExecutionOptions{}, false, StatusChanged)
+
+		r = readFirewallRuleOracle(t, runner, ruleName)
+		if r.LocalPort != "8443" {
+			t.Fatalf("independent oracle after update: expected LocalPort=8443, got %q", r.LocalPort)
+		}
+
+		// ================================================================
+		// Branch: absent — ensure absent removes the rule
+		// ================================================================
+		absentParams := map[string]any{
+			"name":   ruleName,
+			"ensure": "absent",
+		}
+		mustExecute(t, tgt, "fwrule-absent", "firewall_rule", absentParams, ExecutionOptions{}, false, StatusChanged)
+
+		// ---- Verify oracle confirms absence ----
+		r = readFirewallRuleOracle(t, runner, ruleName)
+		if r.Present {
+			t.Fatalf("independent oracle after absent: expected rule to be removed, but it still exists")
+		}
+
+		// ================================================================
+		// Branch: absent idempotent — re-check returns OK
+		// ================================================================
+		mustExecute(t, tgt, "fwrule-absent-idemp", "firewall_rule", absentParams, ExecutionOptions{}, false, StatusOK)
 	})
-
-	// ---- Step 1: Apply a TCP allow inbound rule on port 443 ----
-	params := map[string]any{
-		"name":      ruleName,
-		"direction": "inbound",
-		"action":    "allow",
-		"protocol":  "tcp",
-		"ports":     "443",
-	}
-
-	result, err := tgt.Execute(ctx, "fwrule-apply", "firewall_rule", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule apply: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("firewall_rule apply: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 2: Verify via independent oracle ----
-	r := readFirewallRuleOracle(t, tgt, ruleName)
-	if r.Direction != "Inbound" {
-		t.Fatalf("independent oracle: expected Direction=Inbound, got %q", r.Direction)
-	}
-	if r.Action != "Allow" {
-		t.Fatalf("independent oracle: expected Action=Allow, got %q", r.Action)
-	}
-	if r.Protocol != "TCP" {
-		t.Fatalf("independent oracle: expected Protocol=TCP, got %q", r.Protocol)
-	}
-	if r.LocalPort != "443" {
-		t.Fatalf("independent oracle: expected LocalPort=443, got %q", r.LocalPort)
-	}
-
-	// ---- Step 3: Idempotency — re-check says no change ----
-	result, err = tgt.Execute(ctx, "fwrule-recheck", "firewall_rule", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule re-check: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("firewall_rule re-check: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 4: Idempotency — re-apply is a no-op ----
-	result, err = tgt.Execute(ctx, "fwrule-reapply", "firewall_rule", params, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule re-apply: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("firewall_rule re-apply: expected StatusOK (idempotent), got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 5: Update the rule — change port from 443 to 8443 ----
-	updateParams := map[string]any{
-		"name":      ruleName,
-		"direction": "inbound",
-		"action":    "allow",
-		"protocol":  "tcp",
-		"ports":     "8443",
-	}
-
-	result, err = tgt.Execute(ctx, "fwrule-update", "firewall_rule", updateParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule update: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("firewall_rule update: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// Verify via oracle
-	r = readFirewallRuleOracle(t, tgt, ruleName)
-	if r.LocalPort != "8443" {
-		t.Fatalf("independent oracle after update: expected LocalPort=8443, got %q", r.LocalPort)
-	}
-
-	// ---- Step 6: Ensure absent removes the rule ----
-	absentParams := map[string]any{
-		"name":   ruleName,
-		"ensure": "absent",
-	}
-
-	result, err = tgt.Execute(ctx, "fwrule-absent", "firewall_rule", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule absent: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("firewall_rule absent: expected StatusChanged, got %q: %s", result.Status, result.Message)
-	}
-
-	// ---- Step 7: Verify oracle confirms absence ----
-	r = readFirewallRuleOracle(t, tgt, ruleName)
-	if r.Present {
-		t.Fatalf("independent oracle after absent: expected rule to be removed, but it still exists")
-	}
-
-	// ---- Step 8: Ensure absent is idempotent ----
-	result, err = tgt.Execute(ctx, "fwrule-absent-idempotent", "firewall_rule", absentParams, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("firewall_rule absent idempotent: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("firewall_rule absent idempotent: expected StatusOK, got %q: %s", result.Status, result.Message)
-	}
 }
 
 // readFirewallRuleOracle is an independent PowerShell oracle that reads a
