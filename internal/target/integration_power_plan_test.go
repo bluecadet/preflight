@@ -138,7 +138,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 // getActivePowerSchemeOracle runs powercfg /getactivescheme and returns
 // the GUID of the currently active power scheme. This is an independent
 // oracle separate from the module's own check logic.
-func getActivePowerSchemeOracle(t *testing.T, tgt *WinRMTarget) string {
+func getActivePowerSchemeOracle(t *testing.T, tgt PowerShellRunner) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -159,7 +159,7 @@ Write-Output ''
 // getNamedSchemeGUIDOracle returns the GUID of the first power scheme whose
 // name matches the given name, or an empty string if no match is found. Uses
 // powercfg /list as an independent oracle.
-func getNamedSchemeGUIDOracle(t *testing.T, tgt *WinRMTarget, name string) string {
+func getNamedSchemeGUIDOracle(t *testing.T, tgt PowerShellRunner, name string) string {
 	t.Helper()
 	ctx := context.Background()
 

@@ -133,7 +133,7 @@ try {
 // Task path is injected into a PowerShell double-quoted string. PowerShell
 // treats backslash as a literal character inside double quotes, so no
 // additional escaping is needed.
-func readScheduledTaskOracle(t *testing.T, tgt *WinRMTarget, taskPath, taskName string) string {
+func readScheduledTaskOracle(t *testing.T, tgt PowerShellRunner, taskPath, taskName string) string {
 	t.Helper()
 	ctx := context.Background()
 

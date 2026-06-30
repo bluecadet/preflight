@@ -133,7 +133,7 @@ func TestWinRMIntegration_Shortcut(t *testing.T) {
 // readShortcutOracle is an independent PowerShell oracle that reads a .lnk file's
 // properties via WScript.Shell, without using the module's Check or Apply scripts.
 // This provides a truthful assertion source independent of the module implementation.
-func readShortcutOracle(t *testing.T, tgt *WinRMTarget, lnkPath string) shortcutOracleResult {
+func readShortcutOracle(t *testing.T, tgt PowerShellRunner, lnkPath string) shortcutOracleResult {
 	t.Helper()
 	ctx := context.Background()
 

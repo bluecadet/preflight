@@ -160,7 +160,7 @@ func testRunID() string {
 // at HKLM\SOFTWARE\PreflightTest\IsSacrificial (DWORD=1). Without this marker
 // the test refuses to mutate the target, preventing accidental changes to a
 // non-sacrificial machine.
-func assertSacrificialSentinel(t *testing.T, tgt *WinRMTarget) {
+func assertSacrificialSentinel(t *testing.T, tgt PowerShellRunner) {
 	t.Helper()
 	ctx := context.Background()
 

@@ -114,7 +114,7 @@ func TestWinRMIntegration_User(t *testing.T) {
 // module's Check script to serve as a truthful assertion source.
 //
 // Returns "present" when the user exists, or "absent" when the user does not.
-func readUserOracle(t *testing.T, tgt *WinRMTarget, username string) string {
+func readUserOracle(t *testing.T, tgt PowerShellRunner, username string) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -136,7 +136,7 @@ Write-Output 'present'
 // source.
 //
 // Returns true when the user is a member of the group, false otherwise.
-func readUserGroupOracle(t *testing.T, tgt *WinRMTarget, username, group string) bool {
+func readUserGroupOracle(t *testing.T, tgt PowerShellRunner, username, group string) bool {
 	t.Helper()
 	ctx := context.Background()
 

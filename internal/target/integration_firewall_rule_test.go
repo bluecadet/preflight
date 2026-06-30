@@ -159,7 +159,7 @@ func TestWinRMIntegration_FirewallRule(t *testing.T) {
 // firewall rule's properties directly via Get-NetFirewallRule, without using
 // the module's Check or Apply scripts. This provides a truthful assertion
 // source independent of the module implementation.
-func readFirewallRuleOracle(t *testing.T, tgt *WinRMTarget, ruleName string) firewallRuleOracleResult {
+func readFirewallRuleOracle(t *testing.T, tgt PowerShellRunner, ruleName string) firewallRuleOracleResult {
 	t.Helper()
 	ctx := context.Background()
 
