@@ -120,7 +120,7 @@ CI runs tests, linting, and build jobs. Fixing failures locally is usually much 
 
 ## Windows Integration Tests
 
-The `internal/target` package includes a live-WinRM integration suite that runs real Check/Apply/Check cycles against a Windows endpoint. Each test is skipped automatically when no endpoint is configured, so the suite is inert on CI and on dev machines without a VM.
+The `internal/target` package includes a live-WinRM integration suite that runs real Check/Apply/Check cycles against a Windows endpoint. The suite is guarded two ways: it is behind the `integration` build tag, so it is excluded from the default `go test ./...` / `make test` run entirely, and each test additionally skips at runtime when no endpoint is configured. The result is that `make test` stays fast and the live suite only runs when you ask for it via `make test-integration`.
 
 ### Setting up a disposable Windows VM
 
@@ -171,27 +171,38 @@ PREFLIGHT_TEST_WINRM_PASS=password
 
 ### Running the suite
 
+The whole suite, via the Makefile target (adds the build tag for you):
+
 ```bash
-go test ./internal/target/ -run TestWinRMIntegration
+make test-integration
 ```
 
-To run a specific module:
+The build tag is required — without `-tags integration` the files do not compile in, so a plain `go test` will report no integration tests. To run a specific module:
 
 ```bash
-go test ./internal/target/ -run TestWinRMIntegration_Registry -v
+go test -tags integration ./internal/target/ -run TestWinRMIntegration_Registry -v
 ```
 
 To run the streaming test alone:
 
 ```bash
-go test ./internal/target/ -run TestWinRMIntegration_Streaming -v
+go test -tags integration ./internal/target/ -run TestWinRMIntegration_Streaming -v
 ```
 
 **Important:** `TestWinRMIntegration_WindowsFeature` toggles a Windows optional feature (TelnetClient). Although TelnetClient itself does not require a reboot, DISM operations can occasionally trigger one on some Windows editions. Run this test alone or last so a surprise reboot does not kill other in-flight tests:
 
 ```bash
-go test ./internal/target/ -run TestWinRMIntegration_WindowsFeature -v -timeout 5m
+go test -tags integration ./internal/target/ -run TestWinRMIntegration_WindowsFeature -v -timeout 5m
 ```
+
+### Troubleshooting
+
+If every test fails at the sacrificial-sentinel check — the first PowerShell call — with errors like `Starting the CLR failed with HRESULT 80004005`, `STATUS_DLL_INIT_FAILED` (`0xC0000142`), or `STATUS_COMMITMENT_LIMIT` (`0xC000012D`), the target itself can no longer launch `powershell.exe`. This is endpoint resource exhaustion, not a code failure: the VM is out of committed memory or its non-interactive desktop heap is exhausted, often after many runs have accumulated WinRM shells.
+
+1. **Reboot the VM** and re-run. This clears the exhaustion and is the usual fix.
+2. If it recurs across runs, raise the endpoint's WinRM quotas — `MaxShellsPerUser` and `MaxMemoryPerShellMB` under `WSMan:\localhost\Shell` — and, if process launches keep failing, the non-interactive desktop-heap `SharedSection` value under `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems\Windows`.
+
+The tests register a `Close()` cleanup that releases each target's persistent shell, so a single suite run should no longer leak shells; reboot guidance applies mainly when a VM has been driven into a bad state by older runs or other workloads.
 
 ---
 
