@@ -166,7 +166,7 @@ if ($null -eq $svc) {
 // status and startup type directly via Get-Service and Get-CimInstance,
 // without using the module's Check or Apply scripts. This provides a truthful
 // assertion source independent of the module implementation.
-func readServiceOracle(t *testing.T, tgt *WinRMTarget, serviceName string) serviceOracleResult {
+func readServiceOracle(t *testing.T, tgt PowerShellRunner, serviceName string) serviceOracleResult {
 	t.Helper()
 	ctx := context.Background()
 

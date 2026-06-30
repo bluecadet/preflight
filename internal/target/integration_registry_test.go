@@ -176,7 +176,7 @@ func TestWinRMIntegration_Registry(t *testing.T) {
 // The provider path is injected into a PowerShell double-quoted string.
 // PowerShell treats backslash as a literal character inside double quotes,
 // so no additional escaping is needed.
-func readRegistryOracle(t *testing.T, tgt *WinRMTarget, providerPath, valueName string) string {
+func readRegistryOracle(t *testing.T, tgt PowerShellRunner, providerPath, valueName string) string {
 	t.Helper()
 	ctx := context.Background()
 

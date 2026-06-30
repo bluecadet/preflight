@@ -120,7 +120,7 @@ try {
 // implementation.
 //
 // Returns "present" if a matching package is found, "absent" otherwise.
-func appxPackageOracle(t *testing.T, tgt *WinRMTarget, name string) string {
+func appxPackageOracle(t *testing.T, tgt PowerShellRunner, name string) string {
 	t.Helper()
 	ctx := context.Background()
 
@@ -147,7 +147,7 @@ Write-Output 'present'
 //
 // The NonRemovable guard mirrors the module's own filter so we never hand-pick
 // a package the module would skip.
-func findAppxFixture(t *testing.T, tgt *WinRMTarget) (name, familyName string) {
+func findAppxFixture(t *testing.T, tgt PowerShellRunner) (name, familyName string) {
 	t.Helper()
 	ctx := context.Background()
 

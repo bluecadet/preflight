@@ -163,7 +163,7 @@ func TestWinRMIntegration_WindowsFeature(t *testing.T) {
 // Windows optional feature's state via Get-WindowsOptionalFeature, without
 // using the module's Check or Apply scripts. Returns "Enabled", "Disabled",
 // or an empty string if the feature is not found.
-func readWindowsFeatureOracle(t *testing.T, tgt *WinRMTarget, featureName string) string {
+func readWindowsFeatureOracle(t *testing.T, tgt PowerShellRunner, featureName string) string {
 	t.Helper()
 	ctx := context.Background()
 

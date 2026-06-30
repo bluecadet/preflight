@@ -150,7 +150,7 @@ func isWingetAvailable(ctx context.Context, tgt *WinRMTarget) bool {
 // winget list for the given package ID and returns true if the package is
 // currently installed. This is a truthful assertion source separate from the
 // module's own Check/Apply logic.
-func isWingetPackageInstalledOracle(t *testing.T, tgt *WinRMTarget, pkgID string) bool {
+func isWingetPackageInstalledOracle(t *testing.T, tgt PowerShellRunner, pkgID string) bool {
 	t.Helper()
 	ctx := context.Background()
 
