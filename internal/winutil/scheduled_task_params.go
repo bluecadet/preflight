@@ -2,6 +2,7 @@ package winutil
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"strconv"
 	"strings"
@@ -11,7 +12,7 @@ import (
 // NormalizeScheduledTaskParams applies aliases and defaults so both the local
 // Windows module and the WinRM implementation use the same semantics.
 func NormalizeScheduledTaskParams(params map[string]any) (map[string]any, error) {
-	cloned := CloneParams(params)
+	cloned := maps.Clone(params)
 
 	if execute, ok := cloned["command"]; ok {
 		if _, exists := cloned["execute"]; !exists {
