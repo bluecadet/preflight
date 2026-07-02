@@ -99,9 +99,6 @@ func TestParsePlaybook_Valid(t *testing.T) {
 	if p.Tasks[0].Uses != "preflight/kiosk-mode" {
 		t.Errorf("expected uses=preflight/kiosk-mode, got %q", p.Tasks[0].Uses)
 	}
-	if p.Tasks[0].Ref != "" {
-		t.Errorf("expected empty ref, got %q", p.Tasks[0].Ref)
-	}
 }
 
 func TestTask_ResolveModule(t *testing.T) {
@@ -170,20 +167,7 @@ file:
 	}
 }
 
-func TestTask_ValidateRefRejectsConflictingIDAndRef(t *testing.T) {
-	_, err := action.ParseAction([]byte(`
-name: bad-refs
-tasks:
-  - name: create file
-    id: first
-    ref: second
-    file:
-      dest: /tmp/example
-`))
-	if err == nil {
-		t.Fatal("expected error for conflicting id and ref")
-	}
-}
+
 
 func TestParseAction_RejectsParamsWithoutModule(t *testing.T) {
 	_, err := action.ParseAction([]byte(`

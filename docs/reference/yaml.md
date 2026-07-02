@@ -111,7 +111,6 @@ Mixing these forms in the same task is an error.
 | --- | --- | --- |
 | `name` | string | Task label used in output and as a fallback dependency reference |
 | `id` | string | Optional stable task reference for `depends_on` |
-| `ref` | string | Alias for `id`; if both are set they must match |
 | `uses` | string | Action reference |
 | `with` | object | Inputs passed to the referenced action |
 | `become` | object | Execute the task as another user |
@@ -122,7 +121,7 @@ Mixing these forms in the same task is an error.
 | `ignore_errors` | bool | Continue after a task failure |
 | `tags` | string[] | Tags used by `--tags` and `--skip-tags` |
 
-Use `id` or `ref` when tasks need a stable dependency key that should not change with display-name edits.
+Use `id` when tasks need a stable dependency key that should not change with display-name edits.
 
 Example:
 

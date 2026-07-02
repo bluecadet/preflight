@@ -33,7 +33,6 @@ var knownInlineModuleSet = target.CatalogSet(target.CapabilityInline)
 type Task struct {
 	Name         string         `yaml:"name"`
 	ID           string         `yaml:"id"`
-	Ref          string         `yaml:"ref"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
@@ -53,7 +52,6 @@ type Task struct {
 type taskKnownFields struct {
 	Name         string         `yaml:"name"`
 	ID           string         `yaml:"id"`
-	Ref          string         `yaml:"ref"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
@@ -74,7 +72,6 @@ func (t *Task) UnmarshalYAML(value *yaml.Node) error {
 	*t = Task{
 		Name:         decoded.Name,
 		ID:           decoded.ID,
-		Ref:          decoded.Ref,
 		Uses:         decoded.Uses,
 		With:         decoded.With,
 		Become:       decoded.Become,
@@ -116,17 +113,7 @@ func (t *Task) Key() string {
 	if t.ID != "" {
 		return t.ID
 	}
-	if t.Ref != "" {
-		return t.Ref
-	}
 	return t.Name
-}
-
-func (t *Task) validateRef() error {
-	if t.ID != "" && t.Ref != "" && t.ID != t.Ref {
-		return fmt.Errorf("task %q: id and ref must match when both are set", t.Name)
-	}
-	return nil
 }
 
 // ResolveModule canonicalizes a task into its internal module+params form.
@@ -164,9 +151,6 @@ func (a *Action) Normalize() error {
 		return nil
 	}
 	for i := range a.Tasks {
-		if err := a.Tasks[i].validateRef(); err != nil {
-			return err
-		}
 		if err := a.Tasks[i].ResolveModule(); err != nil {
 			return err
 		}
@@ -205,9 +189,6 @@ func (p *Playbook) Normalize() error {
 		return nil
 	}
 	for i := range p.Tasks {
-		if err := p.Tasks[i].validateRef(); err != nil {
-			return err
-		}
 		if err := p.Tasks[i].ResolveModule(); err != nil {
 			return err
 		}
