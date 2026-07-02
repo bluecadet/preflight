@@ -221,14 +221,6 @@ The `packages` list is the primary interface. Each entry supports:
 
 Put package-specific `winget` flags under `args` on that package entry. Do not add flags as additional `packages` list items.
 
-**Legacy single-package form** — `id` at the top level is still accepted for backward compatibility and behaves identically to a one-entry `packages` list:
-
-```yaml
-winget_package:
-  id: Microsoft.VisualStudioCode
-  version: "1.85.0"
-```
-
 ### `remove_appx_packages`
 
 Remove built-in Windows Store-style packages.

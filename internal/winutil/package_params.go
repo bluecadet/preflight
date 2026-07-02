@@ -5,84 +5,23 @@ import (
 	"strings"
 )
 
-type packageNormConfig struct {
-	moduleName   string
-	singleKey    string
-	validateItem func(i int, item map[string]any) error
-	buildSingle  func(params map[string]any) (map[string]any, error)
-}
-
-func normalizePackageList(params map[string]any, cfg packageNormConfig) (map[string]any, error) {
-	_, hasPackages := params["packages"]
-	_, hasSingle := params[cfg.singleKey]
-
-	if hasPackages && hasSingle {
-		return nil, fmt.Errorf("%s: specify either 'packages' or '%s', not both", cfg.moduleName, cfg.singleKey)
-	}
-
-	if hasPackages {
-		list, ok := params["packages"].([]any)
-		if !ok {
-			return nil, fmt.Errorf("%s: 'packages' must be a list", cfg.moduleName)
-		}
-		for i, item := range list {
-			m, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("%s: packages[%d] must be an object", cfg.moduleName, i)
-			}
-			if err := cfg.validateItem(i, m); err != nil {
-				return nil, err
-			}
-		}
-		return map[string]any{"packages": list}, nil
-	}
-
-	if hasSingle {
-		spec, err := cfg.buildSingle(params)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"packages": []any{spec}}, nil
-	}
-
-	return nil, fmt.Errorf("%s: 'packages' or '%s' is required", cfg.moduleName, cfg.singleKey)
-}
-
-func copyOptionalString(dst, src map[string]any, key string) {
-	if value, _ := src[key].(string); value != "" {
-		dst[key] = value
-	}
-}
-
-// NormalizeWingetParams accepts either a "packages" list or the legacy
-// single-package form ("id" at the top level) and returns a params map with a
-// canonical "packages" key.
+// NormalizeWingetParams validates the canonical "packages" list form and
+// returns a params map with a clean "packages" key.
 func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
-	return normalizePackageList(params, packageNormConfig{
-		moduleName: "winget_package",
-		singleKey:  "id",
-		validateItem: func(i int, item map[string]any) error {
-			if id, _ := item["id"].(string); id == "" {
-				return fmt.Errorf("winget_package: packages[%d].id is required", i)
-			}
-			return nil
-		},
-		buildSingle: func(params map[string]any) (map[string]any, error) {
-			id, ok := params["id"].(string)
-			if !ok || id == "" {
-				return nil, fmt.Errorf("winget_package: 'id' must be a non-empty string")
-			}
-
-			spec := map[string]any{"id": id}
-			for _, key := range []string{"version", "source", "scope", "ensure"} {
-				copyOptionalString(spec, params, key)
-			}
-			if args, ok := params["args"]; ok && args != nil {
-				spec["args"] = args
-			}
-			return spec, nil
-		},
-	})
+	list, ok := params["packages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("winget_package: 'packages' is required and must be a list")
+	}
+	for i, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("winget_package: packages[%d] must be an object", i)
+		}
+		if id, _ := m["id"].(string); id == "" {
+			return nil, fmt.Errorf("winget_package: packages[%d].id is required", i)
+		}
+	}
+	return map[string]any{"packages": list}, nil
 }
 
 // NormalizeRemoveAppxParams validates the canonical "packages" list form and
