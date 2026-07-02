@@ -336,10 +336,7 @@
               "ensure": { "type": "string", "enum": ["absent"], "default": "absent" }
             }
           }
-        },
-        "name": { "type": "string" },
-        "scope": { "type": "string", "enum": ["current_user", "all_users", "provisioned", "both"], "default": "both" },
-        "ensure": { "type": "string", "enum": ["absent"], "default": "absent" }
+        }
       }
     },
     "modulePowerPlan": {
