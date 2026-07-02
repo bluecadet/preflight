@@ -79,7 +79,7 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 	}
 	creator, ok := runner.(sshSessionCreator)
 	if !ok {
-		return nil, nil // runner doesn't support raw sessions; use legacy path
+		return nil, nil // runner doesn't support raw sessions; use per-invocation path
 	}
 
 	session, err := creator.NewSession()
@@ -131,7 +131,7 @@ func (r *sshWindowsPowerShellRuntime) Close() error {
 // It first tries the persistent session (one long-lived powershell.exe per
 // target), which eliminates per-task process-startup overhead. If the session
 // cannot be created or signals a transport failure, it falls back to
-// runPSLegacy which spawns a fresh PowerShell process per invocation.
+// runPSPerInvocation which spawns a fresh PowerShell process per invocation.
 func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
 	return runPSWithFallback(ctx, script, out,
 		func(ctx context.Context) (psSessionRunner, error) {
@@ -142,14 +142,14 @@ func (r *sshWindowsPowerShellRuntime) RunPowerShellScript(ctx context.Context, s
 			return ps, err
 		},
 		func(error) { r.resetPSSession() },
-		r.runPSLegacy,
+		r.runPSPerInvocation,
 	)
 }
 
-// runPSLegacy spawns a fresh PowerShell process per invocation via the SSH
+// runPSPerInvocation spawns a fresh PowerShell process per invocation via the SSH
 // transport. Output is collected into a buffer and replayed through out after
 // the process exits; true line-by-line streaming is not available here.
-func (r *sshWindowsPowerShellRuntime) runPSLegacy(ctx context.Context, script string, out OutputFunc) (string, error) {
+func (r *sshWindowsPowerShellRuntime) runPSPerInvocation(ctx context.Context, script string, out OutputFunc) (string, error) {
 	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
 	if err != nil {
 		return "", wrapSSHTargetError("powershell failed", err)

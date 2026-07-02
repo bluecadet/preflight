@@ -349,7 +349,7 @@ func TestWinRMTarget_CopyFileFallsBackWhenPersistentSessionCreationFails(t *test
 		t.Fatalf("expected CopyFile fallback to succeed, got %v", err)
 	}
 	if runPSCalls == 0 {
-		t.Fatal("expected CopyFile to fall back to legacy PowerShell copy path")
+		t.Fatal("expected CopyFile to fall back to per-invocation PowerShell copy path")
 	}
 }
 
@@ -1166,7 +1166,7 @@ func TestLineStreamWriterFlushStripsCR(t *testing.T) {
 }
 
 func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
-	// The batch (non-streaming) fallback in runPSLegacy replays output through
+	// The batch (non-streaming) fallback in runPSPerInvocation replays output through
 	// out with \r stripped. Verify the callback receives clean lines.
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMClient{
@@ -1248,7 +1248,7 @@ func TestWinRMTarget_RoundTripCount(t *testing.T) {
 		t.Fatalf("initial count = %d, want 0", got)
 	}
 
-	// RunPowerShellScript → 1 round-trip (via runPSLegacy → RunPSWithContext).
+	// RunPowerShellScript → 1 round-trip (via runPSPerInvocation → RunPSWithContext).
 	_, err := tgt.RunPowerShellScript(context.Background(), "Write-Output 'hi'")
 	if err != nil {
 		t.Fatalf("RunPowerShellScript: %v", err)
@@ -1266,7 +1266,7 @@ func TestWinRMTarget_RoundTripCount(t *testing.T) {
 		t.Fatalf("after Reachable: count = %d, want 2", got)
 	}
 
-	// Info → 1 round-trip (via runPS → runPSLegacy → RunPSWithContext).
+	// Info → 1 round-trip (via runPS → runPSPerInvocation → RunPSWithContext).
 	_, err = tgt.Info(context.Background())
 	if err != nil {
 		t.Fatalf("Info: %v", err)
@@ -1281,8 +1281,8 @@ func TestWinRMTarget_RoundTripCount(t *testing.T) {
 
 func TestWinRMTarget_RoundTripCountWithPersistentSession(t *testing.T) {
 	// Verify that CreateShell (even when it fails) is counted as a round-trip,
-	// and that the legacy fallback also gets counted. After the session creation
-	// error, execution falls back to runPSLegacy which adds another count.
+	// and that the per-invocation fallback also gets counted. After the session creation
+	// error, execution falls back to runPSPerInvocation which adds another count.
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
 	tgt.client = &fakeWinRMShellClient{
 		createShell: func() (*winrm.Shell, error) {
@@ -1303,7 +1303,7 @@ func TestWinRMTarget_RoundTripCountWithPersistentSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunPowerShellScript: %v", err)
 	}
-	// CreateShell (1) + legacy RunPSWithContext (1) = 2
+	// CreateShell (1) + per-invocation RunPSWithContext (1) = 2
 	if got := tgt.RoundTripCount(); got != 2 {
 		t.Fatalf("after RunPowerShellScript with failed session: count = %d, want 2", got)
 	}

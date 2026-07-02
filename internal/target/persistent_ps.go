@@ -21,7 +21,7 @@ type psSessionRunner interface {
 }
 
 // runPSWithFallback executes script through the persistent PS session when one
-// is available, falling back to legacy per-invocation execution on session
+// is available, falling back to per-invocation execution on session
 // errors. The acquireSession callback returns (nil, nil) when no session can be
 // created (e.g. test fakes that don't implement the creator interface). On a
 // *psSessionError the session is reset (the underlying error is passed to the
@@ -36,7 +36,7 @@ func runPSWithFallback(
 	out OutputFunc,
 	acquireSession func(context.Context) (psSessionRunner, error),
 	resetSession func(cause error),
-	legacy func(context.Context, string, OutputFunc) (string, error),
+	perInvocation func(context.Context, string, OutputFunc) (string, error),
 ) (string, error) {
 	ps, err := acquireSession(ctx)
 	if err == nil && ps != nil {
@@ -50,7 +50,7 @@ func runPSWithFallback(
 			return result, psErr
 		}
 	}
-	return legacy(ctx, script, out)
+	return perInvocation(ctx, script, out)
 }
 
 // psMarkerBase is the unique prefix used to delimit script output from control
