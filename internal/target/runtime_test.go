@@ -56,9 +56,11 @@ func TestExecuteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) {
 			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
 				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: apply(func(context.Context, map[string]any) (string, error) {
-				return "step one\nstep two\n", nil
-			}),
+			apply: func(_ context.Context, _ map[string]any, out OutputFunc) (ApplyResult, error) {
+				out("step one")
+				out("step two")
+				return ApplyResult{}, nil
+			},
 		},
 	}
 
@@ -87,9 +89,9 @@ func TestExecuteModuleUsesSingleLineOutputAsMessage(t *testing.T) {
 			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
 				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: apply(func(context.Context, map[string]any) (string, error) {
-				return "applied", nil
-			}),
+			apply: func(_ context.Context, _ map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{Message: "applied"}, nil
+			},
 		},
 	}
 
@@ -167,9 +169,11 @@ func TestExecuteModuleAccumulatesCheckAndApplyOutputInOrder(t *testing.T) {
 				out("check-line-2")
 				return CheckResult{NeedsChange: true}, nil
 			},
-			apply: apply(func(context.Context, map[string]any) (string, error) {
-				return "apply-line-1\napply-line-2\n", nil
-			}),
+			apply: func(_ context.Context, _ map[string]any, out OutputFunc) (ApplyResult, error) {
+				out("apply-line-1")
+				out("apply-line-2")
+				return ApplyResult{}, nil
+			},
 		},
 	}
 

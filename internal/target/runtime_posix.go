@@ -22,49 +22,48 @@ type posixShellBackend interface {
 func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 	supported := ModuleRegistry{
 		"directory": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkPOSIXDirectory(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyPOSIXDirectory(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyPOSIXDirectory(ctx, backend, params)
+			},
 		},
 		"file": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkPOSIXFile(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyPOSIXFile(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyPOSIXFile(ctx, backend, params)
+			},
 		},
 		"shell": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkPOSIXShell(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyPOSIXShell(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyPOSIXShell(ctx, backend, params, out)
+			},
 		},
 		"wait": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkPOSIXWait(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyPOSIXWait(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyPOSIXWait(ctx, backend, params)
+			},
 		},
 	}
 	if backend.PowerShellBinary() != "" {
 		supported["powershell"] = moduleFuncs{
-			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkPowerShellModuleWithOutput(ctx, backend, params, out)
-			}),
+			},
 			// applyPowerShellModule streams lines through out during execution.
 			// Pass nil to applyStreamed so it only extracts a single-line message
 			// without re-emitting lines that were already forwarded.
 			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
-				output, err := applyPowerShellModule(ctx, backend, params, out)
-				return applyStreamed(output, nil), err
+				return applyPowerShellModule(ctx, backend, params, out)
 			},
 		}
 	}
@@ -80,10 +79,10 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 	})
 }
 
-func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
 	path, ok := params["path"].(string)
 	if !ok || path == "" {
-		return false, "", fmt.Errorf("directory: required param %q is missing", "path")
+		return CheckResult{}, fmt.Errorf("directory: required param %q is missing", "path")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -96,21 +95,21 @@ func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params 
 	case "present":
 		stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("if [ ! -e %q ]; then printf missing; elif [ -d %q ]; then printf dir; else printf other; fi", path, path), nil)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		if code != 0 {
-			return false, "", fmt.Errorf("directory check exited with code %d: %s", code, strings.TrimSpace(stderr))
+			return CheckResult{}, fmt.Errorf("directory check exited with code %d: %s", code, strings.TrimSpace(stderr))
 		}
 		switch strings.TrimSpace(stdout) {
 		case "missing":
-			return true, "", nil
+			return CheckResult{NeedsChange: true}, nil
 		case "dir":
-			return false, "", nil
+			return CheckResult{}, nil
 		default:
-			return false, "", fmt.Errorf("directory: %q exists but is not a directory", path)
+			return CheckResult{}, fmt.Errorf("directory: %q exists but is not a directory", path)
 		}
 	default:
-		return false, "", fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
+		return CheckResult{}, fmt.Errorf("directory: unknown ensure value %q (want present|absent)", ensure)
 	}
 }
 
@@ -133,10 +132,10 @@ func applyPOSIXDirectory(ctx context.Context, backend posixShellBackend, params 
 	}
 }
 
-func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
 	dest, ok := params["dest"].(string)
 	if !ok || dest == "" {
-		return false, "", fmt.Errorf("file: required param %q is missing", "dest")
+		return CheckResult{}, fmt.Errorf("file: required param %q is missing", "dest")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -145,15 +144,15 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 	src, _ := params["src"].(string)
 	content, hasContent, err := fileContentParam(params, "file", src)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 
 	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("if [ ! -e %q ]; then printf missing; elif [ -d %q ]; then printf dir; else printf file; fi", dest, dest), nil)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if code != 0 {
-		return false, "", fmt.Errorf("file check exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return CheckResult{}, fmt.Errorf("file check exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
 	state := strings.TrimSpace(stdout)
 
@@ -161,45 +160,45 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 	case "absent":
 		switch state {
 		case "dir":
-			return false, "", fmt.Errorf("file module cannot remove directory %q: use the directory module with ensure:absent instead", dest)
+			return CheckResult{}, fmt.Errorf("file module cannot remove directory %q: use the directory module with ensure:absent instead", dest)
 		case "file":
-			return true, "file exists, will remove", nil
+			return CheckResult{NeedsChange: true, Message: "file exists, will remove"}, nil
 		default: // "missing"
-			return false, "", nil
+			return CheckResult{}, nil
 		}
 	case "present":
 		switch state {
 		case "missing":
-			return true, "", nil
+			return CheckResult{NeedsChange: true}, nil
 		case "dir":
-			return false, "", fmt.Errorf("file: %q is a directory, not a file", dest)
+			return CheckResult{}, fmt.Errorf("file: %q is a directory, not a file", dest)
 		case "file":
 			if src == "" {
 				if !hasContent {
-					return false, "", nil
+					return CheckResult{}, nil
 				}
 			}
 			if hasContent {
 				remoteHash, err := posixRemoteFileHash(ctx, backend, dest)
 				if err != nil {
-					return false, "", err
+					return CheckResult{}, err
 				}
-				return hashBytes([]byte(content)) != remoteHash, "", nil
+				return CheckResult{NeedsChange: hashBytes([]byte(content)) != remoteHash}, nil
 			}
 			localHash, err := hashLocalFile(src)
 			if err != nil {
-				return false, "", err
+				return CheckResult{}, err
 			}
 			remoteHash, err := posixRemoteFileHash(ctx, backend, dest)
 			if err != nil {
-				return false, "", err
+				return CheckResult{}, err
 			}
-			return localHash != remoteHash, "", nil
+			return CheckResult{NeedsChange: localHash != remoteHash}, nil
 		default:
-			return false, "", fmt.Errorf("file: unexpected remote state %q", state)
+			return CheckResult{}, fmt.Errorf("file: unexpected remote state %q", state)
 		}
 	default:
-		return false, "", fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
+		return CheckResult{}, fmt.Errorf("file: unknown ensure value %q (want present|absent)", ensure)
 	}
 }
 
@@ -234,10 +233,10 @@ func applyPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 	}
 }
 
-func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
 	creates, _ := params["creates"].(string)
 	if creates == "" {
-		return true, "", nil
+		return CheckResult{NeedsChange: true}, nil
 	}
 	workingDir, _ := params["working_dir"].(string)
 	if workingDir != "" {
@@ -246,14 +245,14 @@ func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 	return posixNonZeroExitMeansChange(ctx, backend, fmt.Sprintf("test -e %q", creates))
 }
 
-func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any) (string, error) {
+func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	cmd, ok := params["cmd"].(string)
 	if !ok || cmd == "" {
-		return "", fmt.Errorf("shell: required param %q is missing", "cmd")
+		return ApplyResult{}, fmt.Errorf("shell: required param %q is missing", "cmd")
 	}
 	args, err := paramStringSlice(params, "args")
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	workingDir, _ := params["working_dir"].(string)
 
@@ -264,22 +263,22 @@ func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 	shellCmd.WriteString(shellQuoteExec(cmd, args))
 	stdout, stderr, code, err := backend.RunPOSIXCommand(ctx, shellCmd.String(), nil)
 	if err != nil {
-		return stdout, err
+		return ApplyResult{}, err
 	}
 	if code != 0 {
-		return stdout, fmt.Errorf("posix command exited with code %d: %s", code, strings.TrimSpace(stderr))
+		return ApplyResult{}, fmt.Errorf("posix command exited with code %d: %s", code, strings.TrimSpace(stderr))
 	}
-	return stdout, nil
+	return applyStreamed(stdout, out), nil
 }
 
-func checkPOSIXWait(ctx context.Context, backend posixShellBackend, params map[string]any) (bool, string, error) {
+func checkPOSIXWait(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
 	condition, _ := params["condition"].(string)
 	targetValue, _ := params["target"].(string)
 	met, err := posixWaitCondition(ctx, backend, condition, targetValue)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
-	return !met, "", nil
+	return CheckResult{NeedsChange: !met}, nil
 }
 
 func applyPOSIXWait(ctx context.Context, backend posixShellBackend, params map[string]any) error {
@@ -371,21 +370,21 @@ fi
 	return false, nil
 }
 
-func posixNonZeroExitMeansChange(ctx context.Context, backend posixShellBackend, command string) (bool, string, error) {
+func posixNonZeroExitMeansChange(ctx context.Context, backend posixShellBackend, command string) (CheckResult, error) {
 	_, stderr, code, err := backend.RunPOSIXCommand(ctx, command, nil)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if code == 0 {
-		return false, "", nil
+		return CheckResult{}, nil
 	}
 	if stderr != "" {
-		return false, "", fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
+		return CheckResult{}, fmt.Errorf("check command failed: %s", strings.TrimSpace(stderr))
 	}
 	// A non-zero exit with no stderr is treated as "condition not met" rather
 	// than an error. This is only safe for test(1) commands where exit code 1
 	// unambiguously means the condition is false, not a shell or command failure.
-	return true, "", nil
+	return CheckResult{NeedsChange: true}, nil
 }
 
 func posixMustRun(ctx context.Context, backend posixShellBackend, command string) error {

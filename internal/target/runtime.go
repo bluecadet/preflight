@@ -192,61 +192,6 @@ func applyStreamed(output string, out OutputFunc) ApplyResult {
 	return ApplyResult{}
 }
 
-// Adapters that lift the legacy closure shapes used by the remote runtime
-// registries into the unified Module / EnsureModule signatures. These exist
-// because rewriting every internal check/apply helper in runtime_windows_*
-// and runtime_posix.go to the new shape would be pure churn; the adapters
-// keep the closures small while presenting the canonical interface upstream.
-
-type legacyCheck = func(ctx context.Context, params map[string]any) (bool, string, error)
-type legacyCheckWithOutput = func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error)
-type legacyApply = func(ctx context.Context, params map[string]any) (string, error)
-type legacyEnsure = func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error)
-
-// check wraps a legacy check func (returning bool+message) as a Module.Check.
-func check(fn legacyCheck) func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
-	return func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
-		needed, msg, err := fn(ctx, params)
-		return CheckResult{NeedsChange: needed, Message: msg}, err
-	}
-}
-
-// checkWithOutput wraps a legacy streaming check func as a Module.Check.
-func checkWithOutput(fn legacyCheckWithOutput) func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
-	return func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
-		needed, msg, err := fn(ctx, params, out)
-		return CheckResult{NeedsChange: needed, Message: msg}, err
-	}
-}
-
-// apply wraps a legacy apply func (returning string output) as a Module.Apply,
-// streaming captured lines through out and lifting a single-line result into
-// the ApplyResult message.
-func apply(fn legacyApply) func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
-	return func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
-		output, err := fn(ctx, params)
-		return applyStreamed(output, out), err
-	}
-}
-
-// applyErrOnly wraps an apply func whose only signal is an error (no output
-// string) as a Module.Apply.
-func applyErrOnly(fn func(ctx context.Context, params map[string]any) error) func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
-	return func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
-		return ApplyResult{}, fn(ctx, params)
-	}
-}
-
-// ensure wraps a legacy ensure func (returning changed+message) as an
-// EnsureModule.Ensure. The wrapped function may return ErrEnsureNotHandled
-// to signal fallback.
-func ensure(fn legacyEnsure) func(context.Context, map[string]any, bool, OutputFunc) (EnsureResult, error) {
-	return func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
-		changed, msg, err := fn(ctx, params, dryRun, out)
-		return EnsureResult{Changed: changed, Message: msg}, err
-	}
-}
-
 // powerShellDryRunPreamble returns a PowerShell snippet that sets
 // $__pf_dry_run to $true or $false. Ensure scripts inspect this variable to
 // short-circuit the apply branch with "would-change" when dryRun is set.
