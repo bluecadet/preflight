@@ -221,11 +221,7 @@
               "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
             }
           }
-        },
-        "source": { "type": "string" },
-        "args": { "type": "array", "items": { "type": "string" } },
-        "product_id": { "type": "string" },
-        "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+        }
       }
     },
     "moduleShortcut": {

@@ -186,8 +186,6 @@ Manage local MSI or EXE installations on Windows.
 | `args` | string[] | Extra installer arguments |
 | `ensure` | `present` or `absent` | Desired state (default: `present`) |
 
-The legacy single-package form (`product_id` at the top level) is still accepted.
-
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
 
 ### `winget_package`

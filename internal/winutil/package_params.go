@@ -104,53 +104,33 @@ func NormalizeRemoveAppxParams(params map[string]any) (map[string]any, error) {
 	return map[string]any{"packages": list}, nil
 }
 
-// NormalizePackageParams accepts either a "packages" list or the legacy
-// single-package form ("product_id" at the top level) and returns a params map
-// with a canonical "packages" key.
+// NormalizePackageParams validates the canonical "packages" list form and
+// returns a params map with a clean "packages" key.
 func NormalizePackageParams(params map[string]any) (map[string]any, error) {
-	return normalizePackageList(params, packageNormConfig{
-		moduleName: "package",
-		singleKey:  "product_id",
-		validateItem: func(i int, item map[string]any) error {
-			pid, _ := item["product_id"].(string)
-			if pid == "" {
-				return fmt.Errorf("package: packages[%d].product_id is required", i)
+	list, ok := params["packages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("package: 'packages' is required and must be a list")
+	}
+	for i, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("package: packages[%d] must be an object", i)
+		}
+		pid, _ := m["product_id"].(string)
+		if pid == "" {
+			return nil, fmt.Errorf("package: packages[%d].product_id is required", i)
+		}
+		ensure, _ := m["ensure"].(string)
+		if ensure == "" {
+			ensure = "present"
+		}
+		if ensure == "present" {
+			if src, _ := m["source"].(string); src == "" {
+				return nil, fmt.Errorf("package: packages[%d].source is required when ensure=present", i)
 			}
-			ensure, _ := item["ensure"].(string)
-			if ensure == "" {
-				ensure = "present"
-			}
-			if ensure == "present" {
-				if src, _ := item["source"].(string); src == "" {
-					return fmt.Errorf("package: packages[%d].source is required when ensure=present", i)
-				}
-			}
-			return nil
-		},
-		buildSingle: func(params map[string]any) (map[string]any, error) {
-			pid, ok := params["product_id"].(string)
-			if !ok || pid == "" {
-				return nil, fmt.Errorf("package: 'product_id' must be a non-empty string")
-			}
-
-			ensure, _ := params["ensure"].(string)
-			if ensure == "" {
-				ensure = "present"
-			}
-			if ensure == "present" {
-				if src, _ := params["source"].(string); src == "" {
-					return nil, fmt.Errorf("package: 'source' is required when ensure=present")
-				}
-			}
-
-			spec := map[string]any{"product_id": pid, "ensure": ensure}
-			copyOptionalString(spec, params, "source")
-			if args, ok := params["args"]; ok && args != nil {
-				spec["args"] = args
-			}
-			return spec, nil
-		},
-	})
+		}
+	}
+	return map[string]any{"packages": list}, nil
 }
 
 // NormalizeFirewallPorts canonicalizes firewall port values into the string
