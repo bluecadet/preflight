@@ -12,8 +12,3 @@ var schemaResources = []schemavalidation.Resource{
 func ValidateYAML(data []byte) error {
 	return schemavalidation.ValidateYAML(data, configSchemaURL, schemaResources)
 }
-
-// ValidateDocument validates a config value against the embedded JSON schema.
-func ValidateDocument(doc any) error {
-	return schemavalidation.ValidateDocument(doc, configSchemaURL, schemaResources)
-}

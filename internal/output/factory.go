@@ -23,12 +23,6 @@ type Options struct {
 	Color        ColorMode
 }
 
-// New returns a Renderer for the requested format writing to w.
-// Any unrecognised format falls back to TextRenderer.
-func New(format Format, w io.Writer) Renderer {
-	return NewWithOptions(format, w, Options{})
-}
-
 // NewWithOptions returns a Renderer for the requested format writing to w.
 // Any unrecognised format falls back to TextRenderer.
 func NewWithOptions(format Format, w io.Writer, opts Options) Renderer {

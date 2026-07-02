@@ -17,17 +17,7 @@ func ValidateActionYAML(data []byte) error {
 	return schemavalidation.ValidateYAML(data, actionSchemaURL, schemaResources)
 }
 
-// ValidateActionDocument validates an action value against the action schema.
-func ValidateActionDocument(doc any) error {
-	return schemavalidation.ValidateDocument(doc, actionSchemaURL, schemaResources)
-}
-
 // ValidatePlaybookYAML validates a playbook document against the embedded JSON schema.
 func ValidatePlaybookYAML(data []byte) error {
 	return schemavalidation.ValidateYAML(data, playbookSchemaURL, schemaResources)
-}
-
-// ValidatePlaybookDocument validates a playbook value against the playbook schema.
-func ValidatePlaybookDocument(doc any) error {
-	return schemavalidation.ValidateDocument(doc, playbookSchemaURL, schemaResources)
 }
