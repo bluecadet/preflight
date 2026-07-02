@@ -1238,12 +1238,13 @@ func TestStateRoundTrip(t *testing.T) {
 		LastApplied: time.Now().Truncate(time.Second),
 		Tasks:       make(map[string]TaskSnapshot),
 	}
-	s.Record(TaskResult{
-		TaskID:    "task-0",
+	s.RecordTask(TaskSnapshot{
+		TaskKey:   "task-0",
 		TaskName:  "run echo",
 		Status:    target.StatusOK,
 		Timestamp: time.Now().Truncate(time.Second),
 		ParamHash: "abc123",
+		TaskHash:  hashValue(map[string]any{"task_key": "task-0", "task_name": "run echo", "param_hash": "abc123"}),
 	})
 
 	if err := s.Save(path); err != nil {

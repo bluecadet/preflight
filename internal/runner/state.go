@@ -19,16 +19,6 @@ import (
 
 const stateVersion2 = 2
 
-// TaskResult is the legacy per-task result shape kept for backward-compatible
-// state loading.
-type TaskResult struct {
-	TaskID    string        `json:"task_id"`
-	TaskName  string        `json:"task_name"`
-	Status    target.Status `json:"status"`
-	Timestamp time.Time     `json:"timestamp"`
-	ParamHash string        `json:"param_hash"`
-}
-
 // TaskSnapshot is the v2 persisted state model used for comparison and audit.
 type TaskSnapshot struct {
 	TaskKey      string        `json:"task_key"`
@@ -48,7 +38,6 @@ type State struct {
 	Version     int                     `json:"version,omitempty"`
 	LastApplied time.Time               `json:"last_applied"`
 	Tasks       map[string]TaskSnapshot `json:"tasks,omitempty"`
-	Results     map[string]TaskResult   `json:"results,omitempty"`
 }
 
 type ComparisonStatus string
@@ -94,7 +83,8 @@ func LoadState(path string) (*State, error) {
 
 	var s State
 	if err := json.Unmarshal(data, &s); err != nil {
-		return nil, fmt.Errorf("state: parse %q: %w", path, err)
+		// Unparseable state file degrades gracefully to no prior state.
+		return &State{Version: stateVersion2, Tasks: make(map[string]TaskSnapshot)}, nil
 	}
 	s.normalise()
 	return &s, nil
@@ -117,18 +107,6 @@ func (s *State) Save(path string) error {
 	return nil
 }
 
-// Record preserves legacy result-only writes by promoting them to v2 snapshots.
-func (s *State) Record(result TaskResult) {
-	s.RecordTask(TaskSnapshot{
-		TaskKey:   result.TaskID,
-		TaskName:  result.TaskName,
-		Status:    result.Status,
-		Timestamp: result.Timestamp,
-		ParamHash: result.ParamHash,
-		TaskHash:  hashValue(map[string]any{"task_key": result.TaskID, "task_name": result.TaskName, "param_hash": result.ParamHash}),
-	})
-}
-
 // RecordTask stores a v2 snapshot in the state, keyed by stable task key.
 func (s *State) RecordTask(snapshot TaskSnapshot) {
 	s.normalise()
@@ -147,18 +125,6 @@ func (s *State) normalise() {
 	}
 	if s.Tasks == nil {
 		s.Tasks = make(map[string]TaskSnapshot)
-	}
-	if len(s.Tasks) == 0 && len(s.Results) > 0 {
-		for key, result := range s.Results {
-			s.Tasks[key] = TaskSnapshot{
-				TaskKey:   result.TaskID,
-				TaskName:  result.TaskName,
-				Status:    result.Status,
-				Timestamp: result.Timestamp,
-				ParamHash: result.ParamHash,
-				TaskHash:  hashValue(map[string]any{"task_key": result.TaskID, "task_name": result.TaskName, "param_hash": result.ParamHash}),
-			}
-		}
 	}
 }
 
