@@ -245,7 +245,6 @@
         "name": { "type": "string" },
         "path": { "type": "string" },
         "execute": { "type": "string" },
-        "command": { "type": "string" },
         "arguments": { "type": "string" },
         "working_dir": { "type": "string" },
         "trigger": {
@@ -257,7 +256,6 @@
         "start_at": { "type": "string" },
         "delay": { "type": "string" },
         "run_as": { "type": "string" },
-        "user": { "type": "string" },
         "run_level": {
           "anyOf": [
             { "type": "string", "enum": ["least", "highest"] },

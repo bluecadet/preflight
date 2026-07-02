@@ -274,19 +274,17 @@ Manage Windows scheduled tasks.
 | `path` | string | Scheduled task folder path, such as `\Preflight\` |
 | `name` | string | Scheduled task name |
 | `execute` | string | Executable path |
-| `command` | string | Alias for `execute` |
 | `arguments` | string | Optional command arguments |
 | `working_dir` | string | Optional working directory |
 | `trigger` | `startup`, `onlogon`, `daily`, or `once` | Trigger type |
 | `start_at` | string | Start time for `daily` and `once` triggers |
 | `delay` | string | Delay for `startup` and `onlogon` triggers |
 | `run_as` | string | Run-as user |
-| `user` | string | Alias for `run_as` |
 | `run_level` | `least` or `highest` | Privilege level |
 | `enabled` | bool | Enabled state |
 | `ensure` | `present` or `absent` | Desired state |
 
-`delay` accepts ISO-8601 duration strings such as `PT30S`. `command` and `user` remain supported as compatibility aliases.
+`delay` accepts ISO-8601 duration strings such as `PT30S`.
 
 ### `user`
 

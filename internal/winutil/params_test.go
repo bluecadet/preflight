@@ -282,8 +282,8 @@ func TestNormalizeScheduledTaskParams_AliasesAndDefaults(t *testing.T) {
 	params, err := NormalizeScheduledTaskParams(map[string]any{
 		"name":     "Preflight Reboot",
 		"path":     "Preflight",
-		"command":  `C:\Windows\System32\shutdown.exe`,
-		"user":     "SYSTEM",
+		"execute":  `C:\Windows\System32\shutdown.exe`,
+		"run_as":   "SYSTEM",
 		"trigger":  "daily",
 		"enabled":  "false",
 		"delay":    "30s",
@@ -293,10 +293,10 @@ func TestNormalizeScheduledTaskParams_AliasesAndDefaults(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if params["execute"] != `C:\Windows\System32\shutdown.exe` {
-		t.Fatalf("expected command alias to populate execute, got %#v", params["execute"])
+		t.Fatalf("expected execute param, got %#v", params["execute"])
 	}
 	if params["run_as"] != "SYSTEM" {
-		t.Fatalf("expected user alias to populate run_as, got %#v", params["run_as"])
+		t.Fatalf("expected run_as param, got %#v", params["run_as"])
 	}
 	if params["path"] != `\Preflight\` {
 		t.Fatalf("expected normalized task path, got %#v", params["path"])
