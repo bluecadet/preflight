@@ -105,23 +105,7 @@ func TestNormalizeWingetParams_Args(t *testing.T) {
 	}
 }
 
-func TestNormalizeRegistryParams_TypedListAndLegacyMap(t *testing.T) {
-	legacy, err := NormalizeRegistryParams(map[string]any{
-		"values": map[string]any{
-			"ToastEnabled": false,
-		},
-	})
-	if err != nil {
-		t.Fatalf("unexpected legacy-map error: %v", err)
-	}
-	legacyValues, ok := legacy["values"].([]map[string]any)
-	if !ok || len(legacyValues) != 1 {
-		t.Fatalf("expected normalized legacy values, got %#v", legacy["values"])
-	}
-	if legacyValues[0]["type"] != "dword" || legacyValues[0]["data"] != int64(0) {
-		t.Fatalf("unexpected normalized legacy value: %#v", legacyValues[0])
-	}
-
+func TestNormalizeRegistryParams_TypedSpecList(t *testing.T) {
 	typed, err := NormalizeRegistryParams(map[string]any{
 		"values": []any{
 			map[string]any{

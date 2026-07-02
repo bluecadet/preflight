@@ -173,17 +173,9 @@
           "description": "Optional Windows user for HKCU/HKEY_CURRENT_USER paths"
         },
         "values": {
-          "description": "Registry values in legacy map or typed spec-list form",
-          "oneOf": [
-            {
-              "type": "object",
-              "description": "Legacy map of value name to value data"
-            },
-            {
-              "type": "array",
-              "items": { "$ref": "#/$defs/registryValueSpec" }
-            }
-          ]
+          "description": "Registry value spec list",
+          "type": "array",
+          "items": { "$ref": "#/$defs/registryValueSpec" }
         },
         "ensure": {
           "type": "string",

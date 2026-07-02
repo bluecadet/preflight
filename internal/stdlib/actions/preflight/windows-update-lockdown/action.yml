@@ -104,7 +104,8 @@ tasks:
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\WindowsStore'
       values:
-        AutoDownload: 2
+        - name: AutoDownload
+          data: 2
 
   - name: Enable Store automatic downloads
     when: "{{ vars.disable_store_auto_download == 'false' }}"

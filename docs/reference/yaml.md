@@ -117,7 +117,7 @@ Mixing these forms in the same task is an error.
 | `module` | string | Explicit module name, including plugin-backed modules |
 | `params` | object | Parameters for `module` |
 | `when` | string | Template condition expression |
-| `depends_on` | string[] | Task dependencies; Preflight resolves `id`/`ref` first, then falls back to `name` when no explicit ref is set |
+| `depends_on` | string[] | Task dependencies; Preflight resolves `id` first, then falls back to `name` when no explicit ref is set |
 | `ignore_errors` | bool | Continue after a task failure |
 | `tags` | string[] | Tags used by `--tags` and `--skip-tags` |
 

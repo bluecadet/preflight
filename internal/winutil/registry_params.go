@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"maps"
 	"math"
-	"sort"
 	"strings"
 )
 
@@ -90,109 +89,87 @@ func normalizeRegistryValues(raw any) ([]map[string]any, error) {
 		return nil, nil
 	}
 
-	switch typed := raw.(type) {
-	case map[string]any:
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-
-		values := make([]map[string]any, 0, len(keys))
-		for _, key := range keys {
-			value, valueType, err := inferRegistryValue(typed[key])
-			if err != nil {
-				return nil, fmt.Errorf("registry value %q: %w", key, err)
-			}
-			values = append(values, map[string]any{
-				"name":   key,
-				"type":   valueType,
-				"data":   value,
-				"ensure": "present",
-			})
-		}
-		return values, nil
-	case []any:
-		values := make([]map[string]any, 0, len(typed))
-		for i, item := range typed {
-			spec, ok := item.(map[string]any)
-			if !ok {
-				return nil, fmt.Errorf("registry values[%d] must be an object, got %T", i, item)
-			}
-
-			name, ok := spec["name"].(string)
-			if !ok || strings.TrimSpace(name) == "" {
-				return nil, fmt.Errorf("registry values[%d].name is required", i)
-			}
-
-			ensure := "present"
-			if rawEnsure, ok := spec["ensure"]; ok && rawEnsure != nil {
-				text, ok := rawEnsure.(string)
-				if !ok {
-					return nil, fmt.Errorf("registry values[%d].ensure must be a string, got %T", i, rawEnsure)
-				}
-				ensure = strings.ToLower(strings.TrimSpace(text))
-			}
-			if ensure != "present" && ensure != "absent" {
-				return nil, fmt.Errorf("registry values[%d].ensure must be present or absent", i)
-			}
-
-			entry := map[string]any{
-				"name":   name,
-				"ensure": ensure,
-			}
-			if ensure == "absent" {
-				values = append(values, entry)
-				continue
-			}
-
-			valueType := ""
-			if rawType, ok := spec["type"]; ok && rawType != nil {
-				text, ok := rawType.(string)
-				if !ok {
-					return nil, fmt.Errorf("registry values[%d].type must be a string, got %T", i, rawType)
-				}
-				valueType = normalizeRegistryType(text)
-			}
-
-			patch, hasPatch, err := normalizeRegistryPatch(spec["patch"])
-			if err != nil {
-				return nil, fmt.Errorf("registry values[%d].patch: %w", i, err)
-			}
-			if hasPatch {
-				if valueType == "" {
-					valueType = "binary"
-				}
-				if valueType != "binary" {
-					return nil, fmt.Errorf("registry values[%d].patch is only supported for binary values", i)
-				}
-				entry["patch"] = patch
-			}
-
-			value, hasData := spec["data"]
-			if !hasData {
-				if !hasPatch {
-					return nil, fmt.Errorf("registry values[%d].data is required when ensure=present", i)
-				}
-				entry["type"] = valueType
-				values = append(values, entry)
-				continue
-			}
-			if hasPatch {
-				return nil, fmt.Errorf("registry values[%d].data cannot be combined with patch", i)
-			}
-			normalizedValue, normalizedType, err := normalizeRegistryValue(value, valueType)
-			if err != nil {
-				return nil, fmt.Errorf("registry values[%d]: %w", i, err)
-			}
-			entry["type"] = normalizedType
-			entry["data"] = normalizedValue
-			values = append(values, entry)
-		}
-		return values, nil
-	default:
-		return nil, fmt.Errorf("registry values must be an object or list, got %T", raw)
+	typed, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("registry values must be a list, got %T", raw)
 	}
+	values := make([]map[string]any, 0, len(typed))
+	for i, item := range typed {
+		spec, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("registry values[%d] must be an object, got %T", i, item)
+		}
+
+		name, ok := spec["name"].(string)
+		if !ok || strings.TrimSpace(name) == "" {
+			return nil, fmt.Errorf("registry values[%d].name is required", i)
+		}
+
+		ensure := "present"
+		if rawEnsure, ok := spec["ensure"]; ok && rawEnsure != nil {
+			text, ok := rawEnsure.(string)
+			if !ok {
+				return nil, fmt.Errorf("registry values[%d].ensure must be a string, got %T", i, rawEnsure)
+			}
+			ensure = strings.ToLower(strings.TrimSpace(text))
+		}
+		if ensure != "present" && ensure != "absent" {
+			return nil, fmt.Errorf("registry values[%d].ensure must be present or absent", i)
+		}
+
+		entry := map[string]any{
+			"name":   name,
+			"ensure": ensure,
+		}
+		if ensure == "absent" {
+			values = append(values, entry)
+			continue
+		}
+
+		valueType := ""
+		if rawType, ok := spec["type"]; ok && rawType != nil {
+			text, ok := rawType.(string)
+			if !ok {
+				return nil, fmt.Errorf("registry values[%d].type must be a string, got %T", i, rawType)
+			}
+			valueType = normalizeRegistryType(text)
+		}
+
+		patch, hasPatch, err := normalizeRegistryPatch(spec["patch"])
+		if err != nil {
+			return nil, fmt.Errorf("registry values[%d].patch: %w", i, err)
+		}
+		if hasPatch {
+			if valueType == "" {
+				valueType = "binary"
+			}
+			if valueType != "binary" {
+				return nil, fmt.Errorf("registry values[%d].patch is only supported for binary values", i)
+			}
+			entry["patch"] = patch
+		}
+
+		value, hasData := spec["data"]
+		if !hasData {
+			if !hasPatch {
+				return nil, fmt.Errorf("registry values[%d].data is required when ensure=present", i)
+			}
+			entry["type"] = valueType
+			values = append(values, entry)
+			continue
+		}
+		if hasPatch {
+			return nil, fmt.Errorf("registry values[%d].data cannot be combined with patch", i)
+		}
+		normalizedValue, normalizedType, err := normalizeRegistryValue(value, valueType)
+		if err != nil {
+			return nil, fmt.Errorf("registry values[%d]: %w", i, err)
+		}
+		entry["type"] = normalizedType
+		entry["data"] = normalizedValue
+		values = append(values, entry)
+	}
+	return values, nil
 }
 
 func normalizeRegistryPatch(raw any) ([]map[string]any, bool, error) {
@@ -237,10 +214,6 @@ func normalizeRegistryPatch(raw any) ([]map[string]any, bool, error) {
 		})
 	}
 	return patches, true, nil
-}
-
-func inferRegistryValue(value any) (any, string, error) {
-	return normalizeRegistryValue(value, "")
 }
 
 func normalizeRegistryValue(value any, valueType string) (any, string, error) {

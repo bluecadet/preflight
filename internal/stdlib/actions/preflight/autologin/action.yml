@@ -22,8 +22,12 @@ tasks:
     registry:
       path: 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
       values:
-        AutoAdminLogon: "1"
-        DefaultUserName: "{{ vars.username }}"
-        DefaultPassword: "{{ vars.password }}"
-        DefaultDomainName: "{{ vars.domain }}"
+        - name: AutoAdminLogon
+          data: "1"
+        - name: DefaultUserName
+          data: "{{ vars.username }}"
+        - name: DefaultPassword
+          data: "{{ vars.password }}"
+        - name: DefaultDomainName
+          data: "{{ vars.domain }}"
       ensure: present

@@ -79,7 +79,7 @@ Manage Windows registry keys and values.
 | --- | --- | --- |
 | `path` | string | Registry key path |
 | `user` | string | Optional Windows user for `HKCU`/`HKEY_CURRENT_USER` paths |
-| `values` | object or list | Legacy value-name map or typed value spec list |
+| `values` | list | Typed value spec list |
 | `ensure` | `present` or `absent` | Desired state |
 
 Typed value specs inside `values` support these fields:
