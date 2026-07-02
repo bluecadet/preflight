@@ -44,10 +44,7 @@
           "type": "string",
           "description": "Stable task ref used for dependency resolution"
         },
-        "ref": {
-          "type": "string",
-          "description": "Alias for id when a shorter stable dependency key is preferred"
-        },
+        
         "name": {
           "type": "string",
           "description": "Human-readable label used in output and as a fallback dependency reference"
