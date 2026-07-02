@@ -357,13 +357,13 @@ func TestIsSessionError_Discrimination(t *testing.T) {
 // WinRMTarget — persistent session
 // ---------------------------------------------------------------------------
 
-func TestWinRMTarget_UsesLegacyWhenClientHasNoCreateShell(t *testing.T) {
+func TestWinRMTarget_UsesPerInvocationWhenClientHasNoCreateShell(t *testing.T) {
 	// fakeWinRMClient does NOT implement winRMShellCreator.
-	var legacyCalled bool
+	var perInvocationCalled bool
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "u", Password: "p"})
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, _ string) (string, string, int, error) {
-			legacyCalled = true
+			perInvocationCalled = true
 			return "ok", "", 0, nil
 		},
 	}
@@ -373,10 +373,10 @@ func TestWinRMTarget_UsesLegacyWhenClientHasNoCreateShell(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if out != "ok" {
-		t.Errorf("expected legacy output 'ok', got %q", out)
+		t.Errorf("expected per-invocation output 'ok', got %q", out)
 	}
-	if !legacyCalled {
-		t.Error("legacy RunPSWithContext was not called")
+	if !perInvocationCalled {
+		t.Error("per-invocation RunPSWithContext was not called")
 	}
 }
 
@@ -403,7 +403,7 @@ func TestSSHWindowsRuntime_PersistentSession_Success(t *testing.T) {
 		target: &SSHTarget{
 			runner: &fakeSSHRunner{
 				run: func(_ context.Context, _ string, _ []byte) (string, string, int, error) {
-					t.Error("legacy Run should not be called when persistent session is active")
+					t.Error("per-invocation Run should not be called when persistent session is active")
 					return "", "", 0, nil
 				},
 			},
@@ -430,7 +430,7 @@ func TestSSHWindowsRuntime_PersistentSession_ScriptError(t *testing.T) {
 		target: &SSHTarget{
 			runner: &fakeSSHRunner{
 				run: func(_ context.Context, _ string, _ []byte) (string, string, int, error) {
-					t.Error("legacy Run should not be called for script-level errors")
+					t.Error("per-invocation Run should not be called for script-level errors")
 					return "", "", 0, nil
 				},
 			},
@@ -451,7 +451,7 @@ func TestSSHWindowsRuntime_PersistentSession_ScriptError(t *testing.T) {
 	}
 }
 
-func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
+func TestSSHWindowsRuntime_FallsBackToPerInvocationOnSessionError(t *testing.T) {
 	// stdin pipe is immediately closed so any write will fail.
 	stdinR, stdinW := io.Pipe()
 	_ = stdinW.Close()
@@ -462,13 +462,13 @@ func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
 		reader: bufio.NewReader(strings.NewReader("")),
 	}
 
-	var legacyCalled bool
+	var perInvocationCalled bool
 	rt := &sshWindowsPowerShellRuntime{
 		target: &SSHTarget{
 			runner: &fakeSSHRunner{
 				run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-					legacyCalled = true
-					return "legacy output", "", 0, nil
+					perInvocationCalled = true
+					return "per-invocation output", "", 0, nil
 				},
 			},
 		},
@@ -478,13 +478,13 @@ func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
 
 	out, err := rt.RunPowerShellScript(context.Background(), "Write-Output 'test'", nil)
 	if err != nil {
-		t.Fatalf("unexpected error after legacy fallback: %v", err)
+		t.Fatalf("unexpected error after per-invocation fallback: %v", err)
 	}
-	if !legacyCalled {
-		t.Error("legacy path was not called after session transport error")
+	if !perInvocationCalled {
+		t.Error("per-invocation path was not called after session transport error")
 	}
-	if out != "legacy output" {
-		t.Errorf("got %q, want 'legacy output'", out)
+	if out != "per-invocation output" {
+		t.Errorf("got %q, want 'per-invocation output'", out)
 	}
 
 	// Session must be reset so the next call can create a fresh one.
@@ -496,15 +496,15 @@ func TestSSHWindowsRuntime_FallsBackToLegacyOnSessionError(t *testing.T) {
 	}
 }
 
-func TestSSHWindowsRuntime_FallsBackToLegacyWhenNoSessionCreator(t *testing.T) {
+func TestSSHWindowsRuntime_FallsBackToPerInvocationWhenNoSessionCreator(t *testing.T) {
 	// fakeSSHRunner does NOT implement sshSessionCreator, so getOrCreatePSSession
-	// must return nil and fall through to the legacy path.
-	var legacyCalled bool
+	// must return nil and fall through to the per-invocation path.
+	var perInvocationCalled bool
 	tgt := &SSHTarget{
 		runner: &fakeSSHRunner{
 			run: func(_ context.Context, _ string, _ []byte) (string, string, int, error) {
-				legacyCalled = true
-				return "legacy ok", "", 0, nil
+				perInvocationCalled = true
+				return "per-invocation ok", "", 0, nil
 			},
 		},
 	}
@@ -518,11 +518,11 @@ func TestSSHWindowsRuntime_FallsBackToLegacyWhenNoSessionCreator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !legacyCalled {
-		t.Error("legacy run was not called when no session creator is available")
+	if !perInvocationCalled {
+		t.Error("per-invocation run was not called when no session creator is available")
 	}
-	if out != "legacy ok" {
-		t.Errorf("got %q, want 'legacy ok'", out)
+	if out != "per-invocation ok" {
+		t.Errorf("got %q, want 'per-invocation ok'", out)
 	}
 }
 
@@ -531,12 +531,12 @@ func TestSSHWindowsRuntime_MultipleScriptsReuseSession(t *testing.T) {
 		"": {"result", ""},
 	})
 
-	var legacyCalls int
+	var perInvocationCalls int
 	rt := &sshWindowsPowerShellRuntime{
 		target: &SSHTarget{
 			runner: &fakeSSHRunner{
 				run: func(_ context.Context, _ string, _ []byte) (string, string, int, error) {
-					legacyCalls++
+					perInvocationCalls++
 					return "", "", 0, nil
 				},
 			},
@@ -550,8 +550,8 @@ func TestSSHWindowsRuntime_MultipleScriptsReuseSession(t *testing.T) {
 			t.Fatalf("script %d failed: %v", i, err)
 		}
 	}
-	if legacyCalls > 0 {
-		t.Errorf("legacy run was called %d time(s); expected 0 (persistent session in use)", legacyCalls)
+	if perInvocationCalls > 0 {
+		t.Errorf("per-invocation run was called %d time(s); expected 0 (persistent session in use)", perInvocationCalls)
 	}
 }
 

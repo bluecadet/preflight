@@ -47,7 +47,7 @@ type winRMShellCreator interface {
 // winRMStreamRunner is an optional extension of winRMClient for implementations
 // that can write stdout/stderr to arbitrary io.Writer values. The real
 // *winrm.Client satisfies this via RunWithContextWithInput; test fakes
-// typically do not, so runPSLegacy falls back to RunPSWithContext (batch mode).
+// typically do not, so runPSPerInvocation falls back to RunPSWithContext (batch mode).
 type winRMStreamRunner interface {
 	RunWithContextWithInput(ctx context.Context, command string, stdout, stderr io.Writer, stdin io.Reader) (int, error)
 }
@@ -163,12 +163,12 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 
 	// Modules tagged freshSession (e.g. powershell) run unbounded user-authored
 	// scripts that can leave a long-lived powershell.exe wedged. Route them
-	// through the per-invocation legacy path and recycle the persistent
+	// through the per-invocation path and recycle the persistent
 	// session afterwards. Built-in modules use bounded scripts and stay on the
 	// persistent session for performance.
 	runPS := t.runPS
 	if windowsPowerShellModuleRequiresFreshSession(module) {
-		runPS = t.runPSLegacy
+		runPS = t.runPSPerInvocation
 		defer t.resetPSSession()
 	}
 
@@ -281,7 +281,7 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 	}
 	creator, ok := client.(winRMShellCreator)
 	if !ok {
-		return nil, nil // client doesn't support raw shells; use legacy path
+		return nil, nil // client doesn't support raw shells; use per-invocation path
 	}
 
 	t.roundTrips.Add(1)
@@ -332,7 +332,7 @@ func (t *WinRMTarget) Close() error {
 // persistent session (one long-lived powershell.exe process per target), which
 // avoids the per-task shell-create and process-startup overhead. If the session
 // does not exist, cannot be created, or signals a transport failure, it falls
-// back to runPSLegacy which opens a fresh shell per invocation.
+// back to runPSPerInvocation — a fresh shell per invocation.
 func (t *WinRMTarget) runPS(ctx context.Context, script string, out OutputFunc) (string, error) {
 	return runPSWithFallback(ctx, script, out,
 		func(ctx context.Context) (psSessionRunner, error) {
@@ -343,10 +343,10 @@ func (t *WinRMTarget) runPS(ctx context.Context, script string, out OutputFunc) 
 			return ps, err
 		},
 		func(cause error) {
-			slog.Debug("winrm runPS: persistent session error, falling back to legacy", "err", cause)
+			slog.Debug("winrm runPS: persistent session error, falling back to per-invocation", "err", cause)
 			t.resetPSSession()
 		},
-		t.runPSLegacy,
+		t.runPSPerInvocation,
 	)
 }
 
@@ -389,10 +389,10 @@ func (w *lineStreamWriter) flush() {
 	}
 }
 
-// runPSLegacy executes a PowerShell script by creating a new WinRM shell per
+// runPSPerInvocation executes a PowerShell script by creating a new WinRM shell per
 // invocation. Used when no persistent session is available and as a fallback
 // when the persistent session fails.
-func (t *WinRMTarget) runPSLegacy(ctx context.Context, script string, out OutputFunc) (string, error) {
+func (t *WinRMTarget) runPSPerInvocation(ctx context.Context, script string, out OutputFunc) (string, error) {
 	if shouldStageWinRMPowerShellScript(script) {
 		stdout, err := t.runPSViaTempFile(ctx, script)
 		if err != nil {
@@ -484,7 +484,7 @@ func (t *WinRMTarget) runPSViaTempFile(ctx context.Context, script string) (stri
 	remotePath := fmt.Sprintf(`%s\run-%d.ps1`, strings.TrimRight(t.RemoteTempDir(), `\/`), time.Now().UnixNano())
 
 	// Upload: prefer session-based chunking (32 KiB chunks, no new shell per
-	// chunk); fall back to the legacy path (1.5 KiB chunks via new shells).
+	// chunk); fall back to the per-invocation path (1.5 KiB chunks via new shells).
 	ps, _ := t.getOrCreatePSSession(ctx)
 	var uploaded bool
 	if ps != nil {
@@ -551,7 +551,7 @@ func shouldStageWinRMPowerShellScript(script string) bool {
 }
 
 // copyBytesChunkSize is the maximum raw bytes per upload round trip when using
-// runPSDirect (legacy path). Each chunk is base64-encoded and inlined into a
+// runPSDirect (per-invocation path). Each chunk is base64-encoded and inlined into a
 // PowerShell script that is UTF-16LE + base64 encoded for -EncodedCommand. The
 // WinRM shell (cmd.exe) enforces an ~8 KB command-line limit, so payloads
 // above ~1.5 KB trigger "command line is too long". 1536 bytes leaves a
@@ -579,7 +579,7 @@ func (t *WinRMTarget) copyBytesViaSession(ctx context.Context, ps *winRMPersiste
 // uploadBytesChunked writes data to dst on a remote Windows host by base64-
 // encoding and inlining each chunk into a PowerShell script. The submit
 // callback delivers the script via whichever transport path the caller chose
-// (legacy per-command runPSDirect with its small cmd.exe ceiling, or the
+// (per-invocation per-command runPSDirect with its small cmd.exe ceiling, or the
 // persistent stdin-driven PS session with a much larger envelope). Both paths
 // previously had near-identical create-then-append loops; this is that loop.
 //

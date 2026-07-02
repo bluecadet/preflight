@@ -149,7 +149,7 @@ This reduces per-task overhead to roughly one write and one read on the existing
 
 **The session is not shared across concurrent target calls.** A mutex serialises access. Task execution is already serial within a single target, so this is not a practical constraint.
 
-**Graceful degradation.** If the WinRM client or SSH runner in use does not expose raw shell or session creation (which is the case for test fakes), the persistent session is skipped and each script runs via the legacy per-command path. If the persistent session breaks mid-run due to a transport failure, it is discarded and the failing call is retried via the legacy path. Script-level errors (thrown exceptions) do not reset the session — only transport failures do.
+**Graceful degradation.** If the WinRM client or SSH runner in use does not expose raw shell or session creation (which is the case for test fakes), the persistent session is skipped and each script runs via the per-invocation path. If the persistent session breaks mid-run due to a transport failure, it is discarded and the failing call is retried via the per-invocation path. Script-level errors (thrown exceptions) do not reset the session — only transport failures do.
 
 ### When to expect the speedup
 
