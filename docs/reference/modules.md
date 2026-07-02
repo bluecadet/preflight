@@ -252,7 +252,6 @@ Remove built-in Windows Store-style packages.
 | `scope` | `current_user`, `all_users`, `provisioned`, or `both` | Removal scope (default: `both`) |
 | `ensure` | `absent` | Desired state |
 
-`remove_appx_packages` supports removal only. The legacy single-package form (`name` at the top level) is still accepted.
 Installed Appx packages that Windows marks `NonRemovable` are ignored so checks do not report changes that Windows will not allow Preflight to apply.
 
 ### `shortcut`

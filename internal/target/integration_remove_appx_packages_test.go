@@ -60,8 +60,12 @@ try {
 		}
 
 		params := map[string]any{
-			"name":  fixtureName,
-			"scope": "all_users",
+			"packages": []any{
+				map[string]any{
+					"name":  fixtureName,
+					"scope": "all_users",
+				},
+			},
 		}
 
 		// ================================================================

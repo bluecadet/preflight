@@ -85,30 +85,23 @@ func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
 	})
 }
 
-// NormalizeRemoveAppxParams accepts either a "packages" list or the legacy
-// single-package form ("name" at the top level) and returns a params map with a
-// canonical "packages" key.
+// NormalizeRemoveAppxParams validates the canonical "packages" list form and
+// returns a params map with a clean "packages" key.
 func NormalizeRemoveAppxParams(params map[string]any) (map[string]any, error) {
-	return normalizePackageList(params, packageNormConfig{
-		moduleName: "remove_appx_packages",
-		singleKey:  "name",
-		validateItem: func(i int, item map[string]any) error {
-			if name, _ := item["name"].(string); name == "" {
-				return fmt.Errorf("remove_appx_packages: packages[%d].name is required", i)
-			}
-			return nil
-		},
-		buildSingle: func(params map[string]any) (map[string]any, error) {
-			name, ok := params["name"].(string)
-			if !ok || name == "" {
-				return nil, fmt.Errorf("remove_appx_packages: 'name' must be a non-empty string")
-			}
-
-			spec := map[string]any{"name": name}
-			copyOptionalString(spec, params, "scope")
-			return spec, nil
-		},
-	})
+	list, ok := params["packages"].([]any)
+	if !ok {
+		return nil, fmt.Errorf("remove_appx_packages: 'packages' is required and must be a list")
+	}
+	for i, item := range list {
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("remove_appx_packages: packages[%d] must be an object", i)
+		}
+		if name, _ := m["name"].(string); name == "" {
+			return nil, fmt.Errorf("remove_appx_packages: packages[%d].name is required", i)
+		}
+	}
+	return map[string]any{"packages": list}, nil
 }
 
 // NormalizePackageParams accepts either a "packages" list or the legacy
