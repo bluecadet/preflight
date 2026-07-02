@@ -17,24 +17,24 @@ type powerShellScriptBackend interface {
 // current native command did not set it. Start each script from a known success.
 const powerShellLastExitCodeReset = "$global:LASTEXITCODE = 0\n"
 
-func checkPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (bool, string, error) {
+func checkPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any) (CheckResult, error) {
 	return checkPowerShellModuleWithOutput(ctx, backend, params, nil)
 }
 
-func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScriptBackend, params map[string]any, onOutput OutputFunc) (bool, string, error) {
+func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScriptBackend, params map[string]any, onOutput OutputFunc) (CheckResult, error) {
 	if checkScript, _ := params["check_script"].(string); strings.TrimSpace(checkScript) != "" {
 		script, err := winutil.BuildPowerShellCheckScript(checkScript)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		script = powerShellLastExitCodeReset + script
 		script, err = wrapPowerShellWorkingDir(params, script)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		script, err = wrapPowerShellEnv(params, script)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		// Wrap onOutput to suppress the check-result protocol marker line before
 		// forwarding lines to the caller. Real PowerShell output is forwarded as
@@ -49,61 +49,61 @@ func checkPowerShellModuleWithOutput(ctx context.Context, backend powerShellScri
 		}
 		out, err := backend.RunPowerShellScript(ctx, script, streamOut)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		result, _, err := winutil.ParsePowerShellCheckOutput([]byte(out))
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
-		return result.NeedsChange, result.Message, nil
+		return CheckResult{NeedsChange: result.NeedsChange, Message: result.Message}, nil
 	}
 
 	creates, _ := params["creates"].(string)
 	if creates == "" {
-		return true, "", nil
+		return CheckResult{NeedsChange: true}, nil
 	}
 	script, err := powershellJSONVar("creates", creates)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	script, err = wrapPowerShellWorkingDir(params, script+`
 Write-Output ([bool](Test-Path -LiteralPath $creates))
 `)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	script, err = wrapPowerShellEnv(params, script)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	out, err := backend.RunPowerShellScript(ctx, script, nil)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	ok, err := parseWindowsBool(out)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
-	return !ok, "", nil
+	return CheckResult{NeedsChange: !ok}, nil
 }
 
 // ensurePowerShellModule combines check and apply into a single round trip when
 // both check_script and script are inline strings (the common case). Returns
 // ErrEnsureNotHandled for other configurations to fall back to check+apply.
-func ensurePowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
+func ensurePowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (EnsureResult, error) {
 	checkScript, _ := params["check_script"].(string)
 	applyScript, _ := params["script"].(string)
 	if strings.TrimSpace(checkScript) == "" || strings.TrimSpace(applyScript) == "" {
-		return false, "", ErrEnsureNotHandled
+		return EnsureResult{}, ErrEnsureNotHandled
 	}
 
 	checkScriptVar, err := winutil.JSONVarScript("__pf_check_script", checkScript)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	applyScriptVar, err := winutil.JSONVarScript("__pf_apply_script", applyScript)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	combined := checkScriptVar + "\n" + applyScriptVar + "\n" + powerShellDryRunPreamble(dryRun) + `$ErrorActionPreference = 'Stop'
 $__pf_block = [ScriptBlock]::Create($__pf_check_script)
@@ -125,11 +125,11 @@ Write-Output 'changed'
 `
 	combined, err = wrapPowerShellWorkingDir(params, combined)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	combined, err = wrapPowerShellEnv(params, combined)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	// Wrap onOutput with a one-line hold-back so the ensure protocol marker
 	// (the last line, one of: ok / changed / would-change) is never forwarded
@@ -153,50 +153,51 @@ Write-Output 'changed'
 		if hasHeld {
 			onOutput(held)
 		}
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	lines := splitOutputLines(out)
 	if len(lines) == 0 {
-		return false, "", fmt.Errorf("powershell ensure: empty output")
+		return EnsureResult{}, fmt.Errorf("powershell ensure: empty output")
 	}
 	marker := strings.TrimSpace(lines[len(lines)-1])
-	return parseEnsureMarkerOutput("powershell", marker)
+	return parseEnsureMarkerResult("powershell", marker)
 }
 
-func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, out OutputFunc) (string, error) {
+func applyPowerShellModule(ctx context.Context, backend powerShellScriptBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	if script, _ := params["script"].(string); script != "" {
 		script = powerShellLastExitCodeReset + script
 		var err error
 		script, err = wrapPowerShellWorkingDir(params, script)
 		if err != nil {
-			return "", err
+			return ApplyResult{}, err
 		}
 		wrapped, err := wrapPowerShellEnv(params, script)
 		if err != nil {
-			return "", err
+			return ApplyResult{}, err
 		}
-		return backend.RunPowerShellScript(ctx, wrapped, out)
+		output, err := backend.RunPowerShellScript(ctx, wrapped, out)
+		return applyStreamed(output, nil), err
 	}
 
 	file, _ := params["file"].(string)
 	if file == "" {
-		return "", fmt.Errorf("powershell: one of 'script' or 'file' is required")
+		return ApplyResult{}, fmt.Errorf("powershell: one of 'script' or 'file' is required")
 	}
 	data, err := os.ReadFile(file)
 	if err != nil {
-		return "", fmt.Errorf("powershell: read %q: %w", file, err)
+		return ApplyResult{}, fmt.Errorf("powershell: read %q: %w", file, err)
 	}
 	args, err := paramStringSlice(params, "args")
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	scriptVar, err := powershellJSONVar("script", string(data))
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	scriptArgsVar, err := powershellJSONVar("scriptArgs", args)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	script := scriptVar + `
 	` + scriptArgsVar + `
@@ -206,13 +207,14 @@ $global:LASTEXITCODE = 0
 `
 	script, err = wrapPowerShellWorkingDir(params, script)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	script, err = wrapPowerShellEnv(params, script)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return backend.RunPowerShellScript(ctx, script, out)
+	output, err := backend.RunPowerShellScript(ctx, script, out)
+	return applyStreamed(output, nil), err
 }
 
 func wrapPowerShellWorkingDir(params map[string]any, script string) (string, error) {

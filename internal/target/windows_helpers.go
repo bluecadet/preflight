@@ -44,16 +44,16 @@ func parseWindowsBoolOutput(out string) (bool, []string, error) {
 	return value, lines[:len(lines)-1], nil
 }
 
-func parseEnsureMarkerOutput(name, out string) (bool, string, error) {
+func parseEnsureMarkerResult(name, out string) (EnsureResult, error) {
 	switch strings.TrimSpace(out) {
 	case "ok":
-		return false, "already in desired state", nil
+		return EnsureResult{Changed: false, Message: "already in desired state"}, nil
 	case "would-change":
-		return true, "would apply change (dry-run)", nil
+		return EnsureResult{Changed: true, Message: "would apply change (dry-run)"}, nil
 	case "changed":
-		return true, "change applied", nil
+		return EnsureResult{Changed: true, Message: "change applied"}, nil
 	default:
-		return false, "", fmt.Errorf("%s ensure: unexpected output %q", name, strings.TrimSpace(out))
+		return EnsureResult{}, fmt.Errorf("%s ensure: unexpected output %q", name, strings.TrimSpace(out))
 	}
 }
 

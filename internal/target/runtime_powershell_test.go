@@ -40,11 +40,11 @@ func TestEnsurePowerShellModuleWrapsEnv(t *testing.T) {
 		"script":       "Write-Output $env:GITHUB_TOKEN",
 	}
 
-	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
+	result, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
 	if err != nil {
 		t.Fatalf("ensurePowerShellModule returned error: %v", err)
 	}
-	if !changed {
+	if !result.Changed {
 		t.Fatal("expected ensurePowerShellModule to report changed")
 	}
 	if len(backend.scripts) != 1 {
@@ -77,11 +77,11 @@ func TestEnsurePowerShellModuleWrapsWorkingDir(t *testing.T) {
 		"script":       "Write-Output (Get-Location)",
 	}
 
-	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
+	result, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
 	if err != nil {
 		t.Fatalf("ensurePowerShellModule returned error: %v", err)
 	}
-	if !changed {
+	if !result.Changed {
 		t.Fatal("expected ensurePowerShellModule to report changed")
 	}
 	if len(backend.scripts) != 1 {
@@ -109,7 +109,7 @@ func TestEnsurePowerShellModuleResetsLastExitCodeBeforeCheckAndApply(t *testing.
 		"script":       "if ($LASTEXITCODE -ne 0) { throw $LASTEXITCODE }",
 	}
 
-	_, _, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
+	_, err := ensurePowerShellModule(context.Background(), backend, params, false, nil)
 	if err != nil {
 		t.Fatalf("ensurePowerShellModule returned error: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEnsurePowerShellModuleResetsLastExitCodeBeforeCheckAndApply(t *testing.
 func TestCheckPowerShellModuleWrapsWorkingDir(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: `__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOmZhbHNlLCJtZXNzYWdlIjpudWxsfQ==`}
 
-	_, _, err := checkPowerShellModule(context.Background(), backend, map[string]any{
+	_, err := checkPowerShellModule(context.Background(), backend, map[string]any{
 		"working_dir":  `C:\App`,
 		"check_script": "return $false",
 	})
@@ -157,7 +157,7 @@ func TestCheckPowerShellModuleWrapsWorkingDir(t *testing.T) {
 func TestCheckPowerShellModuleResetsLastExitCode(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: `__PREFLIGHT_CHECK_RESULT__:eyJuZWVkc19jaGFuZ2UiOmZhbHNlLCJtZXNzYWdlIjpudWxsfQ==`}
 
-	_, _, err := checkPowerShellModule(context.Background(), backend, map[string]any{
+	_, err := checkPowerShellModule(context.Background(), backend, map[string]any{
 		"check_script": "return ($LASTEXITCODE -ne 0)",
 	})
 	if err != nil {
@@ -178,12 +178,12 @@ func TestApplyPowerShellModuleWrapsInlineWorkingDir(t *testing.T) {
 		"script":      "Write-Output (Get-Location)",
 	}
 
-	out, err := applyPowerShellModule(context.Background(), backend, params, nil)
+	result, err := applyPowerShellModule(context.Background(), backend, params, nil)
 	if err != nil {
 		t.Fatalf("applyPowerShellModule returned error: %v", err)
 	}
-	if out != "done" {
-		t.Fatalf("expected output %q, got %q", "done", out)
+	if result.Message != "done" {
+		t.Fatalf("expected output %q, got %q", "done", result.Message)
 	}
 	if len(backend.scripts) != 1 {
 		t.Fatalf("expected one script, got %d", len(backend.scripts))
@@ -209,12 +209,12 @@ func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 		"script": "Write-Output $env:NAME",
 	}
 
-	out, err := applyPowerShellModule(context.Background(), backend, params, nil)
+	result, err := applyPowerShellModule(context.Background(), backend, params, nil)
 	if err != nil {
 		t.Fatalf("applyPowerShellModule returned error: %v", err)
 	}
-	if out != "done" {
-		t.Fatalf("expected output %q, got %q", "done", out)
+	if result.Message != "done" {
+		t.Fatalf("expected output %q, got %q", "done", result.Message)
 	}
 	if len(backend.scripts) != 1 {
 		t.Fatalf("expected one script, got %d", len(backend.scripts))
@@ -231,16 +231,16 @@ func TestApplyPowerShellModuleWrapsInlineEnv(t *testing.T) {
 func TestApplyWindowsShellWrapsWorkingDir(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: "done"}
 
-	out, err := applyWindowsShell(context.Background(), backend, map[string]any{
+	result, err := applyWindowsShell(context.Background(), backend, map[string]any{
 		"cmd":         "git",
 		"args":        []any{"status"},
 		"working_dir": `C:\Repo`,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("applyWindowsShell returned error: %v", err)
 	}
-	if out != "done" {
-		t.Fatalf("expected output %q, got %q", "done", out)
+	if result.Message != "done" {
+		t.Fatalf("expected output %q, got %q", "done", result.Message)
 	}
 	if len(backend.scripts) != 1 {
 		t.Fatalf("expected one script, got %d", len(backend.scripts))
@@ -288,13 +288,13 @@ func TestEnsurePowerShellModuleForwardsIntermediateLinesOnChange(t *testing.T) {
 	}
 
 	var gotLines []string
-	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
+	result, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
 		t.Fatalf("ensurePowerShellModule returned error: %v", err)
 	}
-	if !changed {
+	if !result.Changed {
 		t.Fatal("expected changed=true")
 	}
 	want := []string{"progress-1", "progress-2", "progress-3"}
@@ -313,13 +313,13 @@ func TestEnsurePowerShellModuleForwardsIntermediateLinesOnOk(t *testing.T) {
 	}
 
 	var gotLines []string
-	changed, _, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
+	result, err := ensurePowerShellModule(context.Background(), backend, params, false, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
 		t.Fatalf("ensurePowerShellModule returned error: %v", err)
 	}
-	if changed {
+	if result.Changed {
 		t.Fatal("expected changed=false")
 	}
 	want := []string{"verified-a", "verified-b"}
@@ -340,13 +340,13 @@ func TestCheckPowerShellModuleWithOutputForwardsLines(t *testing.T) {
 	}
 
 	var gotLines []string
-	needsChange, _, err := checkPowerShellModuleWithOutput(context.Background(), backend, params, func(line string) {
+	result, err := checkPowerShellModuleWithOutput(context.Background(), backend, params, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
 		t.Fatalf("checkPowerShellModuleWithOutput returned error: %v", err)
 	}
-	if !needsChange {
+	if !result.NeedsChange {
 		t.Fatal("expected needsChange=true")
 	}
 	want := []string{"diag-line-1", "diag-line-2"}

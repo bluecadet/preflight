@@ -45,168 +45,170 @@ var windowsPowerShellModuleCatalog = map[string]struct {
 func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegistry {
 	supported := ModuleRegistry{
 		"directory": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsDirectory(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyWindowsDirectory(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyWindowsDirectory(ctx, backend, params)
+			},
 		},
 		"file": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsFile(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyWindowsFile(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyWindowsFile(ctx, backend, params)
+			},
 		},
 		"shell": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsCreates(ctx, backend, params, "shell")
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsShell(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsShell(ctx, backend, params, out)
+			},
 		},
 		"powershell": moduleFuncs{
-			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkPowerShellModuleWithOutput(ctx, backend, params, out)
-			}),
+			},
 			// applyPowerShellModule streams lines through out during execution.
 			// Pass nil to applyStreamed so it only extracts a single-line message
 			// without re-emitting lines that were already forwarded.
 			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
-				output, err := applyPowerShellModule(ctx, backend, params, out)
-				return applyStreamed(output, nil), err
+				return applyPowerShellModule(ctx, backend, params, out)
 			},
-			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error) {
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
 				return ensurePowerShellModule(ctx, backend, params, dryRun, out)
-			}),
+			},
 		},
 		"environment": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsEnvironment(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyWindowsEnvironment(ctx, backend, params)
-			}),
-			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyWindowsEnvironment(ctx, backend, params)
+			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (EnsureResult, error) {
 				return ensureWindowsEnvironment(ctx, backend, params, dryRun)
-			}),
+			},
 		},
 		"wait": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsWait(ctx, backend, params)
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyWindowsWait(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyWindowsWait(ctx, backend, params)
+			},
 		},
 		"reboot": moduleFuncs{
-			check: check(func(context.Context, map[string]any) (bool, string, error) {
-				return true, "", nil
-			}),
-			apply: applyErrOnly(func(ctx context.Context, params map[string]any) error {
-				return applyWindowsReboot(ctx, backend, params)
-			}),
+			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
+				return CheckResult{NeedsChange: true}, nil
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyWindowsReboot(ctx, backend, params)
+			},
 		},
 		"registry": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsRegistry(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsRegistry(ctx, backend, params)
-			}),
-			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (bool, string, error) {
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsRegistry(ctx, backend, params, out)
+			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (EnsureResult, error) {
 				return ensureWindowsRegistry(ctx, backend, params, dryRun)
-			}),
+			},
 		},
 		"service": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, serviceCheckScript)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, serviceApplyScript)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				output, err := windowsRunScript(ctx, backend, params, serviceApplyScript)
+				return applyStreamed(output, out), err
+			},
 		},
 		"package": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				normalized, err := winutil.NormalizePackageParams(params)
 				if err != nil {
-					return false, "", err
+					return CheckResult{}, err
 				}
 				return checkWindowsBooleanScript(ctx, backend, normalized, packageCheckScript)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsPackage(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsPackage(ctx, backend, params, out)
+			},
 		},
 		"shortcut": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsShortcut(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsShortcut(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsShortcut(ctx, backend, params, out)
+			},
 		},
 		"scheduled_task": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsScheduledTask(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsScheduledTask(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsScheduledTask(ctx, backend, params, out)
+			},
 		},
 		"user": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsUser(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsUser(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsUser(ctx, backend, params, out)
+			},
 		},
 		"winget_package": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsWingetPackage(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsWingetPackage(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsWingetPackage(ctx, backend, params, out)
+			},
 		},
 		"remove_appx_packages": moduleFuncs{
-			check: checkWithOutput(func(ctx context.Context, params map[string]any, out OutputFunc) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, out)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsRemoveAppxPackages(ctx, backend, params)
-			}),
-			ensure: ensure(func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (bool, string, error) {
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsRemoveAppxPackages(ctx, backend, params, out)
+			},
+			ensure: func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
 				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun, out)
-			}),
+			},
 		},
 		"power_plan": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, powerPlanCheckScript)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, powerPlanApplyScript)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				output, err := windowsRunScript(ctx, backend, params, powerPlanApplyScript)
+				return applyStreamed(output, out), err
+			},
 		},
 		"windows_feature": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsBooleanScript(ctx, backend, params, windowsFeatureCheckScript)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return windowsRunScript(ctx, backend, params, windowsFeatureApplyScript)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				output, err := windowsRunScript(ctx, backend, params, windowsFeatureApplyScript)
+				return applyStreamed(output, out), err
+			},
 		},
 		"firewall_rule": moduleFuncs{
-			check: check(func(ctx context.Context, params map[string]any) (bool, string, error) {
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsFirewallRule(ctx, backend, params)
-			}),
-			apply: apply(func(ctx context.Context, params map[string]any) (string, error) {
-				return applyWindowsFirewallRule(ctx, backend, params)
-			}),
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyWindowsFirewallRule(ctx, backend, params, out)
+			},
 		},
 	}
 	return buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, supported, func(module string) error {
@@ -222,19 +224,19 @@ func windowsRunScript(ctx context.Context, backend windowsPowerShellBackend, par
 	return backend.RunPowerShellScript(ctx, script+"\n"+body, nil)
 }
 
-func checkWindowsBooleanScript(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, body string) (bool, string, error) {
+func checkWindowsBooleanScript(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, body string) (CheckResult, error) {
 	out, err := windowsRunScript(ctx, backend, params, body)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	value, err := parseWindowsBool(out)
-	return value, "", err
+	return CheckResult{NeedsChange: value}, err
 }
 
-func checkWindowsCreates(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, label string) (bool, string, error) {
+func checkWindowsCreates(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, label string) (CheckResult, error) {
 	creates, _ := params["creates"].(string)
 	if creates == "" {
-		return true, "", nil
+		return CheckResult{NeedsChange: true}, nil
 	}
 	out, err := windowsRunScript(ctx, backend, map[string]any{
 		"creates":     creates,
@@ -255,19 +257,19 @@ Write-Output ([bool](Test-Path -LiteralPath $params.creates))
 }
 `)
 	if err != nil {
-		return false, "", fmt.Errorf("%s: %w", label, err)
+		return CheckResult{}, fmt.Errorf("%s: %w", label, err)
 	}
 	ok, err := parseWindowsBool(out)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
-	return !ok, "", nil
+	return CheckResult{NeedsChange: !ok}, nil
 }
 
-func checkWindowsDirectory(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsDirectory(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	script, err := powershellJSONVar("params", params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	out, err := backend.RunPowerShellScript(ctx, script+`
 $path = [string]$params.path
@@ -284,10 +286,10 @@ $item = Get-Item -LiteralPath $path
 Write-Output ([bool](-not $item.PSIsContainer))
 `, nil)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	value, err := parseWindowsBool(out)
-	return value, "", err
+	return CheckResult{NeedsChange: value}, err
 }
 
 func applyWindowsDirectory(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) error {
@@ -303,10 +305,10 @@ New-Item -ItemType Directory -Path $path -Force | Out-Null
 	return err
 }
 
-func checkWindowsFile(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsFile(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	dest, ok := params["dest"].(string)
 	if !ok || dest == "" {
-		return false, "", fmt.Errorf("windows file: required param %q is missing", "dest")
+		return CheckResult{}, fmt.Errorf("windows file: required param %q is missing", "dest")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -315,12 +317,12 @@ func checkWindowsFile(ctx context.Context, backend windowsPowerShellBackend, par
 	src, _ := params["src"].(string)
 	content, hasContent, err := fileContentParam(params, "windows file", src)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 
 	script, err := powershellJSONVar("dest", dest)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	out, err := backend.RunPowerShellScript(ctx, script+`
 if (-not (Test-Path -LiteralPath $dest)) {
@@ -336,35 +338,35 @@ Write-Output ("present:" + $hash)
 `, nil)
 	if err != nil {
 		if ensure == "absent" && strings.Contains(err.Error(), "missing") {
-			return false, "", nil
+			return CheckResult{}, nil
 		}
-		return false, "", err
+		return CheckResult{}, err
 	}
 	trimmed := strings.TrimSpace(out)
 	switch ensure {
 	case "absent":
-		return trimmed != "missing", "", nil
+		return CheckResult{NeedsChange: trimmed != "missing"}, nil
 	case "present":
 		if trimmed == "missing" {
-			return true, "", nil
+			return CheckResult{NeedsChange: true}, nil
 		}
 		if src == "" {
 			if !hasContent {
-				return false, "", nil
+				return CheckResult{}, nil
 			}
 		}
 		if hasContent {
 			remoteHash := strings.TrimPrefix(trimmed, "present:")
-			return hashBytes([]byte(content)) != remoteHash, "", nil
+			return CheckResult{NeedsChange: hashBytes([]byte(content)) != remoteHash}, nil
 		}
 		localHash, err := hashLocalFile(src)
 		if err != nil {
-			return false, "", err
+			return CheckResult{}, err
 		}
 		remoteHash := strings.TrimPrefix(trimmed, "present:")
-		return localHash != remoteHash, "", nil
+		return CheckResult{NeedsChange: localHash != remoteHash}, nil
 	default:
-		return false, "", fmt.Errorf("windows file: unknown ensure value %q", ensure)
+		return CheckResult{}, fmt.Errorf("windows file: unknown ensure value %q", ensure)
 	}
 }
 
@@ -416,31 +418,31 @@ if ($dir) {
 	}
 }
 
-func applyWindowsShell(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsShell(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	cmd, ok := params["cmd"].(string)
 	if !ok || cmd == "" {
-		return "", fmt.Errorf("shell: required param %q is missing", "cmd")
+		return ApplyResult{}, fmt.Errorf("shell: required param %q is missing", "cmd")
 	}
 	args, err := paramStringSlice(params, "args")
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	workingDir, _ := params["working_dir"].(string)
 
 	script, err := powershellJSONVar("cmd", cmd)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	psArgs, err := powershellJSONVar("args", args)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	wd, err := powershellJSONVar("workingDir", workingDir)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	if workingDir == "" {
-		return backend.RunPowerShellScript(ctx, script+`
+		output, err := backend.RunPowerShellScript(ctx, script+`
 `+psArgs+`
 `+wd+`
 if ($workingDir) {
@@ -448,6 +450,7 @@ if ($workingDir) {
 }
 & $cmd @args
 `, nil)
+		return applyStreamed(output, out), err
 	}
 	taskScript := script + `
 ` + psArgs + `
@@ -455,15 +458,16 @@ if ($workingDir) {
 `
 	taskScript, err = wrapPowerShellWorkingDir(map[string]any{"working_dir": workingDir}, taskScript)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return backend.RunPowerShellScript(ctx, taskScript, nil)
+	output, err := backend.RunPowerShellScript(ctx, taskScript, nil)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	name, ok := params["name"].(string)
 	if !ok || name == "" {
-		return false, "", fmt.Errorf("environment: required param %q is missing", "name")
+		return CheckResult{}, fmt.Errorf("environment: required param %q is missing", "name")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -477,15 +481,15 @@ func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBacke
 
 	script, err := powershellJSONVar("name", name)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	psScope, err := powershellJSONVar("scope", normalizeEnvScope(scope))
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	psValue, err := powershellJSONVar("value", value)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	out, err := backend.RunPowerShellScript(ctx, script+`
 `+psScope+`
@@ -498,10 +502,10 @@ if (`+fmt.Sprintf("%q", ensure)+` -eq 'absent') {
 }
 `, nil)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	needs, err := parseWindowsBool(out)
-	return needs, "", err
+	return CheckResult{NeedsChange: needs}, err
 }
 
 func applyWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) error {
@@ -531,10 +535,10 @@ if ($params.ensure -eq 'absent') {
 	return err
 }
 
-func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (bool, string, error) {
+func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (EnsureResult, error) {
 	name, ok := params["name"].(string)
 	if !ok || name == "" {
-		return false, "", fmt.Errorf("environment: required param %q is missing", "name")
+		return EnsureResult{}, fmt.Errorf("environment: required param %q is missing", "name")
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -566,19 +570,19 @@ if ($params.ensure -eq 'absent') {
 Write-Output 'changed'
 `)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
-	return parseEnsureMarkerOutput("environment", out)
+	return parseEnsureMarkerResult("environment", out)
 }
 
-func checkWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	condition, _ := params["condition"].(string)
 	targetValue, _ := params["target"].(string)
 	met, err := windowsWaitCondition(ctx, backend, condition, targetValue)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
-	return !met, "", nil
+	return CheckResult{NeedsChange: !met}, nil
 }
 
 func applyWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) error {
@@ -669,68 +673,70 @@ func applyWindowsReboot(ctx context.Context, backend windowsPowerShellBackend, p
 	return err
 }
 
-func checkWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	normalized, err := winutil.NormalizeWingetParams(params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, normalized, wingetPackageCheckScript)
 }
 
-func applyWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizeWingetParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, normalized, wingetPackageApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, wingetPackageApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsRemoveAppxPackagesWithOutput(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, onOutput OutputFunc) (bool, string, error) {
+func checkWindowsRemoveAppxPackagesWithOutput(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, onOutput OutputFunc) (CheckResult, error) {
 	normalized, err := winutil.NormalizeRemoveAppxParams(params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	out, err := windowsRunScript(ctx, backend, normalized, removeAppxPackagesCheckScript)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	needs, outputLines, err := parseWindowsBoolOutput(out)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if onOutput != nil {
 		for _, line := range outputLines {
 			onOutput(line)
 		}
 	}
-	return needs, "", nil
+	return CheckResult{NeedsChange: needs}, nil
 }
 
-func applyWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizeRemoveAppxParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, normalized, removeAppxPackagesApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, removeAppxPackagesApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (bool, string, error) {
+func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (EnsureResult, error) {
 	normalized, err := winutil.NormalizeRemoveAppxParams(params)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	paramsScript, err := powershellJSONVar("params", normalized)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
 	out, err := backend.RunPowerShellScript(ctx, preamble+removeAppxPackagesEnsureScript, nil)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	lines := splitOutputLines(out)
 	if len(lines) == 0 {
-		return false, "", fmt.Errorf("remove_appx_packages ensure: empty output")
+		return EnsureResult{}, fmt.Errorf("remove_appx_packages ensure: empty output")
 	}
 	marker := lines[len(lines)-1]
 	if onOutput != nil {
@@ -738,13 +744,13 @@ func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerSh
 			onOutput(line)
 		}
 	}
-	return parseEnsureMarkerOutput("remove_appx_packages", marker)
+	return parseEnsureMarkerResult("remove_appx_packages", marker)
 }
 
-func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizePackageParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	list := normalized["packages"].([]any)
 	for i, item := range list {
@@ -756,7 +762,7 @@ func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, 
 		}
 		remotePath := winRMPackageRemotePath(i, source)
 		if err := backend.CopyFile(ctx, source, remotePath); err != nil {
-			return "", err
+			return ApplyResult{}, err
 		}
 		newSpec := make(map[string]any, len(spec))
 		maps.Copy(newSpec, spec)
@@ -764,130 +770,136 @@ func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, 
 		list[i] = newSpec
 	}
 	normalized["packages"] = list
-	return windowsRunScript(ctx, backend, normalized, packageApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, packageApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	if _, err := paramStringRequired(params, "destination"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, params, shortcutCheckScript)
 }
 
-func applyWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsShortcut(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	if _, err := paramStringRequired(params, "destination"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, params, shortcutApplyScript)
+	output, err := windowsRunScript(ctx, backend, params, shortcutApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	if _, err := paramStringRequired(params, "name"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, params, userCheckScript)
 }
 
-func applyWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsUser(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	if _, err := paramStringRequired(params, "name"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, params, userApplyScript)
+	output, err := windowsRunScript(ctx, backend, params, userApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	if _, err := paramStringRequired(params, "name"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	normalized, err := normalizeFirewallRuleParams(params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, normalized, firewallRuleCheckScript)
 }
 
-func applyWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsFirewallRule(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	if _, err := paramStringRequired(params, "name"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	if _, err := paramString(params, "ensure", "present"); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	normalized, err := normalizeFirewallRuleParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, normalized, firewallRuleApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, firewallRuleApplyScript)
+	return applyStreamed(output, out), err
 }
 
-func checkWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	normalized, err := winutil.NormalizeRegistryParams(params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, normalized, registryCheckScript)
 }
 
-func applyWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizeRegistryParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, normalized, registryApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, registryApplyScript)
+	return applyStreamed(output, out), err
 }
 
 // ensureWindowsRegistry combines check and apply into a single PowerShell
 // invocation, halving WinRM round trips for tasks that need applying.
-func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (bool, string, error) {
+func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (EnsureResult, error) {
 	normalized, err := winutil.NormalizeRegistryParams(params)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	paramsScript, err := powershellJSONVar("params", normalized)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
 	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
 	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript, nil)
 	if err != nil {
-		return false, "", err
+		return EnsureResult{}, err
 	}
-	return parseEnsureMarkerOutput("registry", out)
+	return parseEnsureMarkerResult("registry", out)
 }
 
-func checkWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (bool, string, error) {
+func checkWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	normalized, err := winutil.NormalizeScheduledTaskParams(params)
 	if err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	if err := winutil.ValidateScheduledTaskParams(normalized); err != nil {
-		return false, "", err
+		return CheckResult{}, err
 	}
 	return checkWindowsBooleanScript(ctx, backend, normalized, scheduledTaskCheckScript)
 }
 
-func applyWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (string, error) {
+func applyWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizeScheduledTaskParams(params)
 	if err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
 	if err := winutil.ValidateScheduledTaskParams(normalized); err != nil {
-		return "", err
+		return ApplyResult{}, err
 	}
-	return windowsRunScript(ctx, backend, normalized, scheduledTaskApplyScript)
+	output, err := windowsRunScript(ctx, backend, normalized, scheduledTaskApplyScript)
+	return applyStreamed(output, out), err
 }
