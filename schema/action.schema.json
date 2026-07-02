@@ -323,24 +323,6 @@
               "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
             }
           }
-        },
-        "source": {
-          "type": "string",
-          "description": "Legacy: path or UNC path to MSI or EXE installer (use 'packages' instead)"
-        },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Additional installer arguments"
-        },
-        "product_id": {
-          "type": "string",
-          "description": "Legacy: MSI product GUID for idempotency check (use 'packages' instead)"
-        },
-        "ensure": {
-          "type": "string",
-          "enum": ["present", "absent"],
-          "default": "present"
         }
       }
     },
