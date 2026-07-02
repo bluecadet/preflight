@@ -30,7 +30,7 @@ func TestScheduledTaskModule_NoCmdExecWrapper(t *testing.T) {
 	m := &ScheduledTaskModule{}
 	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":    "test-task",
-		"command": `C:\app\run.exe`,
+		"execute": `C:\app\run.exe`,
 		"trigger": "startup",
 	}, nil)
 
@@ -76,7 +76,7 @@ func TestScheduledTaskModule_CommandMetacharsDoNotInject(t *testing.T) {
 	m := &ScheduledTaskModule{}
 	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":    "test-task",
-		"command": maliciousCommand,
+		"execute": maliciousCommand,
 		"trigger": "startup",
 	}, nil)
 
@@ -113,7 +113,7 @@ func TestScheduledTaskModule_UsesPrincipalAndCreatesFolders(t *testing.T) {
 	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":      "test-task",
 		"path":      `Preflight\Maintenance`,
-		"command":   `C:\Windows\System32\shutdown.exe`,
+		"execute":   `C:\Windows\System32\shutdown.exe`,
 		"trigger":   "daily",
 		"start_at":  "04:30",
 		"run_as":    "SYSTEM",
@@ -171,7 +171,7 @@ func TestScheduledTaskModule_CheckUsesExactFolderLookup(t *testing.T) {
 	_, _ = m.Check(context.Background(), map[string]any{
 		"name":     "test-task",
 		"path":     `Preflight`,
-		"command":  `C:\Windows\System32\shutdown.exe`,
+		"execute":  `C:\Windows\System32\shutdown.exe`,
 		"trigger":  "daily",
 		"start_at": "04:30",
 		"run_as":   "SYSTEM",
@@ -213,7 +213,7 @@ func TestScheduledTaskModule_PresentTasksAreExplicitlyEnabled(t *testing.T) {
 	_, _ = m.Apply(context.Background(), map[string]any{
 		"name":     "test-task",
 		"path":     `Preflight`,
-		"command":  `C:\Windows\System32\shutdown.exe`,
+		"execute":  `C:\Windows\System32\shutdown.exe`,
 		"trigger":  "daily",
 		"start_at": "04:30",
 		"ensure":   "present",

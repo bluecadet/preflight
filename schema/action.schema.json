@@ -384,10 +384,6 @@
           "type": "string",
           "description": "Executable path"
         },
-        "command": {
-          "type": "string",
-          "description": "Legacy alias for execute"
-        },
         "arguments": {
           "type": "string",
           "description": "Arguments for the task action"
@@ -414,10 +410,6 @@
         "run_as": {
           "type": "string",
           "description": "User account to run the task as"
-        },
-        "user": {
-          "type": "string",
-          "description": "Legacy alias for run_as"
         },
         "run_level": {
           "anyOf": [

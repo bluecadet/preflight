@@ -14,17 +14,6 @@ import (
 func NormalizeScheduledTaskParams(params map[string]any) (map[string]any, error) {
 	cloned := maps.Clone(params)
 
-	if execute, ok := cloned["command"]; ok {
-		if _, exists := cloned["execute"]; !exists {
-			cloned["execute"] = execute
-		}
-	}
-	if runAs, ok := cloned["user"]; ok {
-		if _, exists := cloned["run_as"]; !exists {
-			cloned["run_as"] = runAs
-		}
-	}
-
 	path, err := normalizeTaskPath(cloned["path"])
 	if err != nil {
 		return nil, err
