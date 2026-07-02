@@ -2,7 +2,6 @@ package action
 
 import (
 	"fmt"
-	"os"
 
 	"gopkg.in/yaml.v3"
 
@@ -229,15 +228,6 @@ func ParsePlaybook(data []byte) (*Playbook, error) {
 		return nil, err
 	}
 	return &p, nil
-}
-
-// ParsePlaybookFile reads a file at path and parses it as a Playbook.
-func ParsePlaybookFile(path string) (*Playbook, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("playbook: read %q: %w", path, err)
-	}
-	return ParsePlaybook(data)
 }
 
 func resolveTaskModule(t *Task) (string, map[string]any, bool, error) {

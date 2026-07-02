@@ -423,14 +423,14 @@ func TestJSONRenderer_TaskOutput(t *testing.T) {
 
 func TestFactory_New(t *testing.T) {
 	var buf bytes.Buffer
-	if _, ok := New(FormatText, &buf).(*TextRenderer); !ok {
+	if _, ok := NewWithOptions(FormatText, &buf, Options{}).(*TextRenderer); !ok {
 		t.Error("expected TextRenderer for FormatText")
 	}
-	if _, ok := New(FormatJSON, &buf).(*JSONRenderer); !ok {
+	if _, ok := NewWithOptions(FormatJSON, &buf, Options{}).(*JSONRenderer); !ok {
 		t.Error("expected JSONRenderer for FormatJSON")
 	}
 	// Unknown format falls back to text.
-	if _, ok := New("unknown", &buf).(*TextRenderer); !ok {
+	if _, ok := NewWithOptions("unknown", &buf, Options{}).(*TextRenderer); !ok {
 		t.Error("expected TextRenderer for unknown format")
 	}
 }

@@ -36,33 +36,6 @@ type PluginStatus struct {
 	ErrorMessage string
 }
 
-// Discover scans well-known directories for preflight plugins and returns a map
-// of plugin name → absolute executable path.
-//
-// Scan order (first match wins):
-//  1. binaryDir — directory alongside the preflight binary
-//  2. ~/.preflight/plugins/
-//  3. ./plugins/ — relative to the current working directory
-//
-// On Windows, executables must have the ".exe" suffix.
-// On all other platforms, executables have no required suffix.
-func Discover(binaryDir string) (map[string]string, error) {
-	plugins, err := Scan(DiscoveryOptions{BinaryDir: binaryDir})
-	if err != nil {
-		return nil, err
-	}
-
-	paths := make(map[string]string, len(plugins))
-	for _, plugin := range plugins {
-		if _, exists := paths[plugin.Name]; exists {
-			continue
-		}
-		paths[plugin.Name] = plugin.Path
-	}
-
-	return paths, nil
-}
-
 // Scan returns every matching plugin executable in scan order. PreferredDirs
 // are searched before the default binary/home/cwd directories.
 func Scan(opts DiscoveryOptions) ([]DiscoveredPlugin, error) {
