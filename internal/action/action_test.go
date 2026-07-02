@@ -167,8 +167,6 @@ file:
 	}
 }
 
-
-
 func TestParseAction_RejectsParamsWithoutModule(t *testing.T) {
 	_, err := action.ParseAction([]byte(`
 name: myorg/test-action

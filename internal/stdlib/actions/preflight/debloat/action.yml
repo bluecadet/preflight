@@ -363,86 +363,102 @@ tasks:
     registry:
       path: 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\DataCollection'
       values:
-        AllowTelemetry: 0
+        - name: AllowTelemetry
+          data: 0
 
   - name: Disable activity history
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
       values:
-        PublishUserActivities: 0
+        - name: PublishUserActivities
+          data: 0
 
   - name: Disable advertising ID
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo'
       user: "{{ vars.user }}"
       values:
-        Enabled: 0
+        - name: Enabled
+          data: 0
 
   - name: Disable tailored experiences
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Privacy'
       user: "{{ vars.user }}"
       values:
-        TailoredExperiencesWithDiagnosticDataEnabled: 0
+        - name: TailoredExperiencesWithDiagnosticDataEnabled
+          data: 0
 
   - name: Disable feedback prompts
     registry:
       path: 'HKCU:\SOFTWARE\Microsoft\Siuf\Rules'
       user: "{{ vars.user }}"
       values:
-        NumberOfSIUFInPeriod: 0
+        - name: NumberOfSIUFInPeriod
+          data: 0
 
   - name: Disable Copilot (user policy)
     registry:
       path: 'HKCU:\Software\Policies\Microsoft\Windows\WindowsCopilot'
       user: "{{ vars.user }}"
       values:
-        TurnOffWindowsCopilot: 1
+        - name: TurnOffWindowsCopilot
+          data: 1
 
   - name: Disable Copilot (system policy)
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot'
       values:
-        TurnOffWindowsCopilot: 1
+        - name: TurnOffWindowsCopilot
+          data: 1
 
   - name: Disable AI Recall
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsAI'
       values:
-        DisableAIDataAnalysis: 1
+        - name: DisableAIDataAnalysis
+          data: 1
 
   - name: Disable Bing and Cortana in search
     registry:
       path: 'HKCU:\Software\Policies\Microsoft\Windows\Explorer'
       user: "{{ vars.user }}"
       values:
-        DisableSearchBoxSuggestions: 1
+        - name: DisableSearchBoxSuggestions
+          data: 1
 
   - name: Disable Cortana (system policy)
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Search'
       values:
-        AllowCortana: 0
-        CortanaConsent: 0
+        - name: AllowCortana
+          data: 0
+        - name: CortanaConsent
+          data: 0
 
   - name: Disable Copilot and Chat taskbar buttons
     registry:
       path: 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
       user: "{{ vars.user }}"
       values:
-        ShowCopilotButton: 0
-        TaskbarMn: 0
-        Start_TrackProgs: 0
+        - name: ShowCopilotButton
+          data: 0
+        - name: TaskbarMn
+          data: 0
+        - name: Start_TrackProgs
+          data: 0
 
   - name: Disable delivery optimization
     registry:
       path: 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\DeliveryOptimization'
       values:
-        DODownloadMode: 0
+        - name: DODownloadMode
+          data: 0
 
   - name: Disable Game DVR
     registry:
       path: 'HKCU:\System\GameConfigStore'
       user: "{{ vars.user }}"
       values:
-        GameDVR_Enabled: 0
+        - name: GameDVR_Enabled
+          data: 0

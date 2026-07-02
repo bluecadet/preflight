@@ -104,9 +104,12 @@ tasks:
       path: 'HKCU:\Control Panel\Desktop'
       user: "{{ vars.user }}"
       values:
-        Wallpaper: ""
-        WallpaperStyle: "0"
-        TileWallpaper: "0"
+        - name: Wallpaper
+          data: ""
+        - name: WallpaperStyle
+          data: "0"
+        - name: TileWallpaper
+          data: "0"
       ensure: present
 
   - name: Set desktop background color
@@ -115,7 +118,8 @@ tasks:
       path: 'HKCU:\Control Panel\Colors'
       user: "{{ vars.user }}"
       values:
-        Background: "0 0 0"
+        - name: Background
+          data: "0 0 0"
       ensure: present
 
   - name: Configure theme mode
@@ -592,4 +596,5 @@ tasks:
       path: 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Explorer'
       user: "{{ vars.user }}"
       values:
-        ConfigureStartPins: "{{ vars.start_pins_json }}"
+        - name: ConfigureStartPins
+          data: "{{ vars.start_pins_json }}"

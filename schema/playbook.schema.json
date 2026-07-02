@@ -44,7 +44,6 @@
           "type": "string",
           "description": "Stable task ref used for dependency resolution"
         },
-        
         "name": {
           "type": "string",
           "description": "Human-readable label used in output and as a fallback dependency reference"
@@ -133,13 +132,8 @@
         "path": { "type": "string" },
         "user": { "type": "string" },
         "values": {
-          "oneOf": [
-            { "type": "object" },
-            {
-              "type": "array",
-              "items": { "$ref": "#/$defs/registryValueSpec" }
-            }
-          ]
+          "type": "array",
+          "items": { "$ref": "#/$defs/registryValueSpec" }
         },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
       }
