@@ -474,27 +474,6 @@
               }
             }
           }
-        },
-        "id": {
-          "type": "string",
-          "description": "Legacy: single package identifier (use 'packages' instead)"
-        },
-        "version": { "type": "string" },
-        "source": { "type": "string" },
-        "args": {
-          "type": "array",
-          "items": { "type": "string" },
-          "description": "Additional winget command arguments"
-        },
-        "scope": {
-          "type": "string",
-          "enum": ["machine", "user"],
-          "default": "machine"
-        },
-        "ensure": {
-          "type": "string",
-          "enum": ["present", "absent"],
-          "default": "present"
         }
       }
     },

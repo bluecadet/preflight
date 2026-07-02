@@ -76,10 +76,14 @@ func TestNormalizeRegistryParams_BoolStringValues(t *testing.T) {
 	}
 }
 
-func TestNormalizeWingetParams_LegacyArgs(t *testing.T) {
+func TestNormalizeWingetParams_Args(t *testing.T) {
 	params, err := NormalizeWingetParams(map[string]any{
-		"id":   "Microsoft.VisualStudio.2022.Community",
-		"args": []any{"--override", "--quiet --wait --norestart"},
+		"packages": []any{
+			map[string]any{
+				"id":   "Microsoft.VisualStudio.2022.Community",
+				"args": []any{"--override", "--quiet --wait --norestart"},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
