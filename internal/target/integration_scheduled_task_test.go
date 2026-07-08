@@ -129,7 +129,7 @@ $task | Set-ScheduledTask -ErrorAction Stop | Out-Null
 		}
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "scheduled-task-drift-check", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-drift-check", "scheduled_task", desiredParams, ExecutionOptions{}, true, StatusChanged)
 
 		// Apply converges back to the desired state
 		mustExecute(t, tgt, "scheduled-task-drift-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)

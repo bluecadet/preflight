@@ -120,7 +120,7 @@ try {
 				status := appxPackageOracle(t, runner, fixtureName)
 				if status == "present" {
 					// Check detects the drift
-					mustExecute(t, tgt, "appx-drift-check", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+					mustExecute(t, tgt, "appx-drift-check", "remove_appx_packages", params, ExecutionOptions{}, true, StatusChanged)
 
 					// Apply converges back
 					mustExecute(t, tgt, "appx-drift-apply", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
