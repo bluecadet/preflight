@@ -26,7 +26,9 @@ func TestIntegration_Become(t *testing.T) {
 		ctx := context.Background()
 
 		// ---- Setup: create a throwaway local user for become ----
-		becomeUser := "pf-test-become-" + testRunID()[:12]
+		// Windows SAM account names are capped at 20 characters, so keep the
+		// prefix short: "pf-bcm-" (7) + 12 hex chars = 19.
+		becomeUser := "pf-bcm-" + testRunID()[:12]
 		becomePass := "PreflightBecome123!"
 
 		_, err := runner.RunPowerShell(ctx, fmt.Sprintf(`
