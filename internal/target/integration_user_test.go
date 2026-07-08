@@ -90,7 +90,7 @@ func TestIntegration_User(t *testing.T) {
 		}
 
 		// Check detects the drift (NeedsChange = true -> StatusChanged)
-		mustExecute(t, tgt, "user-drift-check", "user", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "user-drift-check", "user", desiredParams, ExecutionOptions{}, true, StatusChanged)
 
 		// Apply converges back to the desired state
 		mustExecute(t, tgt, "user-drift-apply", "user", desiredParams, ExecutionOptions{}, false, StatusChanged)

@@ -129,7 +129,7 @@ $shortcut.Save()
 		})
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "shortcut-drift-check", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "shortcut-drift-check", "shortcut", desiredParams, ExecutionOptions{}, true, StatusChanged)
 
 		// Apply converges back to the desired state
 		mustExecute(t, tgt, "shortcut-drift-apply", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)

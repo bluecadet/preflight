@@ -124,7 +124,7 @@ func TestIntegration_WingetPackage(t *testing.T) {
 		}
 
 		// Check detects the drift (package is absent, desired is present → Changed)
-		mustExecute(t, tgt, "winget-drift-check", "winget_package", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "winget-drift-check", "winget_package", desiredParams, ExecutionOptions{}, true, StatusChanged)
 
 		// Apply converges back to the desired state
 		mustExecute(t, tgt, "winget-drift-apply", "winget_package", desiredParams, ExecutionOptions{}, false, StatusChanged)

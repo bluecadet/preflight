@@ -97,7 +97,7 @@ func TestIntegration_Registry(t *testing.T) {
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "99")
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "registry-drift-check", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "registry-drift-check", "registry", desiredParams, ExecutionOptions{}, true, StatusChanged)
 
 		// Apply converges back to the desired state
 		mustExecute(t, tgt, "registry-drift-apply", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
@@ -156,7 +156,10 @@ if (-not (Test-Path -LiteralPath $path)) {
 }
 $props = Get-ItemProperty -LiteralPath $path -ErrorAction SilentlyContinue
 if ($null -eq $props) {
-  Write-Output 'missing'
+  # The key exists (Test-Path passed above) but carries no values — e.g. after
+  # its last value was removed. That means the named value is absent, not that
+  # the key is missing.
+  Write-Output ''
   exit 0
 }
 $prop = $props.PSObject.Properties[$name]
