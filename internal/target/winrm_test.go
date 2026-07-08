@@ -140,7 +140,7 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
 			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
 			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
-			case strings.Contains(command, "System.Diagnostics.ProcessStartInfo"):
+			case strings.Contains(command, "Register-ScheduledTask"):
 				// credential runner executed inline (script small enough)
 				sawCredentialRunner = true
 			default:
@@ -179,7 +179,7 @@ func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	}
 }
 
-func TestBuildWindowsCredentialRunnerContainsProcessRelay(t *testing.T) {
+func TestBuildWindowsCredentialRunnerUsesScheduledTask(t *testing.T) {
 	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
 		User:     "kiosk",
 		Password: "secret",
@@ -187,23 +187,27 @@ func TestBuildWindowsCredentialRunnerContainsProcessRelay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
 	}
+	// A remote (WinRM/SSH) session is non-interactive and has no window
+	// station, so the payload must run through a scheduled task rather than
+	// CreateProcessWithLogonW / System.Diagnostics.Process credentials.
 	for _, want := range []string{
-		"System.Diagnostics.ProcessStartInfo",
-		"RedirectStandardOutput",
-		"ReadToEndAsync",
-		"ReadLine()",
-		"Write-Output $line",
+		"SeBatchLogonRight",          // batch-logon right granted to the target
+		"Register-ScheduledTask",     // payload runs via a scheduled task
+		"New-ScheduledTaskPrincipal", // task runs as the target principal
+		"-LogonType Password",        // password logon (target need not be signed in)
+		"Unregister-ScheduledTask",   // task is cleaned up afterward
+		"runas exited with code",     // non-zero exit is surfaced
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("expected credential runner to contain %q, got:\n%s", want, script)
 		}
 	}
-	if strings.Contains(script, "Start-Process") {
-		t.Fatalf("expected credential runner to use System.Diagnostics.Process, not Start-Process")
+	if strings.Contains(script, "System.Diagnostics.ProcessStartInfo") {
+		t.Fatalf("expected credential runner to use a scheduled task, not ProcessStartInfo")
 	}
 }
 
-func TestBuildWindowsCredentialRunnerSplitsDomainUser(t *testing.T) {
+func TestBuildWindowsCredentialRunnerPassesUserToPrincipal(t *testing.T) {
 	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
 		User:     `CORP\serviceacct`,
 		Password: "secret",
@@ -211,11 +215,13 @@ func TestBuildWindowsCredentialRunnerSplitsDomainUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
 	}
-	if !strings.Contains(script, `$becomeUser -like '*\*'`) {
-		t.Fatalf("expected domain user handling, got:\n%s", script)
+	// DOMAIN\user is handled natively by the task principal, so the runner must
+	// not manually split the domain the way the old ProcessStartInfo path did.
+	if strings.Contains(script, `$becomeUser -like '*\*'`) {
+		t.Fatalf("expected no manual domain splitting, got:\n%s", script)
 	}
-	if !strings.Contains(script, `$psi.Domain`) {
-		t.Fatalf("expected domain field assignment, got:\n%s", script)
+	if !strings.Contains(script, "-UserId $becomeUser") {
+		t.Fatalf("expected the task principal to use $becomeUser, got:\n%s", script)
 	}
 }
 
