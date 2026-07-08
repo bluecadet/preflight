@@ -46,42 +46,56 @@ After the VM boots:
 ### VirtualBox (cross-platform)
 
 Microsoft also publishes Hyper-V and VirtualBox images from the same download
-page. The bootstrap script works identically regardless of hypervisor.
+page. The bootstrap scripts work identically regardless of hypervisor.
 
-## 2. Run The Bootstrap Script
+## 2. Run The Bootstrap Scripts
 
-Inside the Windows VM, open **PowerShell as Administrator** and run:
+Setup is split into three scripts so identity and each transport are
+independent: provision the account once, then enable whichever transports you
+want. Inside the Windows VM, open **PowerShell as Administrator**.
+
+### Provision the test account (always required)
 
 ```powershell
 # Set the password for the pf-test user (use a strong, unique password)
 $env:PREFLIGHT_TEST_WINRM_PASS = 'YourStrongPassword123!'
 
-# Run the bootstrap script directly from the preflight repo
-# (or copy scripts/bootstrap-winrm-vm.ps1 to the VM first)
+# Run directly from the repo (or copy scripts/bootstrap-user-vm.ps1 to the VM first)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+iex ((New-Object System.Net.WebClient).DownloadString(
+  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-user-vm.ps1'
+))
+```
+
+This creates the `pf-test` local admin user and writes the sacrificial
+sentinel, then prints the connection vars (with the password) for your
+`.env.test`. If the VM has no internet access, copy the script over and run
+`.\bootstrap-user-vm.ps1` — you will be prompted for the password.
+
+### Enable WinRM
+
+```powershell
 iex ((New-Object System.Net.WebClient).DownloadString(
   'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-winrm-vm.ps1'
 ))
 ```
 
-If the VM does not have internet access, copy the script to the VM first:
+Enables WinRM over HTTP with Basic auth on port 5985, adds `pf-test` to Remote
+Management Users, and opens the firewall. Secret-free — it reuses the account
+from the provision step.
+
+### Enable SSH-to-Windows
 
 ```powershell
-# On the VM, paste the script contents or run from a local file
-.\bootstrap-winrm-vm.ps1
+iex ((New-Object System.Net.WebClient).DownloadString(
+  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-ssh-vm.ps1'
+))
 ```
 
-When prompted, enter the same password you set above.
-
-The script will:
-
-1. Enable WinRM over HTTP with Basic authentication on port 5985
-2. Create the `pf-test` local user and add it to Administrators
-3. Open the Windows Firewall for inbound WinRM traffic
-4. Write the sacrificial sentinel to the registry
-
-At the end, the script prints instructions for setting the connection vars
-on your dev machine.
+Installs OpenSSH Server, starts `sshd`, and opens the firewall for port 22.
+Preflight authenticates over SSH with password auth by default (the same
+`pf-test` password), so no key generation is required — key auth is optional
+via `PREFLIGHT_TEST_SSH_KEY`.
 
 ## 3. Set The Environment Variables
 
@@ -221,8 +235,8 @@ and `t.Skip` with a clear reason rather than `t.Fatal`.
 | `timeout` | Firewall blocking the port, or VM unreachable |
 | Test skips on CI | Expected — env vars are not set in CI |
 
-Re-run the bootstrap script on the VM if you suspect the WinRM configuration
-has drifted. For a completely fresh start, revert the VM to a snapshot or
+Re-run `bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
+configuration has drifted. For a completely fresh start, revert the VM to a snapshot or
 redeploy the evaluation image.
 
 ## Related Docs

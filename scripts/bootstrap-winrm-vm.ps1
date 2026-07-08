@@ -1,75 +1,38 @@
 <#
 .SYNOPSIS
-    Bootstrap a disposable Windows VM for Preflight WinRM integration testing.
+    Enable the WinRM transport on a Preflight integration test VM.
 .DESCRIPTION
-    Provisions WinRM (HTTP, Basic auth), creates a dedicated pf-test user,
-    opens the firewall, and writes a sacrificial sentinel to the registry
-    so the integration test can verify it is pointing at a safe target.
+    Enables WinRM over HTTP with Basic authentication on port 5985, adds the
+    pf-test account to Remote Management Users, and opens the firewall.
 
-    The WinRM password is read from the env var PREFLIGHT_TEST_WINRM_PASS.
-    If unset, you will be prompted for a password.
-
-    Run this once inside a fresh Windows VM.
+    This script only enables the WinRM transport. It does NOT create the
+    pf-test user or write the sacrificial sentinel - bootstrap-user-vm.ps1 owns
+    those. Run that first (it also prints the .env.test connection vars).
 .LINK
     https://github.com/bluecadet/preflight/docs/how-to/winrm-integration-testing.md
 #>
 
 $ErrorActionPreference = 'Stop'
 
-# ---- Password ----
-$winrmPass = $env:PREFLIGHT_TEST_WINRM_PASS
-if (-not $winrmPass) {
-    $sec = Read-Host -Prompt 'Enter password for pf-test user' -AsSecureString
-    $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
-    $winrmPass = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-}
-
 Write-Host "==> 1. Enabling WinRM over HTTP with Basic auth on port 5985"
 winrm quickconfig -q -force
 winrm set winrm/config/service/Auth "@{Basic=`"true`"}"
 winrm set winrm/config/service "@{AllowUnencrypted=`"true`"}"
 
-Write-Host "==> 2. Creating pf-test user"
-$pw = ConvertTo-SecureString $winrmPass -AsPlainText -Force
-$existing = Get-LocalUser -Name 'pf-test' -ErrorAction SilentlyContinue
-if ($existing) {
-    Write-Host "    pf-test user already exists, resetting password"
-    Set-LocalUser -Name 'pf-test' -Password $pw
+Write-Host "==> 2. Adding pf-test to Remote Management Users"
+if (Get-LocalUser -Name 'pf-test' -ErrorAction SilentlyContinue) {
+    Add-LocalGroupMember -Group 'Remote Management Users' -Member 'pf-test' -ErrorAction SilentlyContinue
 } else {
-    New-LocalUser -Name 'pf-test' -Password $pw -PasswordNeverExpires -AccountNeverExpires
+    Write-Host ""
+    Write-Host "WARNING: the pf-test user does not exist on this VM. Run"
+    Write-Host "bootstrap-user-vm.ps1 first - the WinRM tests reuse that account."
 }
-Add-LocalGroupMember -Group 'Administrators' -Member 'pf-test' -ErrorAction SilentlyContinue
-Add-LocalGroupMember -Group 'Remote Management Users' -Member 'pf-test' -ErrorAction SilentlyContinue
 
 Write-Host "==> 3. Opening firewall rule for WinRM HTTP"
 New-NetFirewallRule -DisplayName 'Preflight WinRM HTTP' `
     -Direction Inbound -Protocol TCP -LocalPort 5985 -Action Allow `
     -Profile Any -ErrorAction SilentlyContinue | Out-Null
 
-Write-Host "==> 4. Writing sacrificial sentinel"
-$sentinelPath = 'HKLM:\SOFTWARE\PreflightTest'
-if (-not (Test-Path $sentinelPath)) {
-    New-Item -Path $sentinelPath -Force | Out-Null
-}
-New-ItemProperty -LiteralPath $sentinelPath -Name 'IsSacrificial' -Value 1 -PropertyType DWord -Force | Out-Null
-
 Write-Host ""
-Write-Host "==============================================================="
-Write-Host " Bootstrap complete.  Add these variables to your .env.test"
-Write-Host " file or export them in your shell:"
-Write-Host "==============================================================="
-Write-Host ""
-$ip = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -and $_.NetAdapter.Status -eq 'Up' }).IPAddress[0].IPAddress
-Write-Host "PREFLIGHT_TEST_WINRM_HOST=$ip"
-Write-Host "PREFLIGHT_TEST_WINRM_PORT=5985"
-Write-Host "PREFLIGHT_TEST_WINRM_USER=pf-test"
-Write-Host "PREFLIGHT_TEST_WINRM_PASS=$winrmPass"
-Write-Host ""
-Write-Host "If OpenSSH Server is running on this VM, add these too:"
-Write-Host "PREFLIGHT_TEST_SSH_HOST=$ip"
-Write-Host "PREFLIGHT_TEST_SSH_PORT=22"
-Write-Host "PREFLIGHT_TEST_SSH_USER=pf-test"
-Write-Host "PREFLIGHT_TEST_SSH_PASS=$winrmPass"
-Write-Host ""
-Write-Host "Then run: cd preflight && go test -v -run TestIntegration_Registry ./internal/target/"
+Write-Host "WinRM enabled on port 5985. Connection vars were printed by"
+Write-Host "bootstrap-user-vm.ps1; reuse the pf-test password."

@@ -161,6 +161,28 @@ New-ItemProperty -Path "HKLM:\SOFTWARE\PreflightTest" `
   -Name IsSacrificial -Value 1 -PropertyType DWord -Force
 ```
 
+To also test the SSH-to-Windows transport on the same VM, enable OpenSSH Server:
+
+```powershell
+# Install and start OpenSSH Server, then open port 22.
+Add-WindowsCapability -Online -Name (Get-WindowsCapability -Online -Name 'OpenSSH.Server*').Name
+Set-Service -Name sshd -StartupType Automatic
+Start-Service sshd
+New-NetFirewallRule -DisplayName "SSH (pf-test)" -Direction Inbound `
+  -Protocol TCP -LocalPort 22 -Action Allow
+```
+
+Three helper scripts under `scripts/` perform this setup, split by concern so
+identity and each transport are independent:
+
+- `bootstrap-user-vm.ps1` — creates the `pf-test` account and the sentinel
+  (owns the password). Run this first.
+- `bootstrap-winrm-vm.ps1` — enables the WinRM transport only.
+- `bootstrap-ssh-vm.ps1` — enables the SSH transport only.
+
+The transport scripts are secret-free and reuse the `pf-test` account from the
+provision step.
+
 ### Configuring the connection
 
 Create a `.env.test` file at the **repo root** (it is git-ignored; never commit it):
