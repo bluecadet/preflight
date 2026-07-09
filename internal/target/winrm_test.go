@@ -225,6 +225,32 @@ func TestBuildWindowsCredentialRunnerPassesUserToPrincipal(t *testing.T) {
 	}
 }
 
+func TestBuildWindowsCredentialRunnerPrependsVarsBeforeEmbeddedScript(t *testing.T) {
+	if strings.TrimSpace(becomeWindowsTaskScript) == "" {
+		t.Fatalf("expected becomeWindowsTaskScript to be non-empty")
+	}
+	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
+		User:     "kiosk",
+		Password: "secret",
+	})
+	if err != nil {
+		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
+	}
+	bodyIndex := strings.Index(script, becomeWindowsTaskScript)
+	if bodyIndex < 0 {
+		t.Fatalf("expected generated script to contain the embedded task script verbatim, got:\n%s", script)
+	}
+	for _, want := range []string{"$becomeUser", "$becomePassword", "$payload", "$tempRoot"} {
+		varIndex := strings.Index(script, want+" =")
+		if varIndex < 0 {
+			t.Fatalf("expected generated script to declare %s, got:\n%s", want, script)
+		}
+		if varIndex >= bodyIndex {
+			t.Fatalf("expected %s declaration to precede the embedded task script body", want)
+		}
+	}
+}
+
 func TestScheduledTaskScriptsCreateFoldersAndUsePrincipals(t *testing.T) {
 	if !strings.Contains(scheduledTaskApplyScript, "Ensure-TaskFolder $path") {
 		t.Fatalf("expected scheduled task apply script to create folders, got %q", scheduledTaskApplyScript)
