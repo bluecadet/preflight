@@ -2,13 +2,38 @@ package targeting_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/bluecadet/preflight/internal/inventory"
+	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/targeting"
 )
+
+// fakeSecretProvider is a minimal secrets.Provider backed by an in-memory
+// map, used to exercise secret resolution without touching age/repo-backed
+// providers.
+type fakeSecretProvider struct {
+	values map[string]string
+}
+
+func (p *fakeSecretProvider) Resolve(_ context.Context, name string) ([]byte, error) {
+	v, ok := p.values[name]
+	if !ok {
+		return nil, fmt.Errorf("fakeSecretProvider: no such secret %q", name)
+	}
+	return []byte(v), nil
+}
+
+func (p *fakeSecretProvider) List() []string {
+	names := make([]string, 0, len(p.values))
+	for name := range p.values {
+		names = append(names, name)
+	}
+	return names
+}
 
 func TestBuildTargetSSH_PassesHostKeyFields(t *testing.T) {
 	data := `
@@ -166,6 +191,146 @@ hosts:
 	}
 	if got, want := sshTgt.Config().PrivateKeyPassphrase, "s3cret-passphrase"; got != want {
 		t.Errorf("SSHConfig.PrivateKeyPassphrase: got %q, want %q", got, want)
+	}
+}
+
+func TestBuildTargetSSH_PassesJumpFields(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      port: 2222
+      username: jumpuser
+      password: bastion-pass
+      private_key: bastion-key
+      private_key_passphrase: bastion-key-pass
+      known_hosts_file: /home/user/.ssh/jump_known_hosts
+      host_key_policy: strict
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	jump := sshTgt.Config().Jump
+	if jump == nil {
+		t.Fatal("expected SSHConfig.Jump to be populated")
+	}
+	if jump.Host != "bastion.example.com" {
+		t.Errorf("Jump.Host: got %q, want %q", jump.Host, "bastion.example.com")
+	}
+	if jump.Port != 2222 {
+		t.Errorf("Jump.Port: got %d, want 2222", jump.Port)
+	}
+	if jump.Username != "jumpuser" {
+		t.Errorf("Jump.Username: got %q, want %q", jump.Username, "jumpuser")
+	}
+	if jump.Password != "bastion-pass" {
+		t.Errorf("Jump.Password: got %q, want %q", jump.Password, "bastion-pass")
+	}
+	if jump.PrivateKey != "bastion-key" {
+		t.Errorf("Jump.PrivateKey: got %q, want %q", jump.PrivateKey, "bastion-key")
+	}
+	if jump.PrivateKeyPassphrase != "bastion-key-pass" {
+		t.Errorf("Jump.PrivateKeyPassphrase: got %q, want %q", jump.PrivateKeyPassphrase, "bastion-key-pass")
+	}
+	if jump.KnownHostsFile != "/home/user/.ssh/jump_known_hosts" {
+		t.Errorf("Jump.KnownHostsFile: got %q, want %q", jump.KnownHostsFile, "/home/user/.ssh/jump_known_hosts")
+	}
+	if jump.HostKeyPolicy != "strict" {
+		t.Errorf("Jump.HostKeyPolicy: got %q, want %q", jump.HostKeyPolicy, "strict")
+	}
+	if jump.Timeout != 0 {
+		t.Errorf("Jump.Timeout: got %s, want 0 (so the 30s default applies)", jump.Timeout)
+	}
+}
+
+func TestBuildTargetSSH_NoJumpBlockLeavesConfigJumpNil(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	if jump := sshTgt.Config().Jump; jump != nil {
+		t.Errorf("expected SSHConfig.Jump to be nil, got %#v", jump)
+	}
+}
+
+func TestBuildTargetSSH_ResolvesJumpPasswordSecret(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      username: jumpuser
+      password: secret:jump-password
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	provider := &fakeSecretProvider{values: map[string]string{"jump-password": "hunter2"}}
+	resolver := secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: provider,
+	})
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	jump := sshTgt.Config().Jump
+	if jump == nil {
+		t.Fatal("expected SSHConfig.Jump to be populated")
+	}
+	if jump.Password != "hunter2" {
+		t.Errorf("Jump.Password: got %q, want resolved secret %q", jump.Password, "hunter2")
 	}
 }
 

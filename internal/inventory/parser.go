@@ -34,6 +34,7 @@ type rawHost struct {
 	Groups               []string       `yaml:"groups"`
 	Vars                 map[string]any `yaml:"vars"`
 	Timeout              string         `yaml:"timeout"`
+	Jump                 *JumpHost      `yaml:"jump"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -120,6 +121,17 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			return nil, fmt.Errorf("inventory: host %q: invalid host_key_policy %q: must be \"accept-new\", \"strict\", or \"insecure\"", rh.Name, rh.HostKeyPolicy)
 		}
 
+		if rh.Jump != nil {
+			if rh.Jump.Address == "" {
+				return nil, fmt.Errorf("inventory: host %q: jump.address is required", rh.Name)
+			}
+			switch rh.Jump.HostKeyPolicy {
+			case "", "accept-new", "strict", "insecure":
+			default:
+				return nil, fmt.Errorf("inventory: host %q: invalid jump host_key_policy %q: must be \"accept-new\", \"strict\", or \"insecure\"", rh.Name, rh.Jump.HostKeyPolicy)
+			}
+		}
+
 		inv.Hosts = append(inv.Hosts, Host{
 			Name:                 rh.Name,
 			Address:              rh.Address,
@@ -136,6 +148,7 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			Groups:               rh.Groups,
 			Vars:                 rh.Vars,
 			Timeout:              timeout,
+			Jump:                 rh.Jump,
 		})
 	}
 

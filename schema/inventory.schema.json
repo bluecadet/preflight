@@ -108,6 +108,47 @@
         "timeout": {
           "type": "string",
           "description": "Connection/handshake timeout as a Go duration string (e.g. \"30s\", \"1m\") for SSH and WinRM. Defaults to 30s for SSH when unset."
+        },
+        "jump": {
+          "type": "object",
+          "description": "Optional single-hop SSH bastion to dial through before reaching this host. The jump host has its own independent authentication and host-key policy.",
+          "required": ["address"],
+          "additionalProperties": false,
+          "properties": {
+            "address": {
+              "type": "string",
+              "description": "IP address or hostname of the jump host"
+            },
+            "port": {
+              "type": "integer",
+              "description": "Jump host SSH port. Defaults to 22."
+            },
+            "username": {
+              "type": "string",
+              "description": "Username for jump host authentication"
+            },
+            "password": {
+              "type": "string",
+              "description": "Password for jump host authentication"
+            },
+            "private_key": {
+              "type": "string",
+              "description": "SSH private key value, path, or secret reference for the jump host"
+            },
+            "private_key_passphrase": {
+              "type": "string",
+              "description": "Passphrase for an encrypted jump host private_key"
+            },
+            "known_hosts_file": {
+              "type": "string",
+              "description": "Path to a known_hosts file for jump host key verification"
+            },
+            "host_key_policy": {
+              "type": "string",
+              "enum": ["accept-new", "strict", "insecure"],
+              "description": "SSH host-key verification policy for the jump host. accept-new (default) trusts unknown hosts on first connect and pins them; strict requires the jump host to already be in known_hosts_file; insecure disables verification entirely."
+            }
+          }
         }
       }
     }

@@ -73,6 +73,34 @@ inventory:
 | `https` | bool | Use HTTPS for WinRM |
 | `groups` | string[] | Group names applied in order for selector membership and variable precedence |
 | `vars` | object | Host-specific variable overrides |
+| `jump` | object | Optional single-hop SSH bastion to dial through before reaching this host. See [Jump Host Fields](#jump-host-fields) below. |
+
+### Jump Host Fields
+
+Set on a host's `jump` block to reach it through a bastion (an SSH ProxyJump). Only a single hop is supported; the jump host cannot itself specify a `jump` block. The jump host has its own independent authentication and host-key policy — it does not inherit any of these fields from the host it fronts.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `address` | string | Required. Hostname or IP address of the jump host. |
+| `port` | integer | Jump host SSH port. Defaults to 22. |
+| `username` | string | Username for jump host authentication |
+| `password` | string | Password or secret reference, such as `secret:bastion-password` |
+| `private_key` | string | Jump host SSH private key value, path, or secret reference |
+| `private_key_passphrase` | string | Passphrase for an encrypted jump host `private_key`, or a secret reference |
+| `known_hosts_file` | string | Path to a known_hosts file for jump host key verification. Defaults to `known_hosts` under the default SSH key directory when omitted. |
+| `host_key_policy` | enum | SSH host-key verification policy for the jump host: `accept-new` (default), `strict`, or `insecure`. See [SSH Host-Key Verification](../explanation/targets-and-transports.md#ssh-host-key-verification). |
+
+```yaml
+hosts:
+  - name: kiosk-01
+    address: 10.0.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.org
+      username: operator
+      private_key: secret:bastion-key
+```
 
 Hosts must not reference undefined groups. Preflight fails early when a host lists a missing group so group variables cannot be skipped silently.
 

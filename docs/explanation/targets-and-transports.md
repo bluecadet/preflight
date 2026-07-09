@@ -152,6 +152,27 @@ inventory:
 
 `host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.
 
+### Bastion / Jump Hosts
+
+An SSH host can be reached through a single-hop bastion by adding a `jump` block. Preflight dials the jump host first, then tunnels a second SSH handshake to the real target over that connection (an SSH ProxyJump):
+
+```yaml
+inventory:
+  hosts:
+    - name: kiosk-01
+      address: 10.0.0.5
+      transport: ssh
+      username: exhibit
+      jump:
+        address: bastion.example.org
+        username: operator
+        private_key: secret:bastion-key
+```
+
+The jump host has its own independent authentication and host-key policy — it does not inherit `username`, `password`, `private_key`, `known_hosts_file`, or `host_key_policy` from the host it fronts. Only a single hop is supported; a jump host cannot itself specify a `jump` block.
+
+The keepalive request described below rides the target connection only, not the bastion directly. Since the target connection's traffic flows through the bastion's TCP connection, keeping the target alive also keeps the bastion connection alive.
+
 ### Connection Timeout
 
 Both SSH and WinRM targets support a `timeout` host field, a Go duration string such as `30s` or `1m`, that bounds how long the initial connection/handshake may take. SSH defaults to 30s when `timeout` is omitted; WinRM defaults to 60s (the underlying client library's default).

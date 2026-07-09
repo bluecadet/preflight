@@ -84,6 +84,11 @@ func prepareHost(
 		"private_key":            host.PrivateKey,
 		"private_key_passphrase": host.PrivateKeyPassphrase,
 	}
+	if host.Jump != nil {
+		auth["jump_password"] = host.Jump.Password
+		auth["jump_private_key"] = host.Jump.PrivateKey
+		auth["jump_private_key_passphrase"] = host.Jump.PrivateKeyPassphrase
+	}
 	if resolver != nil && resolver.HasProviders() {
 		resolved, err := resolver.ResolveMap(ctx, auth)
 		if err != nil {
@@ -130,7 +135,7 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 		password, _ := auth["password"].(string)
 		privateKey, _ := auth["private_key"].(string)
 		privateKeyPassphrase, _ := auth["private_key_passphrase"].(string)
-		return target.NewSSHTarget(target.SSHConfig{
+		cfg := target.SSHConfig{
 			Host:                 address,
 			Port:                 host.Port,
 			Username:             host.Username,
@@ -141,7 +146,23 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 			HostKeyPolicy:        host.HostKeyPolicy,
 			HostKeyAlgorithms:    host.HostKeyAlgorithms,
 			Timeout:              host.Timeout,
-		}, registry), nil
+		}
+		if host.Jump != nil {
+			jumpPassword, _ := auth["jump_password"].(string)
+			jumpPrivateKey, _ := auth["jump_private_key"].(string)
+			jumpPrivateKeyPassphrase, _ := auth["jump_private_key_passphrase"].(string)
+			cfg.Jump = &target.SSHConfig{
+				Host:                 host.Jump.Address,
+				Port:                 host.Jump.Port,
+				Username:             host.Jump.Username,
+				Password:             jumpPassword,
+				PrivateKey:           jumpPrivateKey,
+				PrivateKeyPassphrase: jumpPrivateKeyPassphrase,
+				KnownHostsFile:       host.Jump.KnownHostsFile,
+				HostKeyPolicy:        host.Jump.HostKeyPolicy,
+			}
+		}
+		return target.NewSSHTarget(cfg, registry), nil
 	default:
 		return nil, fmt.Errorf("resolve host %q: unsupported transport %q", host.Name, host.Transport)
 	}
