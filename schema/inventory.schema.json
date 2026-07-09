@@ -93,7 +93,7 @@
         },
         "known_hosts_file": {
           "type": "string",
-          "description": "Path to a known_hosts file for SSH host key verification"
+          "description": "Path to a known_hosts file for SSH host key verification. Defaults to known_hosts under the default SSH key directory (normally ~/.ssh/known_hosts) when omitted. Verification behavior is governed by host_key_policy (default accept-new)."
         },
         "host_key_policy": {
           "type": "string",
@@ -141,7 +141,7 @@
             },
             "known_hosts_file": {
               "type": "string",
-              "description": "Path to a known_hosts file for jump host key verification"
+              "description": "Path to a known_hosts file for jump host key verification. Defaults to known_hosts under the default SSH key directory (normally ~/.ssh/known_hosts) when omitted. Verification behavior is governed by the jump host_key_policy (default accept-new)."
             },
             "host_key_policy": {
               "type": "string",

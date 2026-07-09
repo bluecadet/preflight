@@ -1275,6 +1275,39 @@ func TestSSHTarget_CloseClosesReconnectedRunner(t *testing.T) {
 	}
 }
 
+// TestIsSSHConnectionError covers each branch isSSHConnectionError checks,
+// including wrapped variants and the deliberately-excluded context errors.
+func TestIsSSHConnectionError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "io.EOF", err: io.EOF, want: true},
+		{name: "wrapped io.EOF", err: fmt.Errorf("read: %w", io.EOF), want: true},
+		{name: "net.OpError", err: &net.OpError{Op: "read", Net: "tcp", Err: errors.New("boom")}, want: true},
+		{name: "wrapped net.OpError", err: fmt.Errorf("run command: %w", &net.OpError{Op: "read", Net: "tcp", Err: errors.New("boom")}), want: true},
+		{name: "ssh.ExitMissingError", err: &ssh.ExitMissingError{}, want: true},
+		{name: "wrapped ssh.ExitMissingError", err: fmt.Errorf("run: %w", &ssh.ExitMissingError{}), want: true},
+		{name: "closed network connection string", err: errors.New("read tcp: use of closed network connection"), want: true},
+		{name: "ssh disconnect string", err: errors.New("ssh: disconnect, reason 2: connection lost"), want: true},
+		{name: "context.Canceled", err: context.Canceled, want: false},
+		{name: "wrapped context.Canceled", err: fmt.Errorf("run: %w", context.Canceled), want: false},
+		{name: "context.DeadlineExceeded", err: context.DeadlineExceeded, want: false},
+		{name: "wrapped context.DeadlineExceeded", err: fmt.Errorf("run: %w", context.DeadlineExceeded), want: false},
+		{name: "unrelated exit status error", err: errors.New("exit status 1"), want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isSSHConnectionError(tc.err); got != tc.want {
+				t.Errorf("isSSHConnectionError(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
 func isEncodedPowerShellCommand(command string) bool {
 	return strings.Contains(command, `"-EncodedCommand"`)
 }
