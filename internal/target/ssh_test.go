@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -689,9 +690,81 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 	}
 }
 
+// closeCloser closes c, ignoring any error, when c is non-nil. Test mirror of
+// the production closeAgent helper, used to release the SSH agent connection
+// buildSSHClientConfig may return.
+func closeCloser(c io.Closer) {
+	if c != nil {
+		_ = c.Close()
+	}
+}
+
+// TestDialSSHClient_HandshakeTimesOut verifies that dialSSHClient bounds the
+// SSH handshake itself, not just the TCP connect. x/crypto/ssh's own
+// ssh.Dial only applies config.Timeout to net.DialTimeout, leaving a
+// stalled-but-connected remote (accepts the TCP connection, never speaks)
+// able to hang the handshake forever; dialSSHConnBounded fixes this with an
+// explicit conn deadline.
+func TestDialSSHClient_HandshakeTimesOut(t *testing.T) {
+	withSSHUserKeyDir(t, t.TempDir())
+
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer l.Close()
+	go func() {
+		for {
+			conn, acceptErr := l.Accept()
+			if acceptErr != nil {
+				return
+			}
+			// Accept but never write or close: simulates a stalled sshd
+			// that never completes the version exchange/handshake. conn is
+			// intentionally left open; l.Close() at test end is sufficient
+			// cleanup for this short-lived test.
+			_ = conn
+		}
+	}()
+
+	host, portStr, err := net.SplitHostPort(l.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("Atoi: %v", err)
+	}
+
+	start := time.Now()
+	_, err = dialSSHClient(SSHConfig{
+		Host:          host,
+		Port:          port,
+		Username:      "user",
+		Password:      "x",
+		Timeout:       200 * time.Millisecond,
+		HostKeyPolicy: HostKeyPolicyInsecure,
+	})
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected a handshake timeout error, got nil")
+	}
+	// Generous upper bound to avoid flakes while still proving the handshake
+	// did not hang indefinitely (it would with unbounded ssh.Dial).
+	if elapsed > 3*time.Second {
+		t.Fatalf("expected the dial to fail quickly, took %s: %v", elapsed, err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "timeout") && !strings.Contains(msg, "deadline") {
+		t.Fatalf("expected error to mention a timeout/deadline, got: %v", err)
+	}
+}
+
 func TestBuildSSHClientConfig_DefaultsTimeoutTo30s(t *testing.T) {
 	withSSHUserKeyDir(t, t.TempDir())
-	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x"})
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x"})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
@@ -703,7 +776,8 @@ func TestBuildSSHClientConfig_DefaultsTimeoutTo30s(t *testing.T) {
 func TestBuildSSHClientConfig_HonorsExplicitTimeout(t *testing.T) {
 	withSSHUserKeyDir(t, t.TempDir())
 	want := 5 * time.Second
-	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x", Timeout: want})
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x", Timeout: want})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
@@ -750,12 +824,13 @@ func TestBuildSSHClientConfig_EncryptedKeyWithCorrectPassphrase(t *testing.T) {
 	withSSHUserKeyDir(t, t.TempDir())
 	keyPEM := generateEncryptedTestKey(t, "s3cret-passphrase")
 
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:                 "host",
 		Username:             "user",
 		PrivateKey:           string(keyPEM),
 		PrivateKeyPassphrase: "s3cret-passphrase",
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
@@ -769,11 +844,12 @@ func TestBuildSSHClientConfig_EncryptedKeyWithoutPassphraseErrors(t *testing.T) 
 	withSSHUserKeyDir(t, t.TempDir())
 	keyPEM := generateEncryptedTestKey(t, "s3cret-passphrase")
 
-	_, err := buildSSHClientConfig(SSHConfig{
+	_, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:       "host",
 		Username:   "user",
 		PrivateKey: string(keyPEM),
 	})
+	defer closeCloser(closer)
 	if err == nil {
 		t.Fatal("expected error for encrypted key with no passphrase")
 	}
@@ -799,7 +875,8 @@ func TestBuildSSHClientConfig_DefaultKeyDiscoveryAddsAuthMethod(t *testing.T) {
 	}
 	withSSHUserKeyDir(t, dir)
 
-	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
@@ -812,7 +889,8 @@ func TestBuildSSHClientConfig_NoAuthMethodsAvailableErrors(t *testing.T) {
 	withSSHAuthSock(t, "")
 	withSSHUserKeyDir(t, t.TempDir())
 
-	_, err := buildSSHClientConfig(SSHConfig{Host: "kiosk-01", Username: "user"})
+	_, closer, err := buildSSHClientConfig(SSHConfig{Host: "kiosk-01", Username: "user"})
+	defer closeCloser(closer)
 	if err == nil {
 		t.Fatal("expected error when no authentication method is available")
 	}
@@ -839,7 +917,8 @@ func TestBuildSSHClientConfig_AgentSocketDeadWithPasswordStillBuilds(t *testing.
 	withSSHAuthSock(t, shortTempSockPath(t, "does-not-exist.sock"))
 	withSSHUserKeyDir(t, t.TempDir())
 
-	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x"})
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x"})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
@@ -876,12 +955,18 @@ func TestBuildSSHClientConfig_AgentAddsAuthMethod(t *testing.T) {
 	withSSHAuthSock(t, sockPath)
 	withSSHUserKeyDir(t, t.TempDir())
 
-	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
 	}
 	if len(cfg.Auth) != 1 {
 		t.Fatalf("expected 1 auth method (agent), got %d", len(cfg.Auth))
+	}
+	if closer == nil {
+		t.Fatal("expected a non-nil closer for the dialed agent connection")
+	}
+	if err := closer.Close(); err != nil {
+		t.Fatalf("closer.Close() returned unexpected error: %v", err)
 	}
 }
 
@@ -889,7 +974,8 @@ func TestBuildSSHClientConfig_AgentOnlyCandidateSurfacesDialError(t *testing.T) 
 	withSSHAuthSock(t, shortTempSockPath(t, "does-not-exist.sock"))
 	withSSHUserKeyDir(t, t.TempDir())
 
-	_, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	_, closer, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	defer closeCloser(closer)
 	if err == nil {
 		t.Fatal("expected error when the agent is the only auth candidate and dialing fails")
 	}

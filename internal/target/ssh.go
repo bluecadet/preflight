@@ -57,17 +57,21 @@ type SSHConfig struct {
 	// host-key algorithm list is used. This field applies regardless of
 	// HostKeyPolicy.
 	HostKeyAlgorithms []string
-	// Timeout is the connection/handshake timeout for ssh.Dial. Zero means
+	// Timeout bounds both the TCP connect and the SSH handshake. Zero means
 	// the 30s default (defaultSSHTimeout) is used.
 	Timeout time.Duration
 	// Jump, when set, configures a single-hop SSH bastion (a ProxyJump) to
 	// dial through before reaching Host. Only connection-relevant fields on
 	// the jump config are used: Host, Port, Username, the auth fields
 	// (Password, PrivateKey, PrivateKeyPassphrase), the host-key fields
-	// (KnownHostsFile, HostKeyPolicy, HostKeyAlgorithms), and Timeout. The
-	// jump host has its own independent auth and host-key policy; it does
-	// not inherit anything from the target config it fronts. Jump.Jump must
-	// be nil — nested (multi-hop) bastions are not supported.
+	// (KnownHostsFile, HostKeyPolicy, HostKeyAlgorithms), and Timeout — these
+	// are honored when set programmatically, but the inventory `jump` block
+	// does not currently expose timeout or host_key_algorithms, so the 30s
+	// default timeout (defaultSSHTimeout) applies to the bastion hop for
+	// inventory-configured jump hosts. The jump host has its own independent
+	// auth and host-key policy; it does not inherit anything from the target
+	// config it fronts. Jump.Jump must be nil — nested (multi-hop) bastions
+	// are not supported.
 	Jump *SSHConfig
 }
 
@@ -110,19 +114,28 @@ var defaultSSHKeyFiles = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
 // applying the default connection/handshake timeout when Timeout is unset.
 //
 // Auth methods are tried in this order: explicit private key, SSH agent,
-// default keys discovered under ~/.ssh, then password.
-func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
+// default keys discovered under ~/.ssh, then password. Default keys are only
+// offered when neither an explicit PrivateKey nor a Password is configured —
+// an explicit credential is treated as authoritative.
+//
+// The returned io.Closer, when non-nil, is the SSH agent connection dialed
+// while resolving auth methods. Callers must close it once the handshake
+// that uses this ClientConfig has completed (success or failure); the agent
+// is not needed afterward. It is returned even when buildSSHClientConfig
+// itself returns a non-nil error, since the agent may already have been
+// dialed by that point.
+func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, io.Closer, error) {
 	authMethods := make([]ssh.AuthMethod, 0, 4)
 
 	if cfg.PrivateKey != "" {
 		signer, err := parseSSHPrivateKey(cfg.PrivateKey, cfg.PrivateKeyPassphrase)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
-	agentMethod, agentErr := sshAgentAuthMethod()
+	agentMethod, agentCloser, agentErr := sshAgentAuthMethod()
 	if agentMethod != nil {
 		authMethods = append(authMethods, agentMethod)
 	}
@@ -139,14 +152,14 @@ func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 
 	if len(authMethods) == 0 {
 		if agentErr != nil {
-			return nil, fmt.Errorf("ssh: no authentication method available for host %s: %w", cfg.Host, agentErr)
+			return nil, agentCloser, fmt.Errorf("ssh: no authentication method available for host %s: %w", cfg.Host, agentErr)
 		}
-		return nil, fmt.Errorf("ssh: no authentication method available for host %s: set password, private_key, or make an SSH agent/default key available", cfg.Host)
+		return nil, agentCloser, fmt.Errorf("ssh: no authentication method available for host %s: set password, private_key, or make an SSH agent/default key available", cfg.Host)
 	}
 
 	hostKeyCallback, err := buildHostKeyCallback(cfg)
 	if err != nil {
-		return nil, err
+		return nil, agentCloser, err
 	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
@@ -158,7 +171,7 @@ func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 		HostKeyCallback:   hostKeyCallback,
 		HostKeyAlgorithms: cfg.HostKeyAlgorithms,
 		Timeout:           timeout,
-	}, nil
+	}, agentCloser, nil
 }
 
 // buildHostKeyCallback constructs the ssh.HostKeyCallback for cfg according
@@ -176,7 +189,11 @@ func buildHostKeyCallback(cfg SSHConfig) (ssh.HostKeyCallback, error) {
 
 	path := cfg.KnownHostsFile
 	if path == "" {
-		path = filepath.Join(sshUserKeyDir(), "known_hosts")
+		dir := sshUserKeyDir()
+		if dir == "" {
+			return nil, errors.New("ssh: cannot determine home directory for default known_hosts file; set known_hosts_file or host_key_policy: insecure")
+		}
+		path = filepath.Join(dir, "known_hosts")
 	}
 
 	switch policy {
@@ -312,24 +329,23 @@ func parseSSHKeyBytes(data []byte, passphrase string) (ssh.Signer, error) {
 }
 
 // sshAgentAuthMethod dials the SSH agent at sshAuthSockEnv (when set) and
-// returns an ssh.AuthMethod backed by it. It returns (nil, nil) when
-// SSH_AUTH_SOCK is unset, and (nil, err) when the agent is configured but
-// the dial fails.
+// returns an ssh.AuthMethod backed by it, along with the dialed connection
+// as an io.Closer. It returns (nil, nil, nil) when SSH_AUTH_SOCK is unset,
+// and (nil, nil, err) when the agent is configured but the dial fails.
 //
-// The agent connection is dialed once here and kept open for the lifetime
-// of the process; it is a lightweight unix socket and callers do not need
-// to close it explicitly.
-func sshAgentAuthMethod() (ssh.AuthMethod, error) {
+// The agent connection is dialed fresh on every call; the caller owns it and
+// must close it once it is done with the handshake that may use it.
+func sshAgentAuthMethod() (ssh.AuthMethod, io.Closer, error) {
 	sockPath := sshAuthSockEnv()
 	if sockPath == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	conn, err := net.Dial("unix", sockPath)
 	if err != nil {
-		return nil, fmt.Errorf("connect to SSH agent at %s: %w", sockPath, err)
+		return nil, nil, fmt.Errorf("connect to SSH agent at %s: %w", sockPath, err)
 	}
 	agentClient := agent.NewClient(conn)
-	return ssh.PublicKeysCallback(agentClient.Signers), nil
+	return ssh.PublicKeysCallback(agentClient.Signers), conn, nil
 }
 
 // defaultSSHSigners looks for id_ed25519, id_ecdsa, and id_rsa (in that
@@ -368,13 +384,17 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 }
 
 // dialSSHClient builds an *ssh.ClientConfig from cfg and dials cfg's
-// Host:Port directly (defaulting the port to 22 when unset).
+// Host:Port directly (defaulting the port to 22 when unset), bounding both
+// the TCP connect and the SSH handshake by the config's effective timeout.
 func dialSSHClient(cfg SSHConfig) (*ssh.Client, error) {
-	clientConfig, err := buildSSHClientConfig(cfg)
+	clientConfig, agentCloser, err := buildSSHClientConfig(cfg)
 	if err != nil {
+		closeAgent(agentCloser)
 		return nil, err
 	}
-	return ssh.Dial("tcp", sshAddr(cfg), clientConfig)
+	client, err := dialSSHClientBounded(sshAddr(cfg), clientConfig, clientConfig.Timeout)
+	closeAgent(agentCloser)
+	return client, err
 }
 
 // sshAddr formats cfg's Host:Port as a dial address, defaulting Port to 22
@@ -387,12 +407,111 @@ func sshAddr(cfg SSHConfig) string {
 	return fmt.Sprintf("%s:%d", cfg.Host, port)
 }
 
+// closeAgent closes c, ignoring any error, when c is non-nil. It releases
+// the SSH agent connection returned by buildSSHClientConfig once a handshake
+// that may have used it has completed (successfully or not); the agent is
+// not needed afterward.
+func closeAgent(c io.Closer) {
+	if c != nil {
+		_ = c.Close()
+	}
+}
+
+// dialSSHConnBounded dials addr over TCP and performs the SSH handshake,
+// bounding both phases by timeout.
+//
+// This works around a gap in x/crypto/ssh's own ssh.Dial: it applies
+// config.Timeout only to the net.DialTimeout call, leaving the handshake
+// itself (ssh.NewClientConn) completely unbounded. A remote that accepts the
+// TCP connection but never speaks (or stalls mid-handshake) would otherwise
+// hang ssh.Dial forever. Here, the TCP conn's own deadline is used to bound
+// the handshake too, then cleared before the conn is handed off to the
+// caller for normal use.
+func dialSSHConnBounded(addr string, config *ssh.ClientConfig, timeout time.Duration) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	conn, err := net.DialTimeout("tcp", addr, timeout)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
+		_ = conn.Close()
+		return nil, nil, nil, err
+	}
+	sshConn, chans, reqs, err := ssh.NewClientConn(conn, addr, config)
+	if err != nil {
+		// ssh.NewClientConn closes conn itself on handshake failure; closing
+		// it again here would be a double close.
+		return nil, nil, nil, err
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		_ = sshConn.Close()
+		return nil, nil, nil, err
+	}
+	return sshConn, chans, reqs, nil
+}
+
+// dialSSHClientBounded dials addr and completes an SSH handshake using
+// config, wrapping the result as an *ssh.Client. Both phases are bounded by
+// timeout; see dialSSHConnBounded.
+func dialSSHClientBounded(addr string, config *ssh.ClientConfig, timeout time.Duration) (*ssh.Client, error) {
+	sshConn, chans, reqs, err := dialSSHConnBounded(addr, config, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return ssh.NewClient(sshConn, chans, reqs), nil
+}
+
+// dialSSHViaBastionBounded opens a channel to targetAddr through
+// bastionClient and performs the second SSH handshake, bounded by timeout.
+//
+// Unlike the first hop, the net.Conn returned by (*ssh.Client).Dial (an
+// in-tunnel channel conn) does not support SetDeadline — it always returns
+// an error from SetDeadline — so dialSSHConnBounded's deadline technique
+// cannot be used here. Instead, the channel-open and handshake run in a
+// goroutine that reports its result on a buffered channel, raced against a
+// timer. On timeout, bastionClient is closed: this tears down the tunneled
+// channel out from under the goroutine's blocked Dial/handshake call, so it
+// returns (with an error) instead of leaking forever, even though this
+// function has already returned.
+func dialSSHViaBastionBounded(bastionClient *ssh.Client, targetAddr string, config *ssh.ClientConfig, bastionAddr string, timeout time.Duration) (*ssh.Client, error) {
+	type dialResult struct {
+		client *ssh.Client
+		err    error
+	}
+	done := make(chan dialResult, 1)
+
+	go func() {
+		conn, err := bastionClient.Dial("tcp", targetAddr)
+		if err != nil {
+			done <- dialResult{err: fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)}
+			return
+		}
+		sshConn, chans, reqs, err := ssh.NewClientConn(conn, targetAddr, config)
+		if err != nil {
+			// ssh.NewClientConn closes conn itself on handshake failure.
+			done <- dialResult{err: fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)}
+			return
+		}
+		done <- dialResult{client: ssh.NewClient(sshConn, chans, reqs)}
+	}()
+
+	select {
+	case r := <-done:
+		return r.client, r.err
+	case <-time.After(timeout):
+		_ = bastionClient.Close()
+		return nil, fmt.Errorf("ssh: dial target %s via jump host %s: timeout after %s", targetAddr, bastionAddr, timeout)
+	}
+}
+
 // dialSSHRunnerViaJump dials cfg.Host through the single-hop bastion
 // described by cfg.Jump (an SSH ProxyJump): it connects to the jump host
 // first, then tunnels a second SSH handshake to the real target over that
 // connection. The bastion and target each use their own, independent
 // SSHConfig (auth, host-key policy, timeout) — the target does not inherit
-// anything from the jump host's configuration.
+// anything from the jump host's configuration. Both hops are bounded: the
+// bastion hop by dialSSHClientBounded (TCP connect + handshake), and the
+// target hop by dialSSHViaBastionBounded (channel-open + handshake, since
+// the tunneled channel conn cannot use SetDeadline directly).
 func dialSSHRunnerViaJump(cfg SSHConfig) (sshRunner, error) {
 	jumpCfg := *cfg.Jump
 	if jumpCfg.Jump != nil {
@@ -402,34 +521,32 @@ func dialSSHRunnerViaJump(cfg SSHConfig) (sshRunner, error) {
 	bastionAddr := sshAddr(jumpCfg)
 	targetAddr := sshAddr(cfg)
 
-	bastionClientConfig, err := buildSSHClientConfig(jumpCfg)
+	bastionClientConfig, bastionAgentCloser, err := buildSSHClientConfig(jumpCfg)
 	if err != nil {
+		closeAgent(bastionAgentCloser)
 		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
 	}
-	targetClientConfig, err := buildSSHClientConfig(cfg)
+	targetClientConfig, targetAgentCloser, err := buildSSHClientConfig(cfg)
 	if err != nil {
+		closeAgent(bastionAgentCloser)
+		closeAgent(targetAgentCloser)
 		return nil, err
 	}
 
-	bastionClient, err := ssh.Dial("tcp", bastionAddr, bastionClientConfig)
+	bastionClient, err := dialSSHClientBounded(bastionAddr, bastionClientConfig, bastionClientConfig.Timeout)
+	closeAgent(bastionAgentCloser)
 	if err != nil {
+		closeAgent(targetAgentCloser)
 		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
 	}
 
-	conn, err := bastionClient.Dial("tcp", targetAddr)
+	targetClient, err := dialSSHViaBastionBounded(bastionClient, targetAddr, targetClientConfig, bastionAddr, targetClientConfig.Timeout)
+	closeAgent(targetAgentCloser)
 	if err != nil {
 		_ = bastionClient.Close()
-		return nil, fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)
+		return nil, err
 	}
 
-	clientConn, chans, reqs, err := ssh.NewClientConn(conn, targetAddr, targetClientConfig)
-	if err != nil {
-		_ = conn.Close()
-		_ = bastionClient.Close()
-		return nil, fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)
-	}
-
-	targetClient := ssh.NewClient(clientConn, chans, reqs)
 	return newSSHClientRunner(targetClient, bastionClient), nil
 }
 
