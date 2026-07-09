@@ -5,7 +5,7 @@ name: app-deploy
 Targets:
   app-01 (winrm • 192.168.1.10)
   app-02 (ssh • 192.168.1.20)
-x install .NET runtime                                                      0.0s
+[app-01] x install .NET runtime                                             0.0s
   ERROR: DISM failure: 0x800f0954
   output:
     DISM.exe /Online /Add-Capability

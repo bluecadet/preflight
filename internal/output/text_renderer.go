@@ -147,6 +147,9 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	delete(r.activeTasks, key)
 
 	left := statusGlyph("ok", r.projection.IsCheckMode()) + " " + e.TaskName
+	if r.shouldShowHostLabels() && e.Target != "" {
+		left = "[" + r.displayTarget(e.Target) + "] " + left
+	}
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -166,6 +169,9 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	delete(r.activeTasks, key)
 
 	left := statusGlyph("changed", r.projection.IsCheckMode()) + " " + e.TaskName
+	if r.shouldShowHostLabels() && e.Target != "" {
+		left = "[" + r.displayTarget(e.Target) + "] " + left
+	}
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -184,6 +190,9 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	delete(r.activeTasks, key)
 
 	left := statusGlyph("skipped", r.projection.IsCheckMode()) + " " + e.TaskName
+	if r.shouldShowHostLabels() && e.Target != "" {
+		left = "[" + r.displayTarget(e.Target) + "] " + left
+	}
 	r.writeLine(padLine(left, "", lineWidth))
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
@@ -198,6 +207,9 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	delete(r.activeTasks, key)
 
 	left := statusGlyph("failed", r.projection.IsCheckMode()) + " " + e.TaskName
+	if r.shouldShowHostLabels() && e.Target != "" {
+		left = "[" + r.displayTarget(e.Target) + "] " + left
+	}
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -409,9 +421,14 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 	if r.projection.FailedCount > 0 {
 		r.writeLine("")
 		r.writeLine("Needs attention")
+		showTarget := r.shouldShowHostLabels()
 		for _, failed := range r.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
+			if showTarget {
+				r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
+			} else {
+				r.writeLine("  " + path)
+			}
 		}
 		if r.projection.RunDir != "" {
 			r.writeLine("  Run directory: " + r.projection.RunDir)

@@ -375,6 +375,7 @@ func (m tuiModel) renderFinalSummary() string {
 	b.WriteString(tsRow(overallIcon, S.Bold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), S.Elapsed.Render(formatElapsed(totalElapsed))))
 	b.WriteByte('\n')
 
+	// Task outcome tallies live in the recap.
 	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
 		{ok: m.projection.OkCount, changed: m.projection.ChangedCount, failed: m.projection.FailedCount, skipped: m.projection.SkippedCount},
 	})
@@ -383,9 +384,14 @@ func (m tuiModel) renderFinalSummary() string {
 	if m.projection.FailedCount > 0 {
 		b.WriteByte('\n')
 		b.WriteString("Needs attention\n")
+		showTarget := m.projection.ShouldShowHostLabels()
 		for _, failed := range m.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			b.WriteString("  [" + m.projection.DisplayTarget(failed.target) + "] " + path + "\n")
+			if showTarget {
+				b.WriteString("  [" + m.projection.DisplayTarget(failed.target) + "] " + path + "\n")
+			} else {
+				b.WriteString("  " + path + "\n")
+			}
 		}
 		if m.projection.RunDir != "" {
 			b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
@@ -402,43 +408,20 @@ func (m tuiModel) renderFooter(runningCount int) string {
 	if runningCount == 0 && m.projection.Total() == 0 {
 		return ""
 	}
-	done, failed := m.projection.TargetCounts()
-	waiting := 0
-	if len(m.projection.Targets) > 0 {
-		waiting = max(len(m.projection.Targets)-done-failed-runningCount, 0)
-	}
-	// Single-target footer: no target line (target is promoted to header).
-	// Multi-target footer shows target progression.
-	line1 := fmt.Sprintf(
-		"%s %s   Phase %s",
-		titleRunMode(m.projection.Mode),
-		formatElapsed(m.projection.Elapsed()),
-		titleRunMode(m.projection.Mode),
-	)
-	switch {
-	case len(m.projection.Targets) > 1:
-		line1 += fmt.Sprintf("   Targets %d   Done %d   Running %d   Waiting %d   Failed %d", len(m.projection.Targets), done, runningCount, waiting, failed)
-	default:
-		line1 += fmt.Sprintf("   Running %d", runningCount)
+
+	// Multi-target: one line showing target progress only.
+	if len(m.projection.Targets) > 1 {
+		done, failed := m.projection.TargetCounts()
+		waiting := max(len(m.projection.Targets)-done-failed-runningCount, 0)
+		return fmt.Sprintf("targets: %d done · %d run · %d wait · %d fail", done, runningCount, waiting, failed)
 	}
 
-	changedLabel := "Changed"
-	if m.projection.IsCheckMode() {
-		changedLabel = "Would change"
-	}
-	line2 := fmt.Sprintf(
-		"Tasks %d done   OK %d   %s %d   Skipped %d   Failed %d",
-		m.projection.Total(),
-		m.projection.OkCount,
-		changedLabel,
-		m.projection.ChangedCount,
-		m.projection.SkippedCount,
-		m.projection.FailedCount,
-	)
+	// Single-target: near-empty footer (mode, elapsed, warnings).
+	line := fmt.Sprintf("%s %s", titleRunMode(m.projection.Mode), formatElapsed(m.projection.Elapsed()))
 	if m.projection.WarningCount > 0 {
-		line2 += fmt.Sprintf("   Warnings %d", m.projection.WarningCount)
+		line += fmt.Sprintf("   Warnings %d", m.projection.WarningCount)
 	}
-	return line1 + "\n" + line2
+	return line
 }
 
 func (m tuiModel) widthWithFallback() int {

@@ -1,5 +1,5 @@
 ◫ State Diff
-──────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────
   Playbook      kiosk-provision
   Target        kiosk-01
   State file    /var/lib/preflight/kiosk-provision.json
