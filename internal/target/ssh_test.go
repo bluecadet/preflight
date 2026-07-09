@@ -1293,6 +1293,53 @@ func TestSSHTarget_CloseClosesReconnectedRunner(t *testing.T) {
 	}
 }
 
+// TestSSHTarget_ClosedTargetRejectsReconnect covers the resurrection bug
+// where Close() nils t.runner but reconnect (invoked by run's one-shot
+// retry when an in-flight call races Close and fails with a
+// connection-level error) would otherwise see the nil runner and happily
+// dial and cache a fresh one, resurrecting a connection on a target that
+// nothing will ever close again. Once Close has run, both clientRunner and
+// reconnect must refuse to dial and report the target as closed instead.
+func TestSSHTarget_ClosedTargetRejectsReconnect(t *testing.T) {
+	failed := &fakeSSHConnCloser{fakeSSHRunner: fakeSSHRunner{
+		run: func(context.Context, string, []byte) (string, string, int, error) {
+			return "", "", 0, io.EOF
+		},
+	}}
+
+	var factoryCalls atomic.Int64
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runnerFactory = func(SSHConfig) (sshRunner, error) {
+		factoryCalls.Add(1)
+		return &fakeSSHConnCloser{}, nil
+	}
+
+	if _, err := tgt.clientRunner(); err != nil {
+		t.Fatalf("clientRunner returned error: %v", err)
+	}
+	if factoryCalls.Load() != 1 {
+		t.Fatalf("expected exactly one dial before Close, got %d", factoryCalls.Load())
+	}
+
+	if err := tgt.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	// Simulates a call that already held the (now-closed) runner racing
+	// Close(): its Run fails with a connection-level error, driving run's
+	// one-shot reconnect against the now-closed target.
+	if _, err := tgt.reconnect(failed); !errors.Is(err, errSSHTargetClosed) {
+		t.Fatalf("expected reconnect to reject a closed target, got: %v", err)
+	}
+	if factoryCalls.Load() != 1 {
+		t.Fatalf("expected no additional dial after Close, got %d total dials", factoryCalls.Load())
+	}
+
+	if _, err := tgt.clientRunner(); !errors.Is(err, errSSHTargetClosed) {
+		t.Fatalf("expected clientRunner to reject use after Close, got: %v", err)
+	}
+}
+
 // TestIsSSHConnectionError covers each branch isSSHConnectionError checks,
 // including wrapped variants and the deliberately-excluded context errors.
 func TestIsSSHConnectionError(t *testing.T) {

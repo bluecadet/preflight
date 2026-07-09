@@ -546,9 +546,15 @@ type SSHTarget struct {
 	runnerFactory sshRunnerFactory
 	mu            sync.Mutex
 	runner        sshRunner
+	closed        bool
 	runtimeMu     sync.Mutex
 	runtime       sshRuntime
 }
+
+// errSSHTargetClosed is returned by clientRunner and reconnect once Close
+// has run, so that a connection-level error on a closed target's in-flight
+// call cannot resurrect a runner that nothing will ever close again.
+var errSSHTargetClosed = errors.New("ssh: target is closed")
 
 func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
 	return &SSHTarget{
@@ -657,6 +663,7 @@ func (t *SSHTarget) Close() error {
 	t.mu.Lock()
 	runner := t.runner
 	t.runner = nil
+	t.closed = true
 	t.mu.Unlock()
 
 	var err error
@@ -672,6 +679,9 @@ func (t *SSHTarget) Close() error {
 func (t *SSHTarget) clientRunner() (sshRunner, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.closed {
+		return nil, errSSHTargetClosed
+	}
 	if t.runner != nil {
 		return t.runner, nil
 	}
@@ -744,6 +754,13 @@ func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (stri
 func (t *SSHTarget) reconnect(failed sshRunner) (sshRunner, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+
+	if t.closed {
+		if closer, ok := failed.(sshCloser); ok {
+			_ = closer.Close()
+		}
+		return nil, errSSHTargetClosed
+	}
 
 	if t.runner != failed && t.runner != nil {
 		// Another goroutine already reconnected; reuse its runner.
