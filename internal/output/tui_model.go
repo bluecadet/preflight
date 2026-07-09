@@ -145,6 +145,18 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	if d.PlaybookPath != "" && d.PlaybookName != "" {
 		lines = append(lines, "name: "+d.PlaybookName)
 	}
+	switch len(d.Targets) {
+	case 1:
+		lines = append(lines, "target: "+d.Targets[0])
+	default:
+		if len(d.Targets) > 1 {
+			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
+			if len(d.Targets) <= 5 {
+				lines = append(lines, "  "+strings.Join(d.Targets, ", "))
+			}
+		}
+	}
+	lines = append(lines, m.renderDivider())
 	return tea.Println(strings.Join(lines, "\n") + "\n")
 }
 
@@ -223,27 +235,27 @@ func (m tuiModel) renderCard(d CardDescriptor) tea.Cmd {
 		}
 	case "plan":
 		if e, ok := d.Event.(PlanEvent); ok {
-			block = renderPlanCard(e)
+			block = renderPlanCard(e, m.width)
 		}
 	case "state":
 		if e, ok := d.Event.(StateEvent); ok {
-			block = renderStateCard(e)
+			block = renderStateCard(e, m.width)
 		}
 	case "validate":
 		if e, ok := d.Event.(ValidationEvent); ok {
-			block = renderValidationCard(e)
+			block = renderValidationCard(e, m.width)
 		}
 	case "action_catalog":
 		if e, ok := d.Event.(ActionCatalogEvent); ok {
-			block = renderActionCatalogCard(e)
+			block = renderActionCatalogCard(e, m.width)
 		}
 	case "action_info":
 		if e, ok := d.Event.(ActionInfoEvent); ok {
-			block = renderActionInfoCard(e)
+			block = renderActionInfoCard(e, m.width)
 		}
 	case "action_fetch":
 		if e, ok := d.Event.(ActionFetchEvent); ok {
-			block = renderActionFetchCard(e)
+			block = renderActionFetchCard(e, m.width)
 		}
 	}
 	if block == "" {
@@ -350,6 +362,7 @@ func (m tuiModel) renderFinalSummary() string {
 	totalElapsed := m.projection.Elapsed()
 
 	var b strings.Builder
+	b.WriteString(m.renderDivider())
 	b.WriteByte('\n')
 	b.WriteString("Recap\n")
 
@@ -382,7 +395,7 @@ func (m tuiModel) renderFinalSummary() string {
 }
 
 func (m tuiModel) renderDivider() string {
-	return S.Divider.Render(strings.Repeat("─", m.divWidth()))
+	return S.Divider.Render(strings.Repeat("─", m.widthWithFallback()))
 }
 
 func (m tuiModel) renderFooter(runningCount int) string {
@@ -428,11 +441,11 @@ func (m tuiModel) renderFooter(runningCount int) string {
 	return line1 + "\n" + line2
 }
 
-func (m tuiModel) divWidth() int {
+func (m tuiModel) widthWithFallback() int {
 	if m.width <= 0 {
-		return 50
+		return 80
 	}
-	return min(m.width, 50)
+	return m.width
 }
 
 // statusStyle returns the styled glyph for a task outcome based on status.
