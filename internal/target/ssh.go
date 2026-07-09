@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -359,7 +360,9 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 	if err != nil {
 		return nil, err
 	}
-	return &sshClientRunner{client: client}, nil
+	runner := &sshClientRunner{client: client}
+	runner.startKeepalive()
+	return runner, nil
 }
 
 type sshRuntime interface {
@@ -540,12 +543,105 @@ func (t *SSHTarget) runtimeForUse(ctx context.Context) (sshRuntime, error) {
 	return rt, nil
 }
 
+// run is the single funnel all SSH commands go through. On a connection-level
+// failure (dropped socket, closed channel, etc.) it drops the cached runner,
+// rebuilds it via runnerFactory, and retries the command exactly once. A
+// second failure (either the reconnect dial or the retried command) is
+// returned as-is; run never loops more than one retry.
+//
+// This also fixes up sshWindowsPowerShellRuntime's cached psSession
+// indirectly: getOrCreatePSSession only ever returns the cached session
+// without touching t.runner, so a psSession left over from a dead connection
+// is never itself reconnected here. Instead, its next use fails with a
+// *psSessionError (write/read on the dead channel), runPSWithFallback resets
+// the session and falls back to per-invocation execution, and that fallback
+// calls t.run — which is exactly this reconnect path. So the persistent PS
+// session is always torn down and rebuilt lazily on top of a working
+// connection, without run needing to know about it directly.
 func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
 	runner, err := t.clientRunner()
 	if err != nil {
 		return "", "", 0, err
 	}
-	return runner.Run(ctx, command, stdin)
+	stdout, stderr, code, err := runner.Run(ctx, command, stdin)
+	if err == nil || !isSSHConnectionError(err) {
+		return stdout, stderr, code, err
+	}
+
+	newRunner, reconnectErr := t.reconnect(runner)
+	if reconnectErr != nil {
+		return stdout, stderr, code, wrapSSHTargetError("reconnect", reconnectErr)
+	}
+	return newRunner.Run(ctx, command, stdin)
+}
+
+// reconnect drops failed (the runner that just errored with a
+// connection-level error) and dials a fresh one via runnerFactory, storing it
+// as the new cached runner. If another goroutine has already replaced
+// t.runner (e.g. it hit the same dead connection concurrently and reconnected
+// first), the already-reconnected runner is reused instead of dialing again.
+//
+// t.mu is held while dialing (matching clientRunner's existing behavior) but
+// is never held while invoking Run, so this cannot deadlock against a
+// concurrent call in flight on the runner.
+func (t *SSHTarget) reconnect(failed sshRunner) (sshRunner, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.runner != failed && t.runner != nil {
+		// Another goroutine already reconnected; reuse its runner.
+		return t.runner, nil
+	}
+
+	if closer, ok := failed.(sshCloser); ok {
+		_ = closer.Close()
+	}
+	t.runner = nil
+
+	if t.runnerFactory == nil {
+		t.runnerFactory = defaultSSHRunnerFactory
+	}
+	runner, err := t.runnerFactory(t.config)
+	if err != nil {
+		return nil, err
+	}
+	t.runner = runner
+	return runner, nil
+}
+
+// isSSHConnectionError reports whether err indicates the underlying SSH
+// transport (TCP socket or SSH channel) has failed, as opposed to a normal
+// command-level failure (non-zero exit, script error). Connection-level
+// errors are eligible for SSHTarget.run's one-shot reconnect-and-retry.
+// context.Canceled and context.DeadlineExceeded are deliberately excluded:
+// a cancelled/expired context is the caller giving up, not a dead
+// connection, and must not trigger a retry.
+func isSSHConnectionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	if errors.Is(err, io.EOF) {
+		return true
+	}
+	var netErr *net.OpError
+	if errors.As(err, &netErr) {
+		return true
+	}
+	var missing *ssh.ExitMissingError
+	if errors.As(err, &missing) {
+		return true
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "use of closed network connection") {
+		return true
+	}
+	if strings.Contains(msg, "ssh: disconnect") {
+		return true
+	}
+	return false
 }
 
 func (t *SSHTarget) detectRuntime(ctx context.Context) (sshRuntime, error) {

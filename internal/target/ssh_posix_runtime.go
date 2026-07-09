@@ -5,8 +5,11 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"os"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf16"
 
 	"golang.org/x/crypto/ssh"
@@ -164,12 +167,78 @@ func shellQuoteExec(cmd string, args []string) string {
 	return strings.Join(parts, " ")
 }
 
-type sshClientRunner struct {
-	client *ssh.Client
+// sshKeepaliveInterval is the interval between keepalive requests sent on an
+// established SSH connection. It is fixed (not user-configurable) and is a
+// package var only so tests can drive the keepalive loop faster than 30s.
+var sshKeepaliveInterval = 30 * time.Second
+
+// sshKeepaliveConn is the minimal surface of *ssh.Client needed to send
+// keepalive requests, extracted so sshKeepaliveLoop can be unit tested with a
+// stub instead of a real network connection.
+type sshKeepaliveConn interface {
+	SendRequest(name string, wantReply bool, payload []byte) (bool, []byte, error)
 }
 
+// sshKeepaliveLoop sends a keepalive@openssh.com global request on conn every
+// interval until stop is closed. Two consecutive failed requests are treated
+// as a dead connection: onRepeatedFailure is invoked (the real caller wires
+// this to close the underlying client, so the next command over the cached
+// runner fails fast and triggers SSHTarget's reconnect path) and the loop
+// exits, since further keepalives on an already-failed connection are
+// pointless.
+func sshKeepaliveLoop(conn sshKeepaliveConn, interval time.Duration, stop <-chan struct{}, onRepeatedFailure func()) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	consecutiveFailures := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			if _, _, err := conn.SendRequest("keepalive@openssh.com", true, nil); err != nil {
+				consecutiveFailures++
+				if consecutiveFailures >= 2 {
+					onRepeatedFailure()
+					return
+				}
+				continue
+			}
+			consecutiveFailures = 0
+		}
+	}
+}
+
+type sshClientRunner struct {
+	client *ssh.Client
+
+	stopKeepalive chan struct{}
+	closeOnce     sync.Once
+	closeErr      error
+}
+
+// startKeepalive launches the keepalive goroutine for this runner's client.
+// It must be called at most once per runner (the factory calls it right
+// after dialing).
+func (r *sshClientRunner) startKeepalive() {
+	r.stopKeepalive = make(chan struct{})
+	go sshKeepaliveLoop(r.client, sshKeepaliveInterval, r.stopKeepalive, func() {
+		slog.Warn("ssh: keepalive failed twice in a row, closing connection")
+		_ = r.Close()
+	})
+}
+
+// Close stops the keepalive goroutine (if running) and closes the underlying
+// client. It is safe to call multiple times, including concurrently from the
+// keepalive goroutine itself when it self-closes after repeated failures.
 func (r *sshClientRunner) Close() error {
-	return r.client.Close()
+	r.closeOnce.Do(func() {
+		if r.stopKeepalive != nil {
+			close(r.stopKeepalive)
+		}
+		r.closeErr = r.client.Close()
+	})
+	return r.closeErr
 }
 
 // NewSession opens a new multiplexed channel on the existing SSH connection.
