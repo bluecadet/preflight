@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 	"unicode/utf16"
 )
 
@@ -675,6 +676,27 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 
 	if got := detectionCount.Load(); got != 1 {
 		t.Fatalf("expected runtime detection exactly once, got %d", got)
+	}
+}
+
+func TestBuildSSHClientConfig_DefaultsTimeoutTo30s(t *testing.T) {
+	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user"})
+	if err != nil {
+		t.Fatalf("buildSSHClientConfig returned error: %v", err)
+	}
+	if cfg.Timeout != defaultSSHTimeout {
+		t.Fatalf("expected default timeout %s, got %s", defaultSSHTimeout, cfg.Timeout)
+	}
+}
+
+func TestBuildSSHClientConfig_HonorsExplicitTimeout(t *testing.T) {
+	want := 5 * time.Second
+	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Timeout: want})
+	if err != nil {
+		t.Fatalf("buildSSHClientConfig returned error: %v", err)
+	}
+	if cfg.Timeout != want {
+		t.Fatalf("expected timeout %s, got %s", want, cfg.Timeout)
 	}
 }
 

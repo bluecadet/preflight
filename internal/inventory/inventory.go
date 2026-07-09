@@ -3,6 +3,7 @@ package inventory
 import (
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/bluecadet/preflight/internal/maputil"
 	"github.com/bluecadet/preflight/internal/target"
@@ -31,6 +32,10 @@ type Host struct {
 	HTTPS             bool           `yaml:"https,omitempty"`
 	Groups            []string       `yaml:"groups,omitempty"`
 	Vars              map[string]any `yaml:"vars,omitempty"`
+	// Timeout is the connection/handshake timeout for SSH and WinRM
+	// transports. Zero means unset, which falls back to each transport's
+	// own default (30s for SSH).
+	Timeout time.Duration `yaml:"timeout,omitempty"`
 }
 
 // Group is optional metadata for hosts that opt into the group by name.

@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"fmt"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -30,6 +31,7 @@ type rawHost struct {
 	HTTPS             bool           `yaml:"https"`
 	Groups            []string       `yaml:"groups"`
 	Vars              map[string]any `yaml:"vars"`
+	Timeout           string         `yaml:"timeout"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -101,6 +103,15 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			}
 		}
 
+		var timeout time.Duration
+		if rh.Timeout != "" {
+			parsed, err := time.ParseDuration(rh.Timeout)
+			if err != nil {
+				return nil, fmt.Errorf("inventory: host %q: invalid timeout %q: %w", rh.Name, rh.Timeout, err)
+			}
+			timeout = parsed
+		}
+
 		inv.Hosts = append(inv.Hosts, Host{
 			Name:              rh.Name,
 			Address:           rh.Address,
@@ -114,6 +125,7 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			HTTPS:             rh.HTTPS,
 			Groups:            rh.Groups,
 			Vars:              rh.Vars,
+			Timeout:           timeout,
 		})
 	}
 

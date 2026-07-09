@@ -7,10 +7,15 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
+
+// defaultSSHTimeout is the connection/handshake timeout used when SSHConfig's
+// Timeout field is left at its zero value.
+const defaultSSHTimeout = 30 * time.Second
 
 type SSHConfig struct {
 	Host       string
@@ -27,6 +32,9 @@ type SSHConfig struct {
 	// host-key algorithm list is used. This field applies regardless of
 	// whether KnownHostsFile is set.
 	HostKeyAlgorithms []string
+	// Timeout is the connection/handshake timeout for ssh.Dial. Zero means
+	// the 30s default (defaultSSHTimeout) is used.
+	Timeout time.Duration
 }
 
 type sshRunner interface {
@@ -43,7 +51,9 @@ type sshSessionCreator interface {
 
 type sshRunnerFactory func(SSHConfig) (sshRunner, error)
 
-var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, error) {
+// buildSSHClientConfig translates an SSHConfig into an ssh.ClientConfig,
+// applying the default connection/handshake timeout when Timeout is unset.
+func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 	authMethods := make([]ssh.AuthMethod, 0, 2)
 	if cfg.Password != "" {
 		authMethods = append(authMethods, ssh.Password(cfg.Password))
@@ -68,11 +78,23 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 		}
 		hostKeyCallback = cb
 	}
-	clientConfig := &ssh.ClientConfig{
+	timeout := cfg.Timeout
+	if timeout == 0 {
+		timeout = defaultSSHTimeout
+	}
+	return &ssh.ClientConfig{
 		User:              cfg.Username,
 		Auth:              authMethods,
 		HostKeyCallback:   hostKeyCallback,
 		HostKeyAlgorithms: cfg.HostKeyAlgorithms,
+		Timeout:           timeout,
+	}, nil
+}
+
+var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, error) {
+	clientConfig, err := buildSSHClientConfig(cfg)
+	if err != nil {
+		return nil, err
 	}
 	if cfg.Port == 0 {
 		cfg.Port = 22

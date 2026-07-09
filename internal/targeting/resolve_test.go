@@ -3,6 +3,7 @@ package targeting_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/target"
@@ -67,6 +68,37 @@ hosts:
 	}
 	if cfg.HostKeyAlgorithms[0] != "ssh-ed25519" || cfg.HostKeyAlgorithms[1] != "ssh-rsa" {
 		t.Errorf("SSHConfig.HostKeyAlgorithms: got %v", cfg.HostKeyAlgorithms)
+	}
+}
+
+func TestBuildTargetSSH_PassesTimeout(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    timeout: 45s
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	if got, want := sshTgt.Config().Timeout, 45*time.Second; got != want {
+		t.Errorf("SSHConfig.Timeout: got %s, want %s", got, want)
 	}
 }
 

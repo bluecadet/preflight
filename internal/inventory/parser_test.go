@@ -3,6 +3,7 @@ package inventory_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bluecadet/preflight/internal/inventory"
 )
@@ -354,6 +355,64 @@ hosts:
 	}
 	if h.HostKeyAlgorithms[0] != "ssh-ed25519" || h.HostKeyAlgorithms[1] != "ssh-rsa" {
 		t.Errorf("unexpected host_key_algorithms: %v", h.HostKeyAlgorithms)
+	}
+}
+
+func TestParseHostTimeout(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    timeout: 45s
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got, want := hosts[0].Timeout, 45*time.Second; got != want {
+		t.Errorf("expected timeout %s, got %s", want, got)
+	}
+}
+
+func TestParseHostTimeout_Absent(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Timeout != 0 {
+		t.Errorf("expected zero timeout when absent, got %s", hosts[0].Timeout)
+	}
+}
+
+func TestParseHostTimeout_Invalid(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    timeout: not-a-duration
+`
+	_, err := inventory.Parse([]byte(data))
+	if err == nil {
+		t.Fatal("expected error for invalid timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), `host "staging-pc-01": invalid timeout "not-a-duration"`) {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

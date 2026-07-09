@@ -123,6 +123,7 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 			Username: host.Username,
 			Password: password,
 			HTTPS:    host.HTTPS,
+			Timeout:  host.Timeout,
 		}), nil
 	case inventory.TransportSSH:
 		password, _ := auth["password"].(string)
@@ -135,6 +136,7 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 			PrivateKey:        privateKey,
 			KnownHostsFile:    host.KnownHostsFile,
 			HostKeyAlgorithms: host.HostKeyAlgorithms,
+			Timeout:           host.Timeout,
 		}, registry), nil
 	default:
 		return nil, fmt.Errorf("resolve host %q: unsupported transport %q", host.Name, host.Transport)

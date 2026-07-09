@@ -67,6 +67,7 @@ inventory:
 | `private_key` | string | SSH private key value, path, or secret reference |
 | `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped. |
 | `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms, such as `[ssh-ed25519, ssh-rsa]`. |
+| `timeout` | duration | Connection/handshake timeout for SSH and WinRM, as a Go duration string such as `30s` or `1m`. Defaults to 30s for SSH when omitted. |
 | `https` | bool | Use HTTPS for WinRM |
 | `groups` | string[] | Group names applied in order for selector membership and variable precedence |
 | `vars` | object | Host-specific variable overrides |

@@ -120,6 +120,19 @@ inventory:
 
 `host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.
 
+### Connection Timeout
+
+Both SSH and WinRM targets support a `timeout` host field, a Go duration string such as `30s` or `1m`, that bounds how long the initial connection/handshake may take. SSH defaults to 30s when `timeout` is omitted; WinRM defaults to 60s (the underlying client library's default).
+
+```yaml
+inventory:
+  hosts:
+    - name: kiosk-01
+      address: 10.0.0.5
+      transport: ssh
+      timeout: 10s
+```
+
 ## Persistent PowerShell Sessions
 
 Remote Windows tasks are slow if every Check and Apply call starts a fresh `powershell.exe` process. PowerShell startup takes 200–500 ms, and on WinRM each invocation also creates and tears down a WinRM shell — a further five HTTP round-trips. A 20-task playbook against a remote Windows host could spend 20 seconds doing nothing but process startup.
