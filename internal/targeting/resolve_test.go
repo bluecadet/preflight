@@ -3,6 +3,7 @@ package targeting_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -331,6 +332,138 @@ hosts:
 	}
 	if jump.Password != "hunter2" {
 		t.Errorf("Jump.Password: got %q, want resolved secret %q", jump.Password, "hunter2")
+	}
+}
+
+func TestBuildTargetSSH_ResolvesJumpPrivateKeyAndPassphraseSecrets(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      username: jumpuser
+      private_key: secret:jump-private-key
+      private_key_passphrase: secret:jump-passphrase
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	provider := &fakeSecretProvider{values: map[string]string{
+		"jump-private-key": "-----BEGIN JUMP KEY-----",
+		"jump-passphrase":  "jump-hunter2",
+	}}
+	resolver := secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: provider,
+	})
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	jump := sshTgt.Config().Jump
+	if jump == nil {
+		t.Fatal("expected SSHConfig.Jump to be populated")
+	}
+	if jump.PrivateKey != "-----BEGIN JUMP KEY-----" {
+		t.Errorf("Jump.PrivateKey: got %q, want resolved secret", jump.PrivateKey)
+	}
+	if jump.PrivateKeyPassphrase != "jump-hunter2" {
+		t.Errorf("Jump.PrivateKeyPassphrase: got %q, want resolved secret", jump.PrivateKeyPassphrase)
+	}
+}
+
+func TestBuildTargetSSH_JumpPlainCredentialsPassThroughResolver(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      username: jumpuser
+      password: plain-pass
+      private_key: plain-key
+      private_key_passphrase: plain-passphrase
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	provider := &fakeSecretProvider{values: map[string]string{}}
+	resolver := secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: provider,
+	})
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	jump := sshTgt.Config().Jump
+	if jump == nil {
+		t.Fatal("expected SSHConfig.Jump to be populated")
+	}
+	if jump.Password != "plain-pass" {
+		t.Errorf("Jump.Password: got %q, want %q", jump.Password, "plain-pass")
+	}
+	if jump.PrivateKey != "plain-key" {
+		t.Errorf("Jump.PrivateKey: got %q, want %q", jump.PrivateKey, "plain-key")
+	}
+	if jump.PrivateKeyPassphrase != "plain-passphrase" {
+		t.Errorf("Jump.PrivateKeyPassphrase: got %q, want %q", jump.PrivateKeyPassphrase, "plain-passphrase")
+	}
+}
+
+func TestBuildTargetSSH_JumpSecretResolveErrorIncludesHostName(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      username: jumpuser
+      password: secret:missing-jump-password
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	provider := &fakeSecretProvider{values: map[string]string{}}
+	resolver := secrets.NewResolver(map[string]secrets.Provider{
+		secrets.DefaultProviderName: provider,
+	})
+
+	_, err = targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	if err == nil {
+		t.Fatal("expected error from unresolved jump secret, got nil")
+	}
+	if got, want := err.Error(), `resolve host "staging-pc-01" jump auth`; !strings.Contains(got, want) {
+		t.Errorf("error %q does not contain %q", got, want)
 	}
 }
 

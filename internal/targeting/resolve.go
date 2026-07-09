@@ -72,6 +72,44 @@ func ResolveLocalHost(registry target.ModuleRegistry, statePath string) Resolved
 	}
 }
 
+// hostAuth is a typed credential set for a single host (or its jump host),
+// resolved through the secrets resolver before it reaches target config.
+type hostAuth struct {
+	password   string
+	privateKey string
+	passphrase string
+}
+
+// resolveAuth resolves any secret references in a. When resolver is nil or
+// has no configured providers, a is returned unchanged.
+func resolveAuth(ctx context.Context, resolver *secrets.Resolver, a hostAuth) (hostAuth, error) {
+	if resolver == nil || !resolver.HasProviders() {
+		return a, nil
+	}
+
+	password, err := resolveSecretString(ctx, resolver, a.password)
+	if err != nil {
+		return hostAuth{}, err
+	}
+	privateKey, err := resolveSecretString(ctx, resolver, a.privateKey)
+	if err != nil {
+		return hostAuth{}, err
+	}
+	passphrase, err := resolveSecretString(ctx, resolver, a.passphrase)
+	if err != nil {
+		return hostAuth{}, err
+	}
+
+	return hostAuth{password: password, privateKey: privateKey, passphrase: passphrase}, nil
+}
+
+func resolveSecretString(ctx context.Context, resolver *secrets.Resolver, s string) (string, error) {
+	if !secrets.IsRef(s) {
+		return s, nil
+	}
+	return resolver.ResolveRef(ctx, s)
+}
+
 func prepareHost(
 	ctx context.Context,
 	host inventory.Host,
@@ -79,25 +117,28 @@ func prepareHost(
 	resolver *secrets.Resolver,
 	statePath string,
 ) (ResolvedHost, error) {
-	auth := map[string]any{
-		"password":               host.Password,
-		"private_key":            host.PrivateKey,
-		"private_key_passphrase": host.PrivateKeyPassphrase,
-	}
-	if host.Jump != nil {
-		auth["jump_password"] = host.Jump.Password
-		auth["jump_private_key"] = host.Jump.PrivateKey
-		auth["jump_private_key_passphrase"] = host.Jump.PrivateKeyPassphrase
-	}
-	if resolver != nil && resolver.HasProviders() {
-		resolved, err := resolver.ResolveMap(ctx, auth)
-		if err != nil {
-			return ResolvedHost{}, fmt.Errorf("resolve host %q auth: %w", host.Name, err)
-		}
-		auth = resolved
+	auth, err := resolveAuth(ctx, resolver, hostAuth{
+		password:   host.Password,
+		privateKey: host.PrivateKey,
+		passphrase: host.PrivateKeyPassphrase,
+	})
+	if err != nil {
+		return ResolvedHost{}, fmt.Errorf("resolve host %q auth: %w", host.Name, err)
 	}
 
-	tgt, err := buildTarget(host, auth, registry)
+	var jumpAuth hostAuth
+	if host.Jump != nil {
+		jumpAuth, err = resolveAuth(ctx, resolver, hostAuth{
+			password:   host.Jump.Password,
+			privateKey: host.Jump.PrivateKey,
+			passphrase: host.Jump.PrivateKeyPassphrase,
+		})
+		if err != nil {
+			return ResolvedHost{}, fmt.Errorf("resolve host %q jump auth: %w", host.Name, err)
+		}
+	}
+
+	tgt, err := buildTarget(host, auth, jumpAuth, registry)
 	if err != nil {
 		return ResolvedHost{}, err
 	}
@@ -112,7 +153,7 @@ func prepareHost(
 	}, nil
 }
 
-func buildTarget(host inventory.Host, auth map[string]any, registry target.ModuleRegistry) (target.Target, error) {
+func buildTarget(host inventory.Host, auth, jumpAuth hostAuth, registry target.ModuleRegistry) (target.Target, error) {
 	address := host.Address
 	if address == "" {
 		address = host.Name
@@ -122,42 +163,35 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 	case inventory.TransportLocal:
 		return target.NewLocalTarget(registry), nil
 	case inventory.TransportWinRM:
-		password, _ := auth["password"].(string)
 		return target.NewWinRMTarget(target.WinRMConfig{
 			Host:     address,
 			Port:     host.Port,
 			Username: host.Username,
-			Password: password,
+			Password: auth.password,
 			HTTPS:    host.HTTPS,
 			Timeout:  host.Timeout,
 		}), nil
 	case inventory.TransportSSH:
-		password, _ := auth["password"].(string)
-		privateKey, _ := auth["private_key"].(string)
-		privateKeyPassphrase, _ := auth["private_key_passphrase"].(string)
 		cfg := target.SSHConfig{
 			Host:                 address,
 			Port:                 host.Port,
 			Username:             host.Username,
-			Password:             password,
-			PrivateKey:           privateKey,
-			PrivateKeyPassphrase: privateKeyPassphrase,
+			Password:             auth.password,
+			PrivateKey:           auth.privateKey,
+			PrivateKeyPassphrase: auth.passphrase,
 			KnownHostsFile:       host.KnownHostsFile,
 			HostKeyPolicy:        host.HostKeyPolicy,
 			HostKeyAlgorithms:    host.HostKeyAlgorithms,
 			Timeout:              host.Timeout,
 		}
 		if host.Jump != nil {
-			jumpPassword, _ := auth["jump_password"].(string)
-			jumpPrivateKey, _ := auth["jump_private_key"].(string)
-			jumpPrivateKeyPassphrase, _ := auth["jump_private_key_passphrase"].(string)
 			cfg.Jump = &target.SSHConfig{
 				Host:                 host.Jump.Address,
 				Port:                 host.Jump.Port,
 				Username:             host.Jump.Username,
-				Password:             jumpPassword,
-				PrivateKey:           jumpPrivateKey,
-				PrivateKeyPassphrase: jumpPrivateKeyPassphrase,
+				Password:             jumpAuth.password,
+				PrivateKey:           jumpAuth.privateKey,
+				PrivateKeyPassphrase: jumpAuth.passphrase,
 				KnownHostsFile:       host.Jump.KnownHostsFile,
 				HostKeyPolicy:        host.Jump.HostKeyPolicy,
 			}
