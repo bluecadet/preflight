@@ -416,9 +416,9 @@ func (m tuiModel) renderFinalSummary() string {
 			}
 			b.WriteString(prefix + path + "\n")
 		}
-		if m.projection.RunDir != "" {
-			b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
-		}
+	}
+	if m.projection.RunDir != "" {
+		b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
 	}
 	return b.String()
 }

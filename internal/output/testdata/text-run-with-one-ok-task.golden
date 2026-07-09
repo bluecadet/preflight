@@ -8,3 +8,4 @@ playbook: kiosk-provision
 Recap
 ✓ Apply complete
   tasks: 1 ok, 0 changed, 0 skipped, 0 failed
+  Run directory: /var/log/preflight/run-20250301-120000
