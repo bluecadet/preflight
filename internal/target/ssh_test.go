@@ -786,6 +786,24 @@ func TestBuildSSHClientConfig_HonorsExplicitTimeout(t *testing.T) {
 	}
 }
 
+// TestNewSSHTarget_DoesNotMutateConfigPort verifies that NewSSHTarget stores
+// the SSHConfig it was given as-is, without defaulting a zero Port to 22:
+// that default is applied at dial time by sshAddr instead.
+func TestNewSSHTarget_DoesNotMutateConfigPort(t *testing.T) {
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	if got := tgt.Config().Port; got != 0 {
+		t.Fatalf("expected NewSSHTarget to leave Port at 0, got %d", got)
+	}
+}
+
+// TestSSHAddr_DefaultsPort verifies that sshAddr defaults an unset Port to
+// 22 when formatting the dial address.
+func TestSSHAddr_DefaultsPort(t *testing.T) {
+	if got, want := sshAddr(SSHConfig{Host: "h"}), "h:22"; got != want {
+		t.Fatalf("sshAddr(%+v) = %q, want %q", SSHConfig{Host: "h"}, got, want)
+	}
+}
+
 // withSSHUserKeyDir overrides the package-level default-key-directory lookup
 // for the duration of a test.
 func withSSHUserKeyDir(t *testing.T, dir string) {
