@@ -119,16 +119,14 @@ func TestTUIModel_WrapsLongCommittedFailureOutput(t *testing.T) {
 	m := newTUIModel(events)
 	m.width = 48
 	m, _ = m.applyEvent(TaskStartedEvent{
-		Target:     "host-a",
-		TaskID:     "task-1",
-		TaskName:   "Run smoke test",
-		ActionPath: "apps/smoke",
+		Target:   "host-a",
+		TaskID:   "task-1",
+		TaskName: "Run smoke test",
 	})
 	m, _ = m.applyEvent(TaskFailedEvent{
 		Target:      "host-a",
 		TaskID:      "task-1",
 		TaskName:    "Run smoke test",
-		ActionPath:  "apps/smoke",
 		FailMessage: strings.Repeat("failure-message ", 6),
 		Output:      []string{strings.Repeat("verbose-output ", 6)},
 	})
@@ -226,11 +224,25 @@ func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
 }
 
 func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
+	// Source events from the shared fixture to exercise both
+	// text and TUI surfaces from the same input.
+	var fixture *snapshotCase
+	for _, tc := range newEventSnapshotCases() {
+		if tc.name == "two-targets-task-finished" {
+			f := tc
+			fixture = &f
+			break
+		}
+	}
+	if fixture == nil {
+		t.Fatal("shared fixture 'two-targets-task-finished' not found")
+	}
+
 	savedS := S
 	defer func() { S = savedS }()
 	S = NewTUIStyles(DefaultPalette(), true)
 
-	events := make(chan Event, 10)
+	events := make(chan Event, len(fixture.events))
 	m := newTUIModelWithOptions(events, Options{Color: ColorAlways})
 	m.width = 80
 
@@ -240,74 +252,28 @@ func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
 	}
 	var blocks []namedBlock
 
-	// RunStart.
-	m, cmd := m.applyEvent(RunStartEvent{
-		Mode:         "apply",
-		PlaybookPath: "deploy.yml",
-		PlaybookName: "deploy",
-		Targets:      []string{"host-a", "host-b"},
-	})
-	if cmd != nil {
-		for _, b := range collectPrintedBlocks(cmd) {
-			blocks = append(blocks, namedBlock{name: "run-start", block: b})
+	eventNames := []string{
+		"run-start",
+		"target-start-a",
+		"target-start-b",
+		"task-started-a",
+		"task-ok",
+		"task-started-b",
+		"task-skipped",
+	}
+	for i, evt := range fixture.events {
+		_, cmd := m.applyEvent(evt)
+		if cmd != nil {
+			for _, b := range collectPrintedBlocks(cmd) {
+				name := eventNames[i]
+				if i < len(eventNames) {
+					name = eventNames[i]
+				}
+				blocks = append(blocks, namedBlock{name: name, block: b})
+			}
 		}
 	}
 
-	// TargetStart for host-a (ssh) — first target, roster not yet emitted.
-	m, cmd = m.applyEvent(TargetStartEvent{
-		Target:    "host-a",
-		Transport: "ssh",
-		Address:   "[IP_ADDRESS]",
-	})
-	if cmd != nil {
-		for _, b := range collectPrintedBlocks(cmd) {
-			blocks = append(blocks, namedBlock{name: "target-roster", block: b})
-		}
-	}
-
-	// TargetStart for host-b (winrm) — all targets seen, emits the roster.
-	m, cmd = m.applyEvent(TargetStartEvent{
-		Target:    "host-b",
-		Transport: "winrm",
-		Address:   "[IP_ADDRESS]",
-	})
-	if cmd != nil {
-		for _, b := range collectPrintedBlocks(cmd) {
-			blocks = append(blocks, namedBlock{name: "target-roster-full", block: b})
-		}
-	}
-
-	// TaskOK on host-a.
-	m, _ = m.applyEvent(TaskStartedEvent{Target: "host-a", TaskID: "sync", TaskName: "sync artifacts"})
-	m, cmd = m.applyEvent(TaskOKEvent{
-		Target:    "host-a",
-		TaskID:    "sync",
-		TaskName:  "sync artifacts",
-		ElapsedMs: 800,
-	})
-	if cmd != nil {
-		for _, b := range collectPrintedBlocks(cmd) {
-			blocks = append(blocks, namedBlock{name: "task-ok", block: b})
-		}
-	}
-
-	// TaskSkipped on host-b.
-	m, _ = m.applyEvent(TaskStartedEvent{Target: "host-b", TaskID: "sync", TaskName: "sync artifacts"})
-	m, cmd = m.applyEvent(TaskSkippedEvent{
-		Target:   "host-b",
-		TaskID:   "sync",
-		TaskName: "sync artifacts",
-		Reason:   "when-condition-false",
-	})
-	if cmd != nil {
-		for _, b := range collectPrintedBlocks(cmd) {
-			blocks = append(blocks, namedBlock{name: "task-skipped", block: b})
-		}
-	}
-
-	// Verify the transport-colored target badge appears on both task finished lines.
-	// We can't test exact ANSI codes in a portable way, but we can match the
-	// visible structure.
 	var sb strings.Builder
 	for _, b := range blocks {
 		sb.WriteString("[" + b.name + "]\n")
@@ -403,10 +369,9 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	}
 	for _, s := range statuses {
 		r.Emit(TaskStartedEvent{
-			Target:     "host",
-			TaskID:     s.id,
-			TaskName:   s.name,
-			ActionPath: "apps/play",
+			Target:   "host",
+			TaskID:   s.id,
+			TaskName: s.name,
 		})
 		switch s.status {
 		case "ok":
@@ -414,7 +379,7 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 		case "changed":
 			r.Emit(TaskChangedEvent{Target: "host", TaskID: s.id, TaskName: s.name})
 		case "failed":
-			r.Emit(TaskFailedEvent{Target: "host", TaskID: s.id, TaskName: s.name, ActionPath: "apps/play", FailMessage: "error"})
+			r.Emit(TaskFailedEvent{Target: "host", TaskID: s.id, TaskName: s.name, FailMessage: "error"})
 		case "skipped":
 			r.Emit(TaskSkippedEvent{Target: "host", TaskID: s.id, TaskName: s.name, Reason: "filtered"})
 		}
@@ -439,5 +404,25 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Error("TUIRenderer.Close() timed out")
+	}
+}
+
+// TestTUIModel_Snapshots runs every shared event fixture through the TUI
+// model and snapshots the scroll-region output. Each fixture produces a
+// tui-{name}.golden file alongside the text-{name}.golden from
+// TestTextRendererNewEventTypes_Snapshots.
+//
+// The "two-targets-task-finished" fixture is excluded because it has a
+// dedicated labeled-block test (TestTUIModel_MultiTargetTaskFinished)
+// that shares its golden path.
+func TestTUIModel_Snapshots(t *testing.T) {
+	for _, tc := range newEventSnapshotCases() {
+		if tc.name == "two-targets-task-finished" {
+			continue
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			got := tuiRenderSnapshot(tc.events)
+			assertSnapshot(t, snapshotPath("tui", tc.name), got)
+		})
 	}
 }
