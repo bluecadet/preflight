@@ -223,6 +223,97 @@ func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
 	}
 }
 
+func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
+	savedS := S
+	defer func() { S = savedS }()
+	S = NewTUIStyles(DefaultPalette(), true)
+
+	events := make(chan Event, 10)
+	m := newTUIModelWithOptions(events, Options{Color: ColorAlways})
+	m.width = 80
+
+	type namedBlock struct {
+		name  string
+		block string
+	}
+	var blocks []namedBlock
+
+	// RunStart.
+	m, cmd := m.applyEvent(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "deploy.yml",
+		PlaybookName: "deploy",
+		Targets:      []string{"host-a", "host-b"},
+	})
+	if cmd != nil {
+		for _, b := range collectPrintedBlocks(cmd) {
+			blocks = append(blocks, namedBlock{name: "run-start", block: b})
+		}
+	}
+
+	// TargetStart for host-a (ssh) — triggers roster descriptor.
+	m, cmd = m.applyEvent(TargetStartEvent{
+		Target:    "host-a",
+		Transport: "ssh",
+		Address:   "[IP_ADDRESS]",
+	})
+	if cmd != nil {
+		for _, b := range collectPrintedBlocks(cmd) {
+			blocks = append(blocks, namedBlock{name: "target-roster", block: b})
+		}
+	}
+
+	// TargetStart for host-b (winrm) — no descriptor (pre-existing roster bug).
+	m, cmd = m.applyEvent(TargetStartEvent{
+		Target:    "host-b",
+		Transport: "winrm",
+		Address:   "[IP_ADDRESS]",
+	})
+	if cmd != nil {
+		blocks = append(blocks, namedBlock{name: "target-start-b", block: collectPrintedBlocks(cmd)[0]})
+	}
+
+	// TaskOK on host-a.
+	m, _ = m.applyEvent(TaskStartedEvent{Target: "host-a", TaskID: "sync", TaskName: "sync artifacts"})
+	m, cmd = m.applyEvent(TaskOKEvent{
+		Target:    "host-a",
+		TaskID:    "sync",
+		TaskName:  "sync artifacts",
+		ElapsedMs: 800,
+	})
+	if cmd != nil {
+		for _, b := range collectPrintedBlocks(cmd) {
+			blocks = append(blocks, namedBlock{name: "task-ok", block: b})
+		}
+	}
+
+	// TaskSkipped on host-b.
+	m, _ = m.applyEvent(TaskStartedEvent{Target: "host-b", TaskID: "sync", TaskName: "sync artifacts"})
+	m, cmd = m.applyEvent(TaskSkippedEvent{
+		Target:   "host-b",
+		TaskID:   "sync",
+		TaskName: "sync artifacts",
+		Reason:   "when-condition-false",
+	})
+	if cmd != nil {
+		for _, b := range collectPrintedBlocks(cmd) {
+			blocks = append(blocks, namedBlock{name: "task-skipped", block: b})
+		}
+	}
+
+	// Verify the transport-colored target badge appears on both task finished lines.
+	// We can't test exact ANSI codes in a portable way, but we can match the
+	// visible structure.
+	var sb strings.Builder
+	for _, b := range blocks {
+		sb.WriteString("[" + b.name + "]\n")
+		sb.WriteString(b.block)
+		sb.WriteByte('\n')
+	}
+	got := normalizeSnapshot(sb.String())
+	assertSnapshot(t, snapshotPath("tui", "two-targets-task-finished"), got)
+}
+
 func TestTUIModel_CardSnapshots(t *testing.T) {
 	savedS := S
 	defer func() { S = savedS }()

@@ -325,6 +325,17 @@ func (p *RunProjection) Elapsed() time.Duration {
 }
 
 // IsSingleTarget returns true when the run has exactly one target.
+// TargetTransport returns the transport for the given target name.
+// Returns empty string if the target is not found.
+func (p *RunProjection) TargetTransport(target string) string {
+	for _, ti := range p.TargetInfo {
+		if ti.Name == target {
+			return ti.Transport
+		}
+	}
+	return ""
+}
+
 func (p *RunProjection) IsSingleTarget() bool {
 	return len(p.Targets) == 1
 }

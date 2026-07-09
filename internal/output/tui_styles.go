@@ -29,6 +29,10 @@ type TUIStyles struct {
 	TableHead lipgloss.Style
 	TableRule lipgloss.Style
 
+	TransportLocal lipgloss.Style
+	TransportSSH   lipgloss.Style
+	TransportWinRM lipgloss.Style
+
 	RowInset       lipgloss.Style
 	CardTitleInset lipgloss.Style
 	CardBodyInset  lipgloss.Style
@@ -66,6 +70,10 @@ func NewTUIStyles(p SemanticPalette, color bool) TUIStyles {
 		Value:     build(p.Value),
 		TableHead: build(p.TableHead),
 		TableRule: build(p.TableRule),
+
+		TransportLocal: build(p.TransportLocal),
+		TransportSSH:   build(p.TransportSSH),
+		TransportWinRM: build(p.TransportWinRM),
 
 		RowInset:       lipgloss.NewStyle().PaddingLeft(2),
 		CardTitleInset: lipgloss.NewStyle().PaddingLeft(2),
