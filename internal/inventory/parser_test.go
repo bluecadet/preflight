@@ -296,8 +296,27 @@ hosts:
 	if err != nil {
 		t.Fatalf("unexpected target error: %v", err)
 	}
-	if hosts[0].Transport != inventory.TransportWinRM {
-		t.Errorf("expected default transport WinRM, got %s", hosts[0].Transport)
+	if hosts[0].Transport != inventory.TransportSSH {
+		t.Errorf("expected default transport SSH, got %s", hosts[0].Transport)
+	}
+}
+
+func TestDefaultPort_DefaultTransport(t *testing.T) {
+	data := `
+hosts:
+  - name: default-transport
+    address: 10.0.0.1
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("default-transport")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Port != 22 {
+		t.Errorf("expected default SSH port 22, got %d", hosts[0].Port)
 	}
 }
 

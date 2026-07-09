@@ -55,11 +55,11 @@
         "transport": {
           "type": "string",
           "enum": ["winrm", "ssh", "local"],
-          "description": "Connection transport"
+          "description": "Connection transport. Defaults to \"ssh\" when omitted."
         },
         "port": {
           "type": "integer",
-          "description": "Connection port (defaults vary by transport: WinRM=5985/5986, SSH=22)"
+          "description": "Connection port (defaults vary by transport: SSH=22, WinRM=5985/5986)"
         },
         "username": {
           "type": "string",

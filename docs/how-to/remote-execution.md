@@ -50,8 +50,8 @@ inventory:
 
 Transport guidance:
 
-- Use `winrm` for Windows-native configuration work.
-- Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules.
+- Use `winrm` for Windows-native configuration work. `transport` must be set explicitly to `winrm`; a host with no `transport` field connects over `ssh` instead.
+- Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules. `ssh` is also the default when `transport` is omitted.
 - Use `local` if you want inventory-driven selection but execution should still happen on the initiating machine.
 - For a brand-new WinRM target, validate the endpoint and credentials with a temporary `preflight.yml` plus `preflight facts` before you wire the host into your project inventory.
 

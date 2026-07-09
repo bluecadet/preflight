@@ -60,8 +60,8 @@ inventory:
 | --- | --- | --- |
 | `name` | string | Required unique host identifier |
 | `address` | string | Hostname or IP address. Defaults to `name` when omitted. |
-| `transport` | enum | `winrm`, `ssh`, or `local` |
-| `port` | integer | Explicit port override |
+| `transport` | enum | `winrm`, `ssh`, or `local`. Defaults to `ssh` when omitted. |
+| `port` | integer | Explicit port override. Defaults to 22 for `ssh` (including the implicit default transport), 5985/5986 for `winrm`. |
 | `username` | string | Username for transport authentication |
 | `password` | string | Password or secret reference such as `secret:winrm-password` |
 | `private_key` | string | SSH private key value, path, or secret reference |
@@ -117,6 +117,7 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 
 ## Transport Notes
 
+- A host with no `transport` field connects over `ssh` on port 22, with `host_key_policy: accept-new` pinning the remote key on first connect. Inventories that relied on the old implicit WinRM default must now set `transport: winrm` explicitly.
 - `winrm` is the full Windows-native transport and supports all built-in modules.
 - For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Validate a WinRM connection from macOS](../how-to/validate-winrm-from-macos.md) for a concrete validation flow from a Mac controller.
 - The current WinRM path is easiest to use with a local Windows account. If an endpoint answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
