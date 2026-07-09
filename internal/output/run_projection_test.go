@@ -7,6 +7,7 @@ import (
 
 func TestRunProjection_RunStart(t *testing.T) {
 	p := NewRunProjection()
+	// Single-target RunStart is buffered — no descriptor yet.
 	descs := p.Apply(RunStartEvent{
 		PlaybookPath: "test.yml",
 		PlaybookName: "test-play",
@@ -29,18 +30,36 @@ func TestRunProjection_RunStart(t *testing.T) {
 		t.Errorf("expected Mode=apply, got %q", p.Mode)
 	}
 
-	if len(descs) != 1 {
-		t.Fatalf("expected 1 descriptor, got %d", len(descs))
+	if len(descs) != 0 {
+		t.Fatalf("expected 0 descriptors (buffered) for single-target RunStart, got %d", len(descs))
 	}
-	desc, ok := descs[0].(RunStartDescriptor)
+
+	// The descriptor should be flushed when TargetStartEvent arrives.
+	descs = p.Apply(TargetStartEvent{Target: "web-01", Transport: "ssh", Address: "10.0.0.1"})
+	if len(descs) != 1 {
+		t.Fatalf("expected 1 descriptor after TargetStart, got %d", len(descs))
+	}
+	desc, ok := descs[0].(*RunStartDescriptor)
 	if !ok {
-		t.Fatalf("expected RunStartDescriptor, got %T", descs[0])
+		t.Fatalf("expected *RunStartDescriptor, got %T", descs[0])
 	}
 	if desc.PlaybookPath != "test.yml" {
 		t.Errorf("expected PlaybookPath=test.yml, got %q", desc.PlaybookPath)
 	}
 	if len(desc.Targets) != 1 || desc.Targets[0] != "web-01" {
 		t.Errorf("expected Targets=[web-01], got %v", desc.Targets)
+	}
+	if desc.SingleTarget == nil {
+		t.Fatal("expected SingleTarget to be set")
+	}
+	if desc.SingleTarget.Name != "web-01" {
+		t.Errorf("expected SingleTarget.Name=web-01, got %q", desc.SingleTarget.Name)
+	}
+	if desc.SingleTarget.Transport != "ssh" {
+		t.Errorf("expected SingleTarget.Transport=ssh, got %q", desc.SingleTarget.Transport)
+	}
+	if desc.SingleTarget.Address != "10.0.0.1" {
+		t.Errorf("expected SingleTarget.Address=10.0.0.1, got %q", desc.SingleTarget.Address)
 	}
 }
 

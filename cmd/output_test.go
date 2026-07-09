@@ -62,7 +62,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "test",
+			expectInOut: "echo",
 		},
 		{
 			name: "check",
@@ -79,7 +79,7 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 				}
 				return out
 			},
-			expectInOut: "test",
+			expectInOut: "echo",
 		},
 		{
 			name: "plan",

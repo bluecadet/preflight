@@ -280,18 +280,17 @@ func (r *TextRenderer) flushRunStartHeader() {
 func (r *TextRenderer) emitTargetStart(e TargetStartEvent) {
 	// Single-target runs: promote target info into the header line.
 	if r.bufferedRunStart != nil {
-		r.writeLine(r.colorize(ansiBold, titleRunMode(r.projection.Mode)))
-		switch {
-		case r.projection.Playbook != "":
-			r.writeLine("playbook: " + r.projection.Playbook + " → " + r.targetDisplayString(e))
-		case r.projection.PlayName != "":
-			r.writeLine("playbook: " + r.projection.PlayName + " → " + r.targetDisplayString(e))
-		default:
-			r.writeLine(r.targetDisplayString(e))
+		playbook := r.projection.Playbook
+		if playbook == "" {
+			playbook = r.projection.PlayName
 		}
-		if r.projection.Playbook != "" && r.projection.PlayName != "" {
-			r.writeLine("playbook: " + r.projection.PlayName)
+		target := e.Target + " (" + e.Transport
+		if e.Address != "" {
+			target += " • " + e.Address
 		}
+		target += ")"
+		elapsed := formatElapsed(r.projection.Elapsed())
+		r.writeLine(r.colorize(ansiBold, padLine("RUN  "+playbook+" → "+target, elapsed, lineWidth)))
 		r.writeBlank()
 		r.bufferedRunStart = nil
 		return

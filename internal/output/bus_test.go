@@ -61,11 +61,11 @@ func TestBus_FanOut(t *testing.T) {
 
 	out1 := buf1.String()
 	out2 := buf2.String()
-	if !strings.Contains(out1, "Apply") {
-		t.Errorf("sink 1 expected Apply heading, got: %q", out1)
+	if !strings.Contains(out1, "RUN") {
+		t.Errorf("sink 1 expected RUN heading, got: %q", out1)
 	}
-	if !strings.Contains(out2, "Apply") {
-		t.Errorf("sink 2 expected Apply heading, got: %q", out2)
+	if !strings.Contains(out2, "RUN") {
+		t.Errorf("sink 2 expected RUN heading, got: %q", out2)
 	}
 }
 

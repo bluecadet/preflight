@@ -99,11 +99,6 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	descriptors := m.projection.Apply(event)
 
 	if len(descriptors) == 0 {
-		// Check for events that need direct handling even without descriptors.
-		if e, ok := event.(TargetStartEvent); ok && m.projection.IsSingleTarget() {
-			// Single-target runs: promote target info into the header line.
-			return m, tea.Println("→ " + m.targetInfoLine(e))
-		}
 		return m, nil
 	}
 
@@ -112,6 +107,8 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		switch desc := d.(type) {
 		case RunStartDescriptor:
 			cmds = append(cmds, m.renderRunStart(desc))
+		case *RunStartDescriptor:
+			cmds = append(cmds, m.renderRunStart(*desc))
 		case TargetRosterDescriptor:
 			cmds = append(cmds, m.renderTargetRoster(desc))
 		case TaskFinishedDescriptor:
@@ -123,15 +120,6 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		}
 	}
 	return m, tea.Sequence(cmds...)
-}
-
-func (m tuiModel) targetInfoLine(e TargetStartEvent) string {
-	s := e.Target + " (" + e.Transport
-	if e.Address != "" {
-		s += " • " + e.Address
-	}
-	s += ")"
-	return s
 }
 
 // targetBadge returns a transport-colored [target] badge string.
@@ -160,19 +148,32 @@ func (m tuiModel) transportStyle(transport string) lipgloss.Style {
 
 func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	var lines []string
-	lines = append(lines, S.Bold.Render(titleRunMode(d.Mode)))
-	if d.PlaybookPath != "" {
-		lines = append(lines, "playbook: "+d.PlaybookPath)
-	} else if d.PlaybookName != "" {
-		lines = append(lines, "playbook: "+d.PlaybookName)
-	}
-	if d.PlaybookPath != "" && d.PlaybookName != "" {
-		lines = append(lines, "name: "+d.PlaybookName)
-	}
-	switch len(d.Targets) {
-	case 1:
-		lines = append(lines, "target: "+d.Targets[0])
-	default:
+
+	if d.SingleTarget != nil {
+		// Single-target: folded header line.
+		playbook := d.PlaybookPath
+		if playbook == "" {
+			playbook = d.PlaybookName
+		}
+		target := d.SingleTarget.Name + " (" + d.SingleTarget.Transport
+		if d.SingleTarget.Address != "" {
+			target += " • " + d.SingleTarget.Address
+		}
+		target += ")"
+		elapsed := formatElapsed(m.projection.Elapsed())
+		line := padLine("RUN  "+playbook+" → "+target, elapsed, m.width)
+		lines = append(lines, S.Bold.Render(line))
+	} else {
+		// Multi-target: current multi-line block.
+		lines = append(lines, S.Bold.Render(titleRunMode(d.Mode)))
+		if d.PlaybookPath != "" {
+			lines = append(lines, "playbook: "+d.PlaybookPath)
+		} else if d.PlaybookName != "" {
+			lines = append(lines, "playbook: "+d.PlaybookName)
+		}
+		if d.PlaybookPath != "" && d.PlaybookName != "" {
+			lines = append(lines, "name: "+d.PlaybookName)
+		}
 		if len(d.Targets) > 1 {
 			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
 			if len(d.Targets) <= 5 {

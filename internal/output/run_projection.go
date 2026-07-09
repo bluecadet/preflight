@@ -63,6 +63,10 @@ type RunProjection struct {
 	PlayStarted bool
 	RunDir      string
 
+	// bufferedRunStartDesc holds the RunStartDescriptor for single-target runs
+	// until the target info arrives via TargetStartEvent.
+	bufferedRunStartDesc *RunStartDescriptor
+
 	OkCount      int
 	ChangedCount int
 	FailedCount  int
@@ -92,6 +96,10 @@ type RunStartDescriptor struct {
 	PlaybookPath string
 	PlaybookName string
 	Targets      []string
+	// SingleTarget is set only for single-target runs, carrying the target
+	// identity from the first TargetStartEvent. When set, the renderer should
+	// fold the header into one line: RUN  playbook → name (transport • address).
+	SingleTarget *TargetInfo
 }
 
 // TaskFinishedDescriptor describes a completed task to render.
@@ -347,20 +355,39 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	p.Playbook = e.PlaybookPath
 	p.Targets = append([]string(nil), e.Targets...)
 	p.StartedAt = time.Now()
-	return []CommitDescriptor{RunStartDescriptor{
+
+	desc := RunStartDescriptor{
 		Mode:         e.Mode,
 		PlaybookPath: e.PlaybookPath,
 		PlaybookName: e.PlaybookName,
 		Targets:      e.Targets,
-	}}
+	}
+
+	// For single-target runs, buffer until we have the target identity from
+	// TargetStartEvent so the header can include transport and address.
+	if len(e.Targets) == 1 {
+		p.bufferedRunStartDesc = &desc
+		return nil
+	}
+
+	return []CommitDescriptor{desc}
 }
 
 func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor {
-	p.TargetInfo = append(p.TargetInfo, TargetInfo{
+	info := TargetInfo{
 		Name:      e.Target,
 		Transport: e.Transport,
 		Address:   e.Address,
-	})
+	}
+	p.TargetInfo = append(p.TargetInfo, info)
+
+	// Single-target: flush the buffered run start with target info.
+	if p.bufferedRunStartDesc != nil {
+		desc := *p.bufferedRunStartDesc
+		desc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
+		p.bufferedRunStartDesc = nil
+		return []CommitDescriptor{&desc}
+	}
 
 	// For multi-target runs, emit the roster once all targets have been seen.
 	if len(p.Targets) > 1 && len(p.TargetInfo) == len(p.Targets) {
