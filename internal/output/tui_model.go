@@ -134,6 +134,30 @@ func (m tuiModel) targetInfoLine(e TargetStartEvent) string {
 	return s
 }
 
+// targetBadge returns a transport-colored [target] badge string.
+// Returns empty string when host labels should not be shown.
+func (m tuiModel) targetBadge(target string) string {
+	if target == "" {
+		return ""
+	}
+	displayName := m.projection.DisplayTarget(target)
+	transport := m.projection.TargetTransport(target)
+	style := m.transportStyle(transport)
+	return style.Render("[" + displayName + "]")
+}
+
+// transportStyle returns the lipgloss.Style for a given transport type.
+func (m tuiModel) transportStyle(transport string) lipgloss.Style {
+	switch transport {
+	case "ssh":
+		return S.TransportSSH
+	case "winrm":
+		return S.TransportWinRM
+	default:
+		return S.TransportLocal
+	}
+}
+
 func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	var lines []string
 	lines = append(lines, S.Bold.Render(titleRunMode(d.Mode)))
@@ -177,7 +201,7 @@ func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
 	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + d.TaskName
 	if m.projection.ShouldShowHostLabels() && d.Target != "" {
-		left = "[" + m.projection.DisplayTarget(d.Target) + "] " + left
+		left = m.targetBadge(d.Target) + " " + left
 	}
 	right := ""
 	if d.Elapsed > 0 && d.Status != "skipped" {
@@ -329,7 +353,7 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 	if task.actionPath != "" {
 		header := renderDisplayPath(task.actionPath)
 		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			header = "[" + m.projection.DisplayTarget(task.target) + "] " + header
+			header = m.targetBadge(task.target) + " " + header
 		}
 		b.WriteString(header)
 		b.WriteByte('\n')
@@ -338,7 +362,7 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 	} else {
 		left := spin + " " + task.name
 		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			left = "[" + m.projection.DisplayTarget(task.target) + "] " + left
+			left = m.targetBadge(task.target) + " " + left
 		}
 		b.WriteString(tsRow(padLine(left, timer, m.width)))
 	}
@@ -384,14 +408,13 @@ func (m tuiModel) renderFinalSummary() string {
 	if m.projection.FailedCount > 0 {
 		b.WriteByte('\n')
 		b.WriteString("Needs attention\n")
-		showTarget := m.projection.ShouldShowHostLabels()
 		for _, failed := range m.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			if showTarget {
-				b.WriteString("  [" + m.projection.DisplayTarget(failed.target) + "] " + path + "\n")
-			} else {
-				b.WriteString("  " + path + "\n")
+			prefix := "  "
+			if m.projection.ShouldShowHostLabels() && failed.target != "" {
+				prefix = "  " + m.targetBadge(failed.target) + " "
 			}
+			b.WriteString(prefix + path + "\n")
 		}
 		if m.projection.RunDir != "" {
 			b.WriteString("  Run directory: " + m.projection.RunDir + "\n")

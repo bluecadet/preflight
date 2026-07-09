@@ -57,6 +57,22 @@ func TestRunProjection_RunStartIdempotent(t *testing.T) {
 	}
 }
 
+func TestRunProjection_TargetTransport(t *testing.T) {
+	p := NewRunProjection()
+	p.Apply(TargetStartEvent{Target: "host-a", Transport: "ssh", Address: "192.168.1.1"})
+	p.Apply(TargetStartEvent{Target: "host-b", Transport: "winrm", Address: "192.168.1.2"})
+
+	if got := p.TargetTransport("host-a"); got != "ssh" {
+		t.Errorf("TargetTransport(host-a) = %q, want %q", got, "ssh")
+	}
+	if got := p.TargetTransport("host-b"); got != "winrm" {
+		t.Errorf("TargetTransport(host-b) = %q, want %q", got, "winrm")
+	}
+	if got := p.TargetTransport("unknown"); got != "" {
+		t.Errorf("TargetTransport(unknown) = %q, want %q", got, "")
+	}
+}
+
 func TestRunProjection_TaskOK(t *testing.T) {
 	p := NewRunProjection()
 	p.Apply(TaskStartedEvent{Target: "host-a", TaskID: "t1", TaskName: "task-1"})
