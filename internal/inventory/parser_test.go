@@ -600,6 +600,34 @@ hosts:
 	}
 }
 
+// TestParseJumpBlock_InvalidHostKeyPolicyViaParseNode exercises the parser's
+// own jump host_key_policy validation directly (bypassing schema validation)
+// to confirm the "jump host_key_policy" error shape, mirroring
+// TestParseSSHHostKeyPolicyField_InvalidViaParseNode for the host-level
+// check.
+func TestParseJumpBlock_InvalidHostKeyPolicyViaParseNode(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    jump:
+      address: bastion.example.com
+      host_key_policy: bogus
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(data), &root); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	_, err := inventory.ParseNode(root.Content[0])
+	if err == nil {
+		t.Fatal("expected error for invalid jump host_key_policy, got nil")
+	}
+	if !strings.Contains(err.Error(), `host "staging-pc-01": invalid jump host_key_policy "bogus"`) {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func TestParseHostTimeout(t *testing.T) {
 	data := `
 hosts:
@@ -683,6 +711,87 @@ hosts:
 				t.Errorf("unexpected error message: %v", err)
 			}
 		})
+	}
+}
+
+func TestParseHost_AllFieldsEndToEnd(t *testing.T) {
+	data := `
+groups:
+  secure: {}
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    port: 2200
+    username: exhibit
+    password: secret:host-password
+    private_key: secret:host-key
+    private_key_passphrase: secret:host-key-passphrase
+    known_hosts_file: /home/user/.ssh/known_hosts
+    host_key_policy: strict
+    host_key_algorithms: [ssh-ed25519]
+    groups: [secure]
+    timeout: 45s
+    jump:
+      address: bastion.example.com
+      port: 2222
+      username: jumpuser
+      host_key_policy: accept-new
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	h := hosts[0]
+
+	if h.Port != 2200 {
+		t.Errorf("Port: got %d, want 2200", h.Port)
+	}
+	if h.Username != "exhibit" {
+		t.Errorf("Username: got %q, want %q", h.Username, "exhibit")
+	}
+	if h.Password != "secret:host-password" {
+		t.Errorf("Password: got %q, want %q", h.Password, "secret:host-password")
+	}
+	if h.PrivateKey != "secret:host-key" {
+		t.Errorf("PrivateKey: got %q, want %q", h.PrivateKey, "secret:host-key")
+	}
+	if h.PrivateKeyPassphrase != "secret:host-key-passphrase" {
+		t.Errorf("PrivateKeyPassphrase: got %q, want %q", h.PrivateKeyPassphrase, "secret:host-key-passphrase")
+	}
+	if h.KnownHostsFile != "/home/user/.ssh/known_hosts" {
+		t.Errorf("KnownHostsFile: got %q, want %q", h.KnownHostsFile, "/home/user/.ssh/known_hosts")
+	}
+	if h.HostKeyPolicy != "strict" {
+		t.Errorf("HostKeyPolicy: got %q, want %q", h.HostKeyPolicy, "strict")
+	}
+	if len(h.HostKeyAlgorithms) != 1 || h.HostKeyAlgorithms[0] != "ssh-ed25519" {
+		t.Errorf("HostKeyAlgorithms: got %v, want [ssh-ed25519]", h.HostKeyAlgorithms)
+	}
+	if len(h.Groups) != 1 || h.Groups[0] != "secure" {
+		t.Errorf("Groups: got %v, want [secure]", h.Groups)
+	}
+	if h.Timeout != 45*time.Second {
+		t.Errorf("Timeout: got %s, want %s", h.Timeout, 45*time.Second)
+	}
+	if h.Jump == nil {
+		t.Fatal("expected Jump to be populated")
+	}
+	if h.Jump.Address != "bastion.example.com" {
+		t.Errorf("Jump.Address: got %q, want %q", h.Jump.Address, "bastion.example.com")
+	}
+	if h.Jump.Port != 2222 {
+		t.Errorf("Jump.Port: got %d, want 2222", h.Jump.Port)
+	}
+	if h.Jump.Username != "jumpuser" {
+		t.Errorf("Jump.Username: got %q, want %q", h.Jump.Username, "jumpuser")
+	}
+	if h.Jump.HostKeyPolicy != "accept-new" {
+		t.Errorf("Jump.HostKeyPolicy: got %q, want %q", h.Jump.HostKeyPolicy, "accept-new")
 	}
 }
 
