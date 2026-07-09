@@ -162,6 +162,7 @@ func TestRunProjection_TaskFailed(t *testing.T) {
 		Target:      "host-a",
 		TaskID:      "t1",
 		TaskName:    "risky",
+		ActionPath:  "app/deploy",
 		ElapsedMs:   5000,
 		ExitCode:    1,
 		FailMessage: "process exited with code 1",
@@ -178,6 +179,9 @@ func TestRunProjection_TaskFailed(t *testing.T) {
 	}
 	if failedTasks[0].name != "risky" {
 		t.Errorf("expected failedTask name=risky, got %q", failedTasks[0].name)
+	}
+	if failedTasks[0].actionPath != "app/deploy" {
+		t.Errorf("expected failedTask actionPath=app/deploy, got %q", failedTasks[0].actionPath)
 	}
 	if len(failedTasks[0].output) != 2 {
 		t.Errorf("expected 2 output lines, got %d", len(failedTasks[0].output))
