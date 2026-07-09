@@ -28,6 +28,7 @@ type rawHost struct {
 	PrivateKey           string         `yaml:"private_key"`
 	PrivateKeyPassphrase string         `yaml:"private_key_passphrase"`
 	KnownHostsFile       string         `yaml:"known_hosts_file"`
+	HostKeyPolicy        string         `yaml:"host_key_policy"`
 	HostKeyAlgorithms    []string       `yaml:"host_key_algorithms"`
 	HTTPS                bool           `yaml:"https"`
 	Groups               []string       `yaml:"groups"`
@@ -113,6 +114,12 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			timeout = parsed
 		}
 
+		switch rh.HostKeyPolicy {
+		case "", "accept-new", "strict", "insecure":
+		default:
+			return nil, fmt.Errorf("inventory: host %q: invalid host_key_policy %q: must be \"accept-new\", \"strict\", or \"insecure\"", rh.Name, rh.HostKeyPolicy)
+		}
+
 		inv.Hosts = append(inv.Hosts, Host{
 			Name:                 rh.Name,
 			Address:              rh.Address,
@@ -123,6 +130,7 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			PrivateKey:           rh.PrivateKey,
 			PrivateKeyPassphrase: rh.PrivateKeyPassphrase,
 			KnownHostsFile:       rh.KnownHostsFile,
+			HostKeyPolicy:        rh.HostKeyPolicy,
 			HostKeyAlgorithms:    rh.HostKeyAlgorithms,
 			HTTPS:                rh.HTTPS,
 			Groups:               rh.Groups,

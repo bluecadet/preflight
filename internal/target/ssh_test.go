@@ -688,6 +688,7 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 }
 
 func TestBuildSSHClientConfig_DefaultsTimeoutTo30s(t *testing.T) {
+	withSSHUserKeyDir(t, t.TempDir())
 	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x"})
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig returned error: %v", err)
@@ -698,6 +699,7 @@ func TestBuildSSHClientConfig_DefaultsTimeoutTo30s(t *testing.T) {
 }
 
 func TestBuildSSHClientConfig_HonorsExplicitTimeout(t *testing.T) {
+	withSSHUserKeyDir(t, t.TempDir())
 	want := 5 * time.Second
 	cfg, err := buildSSHClientConfig(SSHConfig{Host: "host", Username: "user", Password: "x", Timeout: want})
 	if err != nil {
@@ -743,6 +745,7 @@ func generateEncryptedTestKey(t *testing.T, passphrase string) []byte {
 
 func TestBuildSSHClientConfig_EncryptedKeyWithCorrectPassphrase(t *testing.T) {
 	withSSHAuthSock(t, "")
+	withSSHUserKeyDir(t, t.TempDir())
 	keyPEM := generateEncryptedTestKey(t, "s3cret-passphrase")
 
 	cfg, err := buildSSHClientConfig(SSHConfig{
@@ -761,6 +764,7 @@ func TestBuildSSHClientConfig_EncryptedKeyWithCorrectPassphrase(t *testing.T) {
 
 func TestBuildSSHClientConfig_EncryptedKeyWithoutPassphraseErrors(t *testing.T) {
 	withSSHAuthSock(t, "")
+	withSSHUserKeyDir(t, t.TempDir())
 	keyPEM := generateEncryptedTestKey(t, "s3cret-passphrase")
 
 	_, err := buildSSHClientConfig(SSHConfig{

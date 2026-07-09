@@ -66,7 +66,8 @@ inventory:
 | `password` | string | Password or secret reference such as `secret:winrm-password` |
 | `private_key` | string | SSH private key value, path, or secret reference |
 | `private_key_passphrase` | string | Passphrase for an encrypted SSH `private_key`, or a secret reference |
-| `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped. |
+| `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. Defaults to `known_hosts` under the default SSH key directory (normally `~/.ssh/known_hosts`) when omitted. |
+| `host_key_policy` | enum | SSH host-key verification policy: `accept-new` (default, trust-on-first-use), `strict` (known_hosts entry required), or `insecure` (verification disabled). See [SSH Host-Key Verification](../explanation/targets-and-transports.md#ssh-host-key-verification). |
 | `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms, such as `[ssh-ed25519, ssh-rsa]`. |
 | `timeout` | duration | Connection/handshake timeout for SSH and WinRM, as a Go duration string such as `30s` or `1m`. Defaults to 30s for SSH when omitted. |
 | `https` | bool | Use HTTPS for WinRM |

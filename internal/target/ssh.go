@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"path/filepath"
@@ -20,6 +21,19 @@ import (
 // Timeout field is left at its zero value.
 const defaultSSHTimeout = 30 * time.Second
 
+// Host-key verification policies for SSHConfig.HostKeyPolicy.
+const (
+	// HostKeyPolicyAcceptNew verifies against KnownHostsFile; an unknown host
+	// is trusted on first use and its key is appended to the file, while a
+	// known host with a mismatched key is rejected. This is the default.
+	HostKeyPolicyAcceptNew = "accept-new"
+	// HostKeyPolicyStrict verifies against KnownHostsFile only; both unknown
+	// hosts and mismatched keys are rejected.
+	HostKeyPolicyStrict = "strict"
+	// HostKeyPolicyInsecure disables host-key verification entirely.
+	HostKeyPolicyInsecure = "insecure"
+)
+
 type SSHConfig struct {
 	Host       string
 	Port       int
@@ -29,13 +43,18 @@ type SSHConfig struct {
 	// PrivateKeyPassphrase is the passphrase for an encrypted PrivateKey.
 	PrivateKeyPassphrase string
 	// KnownHostsFile is the path to a known_hosts file used to verify the
-	// remote host key. When empty the connection proceeds without host key
-	// verification (insecure; only acceptable on isolated networks).
+	// remote host key, per HostKeyPolicy. When empty, it defaults to
+	// known_hosts under sshUserKeyDir (normally ~/.ssh/known_hosts).
 	KnownHostsFile string
+	// HostKeyPolicy controls how the remote host key is verified. Valid
+	// values are HostKeyPolicyAcceptNew (default), HostKeyPolicyStrict, and
+	// HostKeyPolicyInsecure. Any other non-empty value is a configuration
+	// error.
+	HostKeyPolicy string
 	// HostKeyAlgorithms restricts the accepted host key algorithms during the
 	// SSH handshake. When nil, the SSH client library's built-in default
 	// host-key algorithm list is used. This field applies regardless of
-	// whether KnownHostsFile is set.
+	// HostKeyPolicy.
 	HostKeyAlgorithms []string
 	// Timeout is the connection/handshake timeout for ssh.Dial. Zero means
 	// the 30s default (defaultSSHTimeout) is used.
@@ -115,13 +134,9 @@ func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 		return nil, fmt.Errorf("ssh: no authentication method available for host %s: set password, private_key, or make an SSH agent/default key available", cfg.Host)
 	}
 
-	hostKeyCallback := ssh.InsecureIgnoreHostKey() //nolint:gosec // insecure fallback when KnownHostsFile is not configured
-	if cfg.KnownHostsFile != "" {
-		cb, err := knownhosts.New(cfg.KnownHostsFile)
-		if err != nil {
-			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", cfg.KnownHostsFile, err)
-		}
-		hostKeyCallback = cb
+	hostKeyCallback, err := buildHostKeyCallback(cfg)
+	if err != nil {
+		return nil, err
 	}
 	timeout := cfg.Timeout
 	if timeout == 0 {
@@ -134,6 +149,127 @@ func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 		HostKeyAlgorithms: cfg.HostKeyAlgorithms,
 		Timeout:           timeout,
 	}, nil
+}
+
+// buildHostKeyCallback constructs the ssh.HostKeyCallback for cfg according
+// to its HostKeyPolicy (defaulting to HostKeyPolicyAcceptNew when unset).
+func buildHostKeyCallback(cfg SSHConfig) (ssh.HostKeyCallback, error) {
+	policy := cfg.HostKeyPolicy
+	if policy == "" {
+		policy = HostKeyPolicyAcceptNew
+	}
+
+	if policy == HostKeyPolicyInsecure {
+		slog.Warn("ssh: host key verification disabled", "host", cfg.Host)
+		return ssh.InsecureIgnoreHostKey(), nil //nolint:gosec // explicit opt-in via host_key_policy: insecure
+	}
+
+	path := cfg.KnownHostsFile
+	if path == "" {
+		path = filepath.Join(sshUserKeyDir(), "known_hosts")
+	}
+
+	switch policy {
+	case HostKeyPolicyStrict:
+		if _, statErr := os.Stat(path); statErr != nil {
+			return nil, fmt.Errorf("ssh: known_hosts file %q not found; establish trust first by connecting once with host_key_policy %q, or run `ssh-keyscan -H %s >> %s`: %w", path, HostKeyPolicyAcceptNew, cfg.Host, path, statErr)
+		}
+		cb, err := knownhosts.New(path)
+		if err != nil {
+			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", path, err)
+		}
+		return strictHostKeyCallback(cb, path), nil
+	case HostKeyPolicyAcceptNew:
+		if err := ensureKnownHostsFile(path); err != nil {
+			return nil, err
+		}
+		cb, err := knownhosts.New(path)
+		if err != nil {
+			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", path, err)
+		}
+		return acceptNewHostKeyCallback(cb, path), nil
+	default:
+		return nil, fmt.Errorf("ssh: invalid host_key_policy %q for host %s: must be %q, %q, or %q", cfg.HostKeyPolicy, cfg.Host, HostKeyPolicyAcceptNew, HostKeyPolicyStrict, HostKeyPolicyInsecure)
+	}
+}
+
+// ensureKnownHostsFile creates path, and its parent directory (mode 0700), as
+// an empty file when it does not already exist, so that a fresh accept-new
+// known_hosts file does not cause knownhosts.New to fail before any host has
+// been trusted.
+func ensureKnownHostsFile(path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("ssh: stat known_hosts %q: %w", path, err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("ssh: create known_hosts directory for %q: %w", path, err)
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0o600)
+	if err != nil {
+		return fmt.Errorf("ssh: create known_hosts file %q: %w", path, err)
+	}
+	return f.Close()
+}
+
+// acceptNewHostKeyCallback wraps cb with trust-on-first-use behavior: a host
+// with no known_hosts entry is accepted and its key is appended to path,
+// while a host with a mismatched entry is rejected as a possible MITM. This
+// assumes a single process dials each host at most once per run; concurrent
+// appends across processes are not guarded with file locking.
+func acceptNewHostKeyCallback(cb ssh.HostKeyCallback, path string) ssh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := cb(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		var keyErr *knownhosts.KeyError
+		if !errors.As(err, &keyErr) {
+			return err
+		}
+		if len(keyErr.Want) > 0 {
+			return hostKeyMismatchError(hostname, path, err)
+		}
+
+		line := knownhosts.Line([]string{hostname}, key)
+		f, openErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		if openErr != nil {
+			return fmt.Errorf("ssh: append known_hosts %q: %w", path, openErr)
+		}
+		defer f.Close()
+		if _, writeErr := f.WriteString(line + "\n"); writeErr != nil {
+			return fmt.Errorf("ssh: append known_hosts %q: %w", path, writeErr)
+		}
+		slog.Info("ssh: accepted new host key", "host", hostname, "known_hosts", path)
+		return nil
+	}
+}
+
+// strictHostKeyCallback wraps cb so that both unknown hosts and mismatched
+// keys produce clear, actionable errors instead of the terser errors
+// returned by the knownhosts package directly.
+func strictHostKeyCallback(cb ssh.HostKeyCallback, path string) ssh.HostKeyCallback {
+	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := cb(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+		var keyErr *knownhosts.KeyError
+		if !errors.As(err, &keyErr) {
+			return err
+		}
+		if len(keyErr.Want) > 0 {
+			return hostKeyMismatchError(hostname, path, err)
+		}
+		return fmt.Errorf("ssh: host key for %s is not present in known_hosts %q; establish trust first by connecting once with host_key_policy %q, or run `ssh-keyscan -H %s >> %s`: %w", hostname, path, HostKeyPolicyAcceptNew, hostname, path, err)
+	}
+}
+
+// hostKeyMismatchError formats a possible-MITM error for a host whose
+// known_hosts entry does not match the key presented during the handshake.
+func hostKeyMismatchError(hostname, path string, cause error) error {
+	return fmt.Errorf("ssh: host key for %s does not match the known_hosts entry in %q (possible MITM attack); if this change is expected, remove the stale known_hosts line for %s and reconnect: %w", hostname, path, hostname, cause)
 }
 
 // parseSSHPrivateKey parses an inline PEM-encoded private key or, if that
