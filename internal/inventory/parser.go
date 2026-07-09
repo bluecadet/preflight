@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/bluecadet/preflight/internal/target"
 	"gopkg.in/yaml.v3"
+
+	"github.com/bluecadet/preflight/internal/target"
 )
 
 // rawInventory is the intermediate YAML structure.
@@ -101,58 +102,70 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 		}
 		seenHosts[rh.Name] = struct{}{}
 
-		for _, groupName := range rh.Groups {
-			if _, ok := inv.Groups[groupName]; !ok {
-				return nil, fmt.Errorf("inventory: host %q references undefined group %q", rh.Name, groupName)
-			}
-		}
-
-		var timeout time.Duration
-		if rh.Timeout != "" {
-			parsed, err := time.ParseDuration(rh.Timeout)
-			if err != nil {
-				return nil, fmt.Errorf("inventory: host %q: invalid timeout %q: %w", rh.Name, rh.Timeout, err)
-			}
-			if parsed <= 0 {
-				return nil, fmt.Errorf("inventory: host %q: timeout must be positive, got %q", rh.Name, rh.Timeout)
-			}
-			timeout = parsed
-		}
-
-		if err := validateHostKeyPolicy(rh.Name, "host_key_policy", rh.HostKeyPolicy); err != nil {
+		h, err := hostFromRaw(rh, inv.Groups)
+		if err != nil {
 			return nil, err
 		}
-
-		if rh.Jump != nil {
-			if rh.Jump.Address == "" {
-				return nil, fmt.Errorf("inventory: host %q: jump.address is required", rh.Name)
-			}
-			if err := validateHostKeyPolicy(rh.Name, "jump host_key_policy", rh.Jump.HostKeyPolicy); err != nil {
-				return nil, err
-			}
-		}
-
-		inv.Hosts = append(inv.Hosts, Host{
-			Name:                 rh.Name,
-			Address:              rh.Address,
-			Transport:            defaultTransport(rh.Transport),
-			Port:                 defaultPort(rh.Transport, rh.HTTPS, rh.Port),
-			Username:             rh.Username,
-			Password:             rh.Password,
-			PrivateKey:           rh.PrivateKey,
-			PrivateKeyPassphrase: rh.PrivateKeyPassphrase,
-			KnownHostsFile:       rh.KnownHostsFile,
-			HostKeyPolicy:        rh.HostKeyPolicy,
-			HostKeyAlgorithms:    rh.HostKeyAlgorithms,
-			HTTPS:                rh.HTTPS,
-			Groups:               rh.Groups,
-			Vars:                 rh.Vars,
-			Timeout:              timeout,
-			Jump:                 rh.Jump,
-		})
+		inv.Hosts = append(inv.Hosts, h)
 	}
 
 	return inv, nil
+}
+
+// hostFromRaw validates a single decoded host entry against groups (its
+// group references, timeout, and host_key_policy/jump settings) and maps it
+// into a Host. The caller is responsible for the host-name presence and
+// duplicate checks, since those require state shared across all hosts.
+func hostFromRaw(rh rawHost, groups map[string]Group) (Host, error) {
+	for _, groupName := range rh.Groups {
+		if _, ok := groups[groupName]; !ok {
+			return Host{}, fmt.Errorf("inventory: host %q references undefined group %q", rh.Name, groupName)
+		}
+	}
+
+	var timeout time.Duration
+	if rh.Timeout != "" {
+		parsed, err := time.ParseDuration(rh.Timeout)
+		if err != nil {
+			return Host{}, fmt.Errorf("inventory: host %q: invalid timeout %q: %w", rh.Name, rh.Timeout, err)
+		}
+		if parsed <= 0 {
+			return Host{}, fmt.Errorf("inventory: host %q: timeout must be positive, got %q", rh.Name, rh.Timeout)
+		}
+		timeout = parsed
+	}
+
+	if err := validateHostKeyPolicy(rh.Name, "host_key_policy", rh.HostKeyPolicy); err != nil {
+		return Host{}, err
+	}
+
+	if rh.Jump != nil {
+		if rh.Jump.Address == "" {
+			return Host{}, fmt.Errorf("inventory: host %q: jump.address is required", rh.Name)
+		}
+		if err := validateHostKeyPolicy(rh.Name, "jump host_key_policy", rh.Jump.HostKeyPolicy); err != nil {
+			return Host{}, err
+		}
+	}
+
+	return Host{
+		Name:                 rh.Name,
+		Address:              rh.Address,
+		Transport:            defaultTransport(rh.Transport),
+		Port:                 defaultPort(rh.Transport, rh.HTTPS, rh.Port),
+		Username:             rh.Username,
+		Password:             rh.Password,
+		PrivateKey:           rh.PrivateKey,
+		PrivateKeyPassphrase: rh.PrivateKeyPassphrase,
+		KnownHostsFile:       rh.KnownHostsFile,
+		HostKeyPolicy:        rh.HostKeyPolicy,
+		HostKeyAlgorithms:    rh.HostKeyAlgorithms,
+		HTTPS:                rh.HTTPS,
+		Groups:               rh.Groups,
+		Vars:                 rh.Vars,
+		Timeout:              timeout,
+		Jump:                 rh.Jump,
+	}, nil
 }
 
 // validateHostKeyPolicy checks value against the valid SSH host-key policy
