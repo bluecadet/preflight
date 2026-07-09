@@ -273,7 +273,6 @@ func (r *TextRenderer) flushRunStartHeader() {
 	if r.projection.Playbook != "" && r.projection.PlayName != "" {
 		r.writeLine("name: " + r.projection.PlayName)
 	}
-	r.writeTargetIntro()
 	r.writeBlank()
 }
 
@@ -313,13 +312,6 @@ func (r *TextRenderer) targetDisplayString(e TargetStartEvent) string {
 	}
 	s += ")"
 	return s
-}
-
-func (r *TextRenderer) writeTargetIntro() {
-	// For multi-target runs, the target roster is printed by emitTargetStart.
-	// For single-target runs, the header is buffered and printed together with
-	// the target info from emitTargetStart.
-	// Nothing to do here for either case.
 }
 
 func (r *TextRenderer) emitTaskOutput(e TaskOutputEvent) {

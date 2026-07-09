@@ -105,8 +105,6 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	for _, d := range descriptors {
 		switch desc := d.(type) {
-		case RunStartDescriptor:
-			cmds = append(cmds, m.renderRunStart(desc))
 		case *RunStartDescriptor:
 			cmds = append(cmds, m.renderRunStart(*desc))
 		case TargetRosterDescriptor:

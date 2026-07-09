@@ -251,7 +251,7 @@ func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
 		}
 	}
 
-	// TargetStart for host-a (ssh) — triggers roster descriptor.
+	// TargetStart for host-a (ssh) — first target, roster not yet emitted.
 	m, cmd = m.applyEvent(TargetStartEvent{
 		Target:    "host-a",
 		Transport: "ssh",
@@ -263,7 +263,7 @@ func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
 		}
 	}
 
-	// TargetStart for host-b (winrm) — triggers roster descriptor now that all targets are seen.
+	// TargetStart for host-b (winrm) — all targets seen, emits the roster.
 	m, cmd = m.applyEvent(TargetStartEvent{
 		Target:    "host-b",
 		Transport: "winrm",

@@ -356,21 +356,24 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	p.Targets = append([]string(nil), e.Targets...)
 	p.StartedAt = time.Now()
 
-	desc := RunStartDescriptor{
+	// For single-target runs, buffer until we have the target identity from
+	// TargetStartEvent so the header can include transport and address.
+	if len(e.Targets) == 1 {
+		p.bufferedRunStartDesc = &RunStartDescriptor{
+			Mode:         e.Mode,
+			PlaybookPath: e.PlaybookPath,
+			PlaybookName: e.PlaybookName,
+			Targets:      e.Targets,
+		}
+		return nil
+	}
+
+	return []CommitDescriptor{&RunStartDescriptor{
 		Mode:         e.Mode,
 		PlaybookPath: e.PlaybookPath,
 		PlaybookName: e.PlaybookName,
 		Targets:      e.Targets,
-	}
-
-	// For single-target runs, buffer until we have the target identity from
-	// TargetStartEvent so the header can include transport and address.
-	if len(e.Targets) == 1 {
-		p.bufferedRunStartDesc = &desc
-		return nil
-	}
-
-	return []CommitDescriptor{desc}
+	}}
 }
 
 func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor {
@@ -383,10 +386,10 @@ func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor 
 
 	// Single-target: flush the buffered run start with target info.
 	if p.bufferedRunStartDesc != nil {
-		desc := *p.bufferedRunStartDesc
-		desc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
+		p.bufferedRunStartDesc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
+		desc := p.bufferedRunStartDesc
 		p.bufferedRunStartDesc = nil
-		return []CommitDescriptor{&desc}
+		return []CommitDescriptor{desc}
 	}
 
 	// For multi-target runs, emit the roster once all targets have been seen.
