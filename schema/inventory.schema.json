@@ -95,6 +95,10 @@
           "type": "array",
           "items": { "type": "string" },
           "description": "Restrict accepted SSH host key algorithms during handshake"
+        },
+        "timeout": {
+          "type": "string",
+          "description": "Connection/handshake timeout as a Go duration string (e.g. \"30s\", \"1m\") for SSH and WinRM. Defaults to 30s for SSH when unset."
         }
       }
     }
