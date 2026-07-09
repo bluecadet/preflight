@@ -61,17 +61,10 @@ type SSHConfig struct {
 	// the 30s default (defaultSSHTimeout) is used.
 	Timeout time.Duration
 	// Jump, when set, configures a single-hop SSH bastion (a ProxyJump) to
-	// dial through before reaching Host. Only connection-relevant fields on
-	// the jump config are used: Host, Port, Username, the auth fields
-	// (Password, PrivateKey, PrivateKeyPassphrase), the host-key fields
-	// (KnownHostsFile, HostKeyPolicy, HostKeyAlgorithms), and Timeout — these
-	// are honored when set programmatically, but the inventory `jump` block
-	// does not currently expose timeout or host_key_algorithms, so the 30s
-	// default timeout (defaultSSHTimeout) applies to the bastion hop for
-	// inventory-configured jump hosts. The jump host has its own independent
-	// auth and host-key policy; it does not inherit anything from the target
-	// config it fronts. Jump.Jump must be nil — nested (multi-hop) bastions
-	// are not supported.
+	// dial through before reaching Host. The jump host has its own
+	// independent auth and host-key policy; it does not inherit anything
+	// from the target config it fronts. Jump.Jump must be nil — nested
+	// (multi-hop) bastions are not supported.
 	Jump *SSHConfig
 }
 
@@ -558,9 +551,6 @@ type SSHTarget struct {
 }
 
 func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
-	if cfg.Port == 0 {
-		cfg.Port = 22
-	}
 	return &SSHTarget{
 		config:        cfg,
 		registry:      registry,
