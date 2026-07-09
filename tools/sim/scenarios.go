@@ -8,12 +8,49 @@ import (
 	"github.com/bluecadet/preflight/internal/output"
 )
 
+// targetDecl describes a target with its transport and address for simulator scenarios.
+type targetDecl struct {
+	name      string
+	transport string
+	address   string
+}
+
 // emit helpers
 
 func playStart(r output.Renderer, name string) {
 	r.Emit(output.RunStartEvent{
 		PlaybookName: name,
 		Targets:      []string{"exhibit-pc-01"},
+	})
+}
+
+func playStartN(r output.Renderer, name string, targets []targetDecl) {
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.name
+	}
+	r.Emit(output.RunStartEvent{
+		PlaybookName: name,
+		Targets:      names,
+	})
+}
+
+func emitTargetStart(r output.Renderer, t targetDecl) {
+	r.Emit(output.TargetStartEvent{
+		Target:    t.name,
+		Transport: t.transport,
+		Address:   t.address,
+	})
+}
+
+func emitRunSummary(r output.Renderer, ok, changed, failed, skipped int) {
+	r.Emit(output.RunSummaryEvent{
+		Status:       "ok",
+		OKCount:      ok,
+		ChangedCount: changed,
+		FailedCount:  failed,
+		SkippedCount: skipped,
+		ElapsedMs:    1000,
 	})
 }
 
@@ -362,6 +399,127 @@ func runStreaming(r output.Renderer, delay time.Duration) {
 	}, delay)
 
 	playEnd(r, host, 0, 1, 1, 0)
+}
+
+func runRoster(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "edge-gateway", transport: "ssh", address: "[10.0.1.10]:22"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "dc-controller", transport: "winrm", address: "[10.0.2.50]:5986"},
+		{name: "media-player-03", transport: "ssh", address: "[10.0.1.85]:22"},
+	}
+	playStartN(r, "multi-transport rollout", targets)
+
+	sr := output.Synchronized(r)
+
+	steps := []struct {
+		id, name, status string
+	}{
+		{"connect", "Establish connection", "ok"},
+		{"gather-facts", "Gather system facts", "ok"},
+		{"install-agent", "Install monitoring agent", "changed"},
+		{"configure-logs", "Configure log shipping", "changed"},
+		{"verify-service", "Verify agent service", "ok"},
+	}
+
+	var (
+		wg          sync.WaitGroup
+		totalOK     int
+		totalChg    int
+		totalFailed int
+		totalSkip   int
+		mu          sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.3))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				taskStart(sr, t.name, s.id, s.name)
+				time.Sleep(jitter(delay, 0.3, 1.2))
+				taskDone(sr, t.name, s.id, s.name, s.status, "")
+				if s.status == "ok" {
+					ok++
+				} else {
+					changed++
+				}
+			}
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, totalFailed, totalSkip)
+}
+
+func runInlinePrefixes(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "web-01", transport: "ssh", address: "[10.0.0.10]:22"},
+		{name: "web-02", transport: "ssh", address: "[10.0.0.11]:22"},
+		{name: "win-srv", transport: "winrm", address: "[10.0.0.50]:5986"},
+		{name: "local-node", transport: "local", address: ""},
+	}
+	playStartN(r, "mixed transport deployment", targets)
+
+	sr := output.Synchronized(r)
+
+	type stepDef struct {
+		id, name, status, msg string
+	}
+
+	steps := []stepDef{
+		{"ping", "Ping target", "ok", ""},
+		{"os-check", "Check OS version", "ok", ""},
+		{"install-runtime", "Install runtime", "changed", "v3.2.1 installed"},
+		{"deploy-config", "Deploy configuration", "changed", "42 values synced"},
+		{"restart-service", "Restart service", "ok", ""},
+		{"health-check", "Health check", "ok", ""},
+	}
+
+	var (
+		wg          sync.WaitGroup
+		totalOK     int
+		totalChg    int
+		totalFailed int
+		totalSkip   int
+		mu          sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.4))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				taskStart(sr, t.name, s.id, s.name)
+				time.Sleep(jitter(delay, 0.4, 1.5))
+				taskDone(sr, t.name, s.id, s.name, s.status, s.msg)
+				if s.status == "ok" {
+					ok++
+				} else {
+					changed++
+				}
+			}
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, totalFailed, totalSkip)
 }
 
 func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
