@@ -69,12 +69,13 @@ type SemanticPalette struct {
 	Skipped ColorRole
 
 	// UI element colors.
-	Muted   ColorRole
-	Bold    ColorRole
-	Spin    ColorRole
-	Divider ColorRole
-	Output  ColorRole
-	Elapsed ColorRole
+	TaskName ColorRole
+	Muted    ColorRole
+	Bold     ColorRole
+	Spin     ColorRole
+	Divider  ColorRole
+	Output   ColorRole
+	Elapsed  ColorRole
 
 	// Card element colors.
 	CardTitle ColorRole
@@ -102,12 +103,13 @@ func DefaultPalette() SemanticPalette {
 		Skipped: ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
 
 		// UI elements.
-		Muted:   ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
-		Bold:    ColorRole{ANSI: "\033[1m", Bold: true},                 // no color, bold
-		Spin:    ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"},    // blue
-		Divider: ColorRole{Light: "237", Dark: "237", ANSI: "\033[90m"}, // dim grey
-		Output:  ColorRole{Light: "241", Dark: "241", Italic: true},     // grey italic
-		Elapsed: ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
+		TaskName: ColorRole{Light: "248", Dark: "248"},                   // medium grey, ANSI = terminal default
+		Muted:    ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
+		Bold:     ColorRole{ANSI: "\033[1m", Bold: true},                 // no color, bold
+		Spin:     ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"},    // blue
+		Divider:  ColorRole{Light: "237", Dark: "237", ANSI: "\033[90m"}, // dim grey
+		Output:   ColorRole{Light: "241", Dark: "241", Italic: true},     // grey italic
+		Elapsed:  ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
 
 		// Card elements.
 		CardTitle: ColorRole{Light: "4", Dark: "12", Bold: true},    // bold blue

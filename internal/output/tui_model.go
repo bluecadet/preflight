@@ -198,7 +198,7 @@ func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
-	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + d.TaskName
+	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + S.TaskName.Render(d.TaskName)
 	if m.projection.ShouldShowHostLabels() && d.Target != "" {
 		left = m.targetBadge(d.Target) + " " + left
 	}
@@ -356,10 +356,10 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 		}
 		b.WriteString(header)
 		b.WriteByte('\n')
-		line := padLine("  "+spin+" "+task.name, timer, m.width)
+		line := padLine("  "+spin+" "+S.TaskName.Render(task.name), timer, m.width)
 		b.WriteString(tsRow(line))
 	} else {
-		left := spin + " " + task.name
+		left := spin + " " + S.TaskName.Render(task.name)
 		if m.projection.ShouldShowHostLabels() && task.target != "" {
 			left = m.targetBadge(task.target) + " " + left
 		}
