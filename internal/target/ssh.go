@@ -388,13 +388,11 @@ var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, e
 // the TCP connect and the SSH handshake by the config's effective timeout.
 func dialSSHClient(cfg SSHConfig) (*ssh.Client, error) {
 	clientConfig, agentCloser, err := buildSSHClientConfig(cfg)
+	defer closeAgent(agentCloser)
 	if err != nil {
-		closeAgent(agentCloser)
 		return nil, err
 	}
-	client, err := dialSSHClientBounded(sshAddr(cfg), clientConfig, clientConfig.Timeout)
-	closeAgent(agentCloser)
-	return client, err
+	return dialSSHClientBounded(sshAddr(cfg), clientConfig, clientConfig.Timeout)
 }
 
 // sshAddr formats cfg's Host:Port as a dial address, defaulting Port to 22
@@ -460,8 +458,9 @@ func dialSSHClientBounded(addr string, config *ssh.ClientConfig, timeout time.Du
 	return ssh.NewClient(sshConn, chans, reqs), nil
 }
 
-// dialSSHViaBastionBounded opens a channel to targetAddr through
-// bastionClient and performs the second SSH handshake, bounded by timeout.
+// dialSSHViaBastionBounded builds an *ssh.ClientConfig from targetCfg, then
+// opens a channel to targetCfg's Host:Port through bastionClient and performs
+// the second SSH handshake, bounded by targetCfg's effective timeout.
 //
 // Unlike the first hop, the net.Conn returned by (*ssh.Client).Dial (an
 // in-tunnel channel conn) does not support SetDeadline — it always returns
@@ -472,7 +471,16 @@ func dialSSHClientBounded(addr string, config *ssh.ClientConfig, timeout time.Du
 // channel out from under the goroutine's blocked Dial/handshake call, so it
 // returns (with an error) instead of leaking forever, even though this
 // function has already returned.
-func dialSSHViaBastionBounded(bastionClient *ssh.Client, targetAddr string, config *ssh.ClientConfig, bastionAddr string, timeout time.Duration) (*ssh.Client, error) {
+func dialSSHViaBastionBounded(bastionClient *ssh.Client, targetCfg SSHConfig, bastionAddr string) (*ssh.Client, error) {
+	config, agentCloser, err := buildSSHClientConfig(targetCfg)
+	defer closeAgent(agentCloser)
+	if err != nil {
+		return nil, err
+	}
+
+	targetAddr := sshAddr(targetCfg)
+	timeout := config.Timeout
+
 	type dialResult struct {
 		client *ssh.Client
 		err    error
@@ -509,9 +517,9 @@ func dialSSHViaBastionBounded(bastionClient *ssh.Client, targetAddr string, conf
 // connection. The bastion and target each use their own, independent
 // SSHConfig (auth, host-key policy, timeout) — the target does not inherit
 // anything from the jump host's configuration. Both hops are bounded: the
-// bastion hop by dialSSHClientBounded (TCP connect + handshake), and the
-// target hop by dialSSHViaBastionBounded (channel-open + handshake, since
-// the tunneled channel conn cannot use SetDeadline directly).
+// bastion hop by dialSSHClient (TCP connect + handshake), and the target hop
+// by dialSSHViaBastionBounded (channel-open + handshake, since the tunneled
+// channel conn cannot use SetDeadline directly).
 func dialSSHRunnerViaJump(cfg SSHConfig) (sshRunner, error) {
 	jumpCfg := *cfg.Jump
 	if jumpCfg.Jump != nil {
@@ -519,29 +527,13 @@ func dialSSHRunnerViaJump(cfg SSHConfig) (sshRunner, error) {
 	}
 
 	bastionAddr := sshAddr(jumpCfg)
-	targetAddr := sshAddr(cfg)
 
-	bastionClientConfig, bastionAgentCloser, err := buildSSHClientConfig(jumpCfg)
+	bastionClient, err := dialSSHClient(jumpCfg)
 	if err != nil {
-		closeAgent(bastionAgentCloser)
-		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
-	}
-	targetClientConfig, targetAgentCloser, err := buildSSHClientConfig(cfg)
-	if err != nil {
-		closeAgent(bastionAgentCloser)
-		closeAgent(targetAgentCloser)
-		return nil, err
-	}
-
-	bastionClient, err := dialSSHClientBounded(bastionAddr, bastionClientConfig, bastionClientConfig.Timeout)
-	closeAgent(bastionAgentCloser)
-	if err != nil {
-		closeAgent(targetAgentCloser)
 		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
 	}
 
-	targetClient, err := dialSSHViaBastionBounded(bastionClient, targetAddr, targetClientConfig, bastionAddr, targetClientConfig.Timeout)
-	closeAgent(targetAgentCloser)
+	targetClient, err := dialSSHViaBastionBounded(bastionClient, cfg, bastionAddr)
 	if err != nil {
 		_ = bastionClient.Close()
 		return nil, err
