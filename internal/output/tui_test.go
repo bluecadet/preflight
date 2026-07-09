@@ -263,14 +263,16 @@ func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
 		}
 	}
 
-	// TargetStart for host-b (winrm) — no descriptor (pre-existing roster bug).
+	// TargetStart for host-b (winrm) — triggers roster descriptor now that all targets are seen.
 	m, cmd = m.applyEvent(TargetStartEvent{
 		Target:    "host-b",
 		Transport: "winrm",
 		Address:   "[IP_ADDRESS]",
 	})
 	if cmd != nil {
-		blocks = append(blocks, namedBlock{name: "target-start-b", block: collectPrintedBlocks(cmd)[0]})
+		for _, b := range collectPrintedBlocks(cmd) {
+			blocks = append(blocks, namedBlock{name: "target-roster-full", block: b})
+		}
 	}
 
 	// TaskOK on host-a.

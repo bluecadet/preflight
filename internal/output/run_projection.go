@@ -325,6 +325,10 @@ func (p *RunProjection) Elapsed() time.Duration {
 }
 
 // IsSingleTarget returns true when the run has exactly one target.
+func (p *RunProjection) IsSingleTarget() bool {
+	return len(p.Targets) == 1
+}
+
 // TargetTransport returns the transport for the given target name.
 // Returns empty string if the target is not found.
 func (p *RunProjection) TargetTransport(target string) string {
@@ -334,10 +338,6 @@ func (p *RunProjection) TargetTransport(target string) string {
 		}
 	}
 	return ""
-}
-
-func (p *RunProjection) IsSingleTarget() bool {
-	return len(p.Targets) == 1
 }
 
 func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
@@ -365,10 +365,12 @@ func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor 
 		Address:   e.Address,
 	})
 
-	// For multi-target runs, emit a roster descriptor on the first target start.
-	if len(p.Targets) > 1 && len(p.TargetInfo) == 1 {
+	// For multi-target runs, emit the roster once all targets have been seen.
+	if len(p.Targets) > 1 && len(p.TargetInfo) == len(p.Targets) {
+		targets := make([]TargetInfo, len(p.TargetInfo))
+		copy(targets, p.TargetInfo)
 		return []CommitDescriptor{TargetRosterDescriptor{
-			Targets: p.TargetInfo,
+			Targets: targets,
 		}}
 	}
 	return nil
