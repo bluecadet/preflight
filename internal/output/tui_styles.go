@@ -27,7 +27,6 @@ type TUIStyles struct {
 	Key       lipgloss.Style
 	Value     lipgloss.Style
 	TableHead lipgloss.Style
-	TableRule lipgloss.Style
 
 	TransportLocal lipgloss.Style
 	TransportSSH   lipgloss.Style
@@ -69,7 +68,6 @@ func NewTUIStyles(p SemanticPalette, color bool) TUIStyles {
 		Key:       build(p.Key),
 		Value:     build(p.Value),
 		TableHead: build(p.TableHead),
-		TableRule: build(p.TableRule),
 
 		TransportLocal: build(p.TransportLocal),
 		TransportSSH:   build(p.TransportSSH),

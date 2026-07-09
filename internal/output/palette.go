@@ -82,7 +82,6 @@ type SemanticPalette struct {
 	Key       ColorRole
 	Value     ColorRole
 	TableHead ColorRole
-	TableRule ColorRole
 
 	// Transport badge colors (reserved for future use).
 	TransportLocal ColorRole
@@ -116,7 +115,6 @@ func DefaultPalette() SemanticPalette {
 		Key:       ColorRole{Light: "246", Dark: "246"},             // grey
 		Value:     ColorRole{Light: "252", Dark: "252"},             // light grey
 		TableHead: ColorRole{Light: "252", Dark: "252", Bold: true}, // bold light grey
-		TableRule: ColorRole{Light: "238", Dark: "238"},             // dim grey
 
 		// Transport badges (reserved — not yet used by any renderer).
 		TransportLocal: ColorRole{Light: "8", Dark: "8"},                    // grey

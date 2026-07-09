@@ -114,7 +114,7 @@ func tsRenderSection(title, body string, width int) string {
 	}
 	if title != "" {
 		ruleWidth := max(width-4, 10)
-		parts = append(parts, S.TableRule.Render(strings.Repeat("─", ruleWidth)))
+		parts = append(parts, S.Divider.Render(strings.Repeat("─", ruleWidth)))
 	}
 	parts = append(parts, S.CardBodyInset.Render(body))
 	return strings.Join(parts, "\n")
@@ -163,7 +163,7 @@ func tsRenderSimpleTable(headers []string, rows [][]string) string {
 
 	lines := []string{
 		renderRow(headers, S.TableHead),
-		S.TableRule.Render(renderRow(tsDashCells(widths), lipgloss.NewStyle())),
+		S.Divider.Render(renderRow(tsDashCells(widths), lipgloss.NewStyle())),
 	}
 	for _, row := range rows {
 		lines = append(lines, renderRow(row, lipgloss.NewStyle()))
