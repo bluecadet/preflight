@@ -1,24 +1,26 @@
 [?25l[?<elapsed>
-  ▣ Action Catalog
-────────────────────────────────────────────────────────────────────────────
-  Namespace  preflight/
-  Local dir  <cwd>/actions
-  Embedded   9
-  Local      0
-
-  Embedded actions
-  • preflight/autologin
-  • preflight/debloat
-  • preflight/git-sync
-  • preflight/windows-input
-  • preflight/windows-machine
-  • preflight/windows-power
-  • preflight/windows-quiet-mode
-  • preflight/windows-shell
-  • preflight/windows-update-lockdown
-
-  Local actions
-  (none)
+╭────────────────────────╮
+│   ▣ Action Catalog │
+│ ──────────────────────── │
+│   Namespace  preflight/ │
+│   Local dir  <cwd>/actions │
+│   Embedded   9 │
+│   Local      0 │
+│ │
+│   Embedded actions │
+│   • preflight/autologin │
+│   • preflight/debloat │
+│   • preflight/git-sync │
+│   • preflight/windows-input │
+│   • preflight/windows-machine │
+│   • preflight/windows-power │
+│   • preflight/windows-quiet-mode │
+│   • preflight/windows-shell │
+│   • preflight/windows-update-lockdown │
+│ │
+│   Local actions │
+│   (none) │
+╰────────────────────────╯
 
 
 [2K

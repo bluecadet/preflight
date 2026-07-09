@@ -105,19 +105,44 @@ func tsRenderNotice(glyph string, style lipgloss.Style, message string, width in
 }
 
 func tsRenderSection(title, body string, width int) string {
+	cardWidth := max(width, 20)
+
 	var parts []string
+	// Top border.
+	parts = append(parts, "╭"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╮")
+
 	if title != "" {
-		parts = append(parts, S.CardTitleInset.Render(S.CardTitle.Render(title)))
+		parts = append(parts, cardLine("  "+S.CardTitle.Render(title), cardWidth))
 	}
+
 	if strings.TrimSpace(body) == "" {
+		parts = append(parts, "╰"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╯")
 		return strings.Join(parts, "\n")
 	}
+
 	if title != "" {
-		ruleWidth := max(width-4, 10)
-		parts = append(parts, S.Divider.Render(strings.Repeat("─", ruleWidth)))
+		// Internal rule sized to the card width, not the terminal width.
+		ruleWidth := max(cardWidth-8, 10)
+		parts = append(parts, cardLine("  "+S.Divider.Render(strings.Repeat("─", ruleWidth))+"  ", cardWidth))
 	}
-	parts = append(parts, S.CardBodyInset.Render(body))
+
+	for line := range strings.SplitSeq(body, "\n") {
+		parts = append(parts, cardLine("  "+line, cardWidth))
+	}
+
+	// Bottom border.
+	parts = append(parts, "╰"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╯")
+
 	return strings.Join(parts, "\n")
+}
+
+// cardLine wraps a single line of content with side borders, right-padding
+// to fill the full card width.
+func cardLine(content string, width int) string {
+	innerWidth := width - 4 // "│ " prefix + " │" suffix
+	contentWidth := lipgloss.Width(content)
+	padding := max(innerWidth-contentWidth, 0)
+	return "│ " + content + strings.Repeat(" ", padding) + " │"
 }
 
 func tsRenderPairs(rows [][2]string) string {
