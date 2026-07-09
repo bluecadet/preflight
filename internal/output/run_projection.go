@@ -281,8 +281,8 @@ func (p *RunProjection) OrderedActivities() []*activeActivity {
 	return result
 }
 
-// OrderedRunningTasks returns running tasks sorted by alert status,
-// then start time, then last updated (most recent first).
+// OrderedRunningTasks returns running tasks sorted by start time
+// (oldest first), then last updated (most recent first).
 func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 	var running []*activeTask
 	for _, host := range p.hostOrder {
@@ -295,9 +295,6 @@ func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 	sort.SliceStable(running, func(i, j int) bool {
 		left := running[i]
 		right := running[j]
-		if left.alert != right.alert {
-			return left.alert
-		}
 		if !left.startAt.Equal(right.startAt) {
 			return left.startAt.Before(right.startAt)
 		}
