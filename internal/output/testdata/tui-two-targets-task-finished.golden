@@ -6,9 +6,10 @@ targets: 2
   host-a, host-b
 ────────────────────────────────────────────────────────────────────────────────
 
-[target-roster]
+[target-roster-full]
 Targets:
   host-a (ssh • [IP_ADDRESS])
+  host-b (winrm • [IP_ADDRESS])
 [task-ok]
   [host-a] ✓ sync artifacts                                                 0.8s
 [task-skipped]
