@@ -362,18 +362,13 @@ When changing plugin behavior:
 
 ## Releases
 
-Releases are automated via GoReleaser. To cut a release:
+Releases are driven by [release-please](https://github.com/googleapis/release-please) and built by GoReleaser — no manual tagging.
 
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-```
-
-Pushing a `v*` tag triggers the release workflow, which builds Windows, macOS, and Linux archives, generates checksums, signs the checksum artifact with `cosign` using GitHub OIDC, generates a changelog from commit messages, and publishes a GitHub release.
+Every merge to `main` that contains a `feat:`, `fix:`, or other release-relevant [Conventional Commit](https://www.conventionalcommits.org/) updates (or opens) a standing "release PR" with the accumulated changelog and next version bump. Merging that PR is the release trigger: release-please tags the commit and creates the GitHub release, which in turn fires the tag-triggered release workflow that builds Windows, macOS, and Linux archives, generates checksums, and signs the checksum artifact with `cosign` using GitHub OIDC. GoReleaser attaches those artifacts to the release that release-please already created rather than replacing its notes.
 
 The checksum artifact name is `preflight_checksums.txt`. Installer and smoke-test changes should be verified against that filename and against the release workflow's Linux and Windows install checks.
 
-Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, etc.) — GoReleaser groups the changelog by prefix. Tags named `v1.2.3-beta.1` are automatically marked as pre-releases.
+Commit type determines the version bump (`fix:` → patch, `feat:` → minor, `!`/`BREAKING CHANGE:` → major); non-conventional commits are excluded from the changelog. Version state lives in `.release-please-manifest.json`.
 
 For significant changes (new modules, schema changes, changes to the action resolution chain), open an issue first to discuss the approach. Breaking changes to `action.yml` or `playbook.yml` schemas are treated with extra care — the schema is the public API.
 
