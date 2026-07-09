@@ -658,6 +658,34 @@ hosts:
 	}
 }
 
+func TestParseHostTimeout_NonPositive(t *testing.T) {
+	tests := []struct {
+		name    string
+		timeout string
+	}{
+		{name: "negative", timeout: "-30s"},
+		{name: "zero", timeout: "0s"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    timeout: ` + tc.timeout + `
+`
+			_, err := inventory.Parse([]byte(data))
+			if err == nil {
+				t.Fatal("expected error for non-positive timeout, got nil")
+			}
+			if !strings.Contains(err.Error(), `host "staging-pc-01": timeout must be positive, got "`+tc.timeout+`"`) {
+				t.Errorf("unexpected error message: %v", err)
+			}
+		})
+	}
+}
+
 func TestSelectTargets_DedupesInSelectorOrder(t *testing.T) {
 	inv, err := inventory.Parse([]byte(sampleInventory))
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bluecadet/preflight/internal/target"
 	"gopkg.in/yaml.v3"
 )
 
@@ -112,23 +113,22 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 			if err != nil {
 				return nil, fmt.Errorf("inventory: host %q: invalid timeout %q: %w", rh.Name, rh.Timeout, err)
 			}
+			if parsed <= 0 {
+				return nil, fmt.Errorf("inventory: host %q: timeout must be positive, got %q", rh.Name, rh.Timeout)
+			}
 			timeout = parsed
 		}
 
-		switch rh.HostKeyPolicy {
-		case "", "accept-new", "strict", "insecure":
-		default:
-			return nil, fmt.Errorf("inventory: host %q: invalid host_key_policy %q: must be \"accept-new\", \"strict\", or \"insecure\"", rh.Name, rh.HostKeyPolicy)
+		if err := validateHostKeyPolicy(rh.Name, "host_key_policy", rh.HostKeyPolicy); err != nil {
+			return nil, err
 		}
 
 		if rh.Jump != nil {
 			if rh.Jump.Address == "" {
 				return nil, fmt.Errorf("inventory: host %q: jump.address is required", rh.Name)
 			}
-			switch rh.Jump.HostKeyPolicy {
-			case "", "accept-new", "strict", "insecure":
-			default:
-				return nil, fmt.Errorf("inventory: host %q: invalid jump host_key_policy %q: must be \"accept-new\", \"strict\", or \"insecure\"", rh.Name, rh.Jump.HostKeyPolicy)
+			if err := validateHostKeyPolicy(rh.Name, "jump host_key_policy", rh.Jump.HostKeyPolicy); err != nil {
+				return nil, err
 			}
 		}
 
@@ -153,6 +153,20 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 	}
 
 	return inv, nil
+}
+
+// validateHostKeyPolicy checks value against the valid SSH host-key policy
+// values (empty, meaning the default, or one of the target package's
+// exported HostKeyPolicy constants), returning a descriptive error for
+// hostName/field otherwise. It is shared by the host-level and jump-level
+// host_key_policy checks.
+func validateHostKeyPolicy(hostName, field, value string) error {
+	switch value {
+	case "", target.HostKeyPolicyAcceptNew, target.HostKeyPolicyStrict, target.HostKeyPolicyInsecure:
+		return nil
+	default:
+		return fmt.Errorf("inventory: host %q: invalid %s %q: must be %q, %q, or %q", hostName, field, value, target.HostKeyPolicyAcceptNew, target.HostKeyPolicyStrict, target.HostKeyPolicyInsecure)
+	}
 }
 
 func emptyInventory() *Inventory {
