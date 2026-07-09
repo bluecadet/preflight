@@ -84,12 +84,13 @@ func TestSSHConfig_KnownHostsFile_Callback(t *testing.T) {
 // TestSSHConfig_Insecure_AcceptsAnyKey verifies that the insecure policy
 // accepts any host key.
 func TestSSHConfig_Insecure_AcceptsAnyKey(t *testing.T) {
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:          "127.0.0.1",
 		Username:      "test",
 		Password:      "x",
 		HostKeyPolicy: HostKeyPolicyInsecure,
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig: %v", err)
 	}
@@ -109,12 +110,13 @@ func TestSSHConfig_Insecure_AcceptsAnyKey(t *testing.T) {
 // TestSSHConfig_InvalidHostKeyPolicy_Errors verifies that an unrecognized
 // HostKeyPolicy value is rejected as a configuration error.
 func TestSSHConfig_InvalidHostKeyPolicy_Errors(t *testing.T) {
-	_, err := buildSSHClientConfig(SSHConfig{
+	_, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:          "127.0.0.1",
 		Username:      "test",
 		Password:      "x",
 		HostKeyPolicy: "bogus",
 	})
+	defer closeCloser(closer)
 	if err == nil {
 		t.Fatal("expected error for invalid host_key_policy, got nil")
 	}
@@ -139,13 +141,14 @@ func TestSSHConfig_AcceptNew_UnknownHost_AppendsAndAccepts(t *testing.T) {
 	dir := t.TempDir()
 	khPath := filepath.Join(dir, "known_hosts")
 
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:           "127.0.0.1",
 		Username:       "test",
 		Password:       "x",
 		KnownHostsFile: khPath,
 		HostKeyPolicy:  HostKeyPolicyAcceptNew,
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig: %v", err)
 	}
@@ -200,13 +203,14 @@ func TestSSHConfig_AcceptNew_KnownHostKeyMismatch_Errors(t *testing.T) {
 		t.Fatalf("write known_hosts: %v", err)
 	}
 
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:           "127.0.0.1",
 		Username:       "test",
 		Password:       "x",
 		KnownHostsFile: khPath,
 		HostKeyPolicy:  HostKeyPolicyAcceptNew,
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig: %v", err)
 	}
@@ -231,13 +235,14 @@ func TestSSHConfig_Strict_UnknownHost_Errors(t *testing.T) {
 		t.Fatalf("write known_hosts: %v", err)
 	}
 
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:           "127.0.0.1",
 		Username:       "test",
 		Password:       "x",
 		KnownHostsFile: khPath,
 		HostKeyPolicy:  HostKeyPolicyStrict,
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig: %v", err)
 	}
@@ -264,12 +269,13 @@ func TestSSHConfig_Strict_UnknownHost_Errors(t *testing.T) {
 func TestSSHConfig_DefaultPolicyIsAcceptNew(t *testing.T) {
 	withSSHUserKeyDir(t, t.TempDir())
 
-	cfg, err := buildSSHClientConfig(SSHConfig{
+	cfg, closer, err := buildSSHClientConfig(SSHConfig{
 		Host:     "127.0.0.1",
 		Username: "test",
 		Password: "x",
 		// HostKeyPolicy intentionally left empty.
 	})
+	defer closeCloser(closer)
 	if err != nil {
 		t.Fatalf("buildSSHClientConfig: %v", err)
 	}
@@ -292,6 +298,28 @@ func TestSSHConfig_DefaultPolicyIsAcceptNew(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "127.0.0.1") {
 		t.Errorf("expected default known_hosts to contain accepted host, got: %s", data)
+	}
+}
+
+// TestSSHConfig_DefaultKnownHostsUnresolvableHome_Errors verifies that when
+// KnownHostsFile is unset and sshUserKeyDir cannot determine a home
+// directory (HOME unset), buildSSHClientConfig fails with a clear error
+// instead of silently deriving a CWD-relative known_hosts path.
+func TestSSHConfig_DefaultKnownHostsUnresolvableHome_Errors(t *testing.T) {
+	withSSHUserKeyDir(t, "")
+
+	_, closer, err := buildSSHClientConfig(SSHConfig{
+		Host:     "127.0.0.1",
+		Username: "test",
+		Password: "x",
+		// KnownHostsFile and HostKeyPolicy intentionally left empty.
+	})
+	defer closeCloser(closer)
+	if err == nil {
+		t.Fatal("expected error when the default known_hosts home directory cannot be determined")
+	}
+	if !strings.Contains(err.Error(), "known_hosts") {
+		t.Fatalf("expected error to mention known_hosts, got: %v", err)
 	}
 }
 
