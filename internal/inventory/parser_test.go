@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/bluecadet/preflight/internal/inventory"
 )
 
@@ -377,6 +379,93 @@ hosts:
 	}
 	if h.HostKeyAlgorithms[0] != "ssh-ed25519" || h.HostKeyAlgorithms[1] != "ssh-rsa" {
 		t.Errorf("unexpected host_key_algorithms: %v", h.HostKeyAlgorithms)
+	}
+}
+
+func TestParseSSHHostKeyPolicyField(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    host_key_policy: strict
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got := hosts[0].HostKeyPolicy; got != "strict" {
+		t.Errorf("expected host_key_policy to be populated, got %q", got)
+	}
+}
+
+func TestParseSSHHostKeyPolicyField_Absent(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got := hosts[0].HostKeyPolicy; got != "" {
+		t.Errorf("expected empty host_key_policy when absent, got %q", got)
+	}
+}
+
+// TestParseSSHHostKeyPolicyField_Invalid verifies that an invalid
+// host_key_policy value is rejected. Via the public Parse entry point this is
+// caught by schema validation (which lists the allowed enum values); the
+// parser's own switch-based check in ParseNode is a defense-in-depth guard
+// for callers that decode a node without running schema validation first.
+func TestParseSSHHostKeyPolicyField_Invalid(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    host_key_policy: bogus
+`
+	_, err := inventory.Parse([]byte(data))
+	if err == nil {
+		t.Fatal("expected error for invalid host_key_policy, got nil")
+	}
+	if !strings.Contains(err.Error(), "host_key_policy") || !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+// TestParseSSHHostKeyPolicyField_InvalidViaParseNode exercises the parser's
+// own host_key_policy validation directly (bypassing schema validation) to
+// confirm the "inventory: host %q: invalid host_key_policy %q" error shape.
+func TestParseSSHHostKeyPolicyField_InvalidViaParseNode(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    host_key_policy: bogus
+`
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(data), &root); err != nil {
+		t.Fatalf("yaml.Unmarshal: %v", err)
+	}
+	_, err := inventory.ParseNode(root.Content[0])
+	if err == nil {
+		t.Fatal("expected error for invalid host_key_policy, got nil")
+	}
+	if !strings.Contains(err.Error(), `host "staging-pc-01": invalid host_key_policy "bogus"`) {
+		t.Errorf("unexpected error message: %v", err)
 	}
 }
 

@@ -71,6 +71,38 @@ hosts:
 	}
 }
 
+func TestBuildTargetSSH_PassesHostKeyPolicy(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    host_key_policy: strict
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	cfg := sshTgt.Config()
+	if cfg.HostKeyPolicy != "strict" {
+		t.Errorf("SSHConfig.HostKeyPolicy: got %q, want %q", cfg.HostKeyPolicy, "strict")
+	}
+}
+
 func TestBuildTargetSSH_PassesTimeout(t *testing.T) {
 	data := `
 hosts:

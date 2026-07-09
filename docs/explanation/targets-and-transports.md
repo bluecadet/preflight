@@ -124,9 +124,13 @@ inventory:
 
 ### SSH Host-Key Verification
 
-By default, when no `known_hosts_file` is configured in inventory, host-key checking is skipped. This is insecure and should only be used on isolated networks where host identity is established by other means.
+SSH targets verify the remote host key against a known_hosts file according to `host_key_policy`. There is no way to silently trust an unknown host by omission; every policy either establishes trust explicitly or fails loudly.
 
-To enable host-key verification, set `known_hosts_file` on the host entry in `preflight.yml`:
+- **`accept-new`** (default) — trust-on-first-use (TOFU). Verification runs against `known_hosts_file`; a host with no existing entry is trusted and its key is appended to the file (the file and its parent directory are created with `0600`/`0700` permissions if missing), and a notice is logged. A host with an existing entry whose key no longer matches fails immediately with an error, since that can indicate a MITM attack — if the change is expected (e.g. the remote machine was reimaged), remove the stale line from the known_hosts file and reconnect.
+- **`strict`** — verification only; both unknown hosts and mismatched keys fail. Use this for hardened setups where trust must be established out of band before Preflight ever connects: either connect once with `accept-new` to pin the key, or pre-seed the file with `ssh-keyscan -H <host> >> <known_hosts_file>`.
+- **`insecure`** — disables host-key verification entirely (the pre-hardening default). Every connection logs a prominent warning. Only appropriate for throwaway labs or fully isolated networks where host identity is established by other means.
+
+When `known_hosts_file` is omitted, it defaults to `known_hosts` under the same directory used for default SSH key discovery (normally `~/.ssh/known_hosts`).
 
 ```yaml
 inventory:
@@ -134,6 +138,7 @@ inventory:
     - name: kiosk-01
       address: 10.0.0.5
       transport: ssh
+      host_key_policy: strict
       known_hosts_file: /home/operator/.ssh/known_hosts
       host_key_algorithms:
         - ssh-ed25519

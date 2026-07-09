@@ -138,6 +138,7 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 			PrivateKey:           privateKey,
 			PrivateKeyPassphrase: privateKeyPassphrase,
 			KnownHostsFile:       host.KnownHostsFile,
+			HostKeyPolicy:        host.HostKeyPolicy,
 			HostKeyAlgorithms:    host.HostKeyAlgorithms,
 			Timeout:              host.Timeout,
 		}, registry), nil

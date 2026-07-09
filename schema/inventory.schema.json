@@ -95,6 +95,11 @@
           "type": "string",
           "description": "Path to a known_hosts file for SSH host key verification"
         },
+        "host_key_policy": {
+          "type": "string",
+          "enum": ["accept-new", "strict", "insecure"],
+          "description": "SSH host-key verification policy. accept-new (default) trusts unknown hosts on first connect and pins them; strict requires the host to already be in known_hosts_file; insecure disables verification entirely."
+        },
         "host_key_algorithms": {
           "type": "array",
           "items": { "type": "string" },

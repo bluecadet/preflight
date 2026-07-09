@@ -29,6 +29,7 @@ type Host struct {
 	PrivateKey           string         `yaml:"private_key,omitempty"`
 	PrivateKeyPassphrase string         `yaml:"private_key_passphrase,omitempty"`
 	KnownHostsFile       string         `yaml:"known_hosts_file,omitempty"`
+	HostKeyPolicy        string         `yaml:"host_key_policy,omitempty"`
 	HostKeyAlgorithms    []string       `yaml:"host_key_algorithms,omitempty"`
 	HTTPS                bool           `yaml:"https,omitempty"`
 	Groups               []string       `yaml:"groups,omitempty"`
