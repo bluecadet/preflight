@@ -18,3 +18,4 @@ x Apply failed
 
 Needs attention
   [app-01] install .NET runtime
+  Run directory: /var/log/preflight/run-20250301-120001

@@ -38,7 +38,7 @@ func newEventSnapshotCases() []snapshotCase {
 	return []snapshotCase{
 		{
 			name: "run-with-one-ok-task",
-			opts: Options{Mode: "apply"},
+			opts: Options{Mode: "apply", RunDir: "/var/log/preflight/run-20250301-120000"},
 			events: []Event{
 				RunStartEvent{
 					Mode:         "apply",
@@ -88,7 +88,7 @@ func newEventSnapshotCases() []snapshotCase {
 		},
 		{
 			name: "run-with-failed-task",
-			opts: Options{Mode: "apply"},
+			opts: Options{Mode: "apply", RunDir: "/var/log/preflight/run-20250301-120001"},
 			events: []Event{
 				RunStartEvent{
 					Mode:         "apply",

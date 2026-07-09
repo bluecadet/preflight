@@ -430,9 +430,9 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 				r.writeLine("  " + path)
 			}
 		}
-		if r.projection.RunDir != "" {
-			r.writeLine("  Run directory: " + r.projection.RunDir)
-		}
+	}
+	if r.projection.RunDir != "" {
+		r.writeLine("  Run directory: " + r.projection.RunDir)
 	}
 }
 
