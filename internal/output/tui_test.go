@@ -223,6 +223,72 @@ func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
 	}
 }
 
+func TestTUIModel_CardSnapshots(t *testing.T) {
+	savedS := S
+	defer func() { S = savedS }()
+	S = NewTUIStyles(DefaultPalette(), true)
+
+	tests := []struct {
+		name string
+		evt  Event
+	}{
+		{
+			name: "facts-card",
+			evt: FactsEvent{
+				Target: "kiosk-01",
+				Facts: map[string]any{
+					"hostname": "kiosk-01-prod",
+					"os":       "Windows Server 2022",
+					"kernel":   "10.0.20348",
+					"cpu":      "Intel(R) Xeon(R) Platinum 8375C",
+					"memory":   "8GB",
+				},
+			},
+		},
+		{
+			name: "plan-card",
+			evt: PlanEvent{
+				Target:       "kiosk-01",
+				PlaybookName: "kiosk-provision",
+				Tasks: []PlanTaskEntry{
+					{Number: 1, Module: "command", Name: "install display drivers", Tags: []string{"drivers"}},
+					{Number: 2, Module: "registry", Name: "configure autologin", When: "os == 'windows'", Tags: []string{"login"}},
+					{Number: 3, Module: "file", Name: "copy wallpaper", Tags: []string{}},
+				},
+			},
+		},
+		{
+			name: "state-card",
+			evt: StateEvent{
+				Target:       "kiosk-01",
+				PlaybookName: "kiosk-provision",
+				StatePath:    "/var/lib/preflight/kiosk-provision.json",
+				LastApplied:  "2026-07-01T12:00:00Z",
+				Comparisons: []StateComparison{
+					{Status: "UNCHANGED", TaskName: "install display drivers", Module: "command", RecordedStatus: "ok"},
+					{Status: "CHANGED", TaskName: "configure autologin", Module: "registry", RecordedStatus: "changed"},
+					{Status: "NEW", TaskName: "copy wallpaper", Module: "file", RecordedStatus: "ok"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events := make(chan Event, 1)
+			m := newTUIModelWithOptions(events, Options{Color: ColorAlways})
+			m.width = 80
+			_, cmd := m.applyEvent(tc.evt)
+			blocks := collectPrintedBlocks(cmd)
+			if len(blocks) == 0 {
+				t.Fatalf("no printed blocks for %s", tc.name)
+			}
+			got := normalizeSnapshot(blocks[0])
+			assertSnapshot(t, snapshotPath("tui-card", tc.name), got)
+		})
+	}
+}
+
 func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTUIRenderer(&buf)
