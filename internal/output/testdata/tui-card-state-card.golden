@@ -1,0 +1,12 @@
+◫ State Diff
+──────────────────────────────────────────
+  Playbook      kiosk-provision
+  Target        kiosk-01
+  State file    /var/lib/preflight/kiosk-provision.json
+  Last applied  2026-07-01T12:00:00Z
+
+  STATUS       TASK                     MODULE    RECORDED
+  ───────────  ───────────────────────  ────────  ────────
+  ✓ unchanged  install display drivers  command   ok
+  ◆ changed    configure autologin      registry  changed
+  + new        copy wallpaper           file      ok

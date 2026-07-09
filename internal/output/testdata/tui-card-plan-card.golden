@@ -1,0 +1,10 @@
+☰ Execution Plan
+──────────────────────────────────────────
+  Target    kiosk-01
+  Playbook  kiosk-provision
+
+  #  MODULE    TASK                     DETAILS
+  ─  ────────  ───────────────────────  ─────────────────────────────────────
+  1  command   install display drivers  tags: drivers
+  2  registry  configure autologin      when: os == 'windows'  ·  tags: login
+  3  file      copy wallpaper
