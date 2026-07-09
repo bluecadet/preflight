@@ -90,36 +90,36 @@ type SemanticPalette struct {
 	TransportWinRM ColorRole
 }
 
-// DefaultPalette returns the standard semantic palette with the same color
-// values as the pre-existing ad-hoc styles. This ensures no behavior change
-// during the prefactor — all rendered output and golden snapshots remain
-// identical.
+// DefaultPalette returns the standard semantic palette. Every role uses
+// distinct light and dark values so the palette is adaptive for both light
+// and dark terminal backgrounds. Roles are strippable entirely when color
+// is disabled.
 func DefaultPalette() SemanticPalette {
 	return SemanticPalette{
 		// Status outcomes — adaptive bright variants for dark terminals.
 		OK:      ColorRole{Light: "2", Dark: "10", ANSI: "\033[32m"},    // green
 		Changed: ColorRole{Light: "3", Dark: "11", ANSI: "\033[33m"},    // yellow
 		Failed:  ColorRole{Light: "1", Dark: "9", ANSI: "\033[31m"},     // red
-		Skipped: ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
+		Skipped: ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
 
 		// UI elements.
 		TaskName: ColorRole{Light: "248", Dark: "248"},                   // medium grey, ANSI = terminal default
-		Muted:    ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
+		Muted:    ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
 		Bold:     ColorRole{ANSI: "\033[1m", Bold: true},                 // no color, bold
 		Spin:     ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"},    // blue
-		Divider:  ColorRole{Light: "237", Dark: "237", ANSI: "\033[90m"}, // dim grey
-		Output:   ColorRole{Light: "241", Dark: "241", Italic: true},     // grey italic
-		Elapsed:  ColorRole{Light: "240", Dark: "240", ANSI: "\033[90m"}, // grey
+		Divider:  ColorRole{Light: "237", Dark: "240", ANSI: "\033[90m"}, // dim grey
+		Output:   ColorRole{Light: "241", Dark: "250", Italic: true},     // grey italic
+		Elapsed:  ColorRole{Light: "240", Dark: "246", ANSI: "\033[90m"}, // grey
 
 		// Card elements.
 		CardTitle: ColorRole{Light: "4", Dark: "12", Bold: true},    // bold blue
-		Label:     ColorRole{Light: "245", Dark: "245", Bold: true}, // bold grey
-		Key:       ColorRole{Light: "246", Dark: "246"},             // grey
-		Value:     ColorRole{Light: "252", Dark: "252"},             // light grey
-		TableHead: ColorRole{Light: "252", Dark: "252", Bold: true}, // bold light grey
+		Label:     ColorRole{Light: "245", Dark: "250", Bold: true}, // bold grey
+		Key:       ColorRole{Light: "246", Dark: "250"},             // grey
+		Value:     ColorRole{Light: "252", Dark: "254"},             // light grey
+		TableHead: ColorRole{Light: "252", Dark: "254", Bold: true}, // bold light grey
 
 		// Transport badges (reserved — not yet used by any renderer).
-		TransportLocal: ColorRole{Light: "8", Dark: "8"},                    // grey
+		TransportLocal: ColorRole{Light: "8", Dark: "245"},                    // grey
 		TransportSSH:   ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"}, // blue
 		TransportWinRM: ColorRole{Light: "6", Dark: "14", ANSI: "\033[36m"}, // cyan
 	}
