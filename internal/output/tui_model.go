@@ -99,6 +99,11 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	descriptors := m.projection.Apply(event)
 
 	if len(descriptors) == 0 {
+		// Check for events that need direct handling even without descriptors.
+		if e, ok := event.(TargetStartEvent); ok && m.projection.IsSingleTarget() {
+			// Single-target runs: promote target info into the header line.
+			return m, tea.Println("→ " + m.targetInfoLine(e))
+		}
 		return m, nil
 	}
 
@@ -107,6 +112,8 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		switch desc := d.(type) {
 		case RunStartDescriptor:
 			cmds = append(cmds, m.renderRunStart(desc))
+		case TargetRosterDescriptor:
+			cmds = append(cmds, m.renderTargetRoster(desc))
 		case TaskFinishedDescriptor:
 			cmds = append(cmds, m.renderTaskFinished(desc))
 		case CardDescriptor:
@@ -116,6 +123,15 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		}
 	}
 	return m, tea.Sequence(cmds...)
+}
+
+func (m tuiModel) targetInfoLine(e TargetStartEvent) string {
+	s := e.Target + " (" + e.Transport
+	if e.Address != "" {
+		s += " • " + e.Address
+	}
+	s += ")"
+	return s
 }
 
 func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
@@ -129,18 +145,21 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	if d.PlaybookPath != "" && d.PlaybookName != "" {
 		lines = append(lines, "name: "+d.PlaybookName)
 	}
-	switch len(d.Targets) {
-	case 1:
-		lines = append(lines, "target: "+d.Targets[0])
-	default:
-		if len(d.Targets) > 1 {
-			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
-			if len(d.Targets) <= 5 {
-				lines = append(lines, "  "+strings.Join(d.Targets, ", "))
-			}
-		}
-	}
 	return tea.Println(strings.Join(lines, "\n") + "\n")
+}
+
+func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
+	var lines []string
+	lines = append(lines, "Targets:")
+	for _, ti := range d.Targets {
+		s := ti.Name + " (" + ti.Transport
+		if ti.Address != "" {
+			s += " • " + ti.Address
+		}
+		s += ")"
+		lines = append(lines, "  "+s)
+	}
+	return tea.Println(strings.Join(lines, "\n"))
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
@@ -375,6 +394,8 @@ func (m tuiModel) renderFooter(runningCount int) string {
 	if len(m.projection.Targets) > 0 {
 		waiting = max(len(m.projection.Targets)-done-failed-runningCount, 0)
 	}
+	// Single-target footer: no target line (target is promoted to header).
+	// Multi-target footer shows target progression.
 	line1 := fmt.Sprintf(
 		"%s %s   Phase %s",
 		titleRunMode(m.projection.Mode),
@@ -382,8 +403,6 @@ func (m tuiModel) renderFooter(runningCount int) string {
 		titleRunMode(m.projection.Mode),
 	)
 	switch {
-	case len(m.projection.Targets) == 1:
-		line1 += "   Target " + m.projection.Targets[0]
 	case len(m.projection.Targets) > 1:
 		line1 += fmt.Sprintf("   Targets %d   Done %d   Running %d   Waiting %d   Failed %d", len(m.projection.Targets), done, runningCount, waiting, failed)
 	default:

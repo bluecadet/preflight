@@ -39,8 +39,19 @@ func TestTextRenderer_RunStart(t *testing.T) {
 		PlaybookName: "lobby",
 		Targets:      []string{"lobby-pc-01"},
 	})
-
+	// Single-target: header is buffered until TargetStartEvent.
+	// Without TargetStartEvent, no output is produced yet.
 	out := buf.String()
+	if out != "" {
+		t.Errorf("expected no output before TargetStartEvent for single-target, got: %q", out)
+	}
+
+	// Emit TargetStartEvent to trigger the header.
+	r.Emit(TargetStartEvent{
+		Target:    "lobby-pc-01",
+		Transport: "local",
+	})
+	out = buf.String()
 	if !strings.Contains(out, "Apply") {
 		t.Errorf("expected Apply heading in output, got: %q", out)
 	}
@@ -115,6 +126,11 @@ func TestTextRenderer_SingleTargetOmitsRepeatedHostLabels(t *testing.T) {
 		PlaybookName: "lobby",
 		Targets:      []string{"lobby-pc-01"},
 	})
+	// Emit TargetStartEvent to trigger the header with target info.
+	r.Emit(TargetStartEvent{
+		Target:    "lobby-pc-01",
+		Transport: "local",
+	})
 	r.Emit(TaskStartedEvent{
 		Target:   "lobby-pc-01",
 		TaskID:   "t1",
@@ -131,8 +147,8 @@ func TestTextRenderer_SingleTargetOmitsRepeatedHostLabels(t *testing.T) {
 	if strings.Contains(out, "[lobby-pc-01]") {
 		t.Fatalf("expected single-target rows to omit host label, got %q", out)
 	}
-	if !strings.Contains(out, "target: lobby-pc-01") {
-		t.Fatalf("expected run intro to name the target, got %q", out)
+	if !strings.Contains(out, "→ lobby-pc-01 (local)") {
+		t.Fatalf("expected run intro to promote target into header, got %q", out)
 	}
 }
 

@@ -31,6 +31,11 @@ type TextRenderer struct {
 	projection   *RunProjection
 	runStarted   bool
 	closed       bool
+
+	// bufferedRunStart holds RunStartEvent data for single-target runs so
+	// the header can be printed together with the target info from TargetStartEvent.
+	bufferedRunStart *RunStartEvent
+	rosterPrinted    bool
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
@@ -75,7 +80,7 @@ func (r *TextRenderer) Emit(event Event) {
 	case RunStartEvent:
 		r.emitRunStart(e)
 	case TargetStartEvent:
-		// Target-level events are handled by the runner activity emit; no terminal output needed.
+		r.emitTargetStart(e)
 	case TargetCompleteEvent:
 		r.emitTargetComplete(e)
 	case TaskStartedEvent:
@@ -230,10 +235,27 @@ func (r *TextRenderer) emitRunStart(e RunStartEvent) {
 	}
 	r.runStarted = true
 
+	// For single-target runs, buffer the run start until we have the target
+	// info from TargetStartEvent so the header can include transport/address.
+	if len(e.Targets) == 1 {
+		r.bufferedRunStart = &RunStartEvent{
+			Mode:         e.Mode,
+			PlaybookPath: e.PlaybookPath,
+			PlaybookName: e.PlaybookName,
+			Targets:      e.Targets,
+		}
+		return
+	}
+
+	r.flushRunStartHeader()
+}
+
+func (r *TextRenderer) flushRunStartHeader() {
 	r.writeLine(r.colorize(ansiBold, titleRunMode(r.projection.Mode)))
-	if r.projection.Playbook != "" {
+	switch {
+	case r.projection.Playbook != "":
 		r.writeLine("playbook: " + r.projection.Playbook)
-	} else if r.projection.PlayName != "" {
+	case r.projection.PlayName != "":
 		r.writeLine("playbook: " + r.projection.PlayName)
 	}
 	if r.projection.Playbook != "" && r.projection.PlayName != "" {
@@ -243,18 +265,50 @@ func (r *TextRenderer) emitRunStart(e RunStartEvent) {
 	r.writeBlank()
 }
 
-func (r *TextRenderer) writeTargetIntro() {
-	switch len(r.projection.Targets) {
-	case 0:
-		return
-	case 1:
-		r.writeLine("target: " + r.projection.Targets[0])
-	default:
-		r.writeLine(fmt.Sprintf("targets: %d", len(r.projection.Targets)))
-		if len(r.projection.Targets) <= 5 {
-			r.writeLine("  " + strings.Join(r.projection.Targets, ", "))
+func (r *TextRenderer) emitTargetStart(e TargetStartEvent) {
+	// Single-target runs: promote target info into the header line.
+	if r.bufferedRunStart != nil {
+		r.writeLine(r.colorize(ansiBold, titleRunMode(r.projection.Mode)))
+		switch {
+		case r.projection.Playbook != "":
+			r.writeLine("playbook: " + r.projection.Playbook + " → " + r.targetDisplayString(e))
+		case r.projection.PlayName != "":
+			r.writeLine("playbook: " + r.projection.PlayName + " → " + r.targetDisplayString(e))
+		default:
+			r.writeLine(r.targetDisplayString(e))
 		}
+		if r.projection.Playbook != "" && r.projection.PlayName != "" {
+			r.writeLine("playbook: " + r.projection.PlayName)
+		}
+		r.writeBlank()
+		r.bufferedRunStart = nil
+		return
 	}
+
+	// Multi-target runs: print roster line for each target.
+	if !r.rosterPrinted && len(r.projection.Targets) > 1 {
+		r.rosterPrinted = true
+		r.writeLine("Targets:")
+	}
+	if r.rosterPrinted {
+		r.writeLine("  " + r.targetDisplayString(e))
+	}
+}
+
+func (r *TextRenderer) targetDisplayString(e TargetStartEvent) string {
+	s := e.Target + " (" + e.Transport
+	if e.Address != "" {
+		s += " • " + e.Address
+	}
+	s += ")"
+	return s
+}
+
+func (r *TextRenderer) writeTargetIntro() {
+	// For multi-target runs, the target roster is printed by emitTargetStart.
+	// For single-target runs, the header is buffered and printed together with
+	// the target info from emitTargetStart.
+	// Nothing to do here for either case.
 }
 
 func (r *TextRenderer) emitTaskOutput(e TaskOutputEvent) {

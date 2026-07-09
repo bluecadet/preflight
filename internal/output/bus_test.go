@@ -52,6 +52,11 @@ func TestBus_FanOut(t *testing.T) {
 		PlaybookName: "test",
 		Targets:      []string{"local"},
 	})
+	// Single-target: header is buffered until TargetStartEvent.
+	bus.Emit(TargetStartEvent{
+		Target:    "local",
+		Transport: "local",
+	})
 	bus.Close()
 
 	out1 := buf1.String()

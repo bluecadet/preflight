@@ -1,9 +1,10 @@
 Apply
 playbook: deploy.yml
 name: deploy
-targets: 2
-  host-a, host-b
 
+Targets:
+  host-a (ssh • 10.0.1.1)
+  host-b (winrm • 10.0.1.2)
 ✓ sync artifacts                                                          0.0s
 - sync artifacts
   reason: when-condition-false

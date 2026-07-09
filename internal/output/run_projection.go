@@ -34,6 +34,13 @@ type targetOutcome struct {
 	failed bool
 }
 
+// TargetInfo holds the identity and transport details of a single target.
+type TargetInfo struct {
+	Name      string
+	Transport string
+	Address   string
+}
+
 // failedTask captures a failed task's identity for the final summary.
 type failedTask struct {
 	target     string
@@ -51,6 +58,7 @@ type RunProjection struct {
 	PlayName    string
 	Playbook    string
 	Targets     []string
+	TargetInfo  []TargetInfo
 	StartedAt   time.Time
 	PlayStarted bool
 	RunDir      string
@@ -103,12 +111,19 @@ type CardDescriptor struct {
 	Event Event  // the original event for the sink to format
 }
 
+// TargetRosterDescriptor describes a multi-target run-start roster listing
+// each target with its transport and address.
+type TargetRosterDescriptor struct {
+	Targets []TargetInfo
+}
+
 // WarningDescriptor describes a warning to render.
 type WarningDescriptor struct {
 	Message string
 }
 
 func (RunStartDescriptor) isCommitDescriptor()     {}
+func (TargetRosterDescriptor) isCommitDescriptor() {}
 func (TaskFinishedDescriptor) isCommitDescriptor() {}
 func (CardDescriptor) isCommitDescriptor()         {}
 func (WarningDescriptor) isCommitDescriptor()      {}
@@ -140,6 +155,8 @@ func (p *RunProjection) Apply(event Event) []CommitDescriptor {
 	switch e := event.(type) {
 	case RunStartEvent:
 		return p.applyRunStart(e)
+	case TargetStartEvent:
+		return p.applyTargetStart(e)
 	case TargetCompleteEvent:
 		p.applyTargetComplete(e)
 		return nil
@@ -307,6 +324,11 @@ func (p *RunProjection) Elapsed() time.Duration {
 	return time.Since(p.StartedAt)
 }
 
+// IsSingleTarget returns true when the run has exactly one target.
+func (p *RunProjection) IsSingleTarget() bool {
+	return len(p.Targets) == 1
+}
+
 func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	if p.PlayStarted {
 		return nil
@@ -323,6 +345,22 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 		PlaybookName: e.PlaybookName,
 		Targets:      e.Targets,
 	}}
+}
+
+func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor {
+	p.TargetInfo = append(p.TargetInfo, TargetInfo{
+		Name:      e.Target,
+		Transport: e.Transport,
+		Address:   e.Address,
+	})
+
+	// For multi-target runs, emit a roster descriptor on the first target start.
+	if len(p.Targets) > 1 && len(p.TargetInfo) == 1 {
+		return []CommitDescriptor{TargetRosterDescriptor{
+			Targets: p.TargetInfo,
+		}}
+	}
+	return nil
 }
 
 func (p *RunProjection) applyTargetComplete(e TargetCompleteEvent) {
