@@ -29,6 +29,12 @@ Why it matters:
 - the reference execution model for built-in modules
 - the execution mode used when applying a staged bundle
 
+## Default Transport
+
+A host entry with no `transport` field resolves to `ssh` on port 22, with `host_key_policy: accept-new` pinning the remote key on first connect. This was previously `winrm`.
+
+**Migration note:** inventories that relied on the implicit WinRM default must now set `transport: winrm` explicitly on every host that should connect that way. Hosts left without a `transport` field will connect over SSH instead.
+
 ## WinRM Target
 
 WinRM is the main remote Windows transport. It is where the Windows-first design shows up most clearly.

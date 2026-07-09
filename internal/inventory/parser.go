@@ -155,7 +155,7 @@ func defaultTransport(t string) Transport {
 	case TransportWinRM, TransportSSH, TransportLocal:
 		return Transport(t)
 	default:
-		return TransportWinRM
+		return TransportSSH
 	}
 }
 
@@ -164,7 +164,7 @@ func defaultPort(transport string, https bool, port int) int {
 		return port
 	}
 	switch Transport(transport) {
-	case TransportSSH:
+	case TransportSSH, "":
 		return 22
 	case TransportWinRM:
 		if https {
