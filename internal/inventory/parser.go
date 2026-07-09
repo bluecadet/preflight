@@ -19,19 +19,20 @@ type rawGroup struct {
 }
 
 type rawHost struct {
-	Name              string         `yaml:"name"`
-	Address           string         `yaml:"address"`
-	Transport         string         `yaml:"transport"`
-	Port              int            `yaml:"port"`
-	Username          string         `yaml:"username"`
-	Password          string         `yaml:"password"`
-	PrivateKey        string         `yaml:"private_key"`
-	KnownHostsFile    string         `yaml:"known_hosts_file"`
-	HostKeyAlgorithms []string       `yaml:"host_key_algorithms"`
-	HTTPS             bool           `yaml:"https"`
-	Groups            []string       `yaml:"groups"`
-	Vars              map[string]any `yaml:"vars"`
-	Timeout           string         `yaml:"timeout"`
+	Name                 string         `yaml:"name"`
+	Address              string         `yaml:"address"`
+	Transport            string         `yaml:"transport"`
+	Port                 int            `yaml:"port"`
+	Username             string         `yaml:"username"`
+	Password             string         `yaml:"password"`
+	PrivateKey           string         `yaml:"private_key"`
+	PrivateKeyPassphrase string         `yaml:"private_key_passphrase"`
+	KnownHostsFile       string         `yaml:"known_hosts_file"`
+	HostKeyAlgorithms    []string       `yaml:"host_key_algorithms"`
+	HTTPS                bool           `yaml:"https"`
+	Groups               []string       `yaml:"groups"`
+	Vars                 map[string]any `yaml:"vars"`
+	Timeout              string         `yaml:"timeout"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -113,19 +114,20 @@ func ParseNode(node *yaml.Node) (*Inventory, error) {
 		}
 
 		inv.Hosts = append(inv.Hosts, Host{
-			Name:              rh.Name,
-			Address:           rh.Address,
-			Transport:         defaultTransport(rh.Transport),
-			Port:              defaultPort(rh.Transport, rh.HTTPS, rh.Port),
-			Username:          rh.Username,
-			Password:          rh.Password,
-			PrivateKey:        rh.PrivateKey,
-			KnownHostsFile:    rh.KnownHostsFile,
-			HostKeyAlgorithms: rh.HostKeyAlgorithms,
-			HTTPS:             rh.HTTPS,
-			Groups:            rh.Groups,
-			Vars:              rh.Vars,
-			Timeout:           timeout,
+			Name:                 rh.Name,
+			Address:              rh.Address,
+			Transport:            defaultTransport(rh.Transport),
+			Port:                 defaultPort(rh.Transport, rh.HTTPS, rh.Port),
+			Username:             rh.Username,
+			Password:             rh.Password,
+			PrivateKey:           rh.PrivateKey,
+			PrivateKeyPassphrase: rh.PrivateKeyPassphrase,
+			KnownHostsFile:       rh.KnownHostsFile,
+			HostKeyAlgorithms:    rh.HostKeyAlgorithms,
+			HTTPS:                rh.HTTPS,
+			Groups:               rh.Groups,
+			Vars:                 rh.Vars,
+			Timeout:              timeout,
 		})
 	}
 

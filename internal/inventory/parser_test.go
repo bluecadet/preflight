@@ -327,6 +327,28 @@ hosts:
 	}
 }
 
+func TestParsePrivateKeyPassphraseField(t *testing.T) {
+	data := `
+hosts:
+  - name: encrypted-key-host
+    address: 10.0.0.11
+    transport: ssh
+    private_key: secret:signage-key
+    private_key_passphrase: secret:signage-key-passphrase
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("encrypted-key-host")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if got := hosts[0].PrivateKeyPassphrase; got != "secret:signage-key-passphrase" {
+		t.Fatalf("expected private_key_passphrase to be preserved, got %q", got)
+	}
+}
+
 func TestParseSSHHostKeyVerificationFields(t *testing.T) {
 	data := `
 hosts:

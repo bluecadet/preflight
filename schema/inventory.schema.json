@@ -73,6 +73,10 @@
           "type": "string",
           "description": "Path to SSH private key file"
         },
+        "private_key_passphrase": {
+          "type": "string",
+          "description": "Passphrase for an encrypted SSH private_key"
+        },
         "https": {
           "type": "boolean",
           "description": "Use HTTPS/TLS for WinRM connection",

@@ -102,6 +102,41 @@ hosts:
 	}
 }
 
+func TestBuildTargetSSH_PassesPrivateKeyPassphrase(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    private_key: |
+      -----BEGIN PLACEHOLDER-----
+      not-a-real-key
+      -----END PLACEHOLDER-----
+    private_key_passphrase: s3cret-passphrase
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("parse inventory: %v", err)
+	}
+
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	if err != nil {
+		t.Fatalf("ResolveHosts: %v", err)
+	}
+	if len(resolved) != 1 {
+		t.Fatalf("expected 1 resolved host, got %d", len(resolved))
+	}
+
+	sshTgt, ok := resolved[0].Target.(*target.SSHTarget)
+	if !ok {
+		t.Fatalf("expected target to be *target.SSHTarget, got %T", resolved[0].Target)
+	}
+	if got, want := sshTgt.Config().PrivateKeyPassphrase, "s3cret-passphrase"; got != want {
+		t.Errorf("SSHConfig.PrivateKeyPassphrase: got %q, want %q", got, want)
+	}
+}
+
 func TestResolveHosts_EmptySelectorsDefaultToAllHosts(t *testing.T) {
 	inv := &inventory.Inventory{
 		Groups: map[string]inventory.Group{},

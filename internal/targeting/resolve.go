@@ -80,8 +80,9 @@ func prepareHost(
 	statePath string,
 ) (ResolvedHost, error) {
 	auth := map[string]any{
-		"password":    host.Password,
-		"private_key": host.PrivateKey,
+		"password":               host.Password,
+		"private_key":            host.PrivateKey,
+		"private_key_passphrase": host.PrivateKeyPassphrase,
 	}
 	if resolver != nil && resolver.HasProviders() {
 		resolved, err := resolver.ResolveMap(ctx, auth)
@@ -128,15 +129,17 @@ func buildTarget(host inventory.Host, auth map[string]any, registry target.Modul
 	case inventory.TransportSSH:
 		password, _ := auth["password"].(string)
 		privateKey, _ := auth["private_key"].(string)
+		privateKeyPassphrase, _ := auth["private_key_passphrase"].(string)
 		return target.NewSSHTarget(target.SSHConfig{
-			Host:              address,
-			Port:              host.Port,
-			Username:          host.Username,
-			Password:          password,
-			PrivateKey:        privateKey,
-			KnownHostsFile:    host.KnownHostsFile,
-			HostKeyAlgorithms: host.HostKeyAlgorithms,
-			Timeout:           host.Timeout,
+			Host:                 address,
+			Port:                 host.Port,
+			Username:             host.Username,
+			Password:             password,
+			PrivateKey:           privateKey,
+			PrivateKeyPassphrase: privateKeyPassphrase,
+			KnownHostsFile:       host.KnownHostsFile,
+			HostKeyAlgorithms:    host.HostKeyAlgorithms,
+			Timeout:              host.Timeout,
 		}, registry), nil
 	default:
 		return nil, fmt.Errorf("resolve host %q: unsupported transport %q", host.Name, host.Transport)
