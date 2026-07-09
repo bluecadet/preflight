@@ -37,12 +37,12 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		colorMode = DetectColor("", false, os.Stdout)
 	}
 	if !colorMode.UseColor() {
-		noColorifyStyles()
+		S = NewTUIStyles(DefaultPalette(), false)
 	}
 
 	s := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(tsSpin),
+		spinner.WithStyle(S.Spin),
 	)
 	maxFailLines := opts.MaxFailLines
 	if maxFailLines <= 0 {
@@ -112,7 +112,7 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		case CardDescriptor:
 			cmds = append(cmds, m.renderCard(desc))
 		case WarningDescriptor:
-			cmds = append(cmds, tea.Println(tsRenderNotice("!", tsChanged, "warning: "+desc.Message, m.width)))
+			cmds = append(cmds, tea.Println(tsRenderNotice("!", S.Changed, "warning: "+desc.Message, m.width)))
 		}
 	}
 	return m, tea.Sequence(cmds...)
@@ -120,7 +120,7 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 
 func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	var lines []string
-	lines = append(lines, tsBold.Render(titleRunMode(d.Mode)))
+	lines = append(lines, S.Bold.Render(titleRunMode(d.Mode)))
 	if d.PlaybookPath != "" {
 		lines = append(lines, "playbook: "+d.PlaybookPath)
 	} else if d.PlaybookName != "" {
@@ -281,18 +281,18 @@ func (m tuiModel) View() string {
 }
 
 func (m tuiModel) renderActivity(activity *activeActivity) string {
-	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
-	timer := tsElapsed.Render(formatElapsed(time.Since(activity.startAt)))
+	spin := S.Spin.Render(strings.TrimRight(m.spinner.View(), " "))
+	timer := S.Elapsed.Render(formatElapsed(time.Since(activity.startAt)))
 	message := strings.TrimSpace(activity.message)
 	if m.projection.ShouldShowHostLabels() && activity.target != "" {
 		message = "[" + m.projection.DisplayTarget(activity.target) + "] " + message
 	}
-	return tsRow(spin, tsMuted.Render(message), timer)
+	return tsRow(spin, S.Muted.Render(message), timer)
 }
 
 func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
-	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
-	timer := tsElapsed.Render(formatElapsed(time.Since(task.startAt)))
+	spin := S.Spin.Render(strings.TrimRight(m.spinner.View(), " "))
+	timer := S.Elapsed.Render(formatElapsed(time.Since(task.startAt)))
 
 	var b strings.Builder
 	if task.actionPath != "" {
@@ -334,13 +334,13 @@ func (m tuiModel) renderFinalSummary() string {
 	b.WriteByte('\n')
 	b.WriteString("Recap\n")
 
-	overallIcon := tsOK.Render("✓")
+	overallIcon := S.OK.Render("✓")
 	statusWord := "complete"
 	if m.projection.FailedCount > 0 {
-		overallIcon = tsFailed.Render("x")
+		overallIcon = S.Failed.Render("x")
 		statusWord = "failed"
 	}
-	b.WriteString(tsRow(overallIcon, tsBold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), tsElapsed.Render(formatElapsed(totalElapsed))))
+	b.WriteString(tsRow(overallIcon, S.Bold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), S.Elapsed.Render(formatElapsed(totalElapsed))))
 	b.WriteByte('\n')
 
 	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
@@ -363,7 +363,7 @@ func (m tuiModel) renderFinalSummary() string {
 }
 
 func (m tuiModel) renderDivider() string {
-	return tsDivider.Render(strings.Repeat("─", m.divWidth()))
+	return S.Divider.Render(strings.Repeat("─", m.divWidth()))
 }
 
 func (m tuiModel) renderFooter(runningCount int) string {
@@ -420,13 +420,13 @@ func (m tuiModel) divWidth() int {
 func statusStyle(status string) lipgloss.Style {
 	switch status {
 	case "ok":
-		return tsOK
+		return S.OK
 	case "changed":
-		return tsChanged
+		return S.Changed
 	case "failed":
-		return tsFailed
+		return S.Failed
 	case "skipped":
-		return tsSkipped
+		return S.Skipped
 	default:
 		return lipgloss.NewStyle()
 	}

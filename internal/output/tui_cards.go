@@ -14,24 +14,24 @@ func renderFactsCard(e FactsEvent, width int) string {
 	ff := &factFormat{
 		label: func(s string, topLevel bool) string {
 			if topLevel {
-				return tsLabel.Render(s)
+				return S.Label.Render(s)
 			}
-			return tsKey.Render(s)
+			return S.Key.Render(s)
 		},
-		muted: func(s string) string { return tsMuted.Render(s) },
-		value: func(s string) string { return tsValue.Render(s) },
+		muted: func(s string) string { return S.Muted.Render(s) },
+		value: func(s string) string { return S.Value.Render(s) },
 		scalar: func(prefix, labelText, value string) []string {
-			labelWithColon := labelText + tsMuted.Render(":")
+			labelWithColon := labelText + S.Muted.Render(":")
 			firstPrefix := prefix + labelWithColon + " "
 			available := max(cw-lipgloss.Width(firstPrefix), 16)
 			parts := wrapFactValue(value, available)
 			if len(parts) == 1 {
-				return []string{firstPrefix + tsValue.Render(parts[0])}
+				return []string{firstPrefix + S.Value.Render(parts[0])}
 			}
 			lines := []string{prefix + labelWithColon}
 			continuationPrefix := prefix + "  "
 			for _, part := range parts {
-				lines = append(lines, continuationPrefix+tsValue.Render(part))
+				lines = append(lines, continuationPrefix+S.Value.Render(part))
 			}
 			return lines
 		},
@@ -55,7 +55,7 @@ func renderPlanCard(e PlanEvent) string {
 	card.add(tsRenderPairs(rows))
 
 	if len(e.Tasks) == 0 {
-		card.add(tsMuted.Render("No tasks resolved."))
+		card.add(S.Muted.Render("No tasks resolved."))
 		return card.render()
 	}
 
@@ -132,7 +132,7 @@ func renderValidationCard(e ValidationEvent) string {
 	card.add(tsRenderPairs(rows))
 
 	if e.ErrorCount > 0 {
-		card.add(tsFailed.Render(fmt.Sprintf("%d %s", e.ErrorCount, tsPluralize(e.ErrorCount, "error", "errors"))))
+		card.add(S.Failed.Render(fmt.Sprintf("%d %s", e.ErrorCount, tsPluralize(e.ErrorCount, "error", "errors"))))
 	}
 	if len(e.ResolvedRefs) > 0 {
 		card.addLabeled("Resolved refs", tsRenderBulletList(e.ResolvedRefs, false))

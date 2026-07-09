@@ -7,14 +7,13 @@ import (
 	"time"
 )
 
-// ANSI color codes.
-const (
+// ANSI color codes sourced from the semantic palette.
+var (
 	ansiReset  = "\033[0m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiRed    = "\033[31m"
-	ansiGrey   = "\033[90m"
-	ansiBold   = "\033[1m"
+	ansiGreen  = DefaultPalette().OK.ANSI
+	ansiYellow = DefaultPalette().Changed.ANSI
+	ansiRed    = DefaultPalette().Failed.ANSI
+	ansiBold   = DefaultPalette().Bold.ANSI
 )
 
 const (

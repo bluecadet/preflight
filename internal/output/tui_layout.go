@@ -27,7 +27,7 @@ func (b *tuiCardBuilder) addLabeled(title, body string) {
 	if strings.TrimSpace(body) == "" {
 		return
 	}
-	b.add(tsLabel.Render(title) + "\n" + body)
+	b.add(S.Label.Render(title) + "\n" + body)
 }
 
 func (b *tuiCardBuilder) render() string {
@@ -46,7 +46,7 @@ func tsPluralize(n int, singular, plural string) string {
 }
 
 func tsRow(elems ...string) string {
-	return tsRowInset.Render(tsJoinHorizontal("  ", elems...))
+	return S.RowInset.Render(tsJoinHorizontal("  ", elems...))
 }
 
 func tsJoinHorizontal(gap string, elems ...string) string {
@@ -64,7 +64,7 @@ func tsJoinHorizontal(gap string, elems ...string) string {
 }
 
 func tsOutputLine(depth int, content string) string {
-	return lipgloss.NewStyle().PaddingLeft(depth).Render(tsOutput.Render(content))
+	return lipgloss.NewStyle().PaddingLeft(depth).Render(S.Output.Render(content))
 }
 
 func tsOutputLines(depth int, content string, width int) []string {
@@ -101,15 +101,15 @@ func tsRenderNotice(glyph string, style lipgloss.Style, message string, width in
 func tsRenderSection(title, body string) string {
 	var parts []string
 	if title != "" {
-		parts = append(parts, tsCardTitleInset.Render(tsCardTitle.Render(title)))
+		parts = append(parts, S.CardTitleInset.Render(S.CardTitle.Render(title)))
 	}
 	if strings.TrimSpace(body) == "" {
 		return strings.Join(parts, "\n")
 	}
 	if title != "" {
-		parts = append(parts, tsTableRule.Render(strings.Repeat("─", 42)))
+		parts = append(parts, S.TableRule.Render(strings.Repeat("─", 42)))
 	}
-	parts = append(parts, tsCardBodyInset.Render(body))
+	parts = append(parts, S.CardBodyInset.Render(body))
 	return strings.Join(parts, "\n")
 }
 
@@ -121,8 +121,8 @@ func tsRenderPairs(rows [][2]string) string {
 
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
-		key := lipgloss.NewStyle().Width(maxKeyWidth).Render(tsKey.Render(row[0]))
-		lines = append(lines, tsJoinHorizontal("  ", key, tsValue.Render(row[1])))
+		key := lipgloss.NewStyle().Width(maxKeyWidth).Render(S.Key.Render(row[0]))
+		lines = append(lines, tsJoinHorizontal("  ", key, S.Value.Render(row[1])))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -155,8 +155,8 @@ func tsRenderSimpleTable(headers []string, rows [][]string) string {
 	}
 
 	lines := []string{
-		renderRow(headers, tsTableHead),
-		tsTableRule.Render(renderRow(tsDashCells(widths), lipgloss.NewStyle())),
+		renderRow(headers, S.TableHead),
+		S.TableRule.Render(renderRow(tsDashCells(widths), lipgloss.NewStyle())),
 	}
 	for _, row := range rows {
 		lines = append(lines, renderRow(row, lipgloss.NewStyle()))
@@ -267,7 +267,7 @@ func wrapRunes(value string, width int) []string {
 
 func tsRenderBulletList(items []string, numbered bool) string {
 	if len(items) == 0 {
-		return tsMuted.Render("(none)")
+		return S.Muted.Render("(none)")
 	}
 
 	lines := make([]string, 0, len(items))
@@ -284,15 +284,15 @@ func tsRenderBulletList(items []string, numbered bool) string {
 func tsDecorateStateStatus(status string) string {
 	switch strings.ToUpper(status) {
 	case "UNCHANGED":
-		return tsOK.Render("✓ unchanged")
+		return S.OK.Render("✓ unchanged")
 	case "CHANGED":
-		return tsChanged.Render("◆ changed")
+		return S.Changed.Render("◆ changed")
 	case "NEW":
-		return tsChanged.Render("+ new")
+		return S.Changed.Render("+ new")
 	case "MISSING":
-		return tsFailed.Render("– missing")
+		return S.Failed.Render("– missing")
 	case "RECORDED":
-		return tsMuted.Render("• recorded")
+		return S.Muted.Render("• recorded")
 	default:
 		return status
 	}
@@ -308,7 +308,7 @@ func tsDashCells(widths []int) []string {
 
 func tsRenderOptionalBulletList(items []string) string {
 	if len(items) == 0 {
-		return tsMuted.Render("(none)")
+		return S.Muted.Render("(none)")
 	}
 	return tsRenderBulletList(items, false)
 }
