@@ -123,12 +123,12 @@ func tsRenderSection(title, body string, width int) string {
 func tsRenderPairs(rows [][2]string) string {
 	maxKeyWidth := 0
 	for _, row := range rows {
-		maxKeyWidth = max(maxKeyWidth, lipgloss.Width(row[0]))
+		maxKeyWidth = max(maxKeyWidth, len(row[0]))
 	}
 
 	lines := make([]string, 0, len(rows))
 	for _, row := range rows {
-		key := lipgloss.NewStyle().Width(maxKeyWidth).Render(S.Key.Render(row[0]))
+		key := S.Key.Render(AlignLeft(row[0], maxKeyWidth))
 		lines = append(lines, tsJoinHorizontal("  ", key, S.Value.Render(row[1])))
 	}
 	return strings.Join(lines, "\n")
@@ -141,11 +141,11 @@ func tsRenderSimpleTable(headers []string, rows [][]string) string {
 
 	widths := make([]int, len(headers))
 	for i, header := range headers {
-		widths[i] = lipgloss.Width(header)
+		widths[i] = len(header)
 	}
 	for _, row := range rows {
 		for i := 0; i < min(len(row), len(widths)); i++ {
-			widths[i] = max(widths[i], lipgloss.Width(row[i]))
+			widths[i] = max(widths[i], len(row[i]))
 		}
 	}
 
@@ -156,7 +156,7 @@ func tsRenderSimpleTable(headers []string, rows [][]string) string {
 			if i < len(cells) {
 				cell = cells[i]
 			}
-			rendered[i] = lipgloss.NewStyle().Width(widths[i]).Render(style.Render(cell))
+			rendered[i] = style.Render(AlignLeft(cell, widths[i]))
 		}
 		return tsJoinHorizontal("  ", rendered...)
 	}
