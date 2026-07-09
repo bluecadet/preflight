@@ -205,7 +205,9 @@ func buildHostKeyCallback(cfg SSHConfig) (ssh.HostKeyCallback, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", path, err)
 		}
-		return strictHostKeyCallback(cb, path), nil
+		return verifyingHostKeyCallback(cb, path, func(hostname string, _ ssh.PublicKey, cause error) error {
+			return fmt.Errorf("ssh: host key for %s is not present in known_hosts %q; establish trust first by connecting once with host_key_policy %q, or run `ssh-keyscan -H %s >> %s`: %w", hostname, path, HostKeyPolicyAcceptNew, hostname, path, cause)
+		}), nil
 	case HostKeyPolicyAcceptNew:
 		if err := ensureKnownHostsFile(path); err != nil {
 			return nil, err
@@ -214,7 +216,19 @@ func buildHostKeyCallback(cfg SSHConfig) (ssh.HostKeyCallback, error) {
 		if err != nil {
 			return nil, fmt.Errorf("ssh: load known_hosts %q: %w", path, err)
 		}
-		return acceptNewHostKeyCallback(cb, path), nil
+		return verifyingHostKeyCallback(cb, path, func(hostname string, key ssh.PublicKey, _ error) error {
+			line := knownhosts.Line([]string{hostname}, key)
+			f, openErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+			if openErr != nil {
+				return fmt.Errorf("ssh: append known_hosts %q: %w", path, openErr)
+			}
+			defer f.Close()
+			if _, writeErr := f.WriteString(line + "\n"); writeErr != nil {
+				return fmt.Errorf("ssh: append known_hosts %q: %w", path, writeErr)
+			}
+			slog.Info("ssh: accepted new host key", "host", hostname, "known_hosts", path)
+			return nil
+		}), nil
 	default:
 		return nil, fmt.Errorf("ssh: invalid host_key_policy %q for host %s: must be %q, %q, or %q", cfg.HostKeyPolicy, cfg.Host, HostKeyPolicyAcceptNew, HostKeyPolicyStrict, HostKeyPolicyInsecure)
 	}
@@ -240,12 +254,19 @@ func ensureKnownHostsFile(path string) error {
 	return f.Close()
 }
 
-// acceptNewHostKeyCallback wraps cb with trust-on-first-use behavior: a host
-// with no known_hosts entry is accepted and its key is appended to path,
-// while a host with a mismatched entry is rejected as a possible MITM. This
-// assumes a single process dials each host at most once per run; concurrent
-// appends across processes are not guarded with file locking.
-func acceptNewHostKeyCallback(cb ssh.HostKeyCallback, path string) ssh.HostKeyCallback {
+// verifyingHostKeyCallback wraps cb, the callback loaded from a known_hosts
+// file, so that both of the file-backed host-key policies (accept-new and
+// strict) get clear, actionable errors instead of the terser ones returned
+// by the knownhosts package directly. Both policies treat a key mismatch
+// (keyErr.Want non-empty — a possible MITM) identically, via
+// hostKeyMismatchError; they differ only in how they handle a host with no
+// known_hosts entry at all (keyErr.Want empty), which is where they diverge
+// and is left to onUnknown: accept-new trusts the host on first use and
+// appends its key to path (this assumes a single process dials each host at
+// most once per run; concurrent appends across processes are not guarded
+// with file locking), while strict rejects it with guidance on how to
+// establish trust.
+func verifyingHostKeyCallback(cb ssh.HostKeyCallback, path string, onUnknown func(hostname string, key ssh.PublicKey, cause error) error) ssh.HostKeyCallback {
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		err := cb(hostname, remote, key)
 		if err == nil {
@@ -258,38 +279,7 @@ func acceptNewHostKeyCallback(cb ssh.HostKeyCallback, path string) ssh.HostKeyCa
 		if len(keyErr.Want) > 0 {
 			return hostKeyMismatchError(hostname, path, err)
 		}
-
-		line := knownhosts.Line([]string{hostname}, key)
-		f, openErr := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-		if openErr != nil {
-			return fmt.Errorf("ssh: append known_hosts %q: %w", path, openErr)
-		}
-		defer f.Close()
-		if _, writeErr := f.WriteString(line + "\n"); writeErr != nil {
-			return fmt.Errorf("ssh: append known_hosts %q: %w", path, writeErr)
-		}
-		slog.Info("ssh: accepted new host key", "host", hostname, "known_hosts", path)
-		return nil
-	}
-}
-
-// strictHostKeyCallback wraps cb so that both unknown hosts and mismatched
-// keys produce clear, actionable errors instead of the terser errors
-// returned by the knownhosts package directly.
-func strictHostKeyCallback(cb ssh.HostKeyCallback, path string) ssh.HostKeyCallback {
-	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
-		err := cb(hostname, remote, key)
-		if err == nil {
-			return nil
-		}
-		var keyErr *knownhosts.KeyError
-		if !errors.As(err, &keyErr) {
-			return err
-		}
-		if len(keyErr.Want) > 0 {
-			return hostKeyMismatchError(hostname, path, err)
-		}
-		return fmt.Errorf("ssh: host key for %s is not present in known_hosts %q; establish trust first by connecting once with host_key_policy %q, or run `ssh-keyscan -H %s >> %s`: %w", hostname, path, HostKeyPolicyAcceptNew, hostname, path, err)
+		return onUnknown(hostname, key, err)
 	}
 }
 
