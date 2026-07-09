@@ -522,7 +522,7 @@ func (p *RunProjection) applyTaskFinished(target, taskID, taskName, actionPath, 
 func (p *RunProjection) applyTaskFailed(e TaskFailedEvent) []CommitDescriptor {
 	p.failedTasks = append(p.failedTasks, failedTask{
 		target:     e.Target,
-		actionPath: "",
+		actionPath: e.ActionPath,
 		name:       e.TaskName,
 		message:    e.FailMessage,
 		output:     e.Output,

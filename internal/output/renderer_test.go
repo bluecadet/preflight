@@ -338,9 +338,10 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 		Targets:      []string{"host-a"},
 	})
 	r.Emit(TaskStartedEvent{
-		Target:   "host-a",
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
+		Target:     "host-a",
+		TaskID:     "task-1",
+		TaskName:   "Run smoke test",
+		ActionPath: "apps/smoke",
 	})
 	r.Emit(TaskOutputEvent{
 		Target:   "host-a",
@@ -352,6 +353,7 @@ func TestTextRenderer_FailedTaskIncludesOutput(t *testing.T) {
 		Target:      "host-a",
 		TaskID:      "task-1",
 		TaskName:    "Run smoke test",
+		ActionPath:  "apps/smoke",
 		FailMessage: "process exited with code 1",
 		Output:      []string{"Launching kiosk application...", "Smoke test timeout after 15s"},
 	})
@@ -381,14 +383,16 @@ func TestTextRenderer_FailedTaskWrapsLongMessageAndOutput(t *testing.T) {
 		Targets:      []string{"host-a"},
 	})
 	r.Emit(TaskStartedEvent{
-		Target:   "host-a",
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
+		Target:     "host-a",
+		TaskID:     "task-1",
+		TaskName:   "Run smoke test",
+		ActionPath: "apps/smoke",
 	})
 	r.Emit(TaskFailedEvent{
 		Target:      "host-a",
 		TaskID:      "task-1",
 		TaskName:    "Run smoke test",
+		ActionPath:  "apps/smoke",
 		FailMessage: longMessage,
 		Output:      []string{longOutput},
 	})

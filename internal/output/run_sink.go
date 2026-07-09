@@ -210,6 +210,9 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 		if len(e.Output) > 0 {
 			m["output"] = e.Output
 		}
+		if e.ActionPath != "" {
+			m["action_ref"] = e.ActionPath
+		}
 	case DiagnosticEvent:
 		m["summary"] = e.Summary
 		if e.Source != "" {

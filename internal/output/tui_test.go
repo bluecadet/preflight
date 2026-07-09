@@ -119,14 +119,16 @@ func TestTUIModel_WrapsLongCommittedFailureOutput(t *testing.T) {
 	m := newTUIModel(events)
 	m.width = 48
 	m, _ = m.applyEvent(TaskStartedEvent{
-		Target:   "host-a",
-		TaskID:   "task-1",
-		TaskName: "Run smoke test",
+		Target:     "host-a",
+		TaskID:     "task-1",
+		TaskName:   "Run smoke test",
+		ActionPath: "apps/smoke",
 	})
 	m, _ = m.applyEvent(TaskFailedEvent{
 		Target:      "host-a",
 		TaskID:      "task-1",
 		TaskName:    "Run smoke test",
+		ActionPath:  "apps/smoke",
 		FailMessage: strings.Repeat("failure-message ", 6),
 		Output:      []string{strings.Repeat("verbose-output ", 6)},
 	})
@@ -401,9 +403,10 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	}
 	for _, s := range statuses {
 		r.Emit(TaskStartedEvent{
-			Target:   "host",
-			TaskID:   s.id,
-			TaskName: s.name,
+			Target:     "host",
+			TaskID:     s.id,
+			TaskName:   s.name,
+			ActionPath: "apps/play",
 		})
 		switch s.status {
 		case "ok":
@@ -411,7 +414,7 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 		case "changed":
 			r.Emit(TaskChangedEvent{Target: "host", TaskID: s.id, TaskName: s.name})
 		case "failed":
-			r.Emit(TaskFailedEvent{Target: "host", TaskID: s.id, TaskName: s.name, FailMessage: "error"})
+			r.Emit(TaskFailedEvent{Target: "host", TaskID: s.id, TaskName: s.name, ActionPath: "apps/play", FailMessage: "error"})
 		case "skipped":
 			r.Emit(TaskSkippedEvent{Target: "host", TaskID: s.id, TaskName: s.name, Reason: "filtered"})
 		}
