@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 	"golang.org/x/crypto/ssh/knownhosts"
 )
 
@@ -23,6 +26,8 @@ type SSHConfig struct {
 	Username   string
 	Password   string
 	PrivateKey string
+	// PrivateKeyPassphrase is the passphrase for an encrypted PrivateKey.
+	PrivateKeyPassphrase string
 	// KnownHostsFile is the path to a known_hosts file used to verify the
 	// remote host key. When empty the connection proceeds without host key
 	// verification (insecure; only acceptable on isolated networks).
@@ -51,25 +56,65 @@ type sshSessionCreator interface {
 
 type sshRunnerFactory func(SSHConfig) (sshRunner, error)
 
+// sshAuthSockEnv returns the SSH_AUTH_SOCK environment variable. It is a
+// package var so tests can override agent discovery.
+var sshAuthSockEnv = func() string {
+	return os.Getenv("SSH_AUTH_SOCK")
+}
+
+// sshUserKeyDir returns the directory to search for default SSH private
+// keys (normally ~/.ssh). It is a package var so tests can override default
+// key discovery with a temp directory.
+var sshUserKeyDir = func() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".ssh")
+}
+
+// defaultSSHKeyFiles lists the filenames of default private keys to try, in
+// preference order, when no explicit private key or password is configured.
+var defaultSSHKeyFiles = []string{"id_ed25519", "id_ecdsa", "id_rsa"}
+
 // buildSSHClientConfig translates an SSHConfig into an ssh.ClientConfig,
 // applying the default connection/handshake timeout when Timeout is unset.
+//
+// Auth methods are tried in this order: explicit private key, SSH agent,
+// default keys discovered under ~/.ssh, then password.
 func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
-	authMethods := make([]ssh.AuthMethod, 0, 2)
-	if cfg.Password != "" {
-		authMethods = append(authMethods, ssh.Password(cfg.Password))
-	}
+	authMethods := make([]ssh.AuthMethod, 0, 4)
+
 	if cfg.PrivateKey != "" {
-		signer, err := ssh.ParsePrivateKey([]byte(cfg.PrivateKey))
+		signer, err := parseSSHPrivateKey(cfg.PrivateKey, cfg.PrivateKeyPassphrase)
 		if err != nil {
-			if data, readErr := os.ReadFile(cfg.PrivateKey); readErr == nil {
-				signer, err = ssh.ParsePrivateKey(data)
-			}
-		}
-		if err != nil {
-			return nil, fmt.Errorf("ssh: parse private key: %w", err)
+			return nil, err
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
+
+	agentMethod, agentErr := sshAgentAuthMethod()
+	if agentMethod != nil {
+		authMethods = append(authMethods, agentMethod)
+	}
+
+	if cfg.PrivateKey == "" && cfg.Password == "" {
+		if signers := defaultSSHSigners(); len(signers) > 0 {
+			authMethods = append(authMethods, ssh.PublicKeys(signers...))
+		}
+	}
+
+	if cfg.Password != "" {
+		authMethods = append(authMethods, ssh.Password(cfg.Password))
+	}
+
+	if len(authMethods) == 0 {
+		if agentErr != nil {
+			return nil, fmt.Errorf("ssh: no authentication method available for host %s: %w", cfg.Host, agentErr)
+		}
+		return nil, fmt.Errorf("ssh: no authentication method available for host %s: set password, private_key, or make an SSH agent/default key available", cfg.Host)
+	}
+
 	hostKeyCallback := ssh.InsecureIgnoreHostKey() //nolint:gosec // insecure fallback when KnownHostsFile is not configured
 	if cfg.KnownHostsFile != "" {
 		cb, err := knownhosts.New(cfg.KnownHostsFile)
@@ -89,6 +134,80 @@ func buildSSHClientConfig(cfg SSHConfig) (*ssh.ClientConfig, error) {
 		HostKeyAlgorithms: cfg.HostKeyAlgorithms,
 		Timeout:           timeout,
 	}, nil
+}
+
+// parseSSHPrivateKey parses an inline PEM-encoded private key or, if that
+// fails, treats keyOrPath as a file path and reads/parses it from disk. When
+// passphrase is non-empty, ssh.ParsePrivateKeyWithPassphrase is used;
+// otherwise ssh.ParsePrivateKey is used, and an encrypted key produces a
+// clear error pointing at private_key_passphrase.
+func parseSSHPrivateKey(keyOrPath, passphrase string) (ssh.Signer, error) {
+	signer, err := parseSSHKeyBytes([]byte(keyOrPath), passphrase)
+	if err != nil {
+		if data, readErr := os.ReadFile(keyOrPath); readErr == nil {
+			signer, err = parseSSHKeyBytes(data, passphrase)
+		}
+	}
+	if err != nil {
+		var missing *ssh.PassphraseMissingError
+		if errors.As(err, &missing) {
+			return nil, fmt.Errorf("ssh: private key is encrypted: set private_key_passphrase")
+		}
+		return nil, fmt.Errorf("ssh: parse private key: %w", err)
+	}
+	return signer, nil
+}
+
+func parseSSHKeyBytes(data []byte, passphrase string) (ssh.Signer, error) {
+	if passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(data, []byte(passphrase))
+	}
+	return ssh.ParsePrivateKey(data)
+}
+
+// sshAgentAuthMethod dials the SSH agent at sshAuthSockEnv (when set) and
+// returns an ssh.AuthMethod backed by it. It returns (nil, nil) when
+// SSH_AUTH_SOCK is unset, and (nil, err) when the agent is configured but
+// the dial fails.
+//
+// The agent connection is dialed once here and kept open for the lifetime
+// of the process; it is a lightweight unix socket and callers do not need
+// to close it explicitly.
+func sshAgentAuthMethod() (ssh.AuthMethod, error) {
+	sockPath := sshAuthSockEnv()
+	if sockPath == "" {
+		return nil, nil
+	}
+	conn, err := net.Dial("unix", sockPath)
+	if err != nil {
+		return nil, fmt.Errorf("connect to SSH agent at %s: %w", sockPath, err)
+	}
+	agentClient := agent.NewClient(conn)
+	return ssh.PublicKeysCallback(agentClient.Signers), nil
+}
+
+// defaultSSHSigners looks for id_ed25519, id_ecdsa, and id_rsa (in that
+// order) under sshUserKeyDir and returns a signer for each that exists and
+// parses as an unencrypted key. Missing, encrypted, or unparsable default
+// keys are skipped rather than treated as errors.
+func defaultSSHSigners() []ssh.Signer {
+	dir := sshUserKeyDir()
+	if dir == "" {
+		return nil
+	}
+	var signers []ssh.Signer
+	for _, name := range defaultSSHKeyFiles {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		signer, err := ssh.ParsePrivateKey(data)
+		if err != nil {
+			continue
+		}
+		signers = append(signers, signer)
+	}
+	return signers
 }
 
 var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, error) {

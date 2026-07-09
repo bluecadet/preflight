@@ -65,6 +65,7 @@ inventory:
 | `username` | string | Username for transport authentication |
 | `password` | string | Password or secret reference such as `secret:winrm-password` |
 | `private_key` | string | SSH private key value, path, or secret reference |
+| `private_key_passphrase` | string | Passphrase for an encrypted SSH `private_key`, or a secret reference |
 | `known_hosts_file` | string | Path to a known_hosts file for SSH host-key verification. When omitted, host-key checking is skipped. |
 | `host_key_algorithms` | string[] | Restrict accepted SSH host-key algorithms, such as `[ssh-ed25519, ssh-rsa]`. |
 | `timeout` | duration | Connection/handshake timeout for SSH and WinRM, as a Go duration string such as `30s` or `1m`. Defaults to 30s for SSH when omitted. |
@@ -73,6 +74,8 @@ inventory:
 | `vars` | object | Host-specific variable overrides |
 
 Hosts must not reference undefined groups. Preflight fails early when a host lists a missing group so group variables cannot be skipped silently.
+
+For SSH hosts, when `private_key` and `password` are both omitted, Preflight also tries an SSH agent (via `SSH_AUTH_SOCK`) and default keys under `~/.ssh` (`id_ed25519`, `id_ecdsa`, `id_rsa`) on the machine running Preflight. See [SSH Authentication](../explanation/targets-and-transports.md#ssh-authentication) for the full method order.
 
 ## Variable Merge Order
 

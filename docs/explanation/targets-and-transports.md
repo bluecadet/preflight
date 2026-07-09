@@ -101,6 +101,27 @@ WinRM is still the clearest Windows-first remote transport when it is available,
 
 Unsupported module usage is caught at first task execution and returns a clear error. There is no silent fallback.
 
+### SSH Authentication
+
+SSH targets try the following authentication methods in order, using the first that yields a usable credential:
+
+1. **Explicit private key** — `private_key` (inline PEM or a file path) on the host entry. If the key is encrypted, set `private_key_passphrase` alongside it; without a passphrase, an encrypted `private_key` fails with a clear error rather than silently trying other methods.
+2. **SSH agent** — when the `SSH_AUTH_SOCK` environment variable is set on the machine running Preflight, its keys are offered to the remote host. A dead or unreachable agent socket is skipped silently as long as another auth method (private key, default key, or password) is available; if the agent is the only candidate, its connection error is surfaced.
+3. **Default keys** — when neither `private_key` nor `password` is set, Preflight looks for `~/.ssh/id_ed25519`, `~/.ssh/id_ecdsa`, and `~/.ssh/id_rsa` (in that order) on the machine running Preflight and offers whichever exist and parse as unencrypted keys. Encrypted or unparsable default keys are skipped rather than treated as errors.
+4. **Password** — `password` on the host entry, tried last (matching OpenSSH's preference for public-key auth).
+
+If none of these produce a usable auth method, connecting fails immediately with an error naming the host, instead of attempting a connection with no credentials.
+
+```yaml
+inventory:
+  hosts:
+    - name: kiosk-01
+      address: 10.0.0.5
+      transport: ssh
+      private_key: secret:signage-key
+      private_key_passphrase: secret:signage-key-passphrase
+```
+
 ### SSH Host-Key Verification
 
 By default, when no `known_hosts_file` is configured in inventory, host-key checking is skipped. This is insecure and should only be used on isolated networks where host identity is established by other means.
