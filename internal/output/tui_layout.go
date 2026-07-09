@@ -10,10 +10,16 @@ import (
 type tuiCardBuilder struct {
 	title    string
 	sections []string
+	width    int
 }
 
 func newTUICard(title string) *tuiCardBuilder {
-	return &tuiCardBuilder{title: title}
+	return &tuiCardBuilder{title: title, width: 80}
+}
+
+func (b *tuiCardBuilder) withWidth(w int) *tuiCardBuilder {
+	b.width = w
+	return b
 }
 
 func (b *tuiCardBuilder) add(section string) {
@@ -31,7 +37,7 @@ func (b *tuiCardBuilder) addLabeled(title, body string) {
 }
 
 func (b *tuiCardBuilder) render() string {
-	return tsRenderSection(b.title, strings.Join(b.sections, "\n\n"))
+	return tsRenderSection(b.title, strings.Join(b.sections, "\n\n"), b.width)
 }
 
 func tsTruncate(s string, n int) string {
@@ -98,7 +104,7 @@ func tsRenderNotice(glyph string, style lipgloss.Style, message string, width in
 	return strings.Join(lines, "\n")
 }
 
-func tsRenderSection(title, body string) string {
+func tsRenderSection(title, body string, width int) string {
 	var parts []string
 	if title != "" {
 		parts = append(parts, S.CardTitleInset.Render(S.CardTitle.Render(title)))
@@ -107,7 +113,8 @@ func tsRenderSection(title, body string) string {
 		return strings.Join(parts, "\n")
 	}
 	if title != "" {
-		parts = append(parts, S.TableRule.Render(strings.Repeat("─", 42)))
+		ruleWidth := max(width-4, 10)
+		parts = append(parts, S.TableRule.Render(strings.Repeat("─", ruleWidth)))
 	}
 	parts = append(parts, S.CardBodyInset.Render(body))
 	return strings.Join(parts, "\n")
