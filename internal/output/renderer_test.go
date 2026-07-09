@@ -52,11 +52,11 @@ func TestTextRenderer_RunStart(t *testing.T) {
 		Transport: "local",
 	})
 	out = buf.String()
-	if !strings.Contains(out, "Apply") {
-		t.Errorf("expected Apply heading in output, got: %q", out)
+	if !strings.Contains(out, "RUN") {
+		t.Errorf("expected RUN heading in output, got: %q", out)
 	}
-	if !strings.Contains(out, "playbook: playbooks/lobby.yml") {
-		t.Errorf("expected playbook identity in output, got: %q", out)
+	if !strings.Contains(out, "playbooks/lobby.yml → lobby-pc-01 (local)") {
+		t.Errorf("expected playbook and target identity in output, got: %q", out)
 	}
 }
 
