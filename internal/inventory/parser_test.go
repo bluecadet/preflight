@@ -488,6 +488,118 @@ hosts:
 	}
 }
 
+func TestParseJumpBlock_RoundTrips(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    username: exhibit
+    jump:
+      address: bastion.example.com
+      port: 2222
+      username: jumpuser
+      password: secret:jump-password
+      private_key: secret:jump-key
+      private_key_passphrase: secret:jump-key-passphrase
+      known_hosts_file: /home/user/.ssh/jump_known_hosts
+      host_key_policy: strict
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	jump := hosts[0].Jump
+	if jump == nil {
+		t.Fatal("expected Jump to be populated")
+	}
+	if jump.Address != "bastion.example.com" {
+		t.Errorf("Jump.Address: got %q, want %q", jump.Address, "bastion.example.com")
+	}
+	if jump.Port != 2222 {
+		t.Errorf("Jump.Port: got %d, want 2222", jump.Port)
+	}
+	if jump.Username != "jumpuser" {
+		t.Errorf("Jump.Username: got %q, want %q", jump.Username, "jumpuser")
+	}
+	if jump.Password != "secret:jump-password" {
+		t.Errorf("Jump.Password: got %q, want %q", jump.Password, "secret:jump-password")
+	}
+	if jump.PrivateKey != "secret:jump-key" {
+		t.Errorf("Jump.PrivateKey: got %q, want %q", jump.PrivateKey, "secret:jump-key")
+	}
+	if jump.PrivateKeyPassphrase != "secret:jump-key-passphrase" {
+		t.Errorf("Jump.PrivateKeyPassphrase: got %q, want %q", jump.PrivateKeyPassphrase, "secret:jump-key-passphrase")
+	}
+	if jump.KnownHostsFile != "/home/user/.ssh/jump_known_hosts" {
+		t.Errorf("Jump.KnownHostsFile: got %q, want %q", jump.KnownHostsFile, "/home/user/.ssh/jump_known_hosts")
+	}
+	if jump.HostKeyPolicy != "strict" {
+		t.Errorf("Jump.HostKeyPolicy: got %q, want %q", jump.HostKeyPolicy, "strict")
+	}
+}
+
+func TestParseJumpBlock_Absent(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+`
+	inv, err := inventory.Parse([]byte(data))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+	hosts, err := inv.HostsForTarget("staging-pc-01")
+	if err != nil {
+		t.Fatalf("unexpected target error: %v", err)
+	}
+	if hosts[0].Jump != nil {
+		t.Errorf("expected Jump to be nil when absent, got %#v", hosts[0].Jump)
+	}
+}
+
+func TestParseJumpBlock_MissingAddressErrors(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    jump:
+      username: jumpuser
+`
+	_, err := inventory.Parse([]byte(data))
+	if err == nil {
+		t.Fatal("expected error for jump block missing address, got nil")
+	}
+	if !strings.Contains(err.Error(), "jump") || !strings.Contains(err.Error(), "address") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestParseJumpBlock_InvalidHostKeyPolicyErrors(t *testing.T) {
+	data := `
+hosts:
+  - name: staging-pc-01
+    address: 10.1.0.5
+    transport: ssh
+    jump:
+      address: bastion.example.com
+      host_key_policy: bogus
+`
+	_, err := inventory.Parse([]byte(data))
+	if err == nil {
+		t.Fatal("expected error for invalid jump host_key_policy, got nil")
+	}
+	if !strings.Contains(err.Error(), "host_key_policy") || !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
 func TestParseHostTimeout(t *testing.T) {
 	data := `
 hosts:

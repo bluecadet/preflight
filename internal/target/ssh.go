@@ -60,6 +60,15 @@ type SSHConfig struct {
 	// Timeout is the connection/handshake timeout for ssh.Dial. Zero means
 	// the 30s default (defaultSSHTimeout) is used.
 	Timeout time.Duration
+	// Jump, when set, configures a single-hop SSH bastion (a ProxyJump) to
+	// dial through before reaching Host. Only connection-relevant fields on
+	// the jump config are used: Host, Port, Username, the auth fields
+	// (Password, PrivateKey, PrivateKeyPassphrase), the host-key fields
+	// (KnownHostsFile, HostKeyPolicy, HostKeyAlgorithms), and Timeout. The
+	// jump host has its own independent auth and host-key policy; it does
+	// not inherit anything from the target config it fronts. Jump.Jump must
+	// be nil — nested (multi-hop) bastions are not supported.
+	Jump *SSHConfig
 }
 
 type sshRunner interface {
@@ -348,21 +357,80 @@ func defaultSSHSigners() []ssh.Signer {
 }
 
 var defaultSSHRunnerFactory sshRunnerFactory = func(cfg SSHConfig) (sshRunner, error) {
+	if cfg.Jump != nil {
+		return dialSSHRunnerViaJump(cfg)
+	}
+	client, err := dialSSHClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return newSSHClientRunner(client, nil), nil
+}
+
+// dialSSHClient builds an *ssh.ClientConfig from cfg and dials cfg's
+// Host:Port directly (defaulting the port to 22 when unset).
+func dialSSHClient(cfg SSHConfig) (*ssh.Client, error) {
 	clientConfig, err := buildSSHClientConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Port == 0 {
-		cfg.Port = 22
+	return ssh.Dial("tcp", sshAddr(cfg), clientConfig)
+}
+
+// sshAddr formats cfg's Host:Port as a dial address, defaulting Port to 22
+// when unset.
+func sshAddr(cfg SSHConfig) string {
+	port := cfg.Port
+	if port == 0 {
+		port = 22
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	client, err := ssh.Dial("tcp", addr, clientConfig)
+	return fmt.Sprintf("%s:%d", cfg.Host, port)
+}
+
+// dialSSHRunnerViaJump dials cfg.Host through the single-hop bastion
+// described by cfg.Jump (an SSH ProxyJump): it connects to the jump host
+// first, then tunnels a second SSH handshake to the real target over that
+// connection. The bastion and target each use their own, independent
+// SSHConfig (auth, host-key policy, timeout) — the target does not inherit
+// anything from the jump host's configuration.
+func dialSSHRunnerViaJump(cfg SSHConfig) (sshRunner, error) {
+	jumpCfg := *cfg.Jump
+	if jumpCfg.Jump != nil {
+		return nil, fmt.Errorf("ssh: jump host %s: only a single jump hop is supported (nested jump hosts are not allowed)", jumpCfg.Host)
+	}
+
+	bastionAddr := sshAddr(jumpCfg)
+	targetAddr := sshAddr(cfg)
+
+	bastionClientConfig, err := buildSSHClientConfig(jumpCfg)
+	if err != nil {
+		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
+	}
+	targetClientConfig, err := buildSSHClientConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	runner := &sshClientRunner{client: client}
-	runner.startKeepalive()
-	return runner, nil
+
+	bastionClient, err := ssh.Dial("tcp", bastionAddr, bastionClientConfig)
+	if err != nil {
+		return nil, fmt.Errorf("ssh: dial jump host %s: %w", bastionAddr, err)
+	}
+
+	conn, err := bastionClient.Dial("tcp", targetAddr)
+	if err != nil {
+		_ = bastionClient.Close()
+		return nil, fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)
+	}
+
+	clientConn, chans, reqs, err := ssh.NewClientConn(conn, targetAddr, targetClientConfig)
+	if err != nil {
+		_ = conn.Close()
+		_ = bastionClient.Close()
+		return nil, fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)
+	}
+
+	targetClient := ssh.NewClient(clientConn, chans, reqs)
+	return newSSHClientRunner(targetClient, bastionClient), nil
 }
 
 type sshRuntime interface {

@@ -38,6 +38,24 @@ type Host struct {
 	// transports. Zero means unset, which falls back to each transport's
 	// own default (30s for SSH).
 	Timeout time.Duration `yaml:"timeout,omitempty"`
+	// Jump, when set, configures a single-hop SSH bastion to dial through
+	// before reaching this host. Only meaningful for the SSH transport.
+	Jump *JumpHost `yaml:"jump,omitempty"`
+}
+
+// JumpHost configures a single-hop SSH bastion (a ProxyJump) that a host is
+// reached through. The jump host has its own independent authentication and
+// host-key policy; it does not inherit anything from the host it fronts.
+type JumpHost struct {
+	// Address is the jump host's hostname or IP address. Required.
+	Address              string `yaml:"address"`
+	Port                 int    `yaml:"port,omitempty"`
+	Username             string `yaml:"username,omitempty"`
+	Password             string `yaml:"password,omitempty"`
+	PrivateKey           string `yaml:"private_key,omitempty"`
+	PrivateKeyPassphrase string `yaml:"private_key_passphrase,omitempty"`
+	KnownHostsFile       string `yaml:"known_hosts_file,omitempty"`
+	HostKeyPolicy        string `yaml:"host_key_policy,omitempty"`
 }
 
 // Group is optional metadata for hosts that opt into the group by name.

@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -209,17 +211,44 @@ func sshKeepaliveLoop(conn sshKeepaliveConn, interval time.Duration, stop <-chan
 	}
 }
 
+// sshClient is the subset of *ssh.Client's methods used by sshClientRunner,
+// extracted so sshClientRunner can be unit tested (in particular Close's
+// close-ordering behavior) with a fake instead of a real network connection.
+// *ssh.Client satisfies this interface.
+type sshClient interface {
+	sshKeepaliveConn
+	NewSession() (*ssh.Session, error)
+	Close() error
+}
+
 type sshClientRunner struct {
-	client *ssh.Client
+	client sshClient
+
+	// bastion is the jump-host connection this runner's target client was
+	// tunneled through, when SSHConfig.Jump was set. It is closed after the
+	// target client in Close. Nil for a direct connection.
+	bastion io.Closer
 
 	stopKeepalive chan struct{}
 	closeOnce     sync.Once
 	closeErr      error
 }
 
+// newSSHClientRunner wraps client (optionally tunneled through bastion, when
+// SSHConfig.Jump was set) in an sshClientRunner and starts its keepalive
+// goroutine. bastion is nil for a direct connection.
+func newSSHClientRunner(client *ssh.Client, bastion io.Closer) *sshClientRunner {
+	runner := &sshClientRunner{client: client, bastion: bastion}
+	runner.startKeepalive()
+	return runner
+}
+
 // startKeepalive launches the keepalive goroutine for this runner's client.
-// It must be called at most once per runner (the factory calls it right
-// after dialing).
+// It must be called at most once per runner (newSSHClientRunner calls it
+// right after dialing). Keepalive requests are only sent on the target
+// client, never on the bastion directly: they flow over the tunnel carried
+// by the bastion's TCP connection, so activity on the target client also
+// keeps the bastion connection alive.
 func (r *sshClientRunner) startKeepalive() {
 	r.stopKeepalive = make(chan struct{})
 	go sshKeepaliveLoop(r.client, sshKeepaliveInterval, r.stopKeepalive, func() {
@@ -229,14 +258,18 @@ func (r *sshClientRunner) startKeepalive() {
 }
 
 // Close stops the keepalive goroutine (if running) and closes the underlying
-// client. It is safe to call multiple times, including concurrently from the
-// keepalive goroutine itself when it self-closes after repeated failures.
+// target client, then the bastion connection (if any). It is safe to call
+// multiple times, including concurrently from the keepalive goroutine itself
+// when it self-closes after repeated failures.
 func (r *sshClientRunner) Close() error {
 	r.closeOnce.Do(func() {
 		if r.stopKeepalive != nil {
 			close(r.stopKeepalive)
 		}
 		r.closeErr = r.client.Close()
+		if r.bastion != nil {
+			r.closeErr = errors.Join(r.closeErr, r.bastion.Close())
+		}
 	})
 	return r.closeErr
 }
