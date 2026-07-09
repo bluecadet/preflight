@@ -35,13 +35,7 @@ func (b *tuiCardBuilder) render() string {
 }
 
 func tsTruncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	if n <= 1 {
-		return "…"
-	}
-	return s[:n-1] + "…"
+	return Truncate(s, n)
 }
 
 func tsPluralize(n int, singular, plural string) string {

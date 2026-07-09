@@ -115,14 +115,9 @@ func formatElapsed(d time.Duration) string {
 	return fmt.Sprintf("%dh%02dm", hours, minutes)
 }
 
+// padLine delegates to the shared PadLine helper.
 func padLine(left, right string, width int) string {
-	left = strings.TrimRight(left, " \t")
-	right = strings.TrimSpace(right)
-	if right == "" {
-		return left
-	}
-	spaces := max(width-len(left)-len(right), 1)
-	return left + strings.Repeat(" ", spaces) + right
+	return PadLine(left, right, width)
 }
 
 func indentWrapped(indent int, message string) []string {
