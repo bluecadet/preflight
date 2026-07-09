@@ -147,6 +147,12 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 		right = formatElapsed(elapsed)
 	}
 	r.writeLine(padLine(left, right, lineWidth))
+
+	if detail := okDetail(""); detail != "" {
+		for _, line := range indentWrapped(2, detail) {
+			r.writeLine(line)
+		}
+	}
 }
 
 func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
@@ -160,6 +166,12 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 		right = formatElapsed(elapsed)
 	}
 	r.writeLine(padLine(left, right, lineWidth))
+
+	if detail := changedDetail("", r.projection.IsCheckMode()); detail != "" {
+		for _, line := range indentWrapped(2, detail) {
+			r.writeLine(line)
+		}
+	}
 }
 
 func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
