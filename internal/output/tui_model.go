@@ -184,15 +184,20 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 }
 
 func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
+	maxName := 0
+	for _, ti := range d.Targets {
+		maxName = max(maxName, len(ti.Name))
+	}
 	var lines []string
 	lines = append(lines, "Targets:")
 	for _, ti := range d.Targets {
-		s := ti.Name + " (" + ti.Transport
+		name := AlignLeft(ti.Name, maxName)
+		s := "  " + name + " (" + ti.Transport
 		if ti.Address != "" {
 			s += " • " + ti.Address
 		}
 		s += ")"
-		lines = append(lines, "  "+s)
+		lines = append(lines, s)
 	}
 	return tea.Println(strings.Join(lines, "\n"))
 }

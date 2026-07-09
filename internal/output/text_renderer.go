@@ -301,13 +301,29 @@ func (r *TextRenderer) emitTargetStart(e TargetStartEvent) {
 		return
 	}
 
-	// Multi-target runs: print roster line for each target.
-	if !r.rosterPrinted && len(r.projection.Targets) > 1 {
-		r.rosterPrinted = true
-		r.writeLine("Targets:")
-	}
-	if r.rosterPrinted {
-		r.writeLine("  " + r.targetDisplayString(e))
+	// Multi-target runs: print roster with aligned name column.
+	if len(r.projection.Targets) > 1 {
+		// Compute max name width from projection's target list for alignment.
+		maxName := 0
+		for _, ti := range r.projection.Targets {
+			if len(ti) > maxName {
+				maxName = len(ti)
+			}
+		}
+		if !r.rosterPrinted {
+			r.rosterPrinted = true
+			r.writeLine("Targets:")
+		}
+		// Extract name and suffix, then align with AlignLeft.
+		line := r.targetDisplayString(e)
+		nameEnd := strings.Index(line, " (")
+		if nameEnd > 0 {
+			name := line[:nameEnd]
+			suffix := line[nameEnd:]
+			r.writeLine("  " + AlignLeft(name, maxName) + suffix)
+		} else {
+			r.writeLine("  " + line)
+		}
 	}
 }
 

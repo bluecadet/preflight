@@ -35,6 +35,10 @@ func AlignLeft(s string, width int) string {
 
 // AlignRight pads s with spaces on the left so that the byte length
 // equals width. If s is already longer, it is returned unchanged.
+//
+// Currently unused but preserved as a shared primitive. It is the natural
+// counterpart to AlignLeft and would be needed if any section right-aligns
+// a column (e.g., a numeric column in a table).
 func AlignRight(s string, width int) string {
 	if len(s) >= width {
 		return s
