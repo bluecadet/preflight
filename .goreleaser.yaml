@@ -82,6 +82,9 @@ changelog:
 release:
   draft: false
   prerelease: auto
+  # release-please creates the GitHub release (with its own changelog) before
+  # this runs; keep its notes and just attach build artifacts to it.
+  mode: keep-existing
 
 signs:
   - cmd: cosign
