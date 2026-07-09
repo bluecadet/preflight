@@ -226,6 +226,10 @@ func getSSHConfigFromEnv() (*SSHConfig, bool) {
 		Port:     port,
 		Username: user,
 		Password: pass,
+		// The lab VM's host key rotates whenever the VM is rebuilt, and the
+		// default accept-new policy would pin it into the developer's real
+		// ~/.ssh/known_hosts. Skip verification for the sacrificial test VM.
+		HostKeyPolicy: HostKeyPolicyInsecure,
 	}
 	if key := os.Getenv("PREFLIGHT_TEST_SSH_KEY"); key != "" {
 		cfg.PrivateKey = key
