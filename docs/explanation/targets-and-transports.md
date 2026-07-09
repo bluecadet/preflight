@@ -165,6 +165,10 @@ inventory:
       timeout: 10s
 ```
 
+### Keepalive And Reconnect
+
+Once connected, the SSH target sends an OpenSSH keepalive request every 30s (fixed, not configurable) to keep the connection alive across NAT/firewall idle timeouts during long-running playbooks. If a connection drops mid-run — the keepalive fails twice in a row, or any command hits a connection-level error such as a closed socket or `EOF` — Preflight transparently reconnects once and retries the failed command before giving up. Command-level failures (a non-zero exit code, a script error) and a cancelled/expired context are never retried.
+
 ## Persistent PowerShell Sessions
 
 Remote Windows tasks are slow if every Check and Apply call starts a fresh `powershell.exe` process. PowerShell startup takes 200–500 ms, and on WinRM each invocation also creates and tears down a WinRM shell — a further five HTTP round-trips. A 20-task playbook against a remote Windows host could spend 20 seconds doing nothing but process startup.
