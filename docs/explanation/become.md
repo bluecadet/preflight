@@ -18,9 +18,12 @@ Do not use `become` when the task only needs elevated privilege — on Windows t
 
 ### Windows — `runas`
 
-On Windows, `become` defaults to `method: runas`. Preflight writes the task script to a temporary file and uses `Start-Process` with a `PSCredential` to execute it under the target user's token.
+On Windows, `become` defaults to `method: runas`. How the identity switch happens depends on the target type:
 
-The temporary file is cleaned up after the task regardless of outcome.
+- **Local target** — Preflight relaunches itself as a child process under the target user's credentials, with stdio redirected so module input and output flow through normally.
+- **Remote targets (WinRM and Windows-over-SSH)** — a remote session is non-interactive and has no window station, so starting a process directly under alternate credentials fails inside it. Preflight instead stages the task script on the target, grants the become user the batch-logon right if needed, registers and runs a one-shot scheduled task as that user, waits for it to finish, and replays its output. A non-zero exit code from the task is surfaced as the task's failure.
+
+Staged files and the scheduled task are cleaned up after the task regardless of outcome.
 
 A password is required for all Windows `become` users. Preflight rejects a task with `become.user` set but no `password`.
 
@@ -36,9 +39,9 @@ When a `password` is provided, it is fed via `sudo -S`. When no password is prov
 
 ## `load_profile`
 
-On Windows, `runas` does not automatically load the target user's profile. When `load_profile: true` is set, Preflight sets `LoadUserProfile = $true` in the `Start-Process` call, which populates the user's environment variables (`APPDATA`, `USERPROFILE`, `HOME`, etc.) before the task runs.
+On the local Windows target, `runas` does not automatically load the target user's profile. When `load_profile: true` is set, the child process is started with the user's profile loaded, which populates the user's environment variables (`APPDATA`, `USERPROFILE`, `HOME`, etc.) before the task runs. Use `load_profile: true` any time a local task depends on user profile paths or user-specific environment variables.
 
-Use `load_profile: true` any time the task depends on user profile paths or user-specific environment variables.
+On remote Windows targets (WinRM and Windows-over-SSH), the scheduled task's password logon always loads the target user's profile, so `load_profile` has no additional effect there.
 
 ```yaml
 become:
