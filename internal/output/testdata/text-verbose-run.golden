@@ -1,7 +1,6 @@
 Apply
-playbook: kiosk-provision.yml
-name: kiosk-provision
-target: kiosk-01
+playbook: kiosk-provision.yml → kiosk-01 (local)
+playbook: kiosk-provision
 
 - configure autologin started
     Setting HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\

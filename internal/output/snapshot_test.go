@@ -100,6 +100,12 @@ func newEventSnapshotCases() []snapshotCase {
 				TargetStartEvent{
 					Target:    "app-01",
 					Transport: "winrm",
+					Address:   "192.168.1.10",
+				},
+				TargetStartEvent{
+					Target:    "app-02",
+					Transport: "ssh",
+					Address:   "192.168.1.20",
 				},
 				TaskStartedEvent{
 					Target:   "app-01",
@@ -199,6 +205,12 @@ func newEventSnapshotCases() []snapshotCase {
 				TargetStartEvent{
 					Target:    "host-a",
 					Transport: "ssh",
+					Address:   "10.0.1.1",
+				},
+				TargetStartEvent{
+					Target:    "host-b",
+					Transport: "winrm",
+					Address:   "10.0.1.2",
 				},
 				TaskStartedEvent{
 					Target:   "host-a",
