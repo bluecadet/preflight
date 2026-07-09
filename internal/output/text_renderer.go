@@ -9,11 +9,13 @@ import (
 
 // ANSI color codes sourced from the semantic palette.
 var (
-	ansiReset  = "\033[0m"
-	ansiGreen  = DefaultPalette().OK.ANSI
-	ansiYellow = DefaultPalette().Changed.ANSI
-	ansiRed    = DefaultPalette().Failed.ANSI
-	ansiBold   = DefaultPalette().Bold.ANSI
+	ansiReset    = "\033[0m"
+	ansiGreen    = DefaultPalette().OK.ANSI
+	ansiYellow   = DefaultPalette().Changed.ANSI
+	ansiRed      = DefaultPalette().Failed.ANSI
+	ansiGrey     = DefaultPalette().Skipped.ANSI
+	ansiBold     = DefaultPalette().Bold.ANSI
+	ansiTaskName = DefaultPalette().TaskName.ANSI
 )
 
 const (
@@ -146,7 +148,8 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("ok", r.projection.IsCheckMode()) + " " + e.TaskName
+	glyph := r.colorize(ansiGreen, statusGlyph("ok", r.projection.IsCheckMode()))
+	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	if r.shouldShowHostLabels() && e.Target != "" {
 		left = "[" + r.displayTarget(e.Target) + "] " + left
 	}
@@ -168,7 +171,8 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("changed", r.projection.IsCheckMode()) + " " + e.TaskName
+	glyph := r.colorize(ansiYellow, statusGlyph("changed", r.projection.IsCheckMode()))
+	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	if r.shouldShowHostLabels() && e.Target != "" {
 		left = "[" + r.displayTarget(e.Target) + "] " + left
 	}
@@ -189,7 +193,8 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("skipped", r.projection.IsCheckMode()) + " " + e.TaskName
+	glyph := r.colorize(ansiGrey, statusGlyph("skipped", r.projection.IsCheckMode()))
+	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	if r.shouldShowHostLabels() && e.Target != "" {
 		left = "[" + r.displayTarget(e.Target) + "] " + left
 	}
@@ -206,7 +211,8 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("failed", r.projection.IsCheckMode()) + " " + e.TaskName
+	glyph := r.colorize(ansiRed, statusGlyph("failed", r.projection.IsCheckMode()))
+	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	if r.shouldShowHostLabels() && e.Target != "" {
 		left = "[" + r.displayTarget(e.Target) + "] " + left
 	}

@@ -16,6 +16,7 @@ type TUIStyles struct {
 	Changed   lipgloss.Style
 	Failed    lipgloss.Style
 	Skipped   lipgloss.Style
+	TaskName  lipgloss.Style
 	Muted     lipgloss.Style
 	Bold      lipgloss.Style
 	Spin      lipgloss.Style
@@ -57,6 +58,7 @@ func NewTUIStyles(p SemanticPalette, color bool) TUIStyles {
 		Changed:   build(p.Changed),
 		Failed:    build(p.Failed),
 		Skipped:   build(p.Skipped),
+		TaskName:  build(p.TaskName),
 		Muted:     build(p.Muted),
 		Bold:      build(p.Bold),
 		Spin:      build(p.Spin),
