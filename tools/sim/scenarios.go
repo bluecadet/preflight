@@ -153,11 +153,14 @@ func runBasic(r output.Renderer, delay time.Duration) {
 }
 
 func runMultiHost(r output.Renderer, delay time.Duration) {
-	playStart(r, "gallery rollout")
+	targets := []targetDecl{
+		{name: "gallery-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	}
+	playStartN(r, "gallery rollout", targets)
 
 	sr := output.Synchronized(r)
-
-	hosts := []string{"gallery-01", "gallery-02", "gallery-03"}
 
 	steps := []struct {
 		id, name, status string
@@ -170,8 +173,10 @@ func runMultiHost(r output.Renderer, delay time.Duration) {
 	}
 
 	var wg sync.WaitGroup
-	for _, h := range hosts {
+	for _, t := range targets {
 		wg.Go(func() {
+			emitTargetStart(sr, t)
+			h := t.name
 			// stagger host start so they don't all begin simultaneously
 			time.Sleep(jitter(delay, 0, 0.4))
 			ok, changed := 0, 0
@@ -287,14 +292,19 @@ func runSkipped(r output.Renderer, delay time.Duration) {
 }
 
 func runLarge(r output.Renderer, delay time.Duration) {
-	playStart(r, "fleet rollout")
+	targets := []targetDecl{
+		{name: "exhibit-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-04", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-05", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "exhibit-06", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "kiosk-02", transport: "local", address: ""},
+	}
+	playStartN(r, "fleet rollout", targets)
 
 	sr := output.Synchronized(r)
-
-	hosts := []string{
-		"exhibit-01", "exhibit-02", "exhibit-03", "exhibit-04",
-		"exhibit-05", "exhibit-06", "kiosk-01", "kiosk-02",
-	}
 
 	tasks := []struct {
 		id, name, status string
@@ -317,8 +327,10 @@ func runLarge(r output.Renderer, delay time.Duration) {
 	d = max(d, 10*time.Millisecond)
 
 	var wg sync.WaitGroup
-	for _, h := range hosts {
+	for _, t := range targets {
 		wg.Go(func() {
+			emitTargetStart(sr, t)
+			h := t.name
 			time.Sleep(jitter(d, 0, 1.0)) // stagger host start
 			ok, changed := 0, 0
 			for _, t := range tasks {
@@ -523,7 +535,11 @@ func runInlinePrefixes(r output.Renderer, delay time.Duration) {
 }
 
 func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
-	playStart(r, "streaming multi-host rollout")
+	playStartN(r, "streaming multi-host rollout", []targetDecl{
+		{name: "gallery-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	})
 
 	sr := output.Synchronized(r)
 
@@ -539,6 +555,7 @@ func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
 	var wg sync.WaitGroup
 	for _, h := range hosts {
 		wg.Go(func() {
+			emitTargetStart(sr, targetDecl{name: h.name, transport: "ssh", address: "[[IP_ADDRESS]]:22"})
 			runStreamingTask(sr, h.name, "sync-assets", "Sync assets", "changed", "assets synchronized", []string{
 				"Inspecting existing asset manifest...",
 				"Downloading changed assets...",
