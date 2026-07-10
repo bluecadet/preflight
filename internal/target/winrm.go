@@ -62,6 +62,7 @@ var defaultWinRMClientFactory winRMClientFactory = func(cfg WinRMConfig) (winRMC
 // WinRMTarget communicates with a remote Windows machine via WinRM.
 type WinRMTarget struct {
 	config        WinRMConfig
+	registry      ModuleRegistry
 	clientFactory winRMClientFactory
 	mu            sync.Mutex
 	client        winRMClient
@@ -137,7 +138,7 @@ func (p *winRMPersistentPS) close() {
 
 const winRMMaxInlinePowerShellCommandLen = 7000
 
-func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
+func NewWinRMTarget(cfg WinRMConfig, registry ModuleRegistry) *WinRMTarget {
 	if cfg.Port == 0 {
 		if cfg.HTTPS {
 			cfg.Port = 5986
@@ -147,6 +148,7 @@ func NewWinRMTarget(cfg WinRMConfig) *WinRMTarget {
 	}
 	return &WinRMTarget{
 		config:        cfg,
+		registry:      registry,
 		clientFactory: defaultWinRMClientFactory,
 	}
 }
@@ -187,10 +189,16 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		dryRun,
 		onOutput,
 		registry,
-		func(module string) error {
-			return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
-		},
+		t.unsupportedModuleError,
 	)
+}
+
+// unsupportedModuleError distinguishes a discovered plugin from a genuinely
+// unknown module. See classifyMissingModule for the plugin-vs-unknown
+// distinction shared with SSH; this retires WinRM's former conflation of the
+// two.
+func (t *WinRMTarget) unsupportedModuleError(module string) error {
+	return classifyMissingModule(t.registry, module, RuntimeKindWindowsPowerShell)
 }
 
 func (t *WinRMTarget) CopyFile(ctx context.Context, src, dst string) error {

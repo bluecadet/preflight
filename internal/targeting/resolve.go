@@ -170,7 +170,7 @@ func buildTarget(host inventory.Host, auth, jumpAuth hostAuth, registry target.M
 			Password: auth.password,
 			HTTPS:    host.HTTPS,
 			Timeout:  host.Timeout,
-		}), nil
+		}, registry), nil
 	case inventory.TransportSSH:
 		cfg := target.SSHConfig{
 			Host:                 address,

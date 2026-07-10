@@ -46,7 +46,7 @@ func (f *fakeWinRMShellClient) CreateShell() (*winrm.Shell, error) {
 }
 
 func TestWinRMTarget_ExecuteShell(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			if !strings.Contains(command, "& $cmd @args") {
@@ -73,7 +73,7 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 
 func TestWinRMTarget_ExecuteFileContent(t *testing.T) {
 	var sawApply bool
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			switch {
@@ -106,7 +106,7 @@ func TestWinRMTarget_ExecuteFileContent(t *testing.T) {
 
 func TestWinRMTarget_ExecuteFileContentHashNoop(t *testing.T) {
 	expectedHash := hashBytes([]byte("secret\ncontent\n"))
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			switch {
@@ -133,7 +133,7 @@ func TestWinRMTarget_ExecuteFileContentHashNoop(t *testing.T) {
 
 func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
 	var sawCredentialRunner bool
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			switch {
@@ -325,7 +325,7 @@ func TestRemoveAppxCheckScriptFiltersMalformedPackageNames(t *testing.T) {
 
 func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 	var scripts []string
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			scripts = append(scripts, command)
@@ -358,7 +358,7 @@ func TestWinRMTarget_CopyAndReadFile(t *testing.T) {
 
 func TestWinRMTarget_CopyFileFallsBackWhenPersistentSessionCreationFails(t *testing.T) {
 	var runPSCalls int
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMShellClient{
 		createShell: func() (*winrm.Shell, error) {
 			return nil, errors.New("shell unavailable")
@@ -386,7 +386,7 @@ func TestWinRMTarget_CopyFileFallsBackWhenPersistentSessionCreationFails(t *test
 }
 
 func TestWinRMTarget_ExecuteRecyclesPersistentSessionAfterPowerShellModule(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			tgt.psSession = &winRMPersistentPS{}
@@ -407,7 +407,7 @@ func TestWinRMTarget_ExecuteRecyclesPersistentSessionAfterPowerShellModule(t *te
 }
 
 func TestWinRMTarget_ExecuteKeepsPersistentSessionAfterBuiltinModule(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			tgt.psSession = &winRMPersistentPS{}
@@ -428,7 +428,7 @@ func TestWinRMTarget_ExecuteKeepsPersistentSessionAfterBuiltinModule(t *testing.
 }
 
 func TestWinRMTarget_ReachableAndInfo(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runCmd: func(_ context.Context, command string) (string, string, int, error) {
 			if command != "echo preflight" {
@@ -478,7 +478,7 @@ func TestNormalizeWindowsArch(t *testing.T) {
 func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	var commands []string
 
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			commands = append(commands, command)
@@ -509,7 +509,7 @@ func TestWinRMTarget_RunPowerShellScriptFallsBackToTempFileWhenCommandLineTooLon
 	var psCommands []string
 	var cmdCommands []string
 
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			psCommands = append(psCommands, command)
@@ -553,7 +553,7 @@ func TestWinRMTarget_RunPowerShellScriptProactivelyStagesLargeScripts(t *testing
 	var psCommands []string
 	var cmdCommands []string
 
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			psCommands = append(psCommands, command)
@@ -609,7 +609,7 @@ func TestWinRMTarget_ApplyPackageStagesInstallersToWindowsPath(t *testing.T) {
 	var scripts []string
 	call := 0
 
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			scripts = append(scripts, command)
@@ -671,7 +671,7 @@ func TestWinRMTarget_ApplyPackageAbsentSkipsUpload(t *testing.T) {
 	var scripts []string
 	call := 0
 
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			scripts = append(scripts, command)
@@ -704,7 +704,7 @@ func TestWinRMTarget_ApplyPackageAbsentSkipsUpload(t *testing.T) {
 
 func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T) {
 	call := 0
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			call++
@@ -754,7 +754,7 @@ func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T
 
 func TestWinRMTarget_ExecuteShortcutAbsentRemovesShortcut(t *testing.T) {
 	call := 0
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			call++
@@ -787,7 +787,7 @@ func TestWinRMTarget_ExecuteShortcutAbsentRemovesShortcut(t *testing.T) {
 
 func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 	call := 0
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			call++
@@ -833,7 +833,7 @@ func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 
 func TestWinRMTarget_ExecuteUserAbsentRemovesUser(t *testing.T) {
 	call := 0
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			call++
@@ -921,7 +921,7 @@ func commandContainsNormalizedPorts(command, expected string) bool {
 func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T) {
 	call := 0
 	normalizedPortsObserved := false
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			if commandContainsNormalizedPorts(command, "80,443") {
@@ -976,7 +976,7 @@ func TestWinRMTarget_ExecuteForwardsOutputLinesViaCallback(t *testing.T) {
 	// Verifies the full path: WinRMTarget.Execute → ensurePowerShellModule →
 	// onOutput called once per line for all non-marker output. This exercises
 	// the same code path that fires during long-running apply scripts.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, _ string) (string, string, int, error) {
 			return "step-1\nstep-2\nstep-3\nchanged", "", 0, nil
@@ -1008,7 +1008,7 @@ func TestWinRMTarget_ExecuteForwardsOutputLinesViaCallback(t *testing.T) {
 func TestWinRMTarget_ExecuteShellForwardsOutputLinesViaCallback(t *testing.T) {
 	// Shell module uses applyStreamed → the same onOutput path. Ensure multi-line
 	// apply output is split and each line forwarded individually.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, _ string) (string, string, int, error) {
 			return "shell-out-1\nshell-out-2\n", "", 0, nil
@@ -1041,7 +1041,7 @@ func TestWinRMTarget_ExecutePowerShellWithBecomeForwardsOutput(t *testing.T) {
 	// Verifies that become output lines reach onOutput. The credential runner
 	// forwards subprocess stdout via Write-Output $line; those lines flow back
 	// through the batch replay path and then through the ensure hold-back.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			switch {
@@ -1086,30 +1086,50 @@ func TestWinRMTarget_ExecutePowerShellWithBecomeForwardsOutput(t *testing.T) {
 }
 
 func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
-	tgt.client = &fakeWinRMClient{}
+	t.Run("unknown module", func(t *testing.T) {
+		tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
+		tgt.client = &fakeWinRMClient{}
 
-	// Without become: error should be the standard unsupportedRuntimeModuleError format.
-	_, err := tgt.Execute(context.Background(), "task-1", "nonexistent_module", nil, ExecutionOptions{}, false, nil)
-	if err == nil {
-		t.Fatal("expected error for unknown module, got nil")
-	}
-	want := `windows-powershell runtime: module "nonexistent_module" is not supported`
-	if err.Error() != want {
-		t.Errorf("without become: expected %q, got %q", want, err.Error())
-	}
+		_, err := tgt.Execute(context.Background(), "task-1", "nonexistent_module", nil, ExecutionOptions{}, false, nil)
+		if err == nil {
+			t.Fatal("expected error for unknown module, got nil")
+		}
+		var mse *ModuleSupportError
+		if !errors.As(err, &mse) {
+			t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+		}
+		if mse.Class != ClassUnknownModule {
+			t.Errorf("class = %q, want %q", mse.Class, ClassUnknownModule)
+		}
+		if !strings.Contains(err.Error(), `module "nonexistent_module" is not a known module`) {
+			t.Errorf("unexpected message: %q", err.Error())
+		}
+	})
 
-	// With become enabled: unknown modules should still be reported as unsupported runtime modules.
-	_, err = tgt.Execute(context.Background(), "task-2", "nonexistent_module", nil, ExecutionOptions{
-		Become: &BecomeOptions{Enabled: true, User: "kiosk", Password: "secret"},
-	}, false, nil)
-	if err == nil {
-		t.Fatal("expected error for unknown module with become, got nil")
-	}
-	wantBecome := `windows-powershell runtime: module "nonexistent_module" is not supported`
-	if err.Error() != wantBecome {
-		t.Errorf("with become: expected %q, got %q", wantBecome, err.Error())
-	}
+	// With a controller registry, WinRM must distinguish a known plugin from a
+	// genuinely unknown module: the plugin surfaces unsupported_on_runtime
+	// (recognized but not runnable over this transport yet), not unknown_module.
+	t.Run("plugin distinguished from unknown", func(t *testing.T) {
+		tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, ModuleRegistry{
+			"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
+		})
+		tgt.client = &fakeWinRMClient{}
+
+		_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
+		if err == nil {
+			t.Fatal("expected error for plugin over winrm, got nil")
+		}
+		var mse *ModuleSupportError
+		if !errors.As(err, &mse) {
+			t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+		}
+		if mse.Class != ClassUnsupportedOnRuntime {
+			t.Errorf("plugin over winrm: class = %q, want %q", mse.Class, ClassUnsupportedOnRuntime)
+		}
+		if mse.RuntimeKind != RuntimeKindWindowsPowerShell {
+			t.Errorf("runtime kind = %q, want %q", mse.RuntimeKind, RuntimeKindWindowsPowerShell)
+		}
+	})
 }
 
 func TestLineStreamWriterSplitsOnNewline(t *testing.T) {
@@ -1200,7 +1220,7 @@ func TestLineStreamWriterFlushStripsCR(t *testing.T) {
 func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
 	// The batch (non-streaming) fallback in runPSPerInvocation replays output through
 	// out with \r stripped. Verify the callback receives clean lines.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, _ string) (string, string, int, error) {
 			return "line-a\r\nline-b\r\nchanged\r\n", "", 0, nil
@@ -1225,7 +1245,7 @@ func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
 
 func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 	call := 0
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			call++
@@ -1257,7 +1277,7 @@ func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 }
 
 func TestWinRMTarget_RoundTripCount(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	callCount := 0
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
@@ -1315,7 +1335,7 @@ func TestWinRMTarget_RoundTripCountWithPersistentSession(t *testing.T) {
 	// Verify that CreateShell (even when it fails) is counted as a round-trip,
 	// and that the per-invocation fallback also gets counted. After the session creation
 	// error, execution falls back to runPSPerInvocation which adds another count.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMShellClient{
 		createShell: func() (*winrm.Shell, error) {
 			return nil, errors.New("shell unavailable")

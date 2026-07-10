@@ -1,5 +1,7 @@
 package target
 
+import "slices"
+
 // Capability describes which runtimes and environments a built-in module
 // can execute in.
 type Capability uint8
@@ -29,11 +31,11 @@ var catalogModules = []catalogModule{
 	{Name: "remove_appx_packages", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "power_plan", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "windows_feature", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "environment", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
+	{Name: "environment", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "firewall_rule", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "powershell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "shell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
-	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
+	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "wait", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 }
 
@@ -56,4 +58,40 @@ func CatalogSet(cap Capability) map[string]struct{} {
 		set[name] = struct{}{}
 	}
 	return set
+}
+
+// CatalogKnownModule reports whether name is a catalog built-in module.
+func CatalogKnownModule(name string) bool {
+	_, ok := knownRemoteModuleSet[name]
+	return ok
+}
+
+// CatalogSupportedRuntimes returns the runtime kinds the catalog marks as
+// supporting the named module. BuiltinCommon modules run on both
+// windows-powershell and posix-shell; BuiltinWindows modules run on
+// windows-powershell only. An unknown module returns nil.
+func CatalogSupportedRuntimes(name string) []RuntimeKind {
+	var cap Capability
+	for _, m := range catalogModules {
+		if m.Name == name {
+			cap = m.Capability
+			break
+		}
+	}
+	if cap == 0 {
+		return nil
+	}
+	var runtimes []RuntimeKind
+	if cap&CapabilityBuiltinCommon != 0 {
+		runtimes = append(runtimes, RuntimeKindWindowsPowerShell, RuntimeKindPOSIXShell)
+	} else if cap&CapabilityBuiltinWindows != 0 {
+		runtimes = append(runtimes, RuntimeKindWindowsPowerShell)
+	}
+	return runtimes
+}
+
+// CatalogSupportsRuntime reports whether the catalog marks name as supported
+// on the given runtime kind.
+func CatalogSupportsRuntime(name string, kind RuntimeKind) bool {
+	return slices.Contains(CatalogSupportedRuntimes(name), kind)
 }

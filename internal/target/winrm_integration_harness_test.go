@@ -258,7 +258,7 @@ func forEachTransport(t *testing.T, fn func(t *testing.T, runner PowerShellRunne
 		if !ok {
 			t.Skip("PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS not set")
 		}
-		tgt := NewWinRMTarget(*cfg)
+		tgt := NewWinRMTarget(*cfg, nil)
 		t.Cleanup(func() { _ = tgt.Close() })
 		assertSacrificialSentinel(t, tgt)
 		fn(t, tgt, tgt)

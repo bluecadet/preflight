@@ -143,7 +143,7 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
 		if become != nil {
-			return fmt.Errorf("ssh: module %q does not support become", module)
+			return t.pluginBecomeError(module)
 		}
 		return t.unsupportedModuleError(module, runtime.Kind())
 	})
@@ -413,15 +413,24 @@ if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
 	}
 }
 
+// unsupportedModuleError constructs the typed gap error for a module that the
+// SSH target's runtime registry could not resolve. See classifyMissingModule for
+// the plugin-vs-unknown distinction shared with WinRM.
 func (t *SSHTarget) unsupportedModuleError(module string, runtimeKind RuntimeKind) error {
+	return classifyMissingModule(t.registry, module, runtimeKind)
+}
+
+// pluginBecomeError refuses a plugin module invoked with become enabled.
+// Plugin+become is refused in v1. For non-plugin modules that cannot be
+// elevated, a plain message is returned (not a matrix gap).
+func (t *SSHTarget) pluginBecomeError(module string) error {
 	if t.registry != nil {
-		mod, ok := t.registry[module]
-		if !ok {
-			return fmt.Errorf("ssh: unknown module %q", module)
-		}
-		if _, isPlugin := mod.(PluggableModule); isPlugin {
-			return fmt.Errorf("ssh: plugin module %q is not supported yet; use local execution or a staged bundle", module)
+		if mod, ok := t.registry[module]; ok {
+			if _, isPlugin := mod.(PluggableModule); isPlugin {
+				return NewPluginBecomeError(module)
+			}
+			return fmt.Errorf("ssh: module %q does not support become", module)
 		}
 	}
-	return unsupportedRuntimeModuleError(runtimeKind, module)
+	return NewUnknownModuleError(module)
 }

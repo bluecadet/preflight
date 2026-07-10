@@ -3,6 +3,7 @@ package target
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -613,8 +614,21 @@ func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
 	}
 
 	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "plugin module") {
-		t.Fatalf("expected plugin deferral error, got %v", err)
+	if err == nil {
+		t.Fatalf("expected plugin deferral error, got nil")
+	}
+	// A known plugin is distinguished from a genuinely unknown module: the
+	// plugin surfaces unsupported_on_runtime (it is recognized but cannot run
+	// over this transport yet), not unknown_module.
+	var mse *ModuleSupportError
+	if !errors.As(err, &mse) {
+		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+	}
+	if mse.Class != ClassUnsupportedOnRuntime {
+		t.Errorf("plugin over remote: class = %q, want %q", mse.Class, ClassUnsupportedOnRuntime)
+	}
+	if mse.Module != "custom" {
+		t.Errorf("plugin over remote: module = %q, want %q", mse.Module, "custom")
 	}
 }
 
