@@ -207,6 +207,9 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 		if e.FailMessage != "" {
 			m["error"] = e.FailMessage
 		}
+		if e.Reason != "" {
+			m["reason"] = e.Reason
+		}
 		if len(e.Output) > 0 {
 			m["output"] = e.Output
 		}
