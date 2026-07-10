@@ -1,0 +1,50 @@
+# Ubuntu 24.04 LTS — apt + systemd slot for POSIX/SSH integration tests.
+#
+# Provisions sshd with three test users and a sacrificial sentinel marker.
+# Root SSH login is disabled. Runs systemd as PID 1 so later tickets can add
+# service/system_package tests on a real init system.
+FROM ubuntu:24.04
+
+ENV container=docker
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        openssh-server \
+        sudo \
+        systemd \
+        systemd-sysv \
+        netcat-openbsd \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Sacrificial sentinel — the integration harness refuses to run without it.
+RUN echo "1" > /etc/preflight-test-sacrificial
+
+# Three test users (password "preflight" for all):
+#   pf-admin     — NOPASSWD sudo (main test account)
+#   pf-sudopass  — sudo requires a password
+#   pf-nosudo    — no sudo at all
+RUN useradd -m -s /bin/bash pf-admin && \
+    echo "pf-admin:preflight" | chpasswd && \
+    useradd -m -s /bin/bash pf-sudopass && \
+    echo "pf-sudopass:preflight" | chpasswd && \
+    useradd -m -s /bin/bash pf-nosudo && \
+    echo "pf-nosudo:preflight" | chpasswd
+
+RUN echo "pf-admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/pf-admin && \
+    echo "pf-sudopass ALL=(ALL) ALL" > /etc/sudoers.d/pf-sudopass && \
+    chmod 0440 /etc/sudoers.d/pf-admin /etc/sudoers.d/pf-sudopass
+
+# sshd: generate host keys, disable root login, enable password auth.
+RUN mkdir -p /run/sshd && \
+    ssh-keygen -A && \
+    mkdir -p /etc/ssh/sshd_config.d && \
+    printf 'PermitRootLogin no\nPasswordAuthentication yes\n' \
+        > /etc/ssh/sshd_config.d/00-preflight.conf
+
+RUN systemctl enable ssh
+
+EXPOSE 22
+
+CMD ["/sbin/init"]

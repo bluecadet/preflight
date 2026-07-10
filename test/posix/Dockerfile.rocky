@@ -1,0 +1,39 @@
+# Rocky Linux 9 — dnf + systemd slot for POSIX/SSH integration tests.
+#
+# Mirrors Dockerfile.ubuntu: sshd with three test users and a sacrificial
+# sentinel. Root SSH login is disabled. Runs systemd as PID 1.
+FROM rockylinux:9
+
+ENV container=docker
+
+RUN dnf install -y \
+        openssh-server \
+        sudo \
+        systemd \
+        nmap-ncat \
+    && dnf clean all
+
+RUN echo "1" > /etc/preflight-test-sacrificial
+
+RUN useradd -m -s /bin/bash pf-admin && \
+    echo "pf-admin:preflight" | chpasswd && \
+    useradd -m -s /bin/bash pf-sudopass && \
+    echo "pf-sudopass:preflight" | chpasswd && \
+    useradd -m -s /bin/bash pf-nosudo && \
+    echo "pf-nosudo:preflight" | chpasswd
+
+RUN echo "pf-admin ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/pf-admin && \
+    echo "pf-sudopass ALL=(ALL) ALL" > /etc/sudoers.d/pf-sudopass && \
+    chmod 0440 /etc/sudoers.d/pf-admin /etc/sudoers.d/pf-sudopass
+
+RUN mkdir -p /run/sshd && \
+    ssh-keygen -A && \
+    mkdir -p /etc/ssh/sshd_config.d && \
+    printf 'PermitRootLogin no\nPasswordAuthentication yes\n' \
+        > /etc/ssh/sshd_config.d/00-preflight.conf
+
+RUN systemctl enable sshd
+
+EXPOSE 22
+
+CMD ["/sbin/init"]

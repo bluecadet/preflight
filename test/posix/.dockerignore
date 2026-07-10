@@ -1,0 +1,6 @@
+*.md
+.dockerignore
+Dockerfile.*
+docker-compose.yml
+wait-for-ssh.sh
+run-tests.sh
