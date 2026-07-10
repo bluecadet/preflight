@@ -150,6 +150,7 @@ func runLogFixtureFailure() []Event {
 			ElapsedMs:   14500,
 			ExitCode:    1,
 			FailMessage: "DISM.exe failed: 0x800f0954",
+			Reason:      "unsupported_on_runtime",
 			Output:      []string{"source files could not be downloaded", "check network connectivity"},
 		},
 		DiagnosticEvent{

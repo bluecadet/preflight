@@ -495,6 +495,7 @@ func (e TaskFailedEvent) Redact(secrets []string) Event {
 	e.TaskName = scrubString(e.TaskName, secrets)
 	e.ActionPath = scrubString(e.ActionPath, secrets)
 	e.FailMessage = scrubString(e.FailMessage, secrets)
+	e.Reason = scrubString(e.Reason, secrets)
 	e.Output = scrubStrings(e.Output, secrets)
 	return e
 }
@@ -574,6 +575,7 @@ type TaskFailedEvent struct {
 	ExitCode    int
 	Output      []string
 	FailMessage string
+	Reason      string
 }
 
 // DiagnosticEvent carries the error body following a task failure or target_unreachable.

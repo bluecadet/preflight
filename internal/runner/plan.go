@@ -74,6 +74,10 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 		return nil, fmt.Errorf("plan: %w", err)
 	}
 
+	if err := r.validatePlanTasks(planTasks); err != nil {
+		return nil, fmt.Errorf("plan: %w", err)
+	}
+
 	return &ExecutionPlan{
 		PlaybookName: playbook.Name,
 		Tasks:        planTasks,

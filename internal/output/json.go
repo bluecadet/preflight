@@ -21,6 +21,7 @@ type jsonEvent struct {
 	Target          string               `json:"target,omitempty"`
 	Status          string               `json:"status,omitempty"`
 	Message         string               `json:"message,omitempty"`
+	Reason          string               `json:"reason,omitempty"`
 	Error           string               `json:"error,omitempty"`
 	TaskCount       int                  `json:"task_count,omitempty"`
 	OKCount         *int                 `json:"ok_count,omitempty"`
@@ -104,6 +105,12 @@ func (r *JSONRenderer) Emit(event Event) {
 	case TaskFailedEvent:
 		je.Type = EventTaskFailed
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+		if e.Reason != "" {
+			je.Reason = e.Reason
+		}
+		if e.FailMessage != "" {
+			je.Error = e.FailMessage
+		}
 	case RunSummaryEvent:
 		je.Type = EventRunSummary
 	case TaskOutputEvent:

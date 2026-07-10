@@ -218,6 +218,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 				ExitCode:    0,
 				Output:      result.Output,
 				FailMessage: execErr.Error(),
+				Reason:      target.ReasonCodeForError(execErr),
 			})
 			r.emit(output.DiagnosticEvent{
 				Target:  r.targetName(),
@@ -259,6 +260,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			ExitCode:    0,
 			Output:      result.Output,
 			FailMessage: result.Message,
+			Reason:      target.ReasonCodeForError(result.Error),
 		})
 		r.emit(output.DiagnosticEvent{
 			Target:  r.targetName(),
@@ -401,6 +403,24 @@ func cloneMap(src map[string]any) map[string]any {
 	dst := make(map[string]any, len(src))
 	maps.Copy(dst, src)
 	return dst
+}
+
+// validatePlanTasks runs the plan-time module support check against every
+// planned task. Unknown module names fail for every transport; runtime-support
+// violations fail for transports whose runtime is knowable offline (WinRM,
+// local). SSH only name-checks because its runtime requires a remote probe.
+// Plugins (present in the controller registry) bypass the runtime matrix.
+func (r *Runner) validatePlanTasks(tasks []*PlanTask) error {
+	if r.target == nil {
+		return nil
+	}
+	kind, kindKnown := target.PlanRuntimeForTransport(r.target.Transport())
+	for _, pt := range tasks {
+		if err := target.ValidateModuleForPlan(pt.Module, kind, kindKnown, r.config.ModuleRegistry); err != nil {
+			return fmt.Errorf("task %q: %w", pt.Name, err)
+		}
+	}
+	return nil
 }
 
 func (r *Runner) targetName() string {
