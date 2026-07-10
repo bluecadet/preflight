@@ -76,14 +76,22 @@ func (g *Gatherer) gatherOS(info target.TargetInfo, infoErr error) (OSFacts, err
 	}
 
 	f := OSFacts{
-		Version:  info.OSVersion,
-		Arch:     info.Arch,
-		Hostname: info.Hostname,
+		Version:        info.OSVersion,
+		Arch:           info.Arch,
+		Hostname:       info.Hostname,
+		Family:         string(info.OSFamily),
+		PackageManager: info.PackageManager,
+		Init:           info.Init,
 	}
 
-	// Derive Name and Build from OSVersion when it looks like a Windows build
-	// string (e.g. "10.0.19041").
-	f.Name, f.Build = parseOSVersion(info.OSVersion, info.OSBuild)
+	// Windows keeps deriving the friendly name and integer build from the
+	// version/build strings; POSIX uses the os-release ID from the probe and
+	// has no build (stays Windows-only).
+	if info.OSFamily == target.OSFamilyWindows {
+		f.Name, f.Build = parseOSVersion(info.OSVersion, info.OSBuild)
+	} else {
+		f.Name = info.OSName
+	}
 
 	return f, nil
 }

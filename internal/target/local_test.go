@@ -99,6 +99,39 @@ func TestLocalTarget_CheckError(t *testing.T) {
 	}
 }
 
+// TestLocalTarget_InfoRunsPOSIXProbe verifies the local POSIX target runs the
+// cached detection probe and exposes the enriched family fact. On a POSIX test
+// host the probe runs via the local shell; on macOS os-release is absent so the
+// POSIX-only fields are empty (never missing), while family is derived from
+// uname -s.
+func TestLocalTarget_InfoRunsPOSIXProbe(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX probe test does not run on Windows")
+	}
+	tgt := target.NewLocalTarget(nil)
+
+	info1, err := tgt.Info(context.Background())
+	if err != nil {
+		t.Fatalf("Info returned error: %v", err)
+	}
+	if info1.OSFamily == target.OSFamilyUnknown {
+		t.Fatalf("expected non-unknown OS family, got %q", info1.OSFamily)
+	}
+	if info1.Hostname == "" {
+		t.Error("expected hostname from probe, got empty")
+	}
+
+	// Second call must return the cached result (one probe per target per run);
+	// it must match the first call exactly.
+	info2, err := tgt.Info(context.Background())
+	if err != nil {
+		t.Fatalf("second Info returned error: %v", err)
+	}
+	if info1 != info2 {
+		t.Fatalf("expected cached probe result, got drift:\nfirst:  %#v\nsecond: %#v", info1, info2)
+	}
+}
+
 // streamingMockModule emits a fixed set of lines via the Apply out callback,
 // exercising the unified Module's streaming-during-Apply path.
 type streamingMockModule struct {

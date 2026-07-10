@@ -131,7 +131,7 @@ func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 			case command == "echo preflight":
 				return "preflight", "", 0, nil
 			case strings.Contains(command, "$(hostname)") && strings.Contains(command, "$(uname -s)") && strings.Contains(command, "$(uname -m)"):
-				return "kiosk-a|Linux|x86_64", "", 0, nil
+				return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\n", "", 0, nil
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -167,7 +167,7 @@ func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info returned error: %v", err)
 	}
-	if info.Hostname != "kiosk-a" || info.OSVersion != "Linux" || info.Arch != "x86_64" {
+	if info.Hostname != "kiosk-a" || info.OSVersion != "22.04" || info.Arch != "x86_64" || info.OSName != "ubuntu" || info.PackageManager != "apt" || info.Init != "systemd" || info.OSFamily != OSFamilyLinux {
 		t.Fatalf("unexpected info: %#v", info)
 	}
 
@@ -176,6 +176,43 @@ func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 	}
 }
 
+// TestSSHTarget_POSIXProbeCachedAcrossInfoCalls asserts the one-probe-per-run
+// contract: the POSIX detection probe runs lazily on the first Info() call and
+// is cached so a second Info() call (and the facts gatherer) read the cached
+// result without re-running the probe script.
+func TestSSHTarget_POSIXProbeCachedAcrossInfoCalls(t *testing.T) {
+	var probeRuns int
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				return "preflight", "", 0, nil
+			case strings.Contains(command, "os_name=") && strings.Contains(command, "package_manager="):
+				probeRuns++
+				return "hostname=kiosk-c\nkernel=Linux\narch=x86_64\nos_name=rocky\nos_version=9.3\npackage_manager=dnf\ninit=systemd\n", "", 0, nil
+			default:
+				t.Fatalf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	for i := range 2 {
+		info, err := tgt.Info(context.Background())
+		if err != nil {
+			t.Fatalf("Info #%d returned error: %v", i, err)
+		}
+		if info.OSName != "rocky" || info.PackageManager != "dnf" || info.Init != "systemd" || info.OSVersion != "9.3" {
+			t.Fatalf("Info #%d unexpected: %#v", i, info)
+		}
+	}
+	if probeRuns != 1 {
+		t.Fatalf("expected POSIX probe to run once per target, got %d", probeRuns)
+	}
+}
 func TestSSHTarget_DetectsWindowsPowerShellRuntimeAndExecutesShell(t *testing.T) {
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 	tgt.runner = &fakeSSHRunner{

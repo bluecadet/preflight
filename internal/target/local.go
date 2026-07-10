@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 )
 
 // ModuleRegistry maps module names to their implementations.
@@ -21,6 +22,9 @@ func (r ModuleRegistry) Lookup(name string) (Module, bool) {
 // LocalTarget executes modules in-process on the local machine.
 type LocalTarget struct {
 	registry ModuleRegistry
+
+	probeMu sync.Mutex
+	probe   *Probe
 }
 
 // NewLocalTarget creates a LocalTarget backed by the given registry.
@@ -104,11 +108,34 @@ func (t *LocalTarget) Reachable(_ context.Context) (bool, error) {
 	return true, nil
 }
 
-// Info returns basic facts about the local machine.
-func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
+// Info returns basic facts about the local machine. On POSIX hosts the
+// cached runtime detection probe is used so Info() and the facts gatherer
+// share one detection path; on Windows the probe is not applicable and the
+// Go-runtime values are used directly.
+func (t *LocalTarget) Info(ctx context.Context) (TargetInfo, error) {
+	if runtime.GOOS == "windows" {
+		return t.windowsInfo(), nil
+	}
+	p, err := t.ensureProbe(ctx)
+	if err != nil {
+		return TargetInfo{}, err
+	}
+	return TargetInfo{
+		Hostname:       p.Hostname,
+		OSVersion:      p.OSVersion,
+		Arch:           p.Arch,
+		OSFamily:       normalizeOSFamily(p.Kernel),
+		OSName:         p.OSName,
+		PackageManager: p.PackageManager,
+		Init:           p.Init,
+		Transport:      t.Transport(),
+	}, nil
+}
+
+func (t *LocalTarget) windowsInfo() TargetInfo {
 	hostname, err := os.Hostname()
 	if err != nil {
-		return TargetInfo{}, wrapLocalTargetError("hostname", err)
+		hostname = ""
 	}
 	return TargetInfo{
 		Hostname:  hostname,
@@ -116,7 +143,34 @@ func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 		Arch:      runtime.GOARCH,
 		OSFamily:  normalizeOSFamily(runtime.GOOS),
 		Transport: t.Transport(),
-	}, nil
+	}
+}
+
+// ensureProbe runs the POSIX detection probe once per LocalTarget and caches
+// the result. On Windows this is never called.
+func (t *LocalTarget) ensureProbe(ctx context.Context) (Probe, error) {
+	t.probeMu.Lock()
+	defer t.probeMu.Unlock()
+	if t.probe != nil {
+		return *t.probe, nil
+	}
+	stdout, err := runLocalSh(ctx, posixProbeScript)
+	if err != nil {
+		return Probe{}, wrapLocalTargetError("probe", err)
+	}
+	p := parsePOSIXProbe(stdout)
+	t.probe = &p
+	return p, nil
+}
+
+// runLocalSh executes a POSIX shell script on the local machine and returns its
+// combined stdout/stderr. Used only by the local POSIX detection probe.
+func runLocalSh(ctx context.Context, script string) (string, error) {
+	out, err := exec.CommandContext(ctx, "sh", "-c", script).CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%w\noutput: %s", err, string(out))
+	}
+	return string(out), nil
 }
 
 // RunPowerShell executes a PowerShell script on the local machine.

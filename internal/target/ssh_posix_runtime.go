@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"unicode/utf16"
 )
 
 type sshPOSIXShellRuntime struct {
 	target           *SSHTarget
 	powerShellBinary string
+
+	probeMu sync.Mutex
+	probe   *Probe
 }
 
 func (r *sshPOSIXShellRuntime) Kind() RuntimeKind {
@@ -90,24 +94,43 @@ func (r *sshPOSIXShellRuntime) Reachable(ctx context.Context) (bool, error) {
 }
 
 func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
-	stdout, _, code, err := r.target.run(ctx, "printf '%s|%s|%s\\n' \"$(hostname)\" \"$(uname -s)\" \"$(uname -m)\"", nil)
+	p, err := r.ensureProbe(ctx)
 	if err != nil {
-		return TargetInfo{}, wrapSSHTargetError("info", err)
-	}
-	if code != 0 {
-		return TargetInfo{}, wrapSSHTargetError("info", fmt.Errorf("exited with code %d", code))
-	}
-	parts := strings.Split(strings.TrimSpace(stdout), "|")
-	if len(parts) != 3 {
-		return TargetInfo{}, wrapSSHTargetError("info", fmt.Errorf("unexpected output %q", stdout))
+		return TargetInfo{}, err
 	}
 	return TargetInfo{
-		Hostname:  parts[0],
-		OSVersion: parts[1],
-		Arch:      parts[2],
-		OSFamily:  normalizeOSFamily(parts[1]),
-		Transport: r.target.Transport(),
+		Hostname:       p.Hostname,
+		OSVersion:      p.OSVersion,
+		Arch:           p.Arch,
+		OSFamily:       normalizeOSFamily(p.Kernel),
+		OSName:         p.OSName,
+		PackageManager: p.PackageManager,
+		Init:           p.Init,
+		Transport:      r.target.Transport(),
 	}, nil
+}
+
+// ensureProbe runs the POSIX detection probe once per runtime and caches the
+// result. Subsequent Info() calls and the facts gatherer read the cached
+// probe so there is no second detection path. Only a transport-level failure
+// (the run itself errors or exits non-zero) is surfaced as an error; missing
+// signals are empty fields, never a failed probe.
+func (r *sshPOSIXShellRuntime) ensureProbe(ctx context.Context) (Probe, error) {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+	if r.probe != nil {
+		return *r.probe, nil
+	}
+	stdout, _, code, err := r.target.run(ctx, posixProbeScript, nil)
+	if err != nil {
+		return Probe{}, wrapSSHTargetError("probe", err)
+	}
+	if code != 0 {
+		return Probe{}, wrapSSHTargetError("probe", fmt.Errorf("exited with code %d", code))
+	}
+	p := parsePOSIXProbe(stdout)
+	r.probe = &p
+	return p, nil
 }
 
 func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {

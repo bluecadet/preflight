@@ -100,14 +100,39 @@ The facts command and execution-time fact gathering expose this structure:
 
 | Field | Meaning |
 | --- | --- |
-| `facts.os.name` | Friendly operating system name |
-| `facts.os.version` | Raw version string |
-| `facts.os.build` | Numeric build when available |
+| `facts.os.family` | `windows`, `linux`, `darwin`, or `unknown` |
+| `facts.os.name` | os-release ID on POSIX (e.g. `ubuntu`, `rocky`); friendly name on Windows |
+| `facts.os.version` | os-release VERSION_ID on POSIX; raw version string on Windows |
+| `facts.os.build` | Numeric build number (Windows-only; `0` elsewhere) |
 | `facts.os.arch` | Architecture |
 | `facts.os.hostname` | Hostname from OS facts |
+| `facts.os.package_manager` | `apt` or `dnf` on POSIX; empty on Windows and when none is found |
+| `facts.os.init` | `systemd` on POSIX hosts running systemd; empty otherwise |
 | `facts.hostname` | Top-level hostname |
 | `facts.disks` | List of disk objects |
 | `facts.env` | Environment-variable map |
+
+### Absent signals
+
+Every `facts.os.*` key is always present, even when its underlying signal is
+absent. An absent signal renders as an empty string (`build` as `0`), never as
+a missing key. This lets playbooks branch on `{{ facts.os.package_manager }}`
+and similar without distinguishing "not detected" from "empty":
+
+```yaml
+# only install the systemd unit on hosts that actually run systemd
+when: "{{ facts.os.init }}"
+# only render this task on apt hosts via a vars boolean computed elsewhere
+when: "{{ vars.is_apt_host }}"
+```
+
+On Windows the POSIX-only facts (`package_manager`, `init`) are always empty,
+and `family` is `windows`. `build` stays Windows-only (it is `0` on POSIX).
+
+Because `when:` does not support comparison expressions, branch on a host's
+package manager or family by rendering the fact and letting the playbook's
+variable layer turn it into a boolean, or gate on the truthiness of the value
+itself:
 
 Each disk entry includes:
 
@@ -122,7 +147,15 @@ Each disk entry includes:
 
 Fact gathering is best-effort:
 
-- OS facts come from `Target.Info()`.
+- OS facts come from `Target.Info()`, which on POSIX hosts is backed by a single
+  lazily-run, per-target detection probe (cached for the run). The probe roster
+  is exactly: os-release ID/VERSION_ID, `command -v apt-get` / `command -v dnf`,
+  `test -d /run/systemd/system`, plus hostname / `uname -s` / `uname -m`. Both
+  `Info()` and the facts gatherer read the cached probe result, so there is no
+  second detection path.
+- The probe is defensive per-signal: a missing source (e.g. no os-release on
+  macOS) empties that field without failing the probe. Only a transport-level
+  failure surfaces as an error through `Info()`.
 - Windows disk and environment facts are collected through PowerShell.
 - Local non-Windows disk facts are gathered from the local filesystem.
 - Partial fact collection still returns a usable result set; individual failures are logged as warnings.
