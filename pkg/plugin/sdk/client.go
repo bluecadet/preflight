@@ -10,15 +10,43 @@ import (
 	"sync/atomic"
 )
 
-// Client is the runner-side handle for a running plugin process.
+// Client is the runner-side handle for a JSON-RPC plugin peer. It is
+// transport-agnostic: it speaks the wire protocol over the reader/writer
+// pair supplied at construction and delegates cleanup to an optional
+// close function.
 type Client struct {
 	name    string
 	version string
-	cmd     *exec.Cmd
 	enc     *json.Encoder
 	dec     *json.Decoder
+	close   func() error
 	mu      sync.Mutex
 	seq     atomic.Int64
+}
+
+// NewClientStream connects a Client to a JSON-RPC plugin peer over the given
+// reader/writer pair and performs the "initialize" handshake. The reader is
+// the peer's response stream; the writer is the peer's request stream. The
+// Client does not own the streams: if closeFn is non-nil it is invoked exactly
+// once from Close (and on initialize failure) to release any underlying
+// transport resources; if nil, Close is a no-op.
+func NewClientStream(r io.Reader, w io.Writer, closeFn func() error) (*Client, error) {
+	c := &Client{
+		enc:   json.NewEncoder(w),
+		dec:   json.NewDecoder(r),
+		close: closeFn,
+	}
+
+	var initResult initializeResult
+	if err := c.call("initialize", nil, &initResult); err != nil {
+		if closeFn != nil {
+			_ = closeFn()
+		}
+		return nil, fmt.Errorf("plugin initialize: %w", err)
+	}
+	c.name = initResult.Name
+	c.version = initResult.Version
+	return c, nil
 }
 
 // NewClient starts the plugin at executablePath, sends an "initialize" request,
@@ -46,22 +74,12 @@ func NewClientContext(ctx context.Context, executablePath string) (*Client, erro
 		return nil, fmt.Errorf("start plugin %s: %w", executablePath, err)
 	}
 
-	c := &Client{
-		cmd: cmd,
-		enc: json.NewEncoder(stdin),
-		dec: json.NewDecoder(stdout),
-	}
-
-	// Send initialize and capture the plugin's declared name.
-	var initResult initializeResult
-	if err := c.call("initialize", nil, &initResult); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("plugin initialize: %w", err)
-	}
-	c.name = initResult.Name
-	c.version = initResult.Version
-
-	return c, nil
+	return NewClientStream(stdout, stdin, func() error {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return cmd.Wait()
+	})
 }
 
 // NewClientFromCmd starts the given command and connects a Client to its
@@ -82,21 +100,12 @@ func NewClientFromCmd(cmd *exec.Cmd) (*Client, error) {
 		return nil, fmt.Errorf("start plugin: %w", err)
 	}
 
-	c := &Client{
-		cmd: cmd,
-		enc: json.NewEncoder(stdin),
-		dec: json.NewDecoder(stdout),
-	}
-
-	var initResult initializeResult
-	if err := c.call("initialize", nil, &initResult); err != nil {
-		_ = cmd.Process.Kill()
-		return nil, fmt.Errorf("plugin initialize: %w", err)
-	}
-	c.name = initResult.Name
-	c.version = initResult.Version
-
-	return c, nil
+	return NewClientStream(stdout, stdin, func() error {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+		return cmd.Wait()
+	})
 }
 
 // Name returns the plugin's self-reported name.
@@ -131,12 +140,14 @@ func (c *Client) Apply(args map[string]any) (ApplyResult, error) {
 	return result, nil
 }
 
-// Close terminates the plugin process.
+// Close terminates the plugin peer. It invokes the close function supplied
+// at construction (if any); subsequent calls are no-ops only in the sense that
+// the underlying transport defines their semantics.
 func (c *Client) Close() error {
-	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+	if c.close != nil {
+		return c.close()
 	}
-	return c.cmd.Wait()
+	return nil
 }
 
 // callStreaming sends a single JSON-RPC request, dispatching any output
