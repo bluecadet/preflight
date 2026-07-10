@@ -1,6 +1,7 @@
 package target
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -86,5 +87,46 @@ func TestWrapPOSIXBecome_NilIsPassthrough(t *testing.T) {
 	}
 	if string(stdin) != "x" {
 		t.Errorf("nil become should pass stdin through: got %q", string(stdin))
+	}
+}
+
+// TestClassifySudoFailure guards the sudo failure -> typed reason code mapping
+// so the run log carries sudo-password-required / sudo-auth-failed.
+func TestClassifySudoFailure(t *testing.T) {
+	noPass := &BecomeOptions{User: "root", Method: "sudo"}
+	withPass := &BecomeOptions{User: "root", Method: "sudo", Password: "secret"}
+
+	cases := []struct {
+		name   string
+		become *BecomeOptions
+		stderr string
+		want   string // reason code, empty for nil
+	}{
+		{"no password, sudo -n wants password", noPass, "sudo: a password is required\n", "sudo-password-required"},
+		{"bad password, sorry try again", withPass, "Sorry, try again.\n", "sudo-auth-failed"},
+		{"bad password, authentication failure", withPass, "sudo: authentication failure\n", "sudo-auth-failed"},
+		{"unrelated non-zero exit", noPass, "command not found\n", ""},
+		{"nil become", nil, "sudo: a password is required\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := classifySudoFailure(tc.become, tc.stderr, 1)
+			if tc.want == "" {
+				if err != nil {
+					t.Fatalf("expected nil, got %v", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			var be *BecomeEnvError
+			if !errors.As(err, &be) {
+				t.Fatalf("expected *BecomeEnvError, got %T: %v", err, err)
+			}
+			if be.ReasonCode() != tc.want {
+				t.Errorf("reason: got %q, want %q", be.ReasonCode(), tc.want)
+			}
+		})
 	}
 }
