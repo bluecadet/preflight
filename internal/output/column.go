@@ -33,19 +33,6 @@ func AlignLeft(s string, width int) string {
 	return s + strings.Repeat(" ", width-len(s))
 }
 
-// AlignRight pads s with spaces on the left so that the byte length
-// equals width. If s is already longer, it is returned unchanged.
-//
-// Currently unused but preserved as a shared primitive. It is the natural
-// counterpart to AlignLeft and would be needed if any section right-aligns
-// a column (e.g., a numeric column in a table).
-func AlignRight(s string, width int) string {
-	if len(s) >= width {
-		return s
-	}
-	return strings.Repeat(" ", width-len(s)) + s
-}
-
 // Truncate shortens s to at most max runes (not bytes), appending "…" when
 // truncation occurs. If max is less than 2, a single "…" is returned.
 func Truncate(s string, max int) string {
