@@ -1,7 +1,6 @@
 package output
 
 import (
-	"sort"
 	"strings"
 	"time"
 )
@@ -303,8 +302,10 @@ func (p *RunProjection) OrderedActivities() []*activeActivity {
 	return result
 }
 
-// OrderedRunningTasks returns running tasks sorted by start time
-// (oldest first), then last updated (most recent first).
+// OrderedRunningTasks returns running tasks grouped by host in roster
+// order, with tasks within each host in start order. The order is stable
+// across redraws: it reflects the target roster from RunStartEvent rather
+// than nondeterministic event arrival order.
 func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 	var running []*activeTask
 	for _, host := range p.hostOrder {
@@ -314,14 +315,6 @@ func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 			}
 		}
 	}
-	sort.SliceStable(running, func(i, j int) bool {
-		left := running[i]
-		right := running[j]
-		if !left.startAt.Equal(right.startAt) {
-			return left.startAt.Before(right.startAt)
-		}
-		return left.updatedAt.After(right.updatedAt)
-	})
 	return running
 }
 
@@ -369,6 +362,16 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	p.Playbook = e.PlaybookPath
 	p.Targets = append([]string(nil), e.Targets...)
 	p.StartedAt = time.Now()
+
+	// Seed host order from the resolved target roster so the in-progress
+	// view preserves the order the operator specified (inventory/selector
+	// order) rather than nondeterministic task-start arrival order.
+	for _, target := range p.Targets {
+		if p.hosts[target] == nil {
+			p.hosts[target] = make(map[string]*activeTask)
+			p.hostOrder = append(p.hostOrder, target)
+		}
+	}
 
 	// Buffer the run-start header until target info arrives via
 	// TargetStartEvent so the header can include the target roster inline.

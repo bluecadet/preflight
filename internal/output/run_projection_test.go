@@ -531,6 +531,28 @@ func TestRunProjection_ActionPathPreservedOnTaskCompletion(t *testing.T) {
 	}
 }
 
+func TestRunProjection_OrderedRunningTasks_PreservesRosterOrder(t *testing.T) {
+	// Two hosts in roster order [web-01, web-02]. Tasks start in the
+	// opposite arrival order (web-02 first) to confirm the in-progress
+	// view is ordered by the target roster, not by task-start arrival.
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{PlaybookName: "play", Targets: []string{"web-01", "web-02"}})
+
+	p.Apply(TaskStartedEvent{Target: "web-02", TaskID: "t2", TaskName: "task-2"})
+	p.Apply(TaskStartedEvent{Target: "web-01", TaskID: "t1", TaskName: "task-1"})
+
+	running := p.OrderedRunningTasks()
+	if len(running) != 2 {
+		t.Fatalf("expected 2 running tasks, got %d", len(running))
+	}
+	if running[0].id != "t1" || running[0].target != "web-01" {
+		t.Errorf("expected first task (web-01/t1), got %s/%s", running[0].target, running[0].id)
+	}
+	if running[1].id != "t2" || running[1].target != "web-02" {
+		t.Errorf("expected second task (web-02/t2), got %s/%s", running[1].target, running[1].id)
+	}
+}
+
 func TestRunProjection_VisibleLiveEntries(t *testing.T) {
 	tasks := []*activeTask{
 		{id: "t1", name: "task-1"},
