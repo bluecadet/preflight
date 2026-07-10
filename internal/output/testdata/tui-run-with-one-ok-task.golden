@@ -1,4 +1,3 @@
 RUN  kiosk-provision.yml → kiosk-01 (local)                               0.0s
 ────────────────────────────────────────────────────────────────────────────────
-
   ✓ install display drivers  0.5s

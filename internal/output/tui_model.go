@@ -176,7 +176,7 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 		}
 	}
 	lines = append(lines, m.renderDivider())
-	return tea.Println(strings.Join(lines, "\n") + "\n")
+	return tea.Println(strings.Join(lines, "\n"))
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
