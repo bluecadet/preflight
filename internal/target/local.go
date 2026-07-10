@@ -51,13 +51,26 @@ func (t *LocalTarget) Transport() Transport { return TransportLocal }
 // the become-via-subprocess path share one executor, since both produce
 // ModuleRegistry values whose entries satisfy the same Module interface.
 func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
-	if opts.Enabled() {
-		kind := runtimeKindForLocal()
-		become, err := effectiveBecome(kind, opts)
+	kind := runtimeKindForLocal()
+	become, err := effectiveBecome(kind, opts)
+	if err != nil {
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+
+	// POSIX privilege enforcement: fail the task before Check() when a
+	// requires_root module runs as a non-root effective user, or when become is
+	// enabled but sudo is missing. On Windows this is a no-op.
+	if kind == RuntimeKindPOSIXShell {
+		probe, err := t.ensureProbe(ctx)
 		if err != nil {
 			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 		}
+		if envErr := enforcePOSIXPrivilege(kind, module, become, probe); envErr != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Error: envErr}, envErr
+		}
+	}
 
+	if become != nil {
 		subReg, err := newSubprocessBecomeRegistry(t.registry, kind, become)
 		if err != nil {
 			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err

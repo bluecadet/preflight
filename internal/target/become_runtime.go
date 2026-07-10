@@ -24,6 +24,11 @@ func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, e
 	}
 	switch kind {
 	case RuntimeKindWindowsPowerShell:
+		// Windows keeps requiring an explicit user — bare become is a POSIX-only
+		// root default.
+		if strings.TrimSpace(become.User) == "" {
+			return nil, fmt.Errorf("become: user is required when enabled on Windows")
+		}
 		if become.Method == "" {
 			become.Method = "runas"
 		}
@@ -31,6 +36,11 @@ func effectiveBecome(kind RuntimeKind, opts ExecutionOptions) (*BecomeOptions, e
 			return nil, fmt.Errorf("become: unsupported Windows method %q", become.Method)
 		}
 	case RuntimeKindPOSIXShell:
+		// Bare `become: {enabled: true}` means root on POSIX — fixes the former
+		// `sudo -u ''` wrap when user is unset. Method stays locked to sudo.
+		if strings.TrimSpace(become.User) == "" {
+			become.User = "root"
+		}
 		if become.Method == "" {
 			become.Method = "sudo"
 		}
@@ -213,11 +223,15 @@ func wrapPOSIXBecome(command string, stdin []byte, become *BecomeOptions) (strin
 	if become == nil {
 		return command, stdin
 	}
-	wrapped := fmt.Sprintf("sudo -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
 	if strings.TrimSpace(become.Password) == "" {
+		// No password supplied: require NOPASSWD. `sudo -n` makes a
+		// password-requiring sudo fail deterministically (non-interactive,
+		// no prompt) instead of hanging the run or silently misbehaving.
+		wrapped := fmt.Sprintf("sudo -n -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
 		return wrapped, stdin
 	}
-	wrapped = fmt.Sprintf("sudo -S -p '' -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
+	// Password supplied: feed it via sudo -S with an empty prompt.
+	wrapped := fmt.Sprintf("sudo -S -p '' -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
 	withPassword := append([]byte(become.Password+"\n"), stdin...)
 	return wrapped, withPassword
 }

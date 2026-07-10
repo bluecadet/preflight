@@ -1,0 +1,90 @@
+package target
+
+import (
+	"strings"
+	"testing"
+)
+
+// TestEffectiveBecome_POSIXBareBecomeDefaultsToRoot guards the §5 fix: bare
+// `become: {enabled: true}` (no user) means root on POSIX. Windows keeps
+// requiring an explicit user.
+func TestEffectiveBecome_POSIXBareBecomeDefaultsToRoot(t *testing.T) {
+	opts := ExecutionOptions{Become: &BecomeOptions{Enabled: true}}
+	become, err := effectiveBecome(RuntimeKindPOSIXShell, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if become.User != "root" {
+		t.Errorf("bare POSIX become user: got %q, want root", become.User)
+	}
+	if become.Method != "sudo" {
+		t.Errorf("POSIX become method: got %q, want sudo", become.Method)
+	}
+}
+
+// TestEffectiveBecome_WindowsBareBecomeRequiresUser guards that Windows still
+// rejects a bare become with no user.
+func TestEffectiveBecome_WindowsBareBecomeRequiresUser(t *testing.T) {
+	opts := ExecutionOptions{Become: &BecomeOptions{Enabled: true}}
+	_, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
+	if err == nil {
+		t.Fatal("expected error for bare Windows become, got nil")
+	}
+	if !strings.Contains(err.Error(), "user is required") {
+		t.Errorf("expected user-required error, got: %v", err)
+	}
+}
+
+// TestEffectiveBecome_ExplicitPOSIXUserPreserved guards a named POSIX user is
+// preserved (not overwritten with root).
+func TestEffectiveBecome_ExplicitPOSIXUserPreserved(t *testing.T) {
+	opts := ExecutionOptions{Become: &BecomeOptions{Enabled: true, User: "alice"}}
+	become, err := effectiveBecome(RuntimeKindPOSIXShell, opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if become.User != "alice" {
+		t.Errorf("explicit POSIX user: got %q, want alice", become.User)
+	}
+}
+
+// TestWrapPOSIXBecome_NoPasswordUsesSudoN guards the §5 fail-fast: the
+// no-password wrap uses `sudo -n` so a password-requiring sudo fails
+// deterministically instead of hanging.
+func TestWrapPOSIXBecome_NoPasswordUsesSudoN(t *testing.T) {
+	become := &BecomeOptions{User: "root", Method: "sudo"}
+	wrapped, _ := wrapPOSIXBecome("echo hi", nil, become)
+	if !strings.Contains(wrapped, "sudo -n") {
+		t.Errorf("no-password wrap missing `sudo -n`: %q", wrapped)
+	}
+	if !strings.Contains(wrapped, "-u 'root'") {
+		t.Errorf("wrap missing `-u 'root'`: %q", wrapped)
+	}
+}
+
+// TestWrapPOSIXBecome_PasswordUsesSudoS guards that a supplied password uses
+// `sudo -S` (stdin password) and does NOT add -n.
+func TestWrapPOSIXBecome_PasswordUsesSudoS(t *testing.T) {
+	become := &BecomeOptions{User: "root", Method: "sudo", Password: "secret"}
+	wrapped, stdin := wrapPOSIXBecome("echo hi", nil, become)
+	if !strings.Contains(wrapped, "sudo -S") {
+		t.Errorf("password wrap missing `sudo -S`: %q", wrapped)
+	}
+	if strings.Contains(wrapped, "sudo -n") {
+		t.Errorf("password wrap must not use `sudo -n`: %q", wrapped)
+	}
+	if !strings.HasPrefix(string(stdin), "secret\n") {
+		t.Errorf("stdin missing password prefix: %q", string(stdin))
+	}
+}
+
+// TestWrapPOSIXBecome_NilIsPassthrough guards no become means no wrapping.
+func TestWrapPOSIXBecome_NilIsPassthrough(t *testing.T) {
+	wrapped, stdin := wrapPOSIXBecome("echo hi", []byte("x"), nil)
+	if wrapped != "echo hi" {
+		t.Errorf("nil become should not wrap: got %q", wrapped)
+	}
+	if string(stdin) != "x" {
+		t.Errorf("nil become should pass stdin through: got %q", string(stdin))
+	}
+}
