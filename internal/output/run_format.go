@@ -102,7 +102,11 @@ func renderTaskFailurePath(actionPath, taskName string) string {
 // (name padded to the longest, followed by " (transport" and optional
 // " • address" and ")"), each prefixed with a two-space indent. Used by both
 // the TUI and text renderers to fold the roster into the run-start header.
-func buildTargetRosterLines(targets []TargetInfo) []string {
+// colorName, when non-nil, renders a target's raw name in its assigned host
+// color; the padding and parenthetical transport/address detail stay
+// uncolored. Padding is applied with plain spaces so ANSI escapes in the
+// colored name do not throw off the column width.
+func buildTargetRosterLines(targets []TargetInfo, colorName func(string) string) []string {
 	if len(targets) == 0 {
 		return nil
 	}
@@ -112,8 +116,12 @@ func buildTargetRosterLines(targets []TargetInfo) []string {
 	}
 	lines := make([]string, 0, len(targets))
 	for _, ti := range targets {
-		name := AlignLeft(ti.Name, maxName)
-		s := "  " + name + " (" + ti.Transport
+		name := ti.Name
+		if colorName != nil {
+			name = colorName(name)
+		}
+		pad := strings.Repeat(" ", maxName-len(ti.Name))
+		s := "  " + name + pad + " (" + ti.Transport
 		if ti.Address != "" {
 			s += " • " + ti.Address
 		}

@@ -489,3 +489,75 @@ func TestTextRenderer_VerboseStreamsTaskOutputBeforeResult(t *testing.T) {
 		t.Fatalf("expected task name in output, got %q", out)
 	}
 }
+
+// newColorTextRenderer builds a TextRenderer with color enabled, for tests
+// that assert on ANSI host coloring (the default helpers disable color).
+func newColorTextRenderer(w *bytes.Buffer) *TextRenderer {
+	r := newTextRenderer(w)
+	r.color = true
+	return r
+}
+
+func TestTextRenderer_HostColorBadges(t *testing.T) {
+	// Multi-target run: each host's badge and roster name must be wrapped in
+	// that host's assigned ANSI color (rotation slot by roster order).
+	var buf bytes.Buffer
+	r := newColorTextRenderer(&buf)
+
+	r.Emit(RunStartEvent{
+		Mode:         "apply",
+		PlaybookPath: "deploy.yml",
+		PlaybookName: "deploy",
+		Targets:      []string{"host-a", "host-b"},
+	})
+	r.Emit(TargetStartEvent{Target: "host-a", Transport: "ssh", Address: "10.0.0.1"})
+	r.Emit(TargetStartEvent{Target: "host-b", Transport: "winrm", Address: "10.0.0.2"})
+	r.Emit(TaskStartedEvent{Target: "host-a", TaskID: "t1", TaskName: "sync"})
+	r.Emit(TaskOKEvent{Target: "host-a", TaskID: "t1", TaskName: "sync", ElapsedMs: 10})
+
+	out := buf.String()
+	colors := DefaultPalette().HostColors
+	hostAColor := colors[0].ANSI + "host-a" + ansiReset
+	hostBColor := colors[1].ANSI + "host-b" + ansiReset
+
+	if !strings.Contains(out, hostAColor) {
+		t.Errorf("expected host-a wrapped in its color %q, got: %q", colors[0].ANSI, out)
+	}
+	if !strings.Contains(out, hostBColor) {
+		t.Errorf("expected host-b wrapped in its color %q, got: %q", colors[1].ANSI, out)
+	}
+
+	// Host-a is roster slot 0; host-b slot 1. Confirm the rotation order is
+	// respected (not swapped) by checking each appears with its own code and
+	// not the other's.
+	if strings.Contains(out, colors[1].ANSI+"host-a") {
+		t.Error("host-a must not use host-b's color")
+	}
+	if strings.Contains(out, colors[0].ANSI+"host-b") {
+		t.Error("host-b must not use host-a's color")
+	}
+}
+
+func TestTextRenderer_HostColorDisabledWhenColorOff(t *testing.T) {
+	// With color disabled, badges and roster names must contain no ANSI
+	// host color codes.
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf) // color: false
+
+	r.Emit(RunStartEvent{PlaybookName: "deploy", Targets: []string{"host-a", "host-b"}})
+	r.Emit(TargetStartEvent{Target: "host-a", Transport: "ssh"})
+	r.Emit(TargetStartEvent{Target: "host-b", Transport: "ssh"})
+	r.Emit(TaskStartedEvent{Target: "host-a", TaskID: "t1", TaskName: "sync"})
+	r.Emit(TaskOKEvent{Target: "host-a", TaskID: "t1", TaskName: "sync", ElapsedMs: 10})
+
+	out := buf.String()
+	for _, c := range DefaultPalette().HostColors {
+		if strings.Contains(out, c.ANSI) {
+			t.Errorf("expected no host color ANSI when color off, found %q in: %q", c.ANSI, out)
+		}
+	}
+	// Plain badges still present.
+	if !strings.Contains(out, "[host-a]") {
+		t.Errorf("expected plain [host-a] badge, got: %q", out)
+	}
+}

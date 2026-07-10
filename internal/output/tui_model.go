@@ -118,27 +118,29 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	return m, tea.Sequence(cmds...)
 }
 
-// targetBadge returns a transport-colored [target] badge string.
-// Returns empty string when host labels should not be shown.
+// targetBadge returns a host-colored [target] badge string. Each target
+// gets a stable color assigned by roster position at run start so hosts
+// stay visually distinct across a long run.
+// Returns empty string when the target is empty.
 func (m tuiModel) targetBadge(target string) string {
 	if target == "" {
 		return ""
 	}
 	displayName := m.projection.DisplayTarget(target)
-	transport := m.projection.TargetTransport(target)
-	style := m.transportStyle(transport)
-	return style.Render("[" + displayName + "]")
+	return m.hostStyle(target).Render("[" + displayName + "]")
 }
 
-// transportStyle returns the lipgloss.Style for a given transport type.
-func (m tuiModel) transportStyle(transport string) lipgloss.Style {
-	switch transport {
-	case "ssh":
-		return S.TransportSSH
-	case "winrm":
-		return S.TransportWinRM
-	default:
-		return S.TransportLocal
+// hostStyle returns the lipgloss.Style for a target's assigned host color.
+// Returns a plain style for unknown targets.
+func (m tuiModel) hostStyle(target string) lipgloss.Style {
+	return S.HostStyle(m.projection.HostColorIndex(target))
+}
+
+// rosterColorer returns a function that renders a target's name in its
+// assigned host color, for coloring the run-start target roster.
+func (m tuiModel) rosterColorer() func(string) string {
+	return func(name string) string {
+		return m.hostStyle(name).Render(name)
 	}
 }
 
@@ -172,7 +174,7 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 		}
 		if len(d.Targets) > 1 {
 			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
-			lines = append(lines, buildTargetRosterLines(d.TargetInfos)...)
+			lines = append(lines, buildTargetRosterLines(d.TargetInfos, m.rosterColorer())...)
 		}
 	}
 	lines = append(lines, m.renderDivider())
@@ -317,7 +319,7 @@ func (m tuiModel) renderActivity(activity *activeActivity) string {
 	timer := S.Elapsed.Render(formatElapsed(time.Since(activity.startAt)))
 	message := strings.TrimSpace(activity.message)
 	if m.projection.ShouldShowHostLabels() && activity.target != "" {
-		message = "[" + m.projection.DisplayTarget(activity.target) + "] " + message
+		message = m.targetBadge(activity.target) + " " + message
 	}
 	return tsRow(spin, S.Muted.Render(message), timer)
 }

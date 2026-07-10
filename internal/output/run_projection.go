@@ -76,6 +76,7 @@ type RunProjection struct {
 
 	hosts          map[string]map[string]*activeTask
 	hostOrder      []string
+	hostColorIndex map[string]int
 	taskOrder      map[string][]string
 	activities     map[string]*activeActivity
 	activityOrder  []string
@@ -136,20 +137,22 @@ func (WarningDescriptor) isCommitDescriptor()      {}
 // NewRunProjection creates a RunProjection with zero state.
 func NewRunProjection() *RunProjection {
 	return &RunProjection{
-		hosts:      make(map[string]map[string]*activeTask),
-		taskOrder:  make(map[string][]string),
-		activities: make(map[string]*activeActivity),
+		hosts:          make(map[string]map[string]*activeTask),
+		hostColorIndex: make(map[string]int),
+		taskOrder:      make(map[string][]string),
+		activities:     make(map[string]*activeActivity),
 	}
 }
 
 // NewRunProjectionWithOptions creates a RunProjection seeded from options.
 func NewRunProjectionWithOptions(opts Options) *RunProjection {
 	return &RunProjection{
-		Mode:       normalizeRunMode(opts.Mode),
-		RunDir:     opts.RunDir,
-		hosts:      make(map[string]map[string]*activeTask),
-		taskOrder:  make(map[string][]string),
-		activities: make(map[string]*activeActivity),
+		Mode:           normalizeRunMode(opts.Mode),
+		RunDir:         opts.RunDir,
+		hosts:          make(map[string]map[string]*activeTask),
+		hostColorIndex: make(map[string]int),
+		taskOrder:      make(map[string][]string),
+		activities:     make(map[string]*activeActivity),
 	}
 }
 
@@ -341,15 +344,15 @@ func (p *RunProjection) IsSingleTarget() bool {
 	return len(p.Targets) == 1
 }
 
-// TargetTransport returns the transport for the given target name.
-// Returns empty string if the target is not found.
-func (p *RunProjection) TargetTransport(target string) string {
-	for _, ti := range p.TargetInfo {
-		if ti.Name == target {
-			return ti.Transport
-		}
+// HostColorIndex returns the stable color slot for a target, assigned by
+// roster position at run start. Returns -1 when the target has no slot
+// (unknown target, or before RunStart). The raw index is wrapped modulo
+// the palette's host color count by the renderer.
+func (p *RunProjection) HostColorIndex(target string) int {
+	if idx, ok := p.hostColorIndex[target]; ok {
+		return idx
 	}
-	return ""
+	return -1
 }
 
 func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
@@ -371,6 +374,13 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 			p.hosts[target] = make(map[string]*activeTask)
 			p.hostOrder = append(p.hostOrder, target)
 		}
+	}
+
+	// Assign each target a stable color slot by roster position. Renderers
+	// resolve the slot index to a concrete color from the palette's host
+	// color rotation (wrapping modulo the palette size).
+	for i, target := range p.Targets {
+		p.hostColorIndex[target] = i
 	}
 
 	// Buffer the run-start header until target info arrives via
