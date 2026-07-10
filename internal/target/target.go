@@ -112,13 +112,20 @@ const (
 )
 
 // TargetInfo holds basic facts about a target machine.
+//
+// POSIX fields (OSName, PackageManager, Init) are populated by the cached
+// runtime detection probe and are empty on Windows. Plugins receive this
+// struct so they branch on enriched OS facts without re-detecting.
 type TargetInfo struct {
-	Hostname  string
-	OSVersion string
-	OSBuild   string
-	Arch      string
-	OSFamily  OSFamily
-	Transport Transport
+	Hostname       string
+	OSVersion      string
+	OSBuild        string
+	OSName         string // os-release ID on POSIX; friendly name on Windows
+	Arch           string
+	OSFamily       OSFamily
+	PackageManager string // apt | dnf | "" (POSIX only)
+	Init           string // systemd | "" (POSIX only)
+	Transport      Transport
 }
 
 // IsLocal reports whether the target is the controller machine.
