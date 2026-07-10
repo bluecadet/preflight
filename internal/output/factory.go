@@ -21,6 +21,11 @@ type Options struct {
 	MaxFailLines int
 	RunDir       string
 	Color        ColorMode
+
+	// Width overrides the text renderer's right-alignment width. When
+	// zero or negative, the width is detected from the writer's terminal
+	// (falling back to a fixed default when output is not a TTY).
+	Width int
 }
 
 // NewWithOptions returns a Renderer for the requested format writing to w.
