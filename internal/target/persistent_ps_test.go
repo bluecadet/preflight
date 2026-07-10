@@ -360,7 +360,7 @@ func TestIsSessionError_Discrimination(t *testing.T) {
 func TestWinRMTarget_UsesPerInvocationWhenClientHasNoCreateShell(t *testing.T) {
 	// fakeWinRMClient does NOT implement winRMShellCreator.
 	var perInvocationCalled bool
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "u", Password: "p"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "u", Password: "p"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, _ string) (string, string, int, error) {
 			perInvocationCalled = true
@@ -381,7 +381,7 @@ func TestWinRMTarget_UsesPerInvocationWhenClientHasNoCreateShell(t *testing.T) {
 }
 
 func TestWinRMTarget_ResetPSSessionClearsSession(t *testing.T) {
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host"})
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host"}, nil)
 	// Manually set a non-nil session with a no-op close.
 	tgt.psSession = &winRMPersistentPS{}
 	tgt.resetPSSession()

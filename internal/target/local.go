@@ -67,14 +67,14 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 			if _, ok := t.registry[module]; ok {
 				return wrapLocalTargetError("", fmt.Errorf("module %q does not support become", module))
 			}
-			return wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
+			return wrapLocalTargetError("", NewUnknownModuleError(module))
 		}
 
 		return executeModule(ctx, taskID, module, params, dryRun, onOutput, subReg, unsupported)
 	}
 
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, t.registry, func(module string) error {
-		return wrapLocalTargetError("", fmt.Errorf("unknown module %q", module))
+		return wrapLocalTargetError("", NewUnknownModuleError(module))
 	})
 }
 

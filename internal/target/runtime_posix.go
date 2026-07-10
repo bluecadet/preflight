@@ -70,11 +70,9 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 	return buildRemoteModuleRegistry(RuntimeKindPOSIXShell, supported, func(module string) error {
 		switch module {
 		case "powershell":
-			return fmt.Errorf("posix-shell runtime: module %q requires pwsh or powershell on the remote host", module)
-		case "environment", "reboot":
-			return unsupportedRuntimeModuleDetailError(RuntimeKindPOSIXShell, module, "is not supported yet")
+			return NewMissingPrerequisiteError(module, RuntimeKindPOSIXShell, "requires pwsh or powershell on the remote host")
 		default:
-			return unsupportedRuntimeModuleDetailError(RuntimeKindPOSIXShell, module, "is Windows-only")
+			return NewUnsupportedOnRuntimeError(module, RuntimeKindPOSIXShell)
 		}
 	})
 }

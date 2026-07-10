@@ -212,7 +212,7 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 		},
 	}
 	return buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, supported, func(module string) error {
-		return unsupportedRuntimeModuleError(RuntimeKindWindowsPowerShell, module)
+		return NewUnsupportedOnRuntimeError(module, RuntimeKindWindowsPowerShell)
 	})
 }
 

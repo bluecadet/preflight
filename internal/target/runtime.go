@@ -67,12 +67,18 @@ func unsupportedModule(err error) Module {
 // buildRemoteModuleRegistry assembles a complete ModuleRegistry for a remote
 // runtime: it copies the supplied supported entries and fills every other
 // known remote-capable module name with an unsupportedModule that surfaces
-// the runtime-specific error.
+// the runtime-specific error. It also verifies the supported set against the
+// catalog matrix: every entry must be a known remote module AND a module the
+// catalog marks as supported on this runtime. A mismatch is a programming
+// error (registry drift) and panics.
 func buildRemoteModuleRegistry(kind RuntimeKind, supported ModuleRegistry, unsupported func(module string) error) ModuleRegistry {
 	registry := make(ModuleRegistry, len(knownRemoteModules))
 	for module, impl := range supported {
 		if _, ok := knownRemoteModuleSet[module]; !ok {
 			panic(fmt.Sprintf("%s runtime: unknown module registration %q", kind, module))
+		}
+		if !CatalogSupportsRuntime(module, kind) {
+			panic(fmt.Sprintf("%s runtime: module %q is registered as supported but the catalog does not list it for this runtime", kind, module))
 		}
 		registry[module] = impl
 	}
@@ -222,14 +228,6 @@ func replayBatchOutput(stdout string, out OutputFunc) {
 	for _, line := range splitOutputLines(stdout) {
 		out(strings.TrimSuffix(line, "\r"))
 	}
-}
-
-func unsupportedRuntimeModuleError(kind RuntimeKind, module string) error {
-	return fmt.Errorf("%s runtime: module %q is not supported", kind, module)
-}
-
-func unsupportedRuntimeModuleDetailError(kind RuntimeKind, module, detail string) error {
-	return fmt.Errorf("%s runtime: module %q %s", kind, module, detail)
 }
 
 func fileContentParam(params map[string]any, label, src string) (string, bool, error) {
