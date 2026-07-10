@@ -14,19 +14,20 @@ const (
 )
 
 type catalogModule struct {
-	Name       string
-	Capability Capability
+	Name         string
+	Capability   Capability
+	RequiresRoot bool // POSIX: module needs an effective root user (run as root or via become to root)
 }
 
 var catalogModules = []catalogModule{
 	{Name: "registry", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "service", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
+	{Name: "service", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
 	{Name: "file", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "directory", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "shortcut", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "scheduled_task", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "user", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
+	{Name: "user", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
 	{Name: "winget_package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "remove_appx_packages", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "power_plan", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
@@ -35,7 +36,7 @@ var catalogModules = []catalogModule{
 	{Name: "firewall_rule", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "powershell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "shell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
-	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
+	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
 	{Name: "wait", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 }
 
@@ -94,4 +95,18 @@ func CatalogSupportedRuntimes(name string) []RuntimeKind {
 // on the given runtime kind.
 func CatalogSupportsRuntime(name string, kind RuntimeKind) bool {
 	return slices.Contains(CatalogSupportedRuntimes(name), kind)
+}
+
+// CatalogRequiresRoot reports whether the catalog marks name as requiring an
+// effective root user on POSIX. Root-requiring modules fail before Check()
+// when the effective execution user is not root — enforced by the shared
+// execution layer, not by individual modules. An unknown module returns
+// false (it is handled as unknown elsewhere).
+func CatalogRequiresRoot(name string) bool {
+	for _, m := range catalogModules {
+		if m.Name == name {
+			return m.RequiresRoot
+		}
+	}
+	return false
 }

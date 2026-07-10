@@ -63,3 +63,28 @@ func TestCatalogMatrixIsPartitioned(t *testing.T) {
 		}
 	}
 }
+
+// TestCatalogRequiresRoot guards the requires_root flag: the modules that need
+// root on POSIX are marked, and no module is marked by accident.
+func TestCatalogRequiresRoot(t *testing.T) {
+	for _, name := range []string{"service", "user", "reboot"} {
+		if !CatalogRequiresRoot(name) {
+			t.Errorf("module %q should be marked requires_root", name)
+		}
+	}
+	// A sample of modules that must NOT carry the flag.
+	for _, name := range []string{"file", "directory", "shell", "wait", "powershell", "registry", "package"} {
+		if CatalogRequiresRoot(name) {
+			t.Errorf("module %q must not be marked requires_root", name)
+		}
+	}
+}
+
+// TestCatalogRequiresRootUnknownModuleIsFalse guards the accessor's unknown-name
+// behavior: an unknown module is not root-requiring (it is unknown, handled
+// elsewhere).
+func TestCatalogRequiresRootUnknownModuleIsFalse(t *testing.T) {
+	if CatalogRequiresRoot("does_not_exist") {
+		t.Error("expected false for unknown module")
+	}
+}
