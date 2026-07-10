@@ -146,11 +146,7 @@ func (r *TextRenderer) emitNewTaskStarted(e TaskStartedEvent) {
 	if !r.verbose {
 		return
 	}
-	prefix := ""
-	if r.shouldShowHostLabels() && e.Target != "" {
-		prefix = "[" + r.displayTarget(e.Target) + "] "
-	}
-	r.writeLine(prefix + "- " + e.TaskName + " started")
+	r.writeLine(r.targetPrefix(e.Target) + "- " + e.TaskName + " started")
 }
 
 func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
@@ -159,10 +155,7 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiGreen, statusGlyph("ok", r.projection.IsCheckMode()))
-	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	if r.shouldShowHostLabels() && e.Target != "" {
-		left = "[" + r.displayTarget(e.Target) + "] " + left
-	}
+	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -182,10 +175,7 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiYellow, statusGlyph("changed", r.projection.IsCheckMode()))
-	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	if r.shouldShowHostLabels() && e.Target != "" {
-		left = "[" + r.displayTarget(e.Target) + "] " + left
-	}
+	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -204,10 +194,7 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiGrey, statusGlyph("skipped", r.projection.IsCheckMode()))
-	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	if r.shouldShowHostLabels() && e.Target != "" {
-		left = "[" + r.displayTarget(e.Target) + "] " + left
-	}
+	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	r.writeLine(padLine(left, "", r.width))
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
@@ -222,10 +209,7 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiRed, statusGlyph("failed", r.projection.IsCheckMode()))
-	left := glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	if r.shouldShowHostLabels() && e.Target != "" {
-		left = "[" + r.displayTarget(e.Target) + "] " + left
-	}
+	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
 	right := ""
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
@@ -386,6 +370,16 @@ func (r *TextRenderer) shouldShowHostLabels() bool {
 
 func (r *TextRenderer) displayTarget(target string) string {
 	return r.projection.DisplayTarget(target)
+}
+
+// targetPrefix returns the inline [target] prefix prepended to task lines in
+// multi-target runs, or "" when target labels are suppressed (single-target
+// runs) or the target is empty.
+func (r *TextRenderer) targetPrefix(target string) string {
+	if !r.shouldShowHostLabels() || target == "" {
+		return ""
+	}
+	return "[" + r.displayTarget(target) + "] "
 }
 
 func (r *TextRenderer) writeLine(line string) {
