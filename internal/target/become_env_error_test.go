@@ -46,16 +46,27 @@ func TestBecomeEnvError_Messages(t *testing.T) {
 }
 
 // TestBecomeEnvError_Wrapping guards that the error survives error.Is/As
-// wrapping so ReasonCodeForError can extract it from a wrapped chain.
+// wrapping so ReasonCodeForError can extract it from a wrapped chain (the
+// run-log reason field is populated from ReasonCodeForError on the execErr).
 func TestBecomeEnvError_Wrapping(t *testing.T) {
-	inner := NewSudoMissingError(RuntimeKindPOSIXShell)
-	wrapped := wrapSSHTargetError("become", inner)
-	if got := ReasonCodeForError(wrapped); got != "sudo-missing" {
-		t.Errorf("wrapped: got %q, want sudo-missing", got)
+	all := []struct {
+		err  *BecomeEnvError
+		want string
+	}{
+		{NewSudoMissingError(RuntimeKindPOSIXShell), "sudo-missing"},
+		{NewRequiresRootViolationError("service", RuntimeKindPOSIXShell), "requires-root-violation"},
+		{NewSudoPasswordRequiredError(RuntimeKindPOSIXShell), "sudo-password-required"},
+		{NewSudoAuthFailedError(RuntimeKindPOSIXShell), "sudo-auth-failed"},
 	}
-	var target *BecomeEnvError
-	if !errors.As(wrapped, &target) {
-		t.Error("errors.As should unwrap to *BecomeEnvError")
+	for _, tc := range all {
+		wrapped := wrapSSHTargetError("become", tc.err)
+		if got := ReasonCodeForError(wrapped); got != tc.want {
+			t.Errorf("wrapped %s: got %q, want %q", tc.want, got, tc.want)
+		}
+		var be *BecomeEnvError
+		if !errors.As(wrapped, &be) {
+			t.Errorf("errors.As should unwrap to *BecomeEnvError for %s", tc.want)
+		}
 	}
 }
 
