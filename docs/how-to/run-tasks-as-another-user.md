@@ -165,6 +165,56 @@ preflight secrets show exhibit-password
 
 Check that the task does not have `enabled: false` and that it is not overriding an inherited default with an empty block. A `become:` key without `user:` is an error.
 
+## POSIX: Become To Root From An Unprivileged SSH User
+
+On POSIX targets the recommended posture is the reverse of Windows: connect over SSH as an **unprivileged** user and escalate per task with `become`. Allowing root SSH login is a stated working alternative (it passes the `requires_root` check with no `become`), but an unprivileged session plus `become` is the default recommendation.
+
+A bare `become: {enabled: true}` means **root** on POSIX — you do not need to name `user: root`.
+
+### Password-first: the host-var sudo password pattern
+
+The documented primary path supplies `become.password` from a `secret:` reference. Put the become default in the playbook and the per-host sudo password in ordinary host/group vars — Preflight resolves `secret:` refs in `become.password` right before execution:
+
+```yaml
+# playbooks/manage-hosts.yml
+name: manage-hosts
+
+defaults:
+  become:
+    enabled: true            # bare become means root on POSIX
+    password: "{{ sudo_password }}"
+
+tasks:
+  - name: ensure a package is present
+    system_package:
+      packages:
+        - name: htop
+          ensure: present
+```
+
+```yaml
+# preflight.yml — the sudo password is a per-host secret
+inventory:
+  hosts:
+    - name: web-01
+      address: [IP_ADDRESS]
+      transport: ssh
+      username: deploy              # unprivileged SSH user
+      password: secret:deploy-password
+      vars:
+        sudo_password: secret:deploy-sudo-password
+```
+
+The same shape works at the group level — put `sudo_password` in the group's `vars:` and every host in the group inherits it.
+
+### NOPASSWD fallback
+
+If a host's sudoers is configured with `NOPASSWD` for the SSH user, omit `become.password` entirely. Preflight runs `sudo -n`, which fails fast with a `sudo-password-required` reason code if a password turns out to be required, so a misconfigured `NOPASSWD` never hangs the run.
+
+### `requires_root` modules
+
+`service`, `user`, `system_package`, and `reboot` require an effective root user. Preflight probes `id -u` once per target and fails such a task **before `Check()`** with a `requires-root-violation` reason code when the effective user is not root. Setting `become: {enabled: true}` (root) or connecting as root satisfies the check; become-to-a-non-root-user is caught by the same check.
+
 ## Related Docs
 
 - [Playbook and action YAML reference](../reference/yaml.md) — full `become` field reference
