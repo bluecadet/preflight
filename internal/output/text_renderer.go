@@ -19,6 +19,10 @@ var (
 )
 
 const (
+	// lineWidth is the text renderer's default column width. It serves as
+	// the non-TTY fallback for detectWidth (piped output stays greppable
+	// at a fixed width) and as the wrapping width for fact/failure
+	// output blocks in run_format.go.
 	lineWidth                 = 80
 	defaultFailureOutputLimit = 80
 )
@@ -29,6 +33,7 @@ type TextRenderer struct {
 	color        bool
 	verbose      bool
 	maxFailLines int
+	width        int
 	activeTasks  map[string]time.Time
 	projection   *RunProjection
 	runStarted   bool
@@ -51,11 +56,16 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	if colorMode == ColorAuto {
 		colorMode = DetectColor("", false, w)
 	}
+	width := opts.Width
+	if width <= 0 {
+		width = detectWidth(w)
+	}
 	r := &TextRenderer{
 		w:            w,
 		color:        colorMode.UseColor(),
 		verbose:      opts.Verbose,
 		maxFailLines: opts.MaxFailLines,
+		width:        width,
 		activeTasks:  make(map[string]time.Time),
 		projection:   NewRunProjectionWithOptions(opts),
 	}
@@ -157,7 +167,7 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(padLine(left, right, r.width))
 
 	if detail := okDetail(""); detail != "" {
 		for _, line := range indentWrapped(2, detail) {
@@ -180,7 +190,7 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(padLine(left, right, r.width))
 
 	if detail := changedDetail("", r.projection.IsCheckMode()); detail != "" {
 		for _, line := range indentWrapped(2, detail) {
@@ -198,7 +208,7 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	if r.shouldShowHostLabels() && e.Target != "" {
 		left = "[" + r.displayTarget(e.Target) + "] " + left
 	}
-	r.writeLine(padLine(left, "", lineWidth))
+	r.writeLine(padLine(left, "", r.width))
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
 			r.writeLine(line)
@@ -220,7 +230,7 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	if elapsed > 0 {
 		right = formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(padLine(left, right, r.width))
 
 	indent := 2
 	if e.FailMessage != "" {
@@ -295,7 +305,7 @@ func (r *TextRenderer) emitTargetStart(e TargetStartEvent) {
 		}
 		target += ")"
 		elapsed := formatElapsed(r.projection.Elapsed())
-		r.writeLine(r.colorize(ansiBold, padLine("RUN  "+playbook+" → "+target, elapsed, lineWidth)))
+		r.writeLine(r.colorize(ansiBold, padLine("RUN  "+playbook+" → "+target, elapsed, r.width)))
 		r.writeBlank()
 		r.bufferedRunStart = nil
 		return
