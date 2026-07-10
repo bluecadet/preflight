@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -18,12 +19,10 @@ func finishedTaskLine(t *testing.T, out, taskName string) string {
 	return ""
 }
 
-// TestTextRenderer_RightAlignsElapsedToWidth verifies that finished-task
-// elapsed times are right-aligned to the renderer's target width, not a
-// fixed constant. PadLine produces left + spaces + right whose total byte
-// length equals the width when the content fits, so asserting the line
-// length equals the width is a direct, deterministic check of alignment.
-func TestTextRenderer_RightAlignsElapsedToWidth(t *testing.T) {
+// TestTextRenderer_InlineElapsedAfterTaskName verifies that finished-task
+// elapsed times render inline right after the task name (separated by a
+// short gap) rather than being right-aligned out to the renderer width.
+func TestTextRenderer_InlineElapsedAfterTaskName(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
@@ -62,8 +61,16 @@ func TestTextRenderer_RightAlignsElapsedToWidth(t *testing.T) {
 			})
 
 			line := finishedTaskLine(t, buf.String(), "install display drivers")
-			if len(line) != tc.width {
-				t.Fatalf("expected finished-task line right-aligned to width %d, got length %d: %q", tc.width, len(line), line)
+			wantRe := `^✓ install display drivers  \d+(\.\d+)?s$`
+			matched, err := regexp.MatchString(wantRe, line)
+			if err != nil {
+				t.Fatalf("regexp match error: %v", err)
+			}
+			if !matched {
+				t.Fatalf("expected inline duration immediately after task name matching %q, got %q", wantRe, line)
+			}
+			if len(line) >= tc.width {
+				t.Fatalf("expected compact line shorter than width %d, got length %d: %q", tc.width, len(line), line)
 			}
 		})
 	}
@@ -84,11 +91,12 @@ func TestDetectWidth_NonTTYFallback(t *testing.T) {
 	}
 }
 
-// TestTextRenderer_WideWidth_Snapshot golden-locks the new behavior: at a
-// non-default width, finished-task and run-header elapsed times right-align
-// to that width rather than the fixed 80. It reuses the shared ok-task
-// fixture rendered through Options.Width so the alignment is exercised end
-// to end rather than via the time-based TTY detection path.
+// TestTextRenderer_WideWidth_Snapshot golden-locks behavior at a
+// non-default width: the single-target RUN header still right-aligns its
+// run-elapsed time to the renderer width, while finished-task durations
+// stay inline next to the task name. It reuses the shared ok-task fixture
+// rendered through Options.Width so the layout is exercised end to end
+// rather than via the time-based TTY detection path.
 func TestTextRenderer_WideWidth_Snapshot(t *testing.T) {
 	t.Parallel()
 

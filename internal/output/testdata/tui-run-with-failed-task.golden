@@ -2,13 +2,12 @@ Apply
 playbook: app-deploy.yml
 name: app-deploy
 targets: 2
-  app-01, app-02
 ────────────────────────────────────────────────────────────────────────────────
 
 Targets:
   app-01 (winrm • [IP_ADDRESS])
   app-02 (ssh • [IP_ADDRESS])
-  [app-01] x install .NET runtime                                              15s
+  x [app-01] install .NET runtime  15s
   ERROR: DISM failure: 0x800f0954
   output:
     DISM.exe /Online /Add-Capability

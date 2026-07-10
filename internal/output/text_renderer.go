@@ -155,12 +155,11 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiGreen, statusGlyph("ok", r.projection.IsCheckMode()))
-	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	right := ""
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, r.width))
+	r.writeLine(left)
 
 	if detail := okDetail(""); detail != "" {
 		for _, line := range indentWrapped(2, detail) {
@@ -175,12 +174,11 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiYellow, statusGlyph("changed", r.projection.IsCheckMode()))
-	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	right := ""
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, r.width))
+	r.writeLine(left)
 
 	if detail := changedDetail("", r.projection.IsCheckMode()); detail != "" {
 		for _, line := range indentWrapped(2, detail) {
@@ -194,8 +192,8 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiGrey, statusGlyph("skipped", r.projection.IsCheckMode()))
-	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	r.writeLine(padLine(left, "", r.width))
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
+	r.writeLine(left)
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
 			r.writeLine(line)
@@ -209,12 +207,11 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiRed, statusGlyph("failed", r.projection.IsCheckMode()))
-	left := r.targetPrefix(e.Target) + glyph + " " + r.colorize(ansiTaskName, e.TaskName)
-	right := ""
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, r.width))
+	r.writeLine(left)
 
 	indent := 2
 	if e.FailMessage != "" {
@@ -370,6 +367,16 @@ func (r *TextRenderer) shouldShowHostLabels() bool {
 
 func (r *TextRenderer) displayTarget(target string) string {
 	return r.projection.DisplayTarget(target)
+}
+
+// targetLabel returns the inline [target] segment (space-prefixed, no
+// trailing space) for task lines in multi-target runs, or "" when target
+// labels are suppressed (single-target runs) or the target is empty.
+func (r *TextRenderer) targetLabel(target string) string {
+	if !r.shouldShowHostLabels() || target == "" {
+		return ""
+	}
+	return " [" + r.displayTarget(target) + "]"
 }
 
 // targetPrefix returns the inline [target] prefix prepended to task lines in
