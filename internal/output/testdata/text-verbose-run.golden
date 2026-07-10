@@ -3,7 +3,7 @@ RUN  kiosk-provision.yml → kiosk-01 (local)                               0.0s
 - configure autologin started
     Setting HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\
     AutoAdminLogon
-~ configure autologin                                                       0.0s
+~ configure autologin  0.0s
 
 Recap
 ✓ Apply complete

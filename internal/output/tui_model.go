@@ -174,9 +174,6 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 		}
 		if len(d.Targets) > 1 {
 			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
-			if len(d.Targets) <= 5 {
-				lines = append(lines, "  "+strings.Join(d.Targets, ", "))
-			}
 		}
 	}
 	lines = append(lines, m.renderDivider())
@@ -203,15 +200,15 @@ func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
-	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + S.TaskName.Render(d.TaskName)
+	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode()))
 	if m.projection.ShouldShowHostLabels() && d.Target != "" {
-		left = m.targetBadge(d.Target) + " " + left
+		left += " " + m.targetBadge(d.Target)
 	}
-	right := ""
+	left += " " + S.TaskName.Render(d.TaskName)
 	if d.Elapsed > 0 && d.Status != "skipped" {
-		right = formatElapsed(d.Elapsed)
+		left += "  " + S.Elapsed.Render(formatElapsed(d.Elapsed))
 	}
-	line := tsRow(padLine(left, right, m.width))
+	line := tsRow(left)
 
 	var detailLines []string
 	switch d.Status {
@@ -355,20 +352,11 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 
 	var b strings.Builder
 	if task.actionPath != "" {
-		header := renderDisplayPath(task.actionPath)
-		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			header = m.targetBadge(task.target) + " " + header
-		}
-		b.WriteString(header)
+		b.WriteString(renderDisplayPath(task.actionPath))
 		b.WriteByte('\n')
-		line := padLine("  "+spin+" "+S.TaskName.Render(task.name), timer, m.width)
-		b.WriteString(tsRow(line))
+		b.WriteString(tsRow(m.renderRunningLeft(task, spin, S.TaskName.Render(task.name), timer)))
 	} else {
-		left := spin + " " + S.TaskName.Render(task.name)
-		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			left = m.targetBadge(task.target) + " " + left
-		}
-		b.WriteString(tsRow(padLine(left, timer, m.width)))
+		b.WriteString(tsRow(m.renderRunningLeft(task, spin, S.TaskName.Render(task.name), timer)))
 	}
 	if dense || len(task.recentLines) == 0 {
 		return b.String()
@@ -380,6 +368,18 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 		b.WriteString(tsOutputLine(4, tsTruncate(line, maxWidth)))
 	}
 	return b.String()
+}
+
+// renderRunningLeft builds the left portion of a running-task row with the
+// spinner glyph first, then the target badge (when shown), then the task
+// name, and finally the elapsed timer — kept inline rather than
+// right-aligned to avoid large gaps on wide terminals.
+func (m tuiModel) renderRunningLeft(task *activeTask, spin, name, timer string) string {
+	left := spin
+	if m.projection.ShouldShowHostLabels() && task.target != "" {
+		left += " " + m.targetBadge(task.target)
+	}
+	return left + " " + name + "  " + timer
 }
 
 func (m tuiModel) renderFinalSummary() string {
@@ -427,8 +427,11 @@ func (m tuiModel) renderFinalSummary() string {
 	return b.String()
 }
 
+const maxDividerWidth = 80
+
 func (m tuiModel) renderDivider() string {
-	return S.Divider.Render(strings.Repeat("─", m.widthWithFallback()))
+	width := min(m.widthWithFallback(), maxDividerWidth)
+	return S.Divider.Render(strings.Repeat("─", width))
 }
 
 func (m tuiModel) renderFooter(runningCount int) string {

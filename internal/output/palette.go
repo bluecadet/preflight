@@ -103,7 +103,7 @@ func DefaultPalette() SemanticPalette {
 		Skipped: ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
 
 		// UI elements.
-		TaskName: ColorRole{Light: "248", Dark: "248"},                   // medium grey, ANSI = terminal default
+		TaskName: ColorRole{},                                            // terminal default foreground
 		Muted:    ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
 		Bold:     ColorRole{ANSI: "\033[1m", Bold: true},                 // no color, bold
 		Spin:     ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"},    // blue
@@ -119,7 +119,7 @@ func DefaultPalette() SemanticPalette {
 		TableHead: ColorRole{Light: "252", Dark: "254", Bold: true}, // bold light grey
 
 		// Transport badges (reserved — not yet used by any renderer).
-		TransportLocal: ColorRole{Light: "8", Dark: "245"},                    // grey
+		TransportLocal: ColorRole{Light: "8", Dark: "245"},                  // grey
 		TransportSSH:   ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"}, // blue
 		TransportWinRM: ColorRole{Light: "6", Dark: "14", ANSI: "\033[36m"}, // cyan
 	}
