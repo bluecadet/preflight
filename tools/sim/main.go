@@ -78,6 +78,11 @@ func init() {
 			description: "inline target prefixes across mixed transports on finished + running tasks",
 			run:         runInlinePrefixes,
 		},
+		{
+			name:        "readme",
+			description: "mixed-transport fleet rollout with streamed logs and randomized durations",
+			run:         runReadme,
+		},
 	}
 }
 

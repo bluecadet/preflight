@@ -584,3 +584,91 @@ func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
 	}
 	wg.Wait()
 }
+
+// runReadme is the scenario backing the README header GIF. It mirrors the
+// multi-transport roster shape but slows tasks down with randomized
+// durations and streams realistic log lines from the slower steps. Every
+// target succeeds; the goal is a clean, watchable apply, not a failure demo.
+func runReadme(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "edge-gateway", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "dc-controller", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "media-player-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	}
+	playStartN(r, "fleet rollout", targets)
+
+	sr := output.Synchronized(r)
+
+	type readmeStep struct {
+		id, name, status, msg string
+		live                  []string
+		// slow is a multiplier on the base delay controlling how long the
+		// task appears to run before completing.
+		slow float64
+	}
+
+	steps := []readmeStep{
+		{"connect", "Establish connection", "ok", "", nil, 0.6},
+		{"facts", "Gather system facts", "ok", "", []string{
+			"Querying Win32_OperatingSystem...",
+			"OS: Microsoft Windows 10 Pro 22H2",
+			"Uptime: 14d 03h 22m",
+		}, 1.5},
+		{"install-agent", "Install monitoring agent", "changed", "installed v2.5.0", []string{
+			"Downloading agent.msi v2.5.0...",
+			"Verifying Authenticode signature...",
+			"Running msiexec /i agent.msi /qn...",
+			"Waiting for service registration...",
+		}, 2.8},
+		{"configure-logs", "Configure log shipping", "changed", "42 values synced", []string{
+			"Writing C:\\ProgramData\\preflight\\agent.yml...",
+			"Pointing log shipper at logs.internal:6514...",
+			"Restarting preflight-agent service...",
+		}, 1.8},
+		{"verify-service", "Verify agent service", "ok", "", []string{
+			"Waiting for service to report ready...",
+			"Service reported ready in 1.4s",
+		}, 0.9},
+	}
+
+	var (
+		wg       sync.WaitGroup
+		totalOK  int
+		totalChg int
+		mu       sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.4))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				d := jitter(delay, s.slow*0.7, s.slow*1.3)
+				if s.live != nil {
+					runStreamingTask(sr, t.name, s.id, s.name, s.status, s.msg, s.live, nil, d)
+				} else {
+					runTask(sr, t.name, s.id, s.name, s.status, s.msg, d)
+				}
+				switch s.status {
+				case "ok":
+					ok++
+				case "changed":
+					changed++
+				}
+			}
+
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, 0, 0)
+}
