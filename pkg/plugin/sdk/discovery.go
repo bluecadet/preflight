@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,7 +91,7 @@ func Inspect(opts DiscoveryOptions) ([]PluginStatus, error) {
 			Source: plugin.Source,
 		}
 
-		client, err := NewClient(plugin.Path)
+		client, err := NewClientForInspection(context.Background(), plugin.Path)
 		if err != nil {
 			status.ErrorMessage = err.Error()
 			statuses = append(statuses, status)
@@ -118,7 +119,7 @@ func InspectPlugin(path, source string) PluginStatus {
 		status.Name = name
 	}
 
-	client, err := NewClient(path)
+	client, err := NewClientForInspection(context.Background(), path)
 	if err != nil {
 		status.ErrorMessage = err.Error()
 		return status

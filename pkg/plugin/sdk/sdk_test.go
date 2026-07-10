@@ -7,23 +7,12 @@ import (
 	"testing"
 )
 
-// mockModule is a simple in-process module used across tests.
-type mockModule struct{}
-
-func (mockModule) Name() string    { return "mock" }
-func (mockModule) Version() string { return "2.3.4" }
-
-func (mockModule) Check(_ map[string]any) (CheckResult, error) {
-	return CheckResult{
-		NeedsChange: false,
-		State:       map[string]any{"status": "ok"},
-	}, nil
-}
-
-func (mockModule) Apply(_ map[string]any) (ApplyResult, error) {
-	return ApplyResult{
-		State: map[string]any{"status": "applied"},
-	}, nil
+// rpcResponse is a test helper for decoding JSON-RPC responses.
+type rpcResponse struct {
+	JSONRPC string          `json:"jsonrpc"`
+	ID      json.RawMessage `json:"id"`
+	Result  json.RawMessage `json:"result"`
+	Error   *rpcError       `json:"error"`
 }
 
 // runServe pipes a single JSON request through serveIO and returns the decoded response.
@@ -39,13 +28,10 @@ func runServe(t *testing.T, m Module, reqJSON string) rpcResponse {
 		serveIO(m, pr, &outBuf)
 	}()
 
-	// Write the request and close the writer so serveIO sees EOF.
-	_, err := io.WriteString(pw, reqJSON+"\n")
-	if err != nil {
+	if _, err := io.WriteString(pw, reqJSON+"\n"); err != nil {
 		t.Fatalf("write request: %v", err)
 	}
 	_ = pw.Close()
-
 	<-done
 
 	var resp rpcResponse
@@ -56,23 +42,20 @@ func runServe(t *testing.T, m Module, reqJSON string) rpcResponse {
 }
 
 func TestServe_Check(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"1","method":"check","params":{"module":"mock","args":{}}}`
+	req := `{"jsonrpc":"2.0","id":"1","method":"check","params":{"args":{}}}`
 	resp := runServe(t, mockModule{}, req)
 
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
 	}
-
 	raw, err := json.Marshal(resp.Result)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
-
 	var result CheckResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal CheckResult: %v", err)
 	}
-
 	if result.NeedsChange {
 		t.Errorf("expected NeedsChange=false, got true")
 	}
@@ -82,23 +65,20 @@ func TestServe_Check(t *testing.T) {
 }
 
 func TestServe_Apply(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"2","method":"apply","params":{"module":"mock","args":{}}}`
+	req := `{"jsonrpc":"2.0","id":"2","method":"apply","params":{"args":{}}}`
 	resp := runServe(t, mockModule{}, req)
 
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
 	}
-
 	raw, err := json.Marshal(resp.Result)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
-
 	var result ApplyResult
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal ApplyResult: %v", err)
 	}
-
 	if result.State["status"] != "applied" {
 		t.Errorf("expected state.status=applied, got %v", result.State["status"])
 	}
@@ -107,7 +87,6 @@ func TestServe_Apply(t *testing.T) {
 func TestServe_UnknownMethod(t *testing.T) {
 	req := `{"jsonrpc":"2.0","id":"3","method":"bogus","params":{}}`
 	resp := runServe(t, mockModule{}, req)
-
 	if resp.Error == nil {
 		t.Fatal("expected rpc error for unknown method, got nil")
 	}
@@ -117,93 +96,74 @@ func TestServe_UnknownMethod(t *testing.T) {
 }
 
 func TestServe_Initialize(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"0","method":"initialize","params":{}}`
+	req := `{"jsonrpc":"2.0","id":"0","method":"initialize","params":{"protocol_version":"1","target":{"family":"linux"}}}`
 	resp := runServe(t, mockModule{}, req)
-
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
 	}
-
 	raw, err := json.Marshal(resp.Result)
 	if err != nil {
 		t.Fatalf("marshal result: %v", err)
 	}
-
-	var init initializeResult
+	var init InitializeResult
 	if err := json.Unmarshal(raw, &init); err != nil {
-		t.Fatalf("unmarshal initializeResult: %v", err)
+		t.Fatalf("unmarshal InitializeResult: %v", err)
 	}
-
 	if init.Name != "mock" {
 		t.Errorf("expected name=mock, got %q", init.Name)
 	}
-	if init.Version != "2.3.4" {
-		t.Errorf("expected version=2.3.4, got %q", init.Version)
+	if init.ProtocolVersion != ProtocolVersion {
+		t.Errorf("expected protocol_version=%q, got %q", ProtocolVersion, init.ProtocolVersion)
 	}
 }
 
-type streamingMockModule struct{}
+// streamingModule emits output via the Handle during Check/Apply.
+type streamingModule struct{}
 
-func (streamingMockModule) Name() string    { return "streaming-mock" }
-func (streamingMockModule) Version() string { return "1.0.0" }
+func (streamingModule) Name() string    { return "streaming-mock" }
+func (streamingModule) Version() string { return "1.0.0" }
 
-func (streamingMockModule) Check(_ map[string]any) (CheckResult, error) {
-	return CheckResult{NeedsChange: true}, nil
-}
-
-func (streamingMockModule) Apply(_ map[string]any) (ApplyResult, error) {
-	return ApplyResult{}, nil
-}
-
-func (streamingMockModule) CheckStreaming(_ map[string]any, out OutputFunc) (CheckResult, error) {
-	out("check line 1")
-	out("check line 2")
+func (streamingModule) Check(_ map[string]any, h Handle) (CheckResult, error) {
+	h.Output("check line 1")
+	h.Output("check line 2")
 	return CheckResult{NeedsChange: true, Message: "needs update"}, nil
 }
 
-func (streamingMockModule) ApplyStreaming(_ map[string]any, out OutputFunc) (ApplyResult, error) {
-	out("apply line 1")
-	out("apply line 2")
-	out("apply line 3")
+func (streamingModule) Apply(_ map[string]any, h Handle) (ApplyResult, error) {
+	h.Output("apply line 1")
+	h.Output("apply line 2")
+	h.Output("apply line 3")
 	return ApplyResult{Message: "applied"}, nil
 }
 
 func runServeMulti(t *testing.T, m Module, reqs []string) []string {
 	t.Helper()
-
 	pr, pw := io.Pipe()
 	var outBuf strings.Builder
-
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		serveIO(m, pr, &outBuf)
 	}()
-
 	for _, req := range reqs {
 		if _, err := io.WriteString(pw, req+"\n"); err != nil {
 			t.Fatalf("write request: %v", err)
 		}
 	}
 	_ = pw.Close()
-
 	<-done
-
-	lines := strings.Split(strings.TrimSpace(outBuf.String()), "\n")
-	return lines
+	return strings.Split(strings.TrimSpace(outBuf.String()), "\n")
 }
 
 func TestServe_StreamingCheck(t *testing.T) {
 	req := `{"jsonrpc":"2.0","id":"10","method":"check","params":{"args":{}}}`
-	lines := runServeMulti(t, streamingMockModule{}, []string{req})
-
-	// Should have 2 notification frames + 1 response frame
+	lines := runServeMulti(t, streamingModule{}, []string{req})
+	// 2 output notifications + 1 response
 	if len(lines) != 3 {
 		t.Fatalf("expected 3 output lines, got %d: %v", len(lines), lines)
 	}
-
 	var notif1 struct {
-		Method string         `json:"method"`
+		Method string          `json:"method"`
 		Params map[string]any `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(lines[0]), &notif1); err != nil {
@@ -215,32 +175,12 @@ func TestServe_StreamingCheck(t *testing.T) {
 	if notif1.Params["line"] != "check line 1" {
 		t.Errorf("expected line 'check line 1', got %v", notif1.Params["line"])
 	}
-
-	var resp rpcResponse
-	if err := json.Unmarshal([]byte(lines[2]), &resp); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
-	}
-	if resp.Error != nil {
-		t.Fatalf("unexpected rpc error: %v", resp.Error)
-	}
 }
 
 func TestServe_StreamingApply(t *testing.T) {
 	req := `{"jsonrpc":"2.0","id":"11","method":"apply","params":{"args":{}}}`
-	lines := runServeMulti(t, streamingMockModule{}, []string{req})
-
-	// Should have 3 notification frames + 1 response frame
+	lines := runServeMulti(t, streamingModule{}, []string{req})
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 output lines, got %d: %v", len(lines), lines)
-	}
-}
-
-func TestServe_NonStreamingBackwardsCompat(t *testing.T) {
-	// Non-streaming module gets no notification frames
-	req := `{"jsonrpc":"2.0","id":"12","method":"check","params":{"args":{}}}`
-	lines := runServeMulti(t, mockModule{}, []string{req})
-
-	if len(lines) != 1 {
-		t.Fatalf("expected 1 output line for non-streaming module, got %d: %v", len(lines), lines)
 	}
 }
