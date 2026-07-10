@@ -51,7 +51,7 @@ inventory:
 Transport guidance:
 
 - Use `winrm` for Windows-native configuration work. `transport` must be set explicitly to `winrm`; a host with no `transport` field connects over `ssh` instead.
-- Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules. `ssh` is also the default when `transport` is omitted.
+- Use `ssh` when the target is best reached over SSH and the tasks only require SSH-supported modules. `ssh` is also the default when `transport` is omitted. On POSIX targets, the recommended posture is an **unprivileged SSH user plus `become`** for any task needing root (see [Run tasks as another user](./run-tasks-as-another-user.md#posix-become-to-root-from-an-unprivileged-ssh-user)); root SSH login is a stated working alternative.
 - Use `local` if you want inventory-driven selection but execution should still happen on the initiating machine.
 - For a brand-new WinRM target, validate the endpoint and credentials with a temporary `preflight.yml` plus `preflight facts` before you wire the host into your project inventory.
 
@@ -198,6 +198,15 @@ That usually means the playbook is hitting a runtime-specific limit. SSH now aut
 - POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
 - Plugin modules are not yet supported over SSH.
 - Using the `file` module with `ensure: absent` on a path that resolves to a directory returns an error. Use the `directory` module with `ensure: absent` instead.
+
+On POSIX, a task that needs root fails **before `Check()`** with a typed reason code rather than a generic sudo error:
+
+- `requires-root-violation` — a `requires_root` module (`service`, `user`, `system_package`, `reboot`) ran as a non-root effective user. Fix it by running as root or setting `become: {enabled: true}`.
+- `sudo-missing` — `become` is enabled but the target has no `sudo` binary.
+- `sudo-password-required` — a no-password `sudo -n` run needed a password. Supply `become.password` (secret-backed) or configure `NOPASSWD`.
+- `sudo-auth-failed` — the supplied `become.password` was rejected.
+
+See [How `become` works](../explanation/become.md) for the full POSIX privilege model.
 
 If the target is Windows but does not expose a usable PowerShell runtime over SSH, use WinRM or a staged bundle instead.
 
