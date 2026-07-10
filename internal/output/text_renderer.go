@@ -7,31 +7,38 @@ import (
 	"time"
 )
 
-// ANSI color codes.
-const (
-	ansiReset  = "\033[0m"
-	ansiGreen  = "\033[32m"
-	ansiYellow = "\033[33m"
-	ansiRed    = "\033[31m"
-	ansiGrey   = "\033[90m"
-	ansiBold   = "\033[1m"
+// ANSI color codes sourced from the semantic palette.
+var (
+	ansiReset    = "\033[0m"
+	ansiGreen    = DefaultPalette().OK.ANSI
+	ansiYellow   = DefaultPalette().Changed.ANSI
+	ansiRed      = DefaultPalette().Failed.ANSI
+	ansiGrey     = DefaultPalette().Skipped.ANSI
+	ansiBold     = DefaultPalette().Bold.ANSI
+	ansiTaskName = DefaultPalette().TaskName.ANSI
 )
 
 const (
+	// lineWidth is the text renderer's default column width. It serves as
+	// the non-TTY fallback for detectWidth (piped output stays greppable
+	// at a fixed width) and as the wrapping width for fact/failure
+	// output blocks in run_format.go.
 	lineWidth                 = 80
 	defaultFailureOutputLimit = 80
 )
 
 // TextRenderer writes the append-only form of the apply/check transcript.
 type TextRenderer struct {
-	w            io.Writer
-	color        bool
-	verbose      bool
-	maxFailLines int
-	activeTasks  map[string]time.Time
-	projection   *RunProjection
-	runStarted   bool
-	closed       bool
+	w               io.Writer
+	color           bool
+	verbose         bool
+	maxFailLines    int
+	width           int
+	activeTasks     map[string]time.Time
+	projection      *RunProjection
+	runStarted      bool
+	runStartPending bool // header buffered until target info arrives
+	closed          bool
 }
 
 // NewTextRenderer creates a TextRenderer. Colors are enabled only when w is a TTY.
@@ -45,11 +52,16 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	if colorMode == ColorAuto {
 		colorMode = DetectColor("", false, w)
 	}
+	width := opts.Width
+	if width <= 0 {
+		width = detectWidth(w)
+	}
 	r := &TextRenderer{
 		w:            w,
 		color:        colorMode.UseColor(),
 		verbose:      opts.Verbose,
 		maxFailLines: opts.MaxFailLines,
+		width:        width,
 		activeTasks:  make(map[string]time.Time),
 		projection:   NewRunProjectionWithOptions(opts),
 	}
@@ -70,13 +82,21 @@ func (r *TextRenderer) Emit(event Event) {
 	// Feed the event into the shared projection so all counters and run
 	// state are folded once, regardless of how many sinks consume the stream.
 	r.projection.Apply(event)
+
+	// Flush a pending run-start header before any non-target event so the
+	// header (with its inline target roster) always precedes task output.
+	if r.runStartPending {
+		if _, isTargetStart := event.(TargetStartEvent); !isTargetStart {
+			r.flushRunStartHeader()
+		}
+	}
 	switch e := event.(type) {
 	case VersionEvent:
 		// Version event is only written to the run log; no terminal output.
 	case RunStartEvent:
 		r.emitRunStart(e)
 	case TargetStartEvent:
-		// Target-level events are handled by the runner activity emit; no terminal output needed.
+		r.emitTargetStart(e)
 	case TargetCompleteEvent:
 		r.emitTargetComplete(e)
 	case TaskStartedEvent:
@@ -130,11 +150,7 @@ func (r *TextRenderer) emitNewTaskStarted(e TaskStartedEvent) {
 	if !r.verbose {
 		return
 	}
-	prefix := ""
-	if r.shouldShowHostLabels() && e.Target != "" {
-		prefix = "[" + r.displayTarget(e.Target) + "] "
-	}
-	r.writeLine(prefix + "- " + e.TaskName + " started")
+	r.writeLine(r.targetPrefix(e.Target) + "- " + e.TaskName + " started")
 }
 
 func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
@@ -142,12 +158,18 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("ok", r.projection.IsCheckMode()) + " " + e.TaskName
-	right := ""
+	glyph := r.colorize(ansiGreen, statusGlyph("ok", r.projection.IsCheckMode()))
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(left)
+
+	if detail := okDetail(""); detail != "" {
+		for _, line := range indentWrapped(2, detail) {
+			r.writeLine(line)
+		}
+	}
 }
 
 func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
@@ -155,20 +177,27 @@ func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("changed", r.projection.IsCheckMode()) + " " + e.TaskName
-	right := ""
+	glyph := r.colorize(ansiYellow, statusGlyph("changed", r.projection.IsCheckMode()))
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(left)
+
+	if detail := changedDetail("", r.projection.IsCheckMode()); detail != "" {
+		for _, line := range indentWrapped(2, detail) {
+			r.writeLine(line)
+		}
+	}
 }
 
 func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("skipped", r.projection.IsCheckMode()) + " " + e.TaskName
-	r.writeLine(padLine(left, "", lineWidth))
+	glyph := r.colorize(ansiGrey, statusGlyph("skipped", r.projection.IsCheckMode()))
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
+	r.writeLine(left)
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
 			r.writeLine(line)
@@ -181,12 +210,12 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	elapsed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
-	left := statusGlyph("failed", r.projection.IsCheckMode()) + " " + e.TaskName
-	right := ""
+	glyph := r.colorize(ansiRed, statusGlyph("failed", r.projection.IsCheckMode()))
+	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
 	if elapsed > 0 {
-		right = formatElapsed(elapsed)
+		left += "  " + formatElapsed(elapsed)
 	}
-	r.writeLine(padLine(left, right, lineWidth))
+	r.writeLine(left)
 
 	indent := 2
 	if e.FailMessage != "" {
@@ -218,31 +247,73 @@ func (r *TextRenderer) emitRunStart(e RunStartEvent) {
 		return
 	}
 	r.runStarted = true
+	r.runStartPending = true
+}
+
+// flushRunStartHeader emits the buffered run-start header. For single-target
+// runs it folds the target identity into one RUN line; for multi-target runs
+// it renders the block with the target roster inlined so the roster is part
+// of the header rather than a separate listing.
+func (r *TextRenderer) flushRunStartHeader() {
+	r.runStartPending = false
+
+	if len(r.projection.Targets) == 1 {
+		playbook := r.projection.Playbook
+		if playbook == "" {
+			playbook = r.projection.PlayName
+		}
+		target := "local"
+		transport := "local"
+		address := ""
+		if len(r.projection.TargetInfo) > 0 {
+			ti := r.projection.TargetInfo[0]
+			target = ti.Name
+			transport = ti.Transport
+			address = ti.Address
+		}
+		tgt := target + " (" + transport
+		if address != "" {
+			tgt += " • " + address
+		}
+		tgt += ")"
+		elapsed := formatElapsed(r.projection.Elapsed())
+		r.writeLine(r.colorize(ansiBold, padLine("RUN  "+playbook+" → "+tgt, elapsed, r.width)))
+		r.writeBlank()
+		return
+	}
 
 	r.writeLine(r.colorize(ansiBold, titleRunMode(r.projection.Mode)))
-	if r.projection.Playbook != "" {
+	switch {
+	case r.projection.Playbook != "":
 		r.writeLine("playbook: " + r.projection.Playbook)
-	} else if r.projection.PlayName != "" {
+	case r.projection.PlayName != "":
 		r.writeLine("playbook: " + r.projection.PlayName)
 	}
 	if r.projection.Playbook != "" && r.projection.PlayName != "" {
 		r.writeLine("name: " + r.projection.PlayName)
 	}
-	r.writeTargetIntro()
+	if len(r.projection.Targets) > 1 {
+		r.writeLine(fmt.Sprintf("targets: %d", len(r.projection.Targets)))
+		for _, line := range buildTargetRosterLines(r.projection.TargetInfo, r.rosterColorer()) {
+			r.writeLine(line)
+		}
+	}
 	r.writeBlank()
 }
 
-func (r *TextRenderer) writeTargetIntro() {
-	switch len(r.projection.Targets) {
-	case 0:
+func (r *TextRenderer) emitTargetStart(e TargetStartEvent) {
+	if !r.runStartPending {
 		return
-	case 1:
-		r.writeLine("target: " + r.projection.Targets[0])
-	default:
-		r.writeLine(fmt.Sprintf("targets: %d", len(r.projection.Targets)))
-		if len(r.projection.Targets) <= 5 {
-			r.writeLine("  " + strings.Join(r.projection.Targets, ", "))
-		}
+	}
+	// Single-target: flush as soon as the first (only) target arrives.
+	if len(r.projection.Targets) == 1 {
+		r.flushRunStartHeader()
+		return
+	}
+	// Multi-target: flush once all targets have reported so the roster can
+	// be folded into the header in arrival order.
+	if len(r.projection.TargetInfo) >= len(r.projection.Targets) {
+		r.flushRunStartHeader()
 	}
 }
 
@@ -286,6 +357,66 @@ func (r *TextRenderer) shouldShowHostLabels() bool {
 
 func (r *TextRenderer) displayTarget(target string) string {
 	return r.projection.DisplayTarget(target)
+}
+
+// targetLabel returns the inline [target] segment (space-prefixed, no
+// trailing space) for task lines in multi-target runs, or "" when target
+// labels are suppressed (single-target runs) or the target is empty.
+func (r *TextRenderer) targetLabel(target string) string {
+	if !r.shouldShowHostLabels() || target == "" {
+		return ""
+	}
+	return " [" + r.coloredTarget(target) + "]"
+}
+
+// targetPrefix returns the inline [target] prefix prepended to task lines in
+// multi-target runs, or "" when target labels are suppressed (single-target
+// runs) or the target is empty.
+func (r *TextRenderer) targetPrefix(target string) string {
+	if !r.shouldShowHostLabels() || target == "" {
+		return ""
+	}
+	return "[" + r.coloredTarget(target) + "] "
+}
+
+// coloredTarget returns the display name for a target rendered in its
+// assigned host color. When color is disabled or the target has no color
+// slot, the plain display name is returned.
+func (r *TextRenderer) coloredTarget(target string) string {
+	name := r.displayTarget(target)
+	if !r.color {
+		return name
+	}
+	code := r.hostColorANSI(target)
+	if code == "" {
+		return name
+	}
+	return code + name + ansiReset
+}
+
+// hostColorANSI returns the ANSI escape code for a target's assigned host
+// color, or "" when the target has no color slot (unknown target).
+func (r *TextRenderer) hostColorANSI(target string) string {
+	c, ok := DefaultPalette().HostColor(r.projection.HostColorIndex(target))
+	if !ok {
+		return ""
+	}
+	return c.ANSI
+}
+
+// rosterColorer returns a function that renders a target's raw name in its
+// assigned host color, for coloring the run-start target roster.
+func (r *TextRenderer) rosterColorer() func(string) string {
+	return func(name string) string {
+		if !r.color {
+			return name
+		}
+		code := r.hostColorANSI(name)
+		if code == "" {
+			return name
+		}
+		return code + name + ansiReset
+	}
 }
 
 func (r *TextRenderer) writeLine(line string) {
@@ -344,13 +475,18 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 	if r.projection.FailedCount > 0 {
 		r.writeLine("")
 		r.writeLine("Needs attention")
+		showTarget := r.shouldShowHostLabels()
 		for _, failed := range r.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
+			if showTarget {
+				r.writeLine("  [" + r.coloredTarget(failed.target) + "] " + path)
+			} else {
+				r.writeLine("  " + path)
+			}
 		}
-		if r.projection.RunDir != "" {
-			r.writeLine("  Run directory: " + r.projection.RunDir)
-		}
+	}
+	if r.projection.RunDir != "" {
+		r.writeLine("  Run directory: " + r.projection.RunDir)
 	}
 }
 

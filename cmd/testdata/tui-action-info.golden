@@ -1,21 +1,23 @@
 [?25l[?<elapsed>
-  ◫ Action Info
-──────────────────────────────────────────
-  Ref          preflight/autologin
-  Name         preflight/autologin
-  Description  Configure Windows automatic login
-  Version      1.0.0
-  Author       preflight
-
-  Inputs
-  NAME      TYPE    REQUIRED  DEFAULT  DESCRIPTION
-  ────────  ──────  ────────  ───────  ──────────────────────────────────────
-  domain    string  optional  .        Domain name (use . for local accounts)
-  password  string  optional  —        Password for the auto-login user
-  username  string  required  —        Username to auto-login as
-
-  Tasks
-  1. Enable auto-login
+╭────────────────────────╮
+│   ◫ Action Info │
+│ ──────────────────────── │
+│   Ref          preflight/autologin │
+│   Name         preflight/autologin │
+│   Description  Configure Windows automatic login │
+│   Version      1.0.0 │
+│   Author       preflight │
+│ │
+│   Inputs │
+│   NAME      TYPE    REQUIRED  DEFAULT  DESCRIPTION │
+│   ────────  ──────  ────────  ───────  ────────────────────────────────────── │
+│   domain    string  optional  .        Domain name (use . for local accounts) │
+│   password  string  optional  —      Password for the auto-login user │
+│   username  string  required  —      Username to auto-login as │
+│ │
+│   Tasks │
+│   1. Enable auto-login │
+╰────────────────────────╯
 
 
 [2K

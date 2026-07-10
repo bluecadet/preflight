@@ -8,12 +8,49 @@ import (
 	"github.com/bluecadet/preflight/internal/output"
 )
 
+// targetDecl describes a target with its transport and address for simulator scenarios.
+type targetDecl struct {
+	name      string
+	transport string
+	address   string
+}
+
 // emit helpers
 
 func playStart(r output.Renderer, name string) {
 	r.Emit(output.RunStartEvent{
 		PlaybookName: name,
 		Targets:      []string{"exhibit-pc-01"},
+	})
+}
+
+func playStartN(r output.Renderer, name string, targets []targetDecl) {
+	names := make([]string, len(targets))
+	for i, t := range targets {
+		names[i] = t.name
+	}
+	r.Emit(output.RunStartEvent{
+		PlaybookName: name,
+		Targets:      names,
+	})
+}
+
+func emitTargetStart(r output.Renderer, t targetDecl) {
+	r.Emit(output.TargetStartEvent{
+		Target:    t.name,
+		Transport: t.transport,
+		Address:   t.address,
+	})
+}
+
+func emitRunSummary(r output.Renderer, ok, changed, failed, skipped int) {
+	r.Emit(output.RunSummaryEvent{
+		Status:       "ok",
+		OKCount:      ok,
+		ChangedCount: changed,
+		FailedCount:  failed,
+		SkippedCount: skipped,
+		ElapsedMs:    1000,
 	})
 }
 
@@ -116,11 +153,14 @@ func runBasic(r output.Renderer, delay time.Duration) {
 }
 
 func runMultiHost(r output.Renderer, delay time.Duration) {
-	playStart(r, "gallery rollout")
+	targets := []targetDecl{
+		{name: "gallery-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	}
+	playStartN(r, "gallery rollout", targets)
 
 	sr := output.Synchronized(r)
-
-	hosts := []string{"gallery-01", "gallery-02", "gallery-03"}
 
 	steps := []struct {
 		id, name, status string
@@ -133,8 +173,10 @@ func runMultiHost(r output.Renderer, delay time.Duration) {
 	}
 
 	var wg sync.WaitGroup
-	for _, h := range hosts {
+	for _, t := range targets {
 		wg.Go(func() {
+			emitTargetStart(sr, t)
+			h := t.name
 			// stagger host start so they don't all begin simultaneously
 			time.Sleep(jitter(delay, 0, 0.4))
 			ok, changed := 0, 0
@@ -250,14 +292,19 @@ func runSkipped(r output.Renderer, delay time.Duration) {
 }
 
 func runLarge(r output.Renderer, delay time.Duration) {
-	playStart(r, "fleet rollout")
+	targets := []targetDecl{
+		{name: "exhibit-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-04", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "exhibit-05", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "exhibit-06", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "kiosk-02", transport: "local", address: ""},
+	}
+	playStartN(r, "fleet rollout", targets)
 
 	sr := output.Synchronized(r)
-
-	hosts := []string{
-		"exhibit-01", "exhibit-02", "exhibit-03", "exhibit-04",
-		"exhibit-05", "exhibit-06", "kiosk-01", "kiosk-02",
-	}
 
 	tasks := []struct {
 		id, name, status string
@@ -280,8 +327,10 @@ func runLarge(r output.Renderer, delay time.Duration) {
 	d = max(d, 10*time.Millisecond)
 
 	var wg sync.WaitGroup
-	for _, h := range hosts {
+	for _, t := range targets {
 		wg.Go(func() {
+			emitTargetStart(sr, t)
+			h := t.name
 			time.Sleep(jitter(d, 0, 1.0)) // stagger host start
 			ok, changed := 0, 0
 			for _, t := range tasks {
@@ -364,8 +413,133 @@ func runStreaming(r output.Renderer, delay time.Duration) {
 	playEnd(r, host, 0, 1, 1, 0)
 }
 
+func runRoster(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "edge-gateway", transport: "ssh", address: "[10.0.1.10]:22"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "dc-controller", transport: "winrm", address: "[10.0.2.50]:5986"},
+		{name: "media-player-03", transport: "ssh", address: "[10.0.1.85]:22"},
+	}
+	playStartN(r, "multi-transport rollout", targets)
+
+	sr := output.Synchronized(r)
+
+	steps := []struct {
+		id, name, status string
+	}{
+		{"connect", "Establish connection", "ok"},
+		{"gather-facts", "Gather system facts", "ok"},
+		{"install-agent", "Install monitoring agent", "changed"},
+		{"configure-logs", "Configure log shipping", "changed"},
+		{"verify-service", "Verify agent service", "ok"},
+	}
+
+	var (
+		wg          sync.WaitGroup
+		totalOK     int
+		totalChg    int
+		totalFailed int
+		totalSkip   int
+		mu          sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.3))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				taskStart(sr, t.name, s.id, s.name)
+				time.Sleep(jitter(delay, 0.3, 1.2))
+				taskDone(sr, t.name, s.id, s.name, s.status, "")
+				if s.status == "ok" {
+					ok++
+				} else {
+					changed++
+				}
+			}
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, totalFailed, totalSkip)
+}
+
+func runInlinePrefixes(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "web-01", transport: "ssh", address: "[10.0.0.10]:22"},
+		{name: "web-02", transport: "ssh", address: "[10.0.0.11]:22"},
+		{name: "win-srv", transport: "winrm", address: "[10.0.0.50]:5986"},
+		{name: "local-node", transport: "local", address: ""},
+	}
+	playStartN(r, "mixed transport deployment", targets)
+
+	sr := output.Synchronized(r)
+
+	type stepDef struct {
+		id, name, status, msg string
+	}
+
+	steps := []stepDef{
+		{"ping", "Ping target", "ok", ""},
+		{"os-check", "Check OS version", "ok", ""},
+		{"install-runtime", "Install runtime", "changed", "v3.2.1 installed"},
+		{"deploy-config", "Deploy configuration", "changed", "42 values synced"},
+		{"restart-service", "Restart service", "ok", ""},
+		{"health-check", "Health check", "ok", ""},
+	}
+
+	var (
+		wg          sync.WaitGroup
+		totalOK     int
+		totalChg    int
+		totalFailed int
+		totalSkip   int
+		mu          sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.4))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				taskStart(sr, t.name, s.id, s.name)
+				time.Sleep(jitter(delay, 0.4, 1.5))
+				taskDone(sr, t.name, s.id, s.name, s.status, s.msg)
+				if s.status == "ok" {
+					ok++
+				} else {
+					changed++
+				}
+			}
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, totalFailed, totalSkip)
+}
+
 func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
-	playStart(r, "streaming multi-host rollout")
+	playStartN(r, "streaming multi-host rollout", []targetDecl{
+		{name: "gallery-01", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-02", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "gallery-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	})
 
 	sr := output.Synchronized(r)
 
@@ -381,6 +555,7 @@ func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
 	var wg sync.WaitGroup
 	for _, h := range hosts {
 		wg.Go(func() {
+			emitTargetStart(sr, targetDecl{name: h.name, transport: "ssh", address: "[[IP_ADDRESS]]:22"})
 			runStreamingTask(sr, h.name, "sync-assets", "Sync assets", "changed", "assets synchronized", []string{
 				"Inspecting existing asset manifest...",
 				"Downloading changed assets...",
@@ -408,4 +583,92 @@ func runStreamingMultiHost(r output.Renderer, delay time.Duration) {
 		})
 	}
 	wg.Wait()
+}
+
+// runReadme is the scenario backing the README header GIF. It mirrors the
+// multi-transport roster shape but slows tasks down with randomized
+// durations and streams realistic log lines from the slower steps. Every
+// target succeeds; the goal is a clean, watchable apply, not a failure demo.
+func runReadme(r output.Renderer, delay time.Duration) {
+	targets := []targetDecl{
+		{name: "edge-gateway", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+		{name: "kiosk-01", transport: "local", address: ""},
+		{name: "dc-controller", transport: "winrm", address: "[[IP_ADDRESS]]:5986"},
+		{name: "media-player-03", transport: "ssh", address: "[[IP_ADDRESS]]:22"},
+	}
+	playStartN(r, "fleet rollout", targets)
+
+	sr := output.Synchronized(r)
+
+	type readmeStep struct {
+		id, name, status, msg string
+		live                  []string
+		// slow is a multiplier on the base delay controlling how long the
+		// task appears to run before completing.
+		slow float64
+	}
+
+	steps := []readmeStep{
+		{"connect", "Establish connection", "ok", "", nil, 0.6},
+		{"facts", "Gather system facts", "ok", "", []string{
+			"Querying Win32_OperatingSystem...",
+			"OS: Microsoft Windows 10 Pro 22H2",
+			"Uptime: 14d 03h 22m",
+		}, 1.5},
+		{"install-agent", "Install monitoring agent", "changed", "installed v2.5.0", []string{
+			"Downloading agent.msi v2.5.0...",
+			"Verifying Authenticode signature...",
+			"Running msiexec /i agent.msi /qn...",
+			"Waiting for service registration...",
+		}, 2.8},
+		{"configure-logs", "Configure log shipping", "changed", "42 values synced", []string{
+			"Writing C:\\ProgramData\\preflight\\agent.yml...",
+			"Pointing log shipper at logs.internal:6514...",
+			"Restarting preflight-agent service...",
+		}, 1.8},
+		{"verify-service", "Verify agent service", "ok", "", []string{
+			"Waiting for service to report ready...",
+			"Service reported ready in 1.4s",
+		}, 0.9},
+	}
+
+	var (
+		wg       sync.WaitGroup
+		totalOK  int
+		totalChg int
+		mu       sync.Mutex
+	)
+
+	for _, t := range targets {
+		wg.Go(func() {
+			emitTargetStart(sr, t)
+			time.Sleep(jitter(delay, 0.1, 0.4))
+
+			ok, changed := 0, 0
+			for _, s := range steps {
+				d := jitter(delay, s.slow*0.7, s.slow*1.3)
+				if s.live != nil {
+					runStreamingTask(sr, t.name, s.id, s.name, s.status, s.msg, s.live, nil, d)
+				} else {
+					runTask(sr, t.name, s.id, s.name, s.status, s.msg, d)
+				}
+				switch s.status {
+				case "ok":
+					ok++
+				case "changed":
+					changed++
+				}
+			}
+
+			playEnd(sr, t.name, ok, changed, 0, 0)
+
+			mu.Lock()
+			totalOK += ok
+			totalChg += changed
+			mu.Unlock()
+		})
+	}
+	wg.Wait()
+
+	emitRunSummary(sr, totalOK, totalChg, 0, 0)
 }

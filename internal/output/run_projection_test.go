@@ -7,6 +7,7 @@ import (
 
 func TestRunProjection_RunStart(t *testing.T) {
 	p := NewRunProjection()
+	// Single-target RunStart is buffered — no descriptor yet.
 	descs := p.Apply(RunStartEvent{
 		PlaybookPath: "test.yml",
 		PlaybookName: "test-play",
@@ -29,18 +30,36 @@ func TestRunProjection_RunStart(t *testing.T) {
 		t.Errorf("expected Mode=apply, got %q", p.Mode)
 	}
 
-	if len(descs) != 1 {
-		t.Fatalf("expected 1 descriptor, got %d", len(descs))
+	if len(descs) != 0 {
+		t.Fatalf("expected 0 descriptors (buffered) for single-target RunStart, got %d", len(descs))
 	}
-	desc, ok := descs[0].(RunStartDescriptor)
+
+	// The descriptor should be flushed when TargetStartEvent arrives.
+	descs = p.Apply(TargetStartEvent{Target: "web-01", Transport: "ssh", Address: "10.0.0.1"})
+	if len(descs) != 1 {
+		t.Fatalf("expected 1 descriptor after TargetStart, got %d", len(descs))
+	}
+	desc, ok := descs[0].(*RunStartDescriptor)
 	if !ok {
-		t.Fatalf("expected RunStartDescriptor, got %T", descs[0])
+		t.Fatalf("expected *RunStartDescriptor, got %T", descs[0])
 	}
 	if desc.PlaybookPath != "test.yml" {
 		t.Errorf("expected PlaybookPath=test.yml, got %q", desc.PlaybookPath)
 	}
 	if len(desc.Targets) != 1 || desc.Targets[0] != "web-01" {
 		t.Errorf("expected Targets=[web-01], got %v", desc.Targets)
+	}
+	if desc.SingleTarget == nil {
+		t.Fatal("expected SingleTarget to be set")
+	}
+	if desc.SingleTarget.Name != "web-01" {
+		t.Errorf("expected SingleTarget.Name=web-01, got %q", desc.SingleTarget.Name)
+	}
+	if desc.SingleTarget.Transport != "ssh" {
+		t.Errorf("expected SingleTarget.Transport=ssh, got %q", desc.SingleTarget.Transport)
+	}
+	if desc.SingleTarget.Address != "10.0.0.1" {
+		t.Errorf("expected SingleTarget.Address=10.0.0.1, got %q", desc.SingleTarget.Address)
 	}
 }
 
@@ -127,6 +146,7 @@ func TestRunProjection_TaskFailed(t *testing.T) {
 		Target:      "host-a",
 		TaskID:      "t1",
 		TaskName:    "risky",
+		ActionPath:  "app/deploy",
 		ElapsedMs:   5000,
 		ExitCode:    1,
 		FailMessage: "process exited with code 1",
@@ -143,6 +163,9 @@ func TestRunProjection_TaskFailed(t *testing.T) {
 	}
 	if failedTasks[0].name != "risky" {
 		t.Errorf("expected failedTask name=risky, got %q", failedTasks[0].name)
+	}
+	if failedTasks[0].actionPath != "app/deploy" {
+		t.Errorf("expected failedTask actionPath=app/deploy, got %q", failedTasks[0].actionPath)
 	}
 	if len(failedTasks[0].output) != 2 {
 		t.Errorf("expected 2 output lines, got %d", len(failedTasks[0].output))
@@ -492,6 +515,28 @@ func TestRunProjection_ActionPathPreservedOnTaskCompletion(t *testing.T) {
 	}
 }
 
+func TestRunProjection_OrderedRunningTasks_PreservesRosterOrder(t *testing.T) {
+	// Two hosts in roster order [web-01, web-02]. Tasks start in the
+	// opposite arrival order (web-02 first) to confirm the in-progress
+	// view is ordered by the target roster, not by task-start arrival.
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{PlaybookName: "play", Targets: []string{"web-01", "web-02"}})
+
+	p.Apply(TaskStartedEvent{Target: "web-02", TaskID: "t2", TaskName: "task-2"})
+	p.Apply(TaskStartedEvent{Target: "web-01", TaskID: "t1", TaskName: "task-1"})
+
+	running := p.OrderedRunningTasks()
+	if len(running) != 2 {
+		t.Fatalf("expected 2 running tasks, got %d", len(running))
+	}
+	if running[0].id != "t1" || running[0].target != "web-01" {
+		t.Errorf("expected first task (web-01/t1), got %s/%s", running[0].target, running[0].id)
+	}
+	if running[1].id != "t2" || running[1].target != "web-02" {
+		t.Errorf("expected second task (web-02/t2), got %s/%s", running[1].target, running[1].id)
+	}
+}
+
 func TestRunProjection_VisibleLiveEntries(t *testing.T) {
 	tasks := []*activeTask{
 		{id: "t1", name: "task-1"},
@@ -571,5 +616,50 @@ func TestRunProjection_ActionPathTakenFromActiveTask(t *testing.T) {
 	desc := descs[0].(TaskFinishedDescriptor)
 	if desc.ActionPath != "my-action" {
 		t.Errorf("expected ActionPath inherited from active task, got %q", desc.ActionPath)
+	}
+}
+
+func TestRunProjection_HostColorIndex_RosterOrder(t *testing.T) {
+	// Color index is assigned by roster order from RunStartEvent.Targets,
+	// regardless of when TargetStartEvents or tasks arrive. This keeps the
+	// assignment stable for the whole run.
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{PlaybookName: "play", Targets: []string{"web-01", "web-02", "db-01"}})
+
+	// Tasks start out of order to confirm the index is roster-anchored.
+	p.Apply(TaskStartedEvent{Target: "db-01", TaskID: "t3", TaskName: "task-3"})
+	p.Apply(TaskStartedEvent{Target: "web-01", TaskID: "t1", TaskName: "task-1"})
+
+	cases := []struct {
+		target string
+		want   int
+	}{
+		{"web-01", 0},
+		{"web-02", 1},
+		{"db-01", 2},
+	}
+	for _, tc := range cases {
+		if got := p.HostColorIndex(tc.target); got != tc.want {
+			t.Errorf("HostColorIndex(%q) = %d, want %d", tc.target, got, tc.want)
+		}
+	}
+}
+
+func TestRunProjection_HostColorIndex_UnknownTarget(t *testing.T) {
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{Targets: []string{"web-01"}})
+	if got := p.HostColorIndex("web-01"); got != 0 {
+		t.Errorf("HostColorIndex(web-01) = %d, want 0", got)
+	}
+	if got := p.HostColorIndex("nope"); got != -1 {
+		t.Errorf("HostColorIndex(nope) = %d, want -1", got)
+	}
+}
+
+func TestRunProjection_HostColorIndex_BeforeRunStart(t *testing.T) {
+	// Before RunStart, no assignment exists.
+	p := NewRunProjection()
+	if got := p.HostColorIndex("web-01"); got != -1 {
+		t.Errorf("HostColorIndex before RunStart = %d, want -1", got)
 	}
 }

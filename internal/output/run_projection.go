@@ -1,7 +1,6 @@
 package output
 
 import (
-	"sort"
 	"strings"
 	"time"
 )
@@ -34,6 +33,13 @@ type targetOutcome struct {
 	failed bool
 }
 
+// TargetInfo holds the identity and transport details of a single target.
+type TargetInfo struct {
+	Name      string
+	Transport string
+	Address   string
+}
+
 // failedTask captures a failed task's identity for the final summary.
 type failedTask struct {
 	target     string
@@ -51,9 +57,15 @@ type RunProjection struct {
 	PlayName    string
 	Playbook    string
 	Targets     []string
+	TargetInfo  []TargetInfo
 	StartedAt   time.Time
 	PlayStarted bool
 	RunDir      string
+
+	// bufferedRunStartDesc holds the RunStartDescriptor until target info
+	// arrives via TargetStartEvent (so the header can include the target
+	// roster inline). Set for both single- and multi-target runs.
+	bufferedRunStartDesc *RunStartDescriptor
 
 	OkCount      int
 	ChangedCount int
@@ -64,6 +76,7 @@ type RunProjection struct {
 
 	hosts          map[string]map[string]*activeTask
 	hostOrder      []string
+	hostColorIndex map[string]int
 	taskOrder      map[string][]string
 	activities     map[string]*activeActivity
 	activityOrder  []string
@@ -84,6 +97,14 @@ type RunStartDescriptor struct {
 	PlaybookPath string
 	PlaybookName string
 	Targets      []string
+	// TargetInfos carries the transport/address detail for each target. It is
+	// populated once the buffered header is flushed (after TargetStartEvents
+	// arrive) so the renderer can fold the target roster into the header block.
+	TargetInfos []TargetInfo
+	// SingleTarget is set only for single-target runs, carrying the target
+	// identity from the first TargetStartEvent. When set, the renderer should
+	// fold the header into one line: RUN  playbook → name (transport • address).
+	SingleTarget *TargetInfo
 }
 
 // TaskFinishedDescriptor describes a completed task to render.
@@ -116,20 +137,22 @@ func (WarningDescriptor) isCommitDescriptor()      {}
 // NewRunProjection creates a RunProjection with zero state.
 func NewRunProjection() *RunProjection {
 	return &RunProjection{
-		hosts:      make(map[string]map[string]*activeTask),
-		taskOrder:  make(map[string][]string),
-		activities: make(map[string]*activeActivity),
+		hosts:          make(map[string]map[string]*activeTask),
+		hostColorIndex: make(map[string]int),
+		taskOrder:      make(map[string][]string),
+		activities:     make(map[string]*activeActivity),
 	}
 }
 
 // NewRunProjectionWithOptions creates a RunProjection seeded from options.
 func NewRunProjectionWithOptions(opts Options) *RunProjection {
 	return &RunProjection{
-		Mode:       normalizeRunMode(opts.Mode),
-		RunDir:     opts.RunDir,
-		hosts:      make(map[string]map[string]*activeTask),
-		taskOrder:  make(map[string][]string),
-		activities: make(map[string]*activeActivity),
+		Mode:           normalizeRunMode(opts.Mode),
+		RunDir:         opts.RunDir,
+		hosts:          make(map[string]map[string]*activeTask),
+		hostColorIndex: make(map[string]int),
+		taskOrder:      make(map[string][]string),
+		activities:     make(map[string]*activeActivity),
 	}
 }
 
@@ -137,9 +160,27 @@ func NewRunProjectionWithOptions(opts Options) *RunProjection {
 // descriptors for the scroll region. It never returns rendered strings
 // or bubbletea commands.
 func (p *RunProjection) Apply(event Event) []CommitDescriptor {
+	// If the run-start header is still buffered (waiting for target info to
+	// arrive via TargetStartEvent), flush it before any other event so the
+	// header and its inline target roster precede task/activity output.
+	if p.bufferedRunStartDesc != nil {
+		switch event.(type) {
+		case RunStartEvent, TargetStartEvent:
+			// keep buffering until target info arrives
+		default:
+			descs := p.flushBufferedRunStart()
+			return append(descs, p.applyEvent(event)...)
+		}
+	}
+	return p.applyEvent(event)
+}
+
+func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 	switch e := event.(type) {
 	case RunStartEvent:
 		return p.applyRunStart(e)
+	case TargetStartEvent:
+		return p.applyTargetStart(e)
 	case TargetCompleteEvent:
 		p.applyTargetComplete(e)
 		return nil
@@ -264,8 +305,10 @@ func (p *RunProjection) OrderedActivities() []*activeActivity {
 	return result
 }
 
-// OrderedRunningTasks returns running tasks sorted by alert status,
-// then start time, then last updated (most recent first).
+// OrderedRunningTasks returns running tasks grouped by host in roster
+// order, with tasks within each host in start order. The order is stable
+// across redraws: it reflects the target roster from RunStartEvent rather
+// than nondeterministic event arrival order.
 func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 	var running []*activeTask
 	for _, host := range p.hostOrder {
@@ -275,17 +318,6 @@ func (p *RunProjection) OrderedRunningTasks() []*activeTask {
 			}
 		}
 	}
-	sort.SliceStable(running, func(i, j int) bool {
-		left := running[i]
-		right := running[j]
-		if left.alert != right.alert {
-			return left.alert
-		}
-		if !left.startAt.Equal(right.startAt) {
-			return left.startAt.Before(right.startAt)
-		}
-		return left.updatedAt.After(right.updatedAt)
-	})
 	return running
 }
 
@@ -307,6 +339,22 @@ func (p *RunProjection) Elapsed() time.Duration {
 	return time.Since(p.StartedAt)
 }
 
+// IsSingleTarget returns true when the run has exactly one target.
+func (p *RunProjection) IsSingleTarget() bool {
+	return len(p.Targets) == 1
+}
+
+// HostColorIndex returns the stable color slot for a target, assigned by
+// roster position at run start. Returns -1 when the target has no slot
+// (unknown target, or before RunStart). The raw index is wrapped modulo
+// the palette's host color count by the renderer.
+func (p *RunProjection) HostColorIndex(target string) int {
+	if idx, ok := p.hostColorIndex[target]; ok {
+		return idx
+	}
+	return -1
+}
+
 func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	if p.PlayStarted {
 		return nil
@@ -317,12 +365,73 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	p.Playbook = e.PlaybookPath
 	p.Targets = append([]string(nil), e.Targets...)
 	p.StartedAt = time.Now()
-	return []CommitDescriptor{RunStartDescriptor{
+
+	// Seed host order from the resolved target roster so the in-progress
+	// view preserves the order the operator specified (inventory/selector
+	// order) rather than nondeterministic task-start arrival order.
+	for _, target := range p.Targets {
+		if p.hosts[target] == nil {
+			p.hosts[target] = make(map[string]*activeTask)
+			p.hostOrder = append(p.hostOrder, target)
+		}
+	}
+
+	// Assign each target a stable color slot by roster position. Renderers
+	// resolve the slot index to a concrete color from the palette's host
+	// color rotation (wrapping modulo the palette size).
+	for i, target := range p.Targets {
+		p.hostColorIndex[target] = i
+	}
+
+	// Buffer the run-start header until target info arrives via
+	// TargetStartEvent so the header can include the target roster inline.
+	p.bufferedRunStartDesc = &RunStartDescriptor{
 		Mode:         e.Mode,
 		PlaybookPath: e.PlaybookPath,
 		PlaybookName: e.PlaybookName,
 		Targets:      e.Targets,
-	}}
+	}
+	return nil
+}
+
+// flushBufferedRunStart emits the buffered run-start descriptor with the
+// target info collected so far and clears the buffer.
+func (p *RunProjection) flushBufferedRunStart() []CommitDescriptor {
+	if p.bufferedRunStartDesc == nil {
+		return nil
+	}
+	desc := p.bufferedRunStartDesc
+	p.bufferedRunStartDesc = nil
+	infos := make([]TargetInfo, len(p.TargetInfo))
+	copy(infos, p.TargetInfo)
+	desc.TargetInfos = infos
+	return []CommitDescriptor{desc}
+}
+
+func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor {
+	info := TargetInfo{
+		Name:      e.Target,
+		Transport: e.Transport,
+		Address:   e.Address,
+	}
+	p.TargetInfo = append(p.TargetInfo, info)
+
+	if p.bufferedRunStartDesc == nil {
+		return nil
+	}
+
+	// Single-target: fold the first target's identity into the header line.
+	if len(p.Targets) == 1 {
+		p.bufferedRunStartDesc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
+		return p.flushBufferedRunStart()
+	}
+
+	// Multi-target: flush once all targets have reported so the roster can
+	// be folded into the header block in arrival order.
+	if len(p.TargetInfo) >= len(p.Targets) {
+		return p.flushBufferedRunStart()
+	}
+	return nil
 }
 
 func (p *RunProjection) applyTargetComplete(e TargetCompleteEvent) {
@@ -444,7 +553,7 @@ func (p *RunProjection) applyTaskFinished(target, taskID, taskName, actionPath, 
 func (p *RunProjection) applyTaskFailed(e TaskFailedEvent) []CommitDescriptor {
 	p.failedTasks = append(p.failedTasks, failedTask{
 		target:     e.Target,
-		actionPath: "",
+		actionPath: e.ActionPath,
 		name:       e.TaskName,
 		message:    e.FailMessage,
 		output:     e.Output,

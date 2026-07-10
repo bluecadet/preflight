@@ -493,6 +493,7 @@ func (e TaskFailedEvent) Redact(secrets []string) Event {
 	e.Target = scrubString(e.Target, secrets)
 	e.TaskID = scrubString(e.TaskID, secrets)
 	e.TaskName = scrubString(e.TaskName, secrets)
+	e.ActionPath = scrubString(e.ActionPath, secrets)
 	e.FailMessage = scrubString(e.FailMessage, secrets)
 	e.Output = scrubStrings(e.Output, secrets)
 	return e
@@ -568,6 +569,7 @@ type TaskFailedEvent struct {
 	Target      string
 	TaskID      string
 	TaskName    string
+	ActionPath  string
 	ElapsedMs   int64
 	ExitCode    int
 	Output      []string

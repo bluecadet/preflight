@@ -223,6 +223,133 @@ func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
 	}
 }
 
+func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
+	// Source events from the shared fixture to exercise both
+	// text and TUI surfaces from the same input.
+	var fixture *snapshotCase
+	for _, tc := range newEventSnapshotCases() {
+		if tc.name == "two-targets-task-finished" {
+			f := tc
+			fixture = &f
+			break
+		}
+	}
+	if fixture == nil {
+		t.Fatal("shared fixture 'two-targets-task-finished' not found")
+	}
+
+	savedS := S
+	defer func() { S = savedS }()
+	S = NewTUIStyles(DefaultPalette(), true)
+
+	events := make(chan Event, len(fixture.events))
+	m := newTUIModelWithOptions(events, Options{Color: ColorAlways})
+	m.width = 80
+
+	type namedBlock struct {
+		name  string
+		block string
+	}
+	var blocks []namedBlock
+
+	eventNames := []string{
+		"run-start",
+		"target-start-a",
+		"target-start-b",
+		"task-started-a",
+		"task-ok",
+		"task-started-b",
+		"task-skipped",
+	}
+	for i, evt := range fixture.events {
+		_, cmd := m.applyEvent(evt)
+		if cmd != nil {
+			for _, b := range collectPrintedBlocks(cmd) {
+				name := eventNames[i]
+				if i < len(eventNames) {
+					name = eventNames[i]
+				}
+				blocks = append(blocks, namedBlock{name: name, block: b})
+			}
+		}
+	}
+
+	var sb strings.Builder
+	for _, b := range blocks {
+		sb.WriteString("[" + b.name + "]\n")
+		sb.WriteString(b.block)
+		sb.WriteByte('\n')
+	}
+	got := normalizeSnapshot(sb.String())
+	assertSnapshot(t, snapshotPath("tui", "two-targets-task-finished"), got)
+}
+
+func TestTUIModel_CardSnapshots(t *testing.T) {
+	savedS := S
+	defer func() { S = savedS }()
+	S = NewTUIStyles(DefaultPalette(), true)
+
+	tests := []struct {
+		name string
+		evt  Event
+	}{
+		{
+			name: "facts-card",
+			evt: FactsEvent{
+				Target: "kiosk-01",
+				Facts: map[string]any{
+					"hostname": "kiosk-01-prod",
+					"os":       "Windows Server 2022",
+					"kernel":   "10.0.20348",
+					"cpu":      "Intel(R) Xeon(R) Platinum 8375C",
+					"memory":   "8GB",
+				},
+			},
+		},
+		{
+			name: "plan-card",
+			evt: PlanEvent{
+				Target:       "kiosk-01",
+				PlaybookName: "kiosk-provision",
+				Tasks: []PlanTaskEntry{
+					{Number: 1, Module: "command", Name: "install display drivers", Tags: []string{"drivers"}},
+					{Number: 2, Module: "registry", Name: "configure autologin", When: "os == 'windows'", Tags: []string{"login"}},
+					{Number: 3, Module: "file", Name: "copy wallpaper", Tags: []string{}},
+				},
+			},
+		},
+		{
+			name: "state-card",
+			evt: StateEvent{
+				Target:       "kiosk-01",
+				PlaybookName: "kiosk-provision",
+				StatePath:    "/var/lib/preflight/kiosk-provision.json",
+				LastApplied:  "2026-07-01T12:00:00Z",
+				Comparisons: []StateComparison{
+					{Status: "UNCHANGED", TaskName: "install display drivers", Module: "command", RecordedStatus: "ok"},
+					{Status: "CHANGED", TaskName: "configure autologin", Module: "registry", RecordedStatus: "changed"},
+					{Status: "NEW", TaskName: "copy wallpaper", Module: "file", RecordedStatus: "ok"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			events := make(chan Event, 1)
+			m := newTUIModelWithOptions(events, Options{Color: ColorAlways})
+			m.width = 80
+			_, cmd := m.applyEvent(tc.evt)
+			blocks := collectPrintedBlocks(cmd)
+			if len(blocks) == 0 {
+				t.Fatalf("no printed blocks for %s", tc.name)
+			}
+			got := normalizeSnapshot(blocks[0])
+			assertSnapshot(t, snapshotPath("tui-card", tc.name), got)
+		})
+	}
+}
+
 func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewTUIRenderer(&buf)
@@ -277,5 +404,25 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Error("TUIRenderer.Close() timed out")
+	}
+}
+
+// TestTUIModel_Snapshots runs every shared event fixture through the TUI
+// model and snapshots the scroll-region output. Each fixture produces a
+// tui-{name}.golden file alongside the text-{name}.golden from
+// TestTextRendererNewEventTypes_Snapshots.
+//
+// The "two-targets-task-finished" fixture is excluded because it has a
+// dedicated labeled-block test (TestTUIModel_MultiTargetTaskFinished)
+// that shares its golden path.
+func TestTUIModel_Snapshots(t *testing.T) {
+	for _, tc := range newEventSnapshotCases() {
+		if tc.name == "two-targets-task-finished" {
+			continue
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			got := tuiRenderSnapshot(tc.events)
+			assertSnapshot(t, snapshotPath("tui", tc.name), got)
+		})
 	}
 }

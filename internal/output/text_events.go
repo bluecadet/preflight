@@ -89,15 +89,10 @@ func renderTextState(e StateEvent) []string {
 	}
 
 	b.blank()
-	b.line(fmt.Sprintf("%-12s %-28s %-16s %s", "STATUS", "TASK", "MODULE", "RECORDED STATUS"))
-	b.line(fmt.Sprintf("%-12s %-28s %-16s %s", "------------", "----------------------------", "----------------", "---------------"))
+	b.line(AlignLeft("STATUS", 12) + " " + AlignLeft("TASK", 28) + " " + AlignLeft("MODULE", 16) + " " + "RECORDED STATUS")
+	b.line(AlignLeft("------------", 12) + " " + AlignLeft("----------------------------", 28) + " " + AlignLeft("----------------", 16) + " " + "---------------")
 	for _, comparison := range e.Comparisons {
-		b.linef("%-12s %-28s %-16s %s",
-			comparison.Status,
-			comparison.TaskName,
-			comparison.Module,
-			comparison.RecordedStatus,
-		)
+		b.line(AlignLeft(comparison.Status, 12) + " " + AlignLeft(comparison.TaskName, 28) + " " + AlignLeft(comparison.Module, 16) + " " + comparison.RecordedStatus)
 	}
 	return b.values()
 }
@@ -161,12 +156,7 @@ func renderTextActionInfo(e ActionInfoEvent) []string {
 			if input.Default != "" {
 				defaultValue = " [default: " + input.Default + "]"
 			}
-			b.linef("  %-20s %s%s%s",
-				input.Name+":",
-				input.Description,
-				required,
-				defaultValue,
-			)
+			b.line("  " + AlignLeft(input.Name+":", 20) + input.Description + required + defaultValue)
 		}
 	}
 
@@ -189,11 +179,11 @@ func renderTextPluginList(e PluginListEvent) []string {
 	}
 
 	lines := []string{
-		fmt.Sprintf("%-24s %-12s %-8s %s", "NAME", "VERSION", "STATUS", "PATH"),
-		fmt.Sprintf("%-24s %-12s %-8s %s", "----", "-------", "------", "----"),
+		AlignLeft("NAME", 24) + " " + AlignLeft("VERSION", 12) + " " + AlignLeft("STATUS", 8) + " " + "PATH",
+		AlignLeft("----", 24) + " " + AlignLeft("-------", 12) + " " + AlignLeft("------", 8) + " " + "----",
 	}
 	for _, entry := range e.Entries {
-		lines = append(lines, fmt.Sprintf("%-24s %-12s %-8s %s", entry.Name, entry.Version, entry.Status, entry.Path))
+		lines = append(lines, AlignLeft(entry.Name, 24)+" "+AlignLeft(entry.Version, 12)+" "+AlignLeft(entry.Status, 8)+" "+entry.Path)
 	}
 	return lines
 }
@@ -215,23 +205,15 @@ func renderTextInventoryList(e InventoryListEvent) []string {
 	nameW += 2
 	addrW += 2
 
-	row := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6s %%s", nameW, addrW)
 	lines := []string{
-		fmt.Sprintf(row, "NAME", "ADDRESS", "TRANSPORT", "PORT", "GROUPS"),
-		fmt.Sprintf(row,
-			strings.Repeat("-", nameW-2),
-			strings.Repeat("-", addrW-2),
-			strings.Repeat("-", 10),
-			strings.Repeat("-", 6),
-			strings.Repeat("-", 20),
-		),
+		AlignLeft("NAME", nameW) + " " + AlignLeft("ADDRESS", addrW) + " " + AlignLeft("TRANSPORT", 10) + " " + AlignLeft("PORT", 6) + " " + "GROUPS",
+		AlignLeft(strings.Repeat("-", nameW-2), nameW) + " " + AlignLeft(strings.Repeat("-", addrW-2), addrW) + " " + AlignLeft(strings.Repeat("-", 10), 10) + " " + AlignLeft(strings.Repeat("-", 6), 6) + " " + strings.Repeat("-", 20),
 	}
 
-	rowData := fmt.Sprintf("%%-%ds %%-%ds %%-10s %%-6d %%s", nameW, addrW)
 	for _, host := range e.Hosts {
 		groups := append([]string(nil), host.Groups...)
 		sort.Strings(groups)
-		lines = append(lines, fmt.Sprintf(rowData, host.Name, host.Address, host.Transport, host.Port, strings.Join(groups, ", ")))
+		lines = append(lines, AlignLeft(host.Name, nameW)+" "+AlignLeft(host.Address, addrW)+" "+AlignLeft(host.Transport, 10)+" "+AlignLeft(fmt.Sprintf("%d", host.Port), 6)+" "+strings.Join(groups, ", "))
 	}
 	return lines
 }

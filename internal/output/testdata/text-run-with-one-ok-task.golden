@@ -1,11 +1,9 @@
-Apply
-playbook: kiosk-provision.yml
-name: kiosk-provision
-target: kiosk-01
+RUN  kiosk-provision.yml → kiosk-01 (local)                               0.0s
 
     Installing driver version 2.14
-✓ install display drivers                                                 0.0s
+✓ install display drivers  0.0s
 
 Recap
 ✓ Apply complete
   tasks: 1 ok, 0 changed, 0 skipped, 0 failed
+  Run directory: /var/log/preflight/run-20250301-120000

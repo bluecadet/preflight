@@ -1,12 +1,14 @@
 [?25l[?<elapsed>
-  ◫ State Snapshot
-──────────────────────────────────────────
-  State file    state.json
-  Last applied  2026-04-09 17:00:00 UTC
-
-  STATUS      TASK  MODULE  RECORDED
-  ──────────  ────  ──────  ────────
-  • recorded  echo  shell   ok
+╭────────────────────────╮
+│   ◫ State Snapshot │
+│ ──────────────────────── │
+│   State file    state.json │
+│   Last applied  2026-04-09 17:00:00 UTC │
+│ │
+│   STATUS        TASK  MODULE  RECORDED │
+│   ────────────  ────  ──────  ──────── │
+│   • recorded  echo  shell   ok │
+╰────────────────────────╯
 
 
 [2K

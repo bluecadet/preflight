@@ -68,6 +68,21 @@ func init() {
 			description: "multiple hosts emitting streamed output concurrently",
 			run:         runStreamingMultiHost,
 		},
+		{
+			name:        "roster",
+			description: "multi-target run-start roster with mixed transports (ssh, winrm, local)",
+			run:         runRoster,
+		},
+		{
+			name:        "inline-prefixes",
+			description: "inline target prefixes across mixed transports on finished + running tasks",
+			run:         runInlinePrefixes,
+		},
+		{
+			name:        "readme",
+			description: "mixed-transport fleet rollout with streamed logs and randomized durations",
+			run:         runReadme,
+		},
 	}
 }
 

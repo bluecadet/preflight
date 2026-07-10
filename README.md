@@ -1,5 +1,9 @@
 # Preflight
 
+<p align="center">
+  <img src="docs/assets/header.gif" alt="preflight apply across a mixed-transport fleet" width="640" />
+</p>
+
 Preflight is a Windows-first configuration management CLI for managed endpoints such as kiosks, signage, exhibit PCs, and other dedicated systems. It compiles to a single static binary and is designed around idempotent modules, reusable YAML actions, and explicit execution phases.
 
 ```bash

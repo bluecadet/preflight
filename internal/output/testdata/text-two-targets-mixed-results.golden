@@ -2,10 +2,11 @@ Apply
 playbook: deploy.yml
 name: deploy
 targets: 2
-  host-a, host-b
+  host-a (ssh • [IP_ADDRESS])
+  host-b (winrm • [IP_ADDRESS])
 
-✓ sync artifacts                                                          0.0s
-- sync artifacts
+✓ [host-a] sync artifacts  0.0s
+- [host-b] sync artifacts
   reason: when-condition-false
 
 Recap

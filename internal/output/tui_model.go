@@ -37,12 +37,12 @@ func newTUIModelWithOptions(events chan Event, opts Options) tuiModel {
 		colorMode = DetectColor("", false, os.Stdout)
 	}
 	if !colorMode.UseColor() {
-		noColorifyStyles()
+		S = NewTUIStyles(DefaultPalette(), false)
 	}
 
 	s := spinner.New(
 		spinner.WithSpinner(spinner.MiniDot),
-		spinner.WithStyle(tsSpin),
+		spinner.WithStyle(S.Spin),
 	)
 	maxFailLines := opts.MaxFailLines
 	if maxFailLines <= 0 {
@@ -105,54 +105,92 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 	var cmds []tea.Cmd
 	for _, d := range descriptors {
 		switch desc := d.(type) {
-		case RunStartDescriptor:
-			cmds = append(cmds, m.renderRunStart(desc))
+		case *RunStartDescriptor:
+			cmds = append(cmds, m.renderRunStart(*desc))
 		case TaskFinishedDescriptor:
 			cmds = append(cmds, m.renderTaskFinished(desc))
 		case CardDescriptor:
 			cmds = append(cmds, m.renderCard(desc))
 		case WarningDescriptor:
-			cmds = append(cmds, tea.Println(tsRenderNotice("!", tsChanged, "warning: "+desc.Message, m.width)))
+			cmds = append(cmds, tea.Println(tsRenderNotice("!", S.Changed, "warning: "+desc.Message, m.width)))
 		}
 	}
 	return m, tea.Sequence(cmds...)
 }
 
+// targetBadge returns a host-colored [target] badge string. Each target
+// gets a stable color assigned by roster position at run start so hosts
+// stay visually distinct across a long run.
+// Returns empty string when the target is empty.
+func (m tuiModel) targetBadge(target string) string {
+	if target == "" {
+		return ""
+	}
+	displayName := m.projection.DisplayTarget(target)
+	return m.hostStyle(target).Render("[" + displayName + "]")
+}
+
+// hostStyle returns the lipgloss.Style for a target's assigned host color.
+// Returns a plain style for unknown targets.
+func (m tuiModel) hostStyle(target string) lipgloss.Style {
+	return S.HostStyle(m.projection.HostColorIndex(target))
+}
+
+// rosterColorer returns a function that renders a target's name in its
+// assigned host color, for coloring the run-start target roster.
+func (m tuiModel) rosterColorer() func(string) string {
+	return func(name string) string {
+		return m.hostStyle(name).Render(name)
+	}
+}
+
 func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 	var lines []string
-	lines = append(lines, tsBold.Render(titleRunMode(d.Mode)))
-	if d.PlaybookPath != "" {
-		lines = append(lines, "playbook: "+d.PlaybookPath)
-	} else if d.PlaybookName != "" {
-		lines = append(lines, "playbook: "+d.PlaybookName)
-	}
-	if d.PlaybookPath != "" && d.PlaybookName != "" {
-		lines = append(lines, "name: "+d.PlaybookName)
-	}
-	switch len(d.Targets) {
-	case 1:
-		lines = append(lines, "target: "+d.Targets[0])
-	default:
+
+	if d.SingleTarget != nil {
+		// Single-target: folded header line.
+		playbook := d.PlaybookPath
+		if playbook == "" {
+			playbook = d.PlaybookName
+		}
+		target := d.SingleTarget.Name + " (" + d.SingleTarget.Transport
+		if d.SingleTarget.Address != "" {
+			target += " • " + d.SingleTarget.Address
+		}
+		target += ")"
+		elapsed := formatElapsed(m.projection.Elapsed())
+		line := padLine("RUN  "+playbook+" → "+target, elapsed, m.width)
+		lines = append(lines, S.Bold.Render(line))
+	} else {
+		// Multi-target: current multi-line block.
+		lines = append(lines, S.Bold.Render(titleRunMode(d.Mode)))
+		if d.PlaybookPath != "" {
+			lines = append(lines, "playbook: "+d.PlaybookPath)
+		} else if d.PlaybookName != "" {
+			lines = append(lines, "playbook: "+d.PlaybookName)
+		}
+		if d.PlaybookPath != "" && d.PlaybookName != "" {
+			lines = append(lines, "name: "+d.PlaybookName)
+		}
 		if len(d.Targets) > 1 {
 			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
-			if len(d.Targets) <= 5 {
-				lines = append(lines, "  "+strings.Join(d.Targets, ", "))
-			}
+			lines = append(lines, buildTargetRosterLines(d.TargetInfos, m.rosterColorer())...)
 		}
 	}
-	return tea.Println(strings.Join(lines, "\n") + "\n")
+	lines = append(lines, m.renderDivider())
+	return tea.Println(strings.Join(lines, "\n"))
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {
-	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode())) + " " + d.TaskName
+	left := statusStyle(d.Status).Render(statusGlyph(d.Status, m.projection.IsCheckMode()))
 	if m.projection.ShouldShowHostLabels() && d.Target != "" {
-		left = "[" + m.projection.DisplayTarget(d.Target) + "] " + left
+		left += " " + m.targetBadge(d.Target)
 	}
-	right := ""
+	left += " " + S.TaskName.Render(d.TaskName)
 	if d.Elapsed > 0 && d.Status != "skipped" {
-		right = formatElapsed(d.Elapsed)
+		left += "  " + S.Elapsed.Render(formatElapsed(d.Elapsed))
 	}
-	line := tsRow(padLine(left, right, m.width))
+	line := tsRow(left)
 
 	var detailLines []string
 	switch d.Status {
@@ -204,27 +242,27 @@ func (m tuiModel) renderCard(d CardDescriptor) tea.Cmd {
 		}
 	case "plan":
 		if e, ok := d.Event.(PlanEvent); ok {
-			block = renderPlanCard(e)
+			block = renderPlanCard(e, m.width)
 		}
 	case "state":
 		if e, ok := d.Event.(StateEvent); ok {
-			block = renderStateCard(e)
+			block = renderStateCard(e, m.width)
 		}
 	case "validate":
 		if e, ok := d.Event.(ValidationEvent); ok {
-			block = renderValidationCard(e)
+			block = renderValidationCard(e, m.width)
 		}
 	case "action_catalog":
 		if e, ok := d.Event.(ActionCatalogEvent); ok {
-			block = renderActionCatalogCard(e)
+			block = renderActionCatalogCard(e, m.width)
 		}
 	case "action_info":
 		if e, ok := d.Event.(ActionInfoEvent); ok {
-			block = renderActionInfoCard(e)
+			block = renderActionInfoCard(e, m.width)
 		}
 	case "action_fetch":
 		if e, ok := d.Event.(ActionFetchEvent); ok {
-			block = renderActionFetchCard(e)
+			block = renderActionFetchCard(e, m.width)
 		}
 	}
 	if block == "" {
@@ -247,7 +285,6 @@ func (m tuiModel) View() string {
 
 	if len(activities) > 0 && len(running) == 0 && m.projection.Total() == 0 {
 		var b strings.Builder
-		b.WriteString("In Progress\n")
 		for _, activity := range activities {
 			b.WriteString(m.renderActivity(activity))
 			b.WriteByte('\n')
@@ -259,9 +296,6 @@ func (m tuiModel) View() string {
 	dense := len(running)+len(activities) > maxLiveLines
 	visibleActivities, visibleRunning, hiddenCount := visibleLiveEntries(activities, running, maxLiveLines)
 	var b strings.Builder
-	if len(running)+len(activities) > 0 {
-		b.WriteString("In Progress\n")
-	}
 	for _, activity := range visibleActivities {
 		b.WriteString(m.renderActivity(activity))
 		b.WriteByte('\n')
@@ -281,35 +315,26 @@ func (m tuiModel) View() string {
 }
 
 func (m tuiModel) renderActivity(activity *activeActivity) string {
-	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
-	timer := tsElapsed.Render(formatElapsed(time.Since(activity.startAt)))
+	spin := S.Spin.Render(strings.TrimRight(m.spinner.View(), " "))
+	timer := S.Elapsed.Render(formatElapsed(time.Since(activity.startAt)))
 	message := strings.TrimSpace(activity.message)
 	if m.projection.ShouldShowHostLabels() && activity.target != "" {
-		message = "[" + m.projection.DisplayTarget(activity.target) + "] " + message
+		message = m.targetBadge(activity.target) + " " + message
 	}
-	return tsRow(spin, tsMuted.Render(message), timer)
+	return tsRow(spin, S.Muted.Render(message), timer)
 }
 
 func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
-	spin := tsSpin.Render(strings.TrimRight(m.spinner.View(), " "))
-	timer := tsElapsed.Render(formatElapsed(time.Since(task.startAt)))
+	spin := S.Spin.Render(strings.TrimRight(m.spinner.View(), " "))
+	timer := S.Elapsed.Render(formatElapsed(time.Since(task.startAt)))
 
 	var b strings.Builder
 	if task.actionPath != "" {
-		header := renderDisplayPath(task.actionPath)
-		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			header = "[" + m.projection.DisplayTarget(task.target) + "] " + header
-		}
-		b.WriteString(header)
+		b.WriteString(renderDisplayPath(task.actionPath))
 		b.WriteByte('\n')
-		line := padLine("  "+spin+" "+task.name, timer, m.width)
-		b.WriteString(tsRow(line))
+		b.WriteString(tsRow(m.renderRunningLeft(task, spin, S.TaskName.Render(task.name), timer)))
 	} else {
-		left := spin + " " + task.name
-		if m.projection.ShouldShowHostLabels() && task.target != "" {
-			left = "[" + m.projection.DisplayTarget(task.target) + "] " + left
-		}
-		b.WriteString(tsRow(padLine(left, timer, m.width)))
+		b.WriteString(tsRow(m.renderRunningLeft(task, spin, S.TaskName.Render(task.name), timer)))
 	}
 	if dense || len(task.recentLines) == 0 {
 		return b.String()
@@ -323,6 +348,18 @@ func (m tuiModel) renderRunning(task *activeTask, dense bool) string {
 	return b.String()
 }
 
+// renderRunningLeft builds the left portion of a running-task row with the
+// spinner glyph first, then the target badge (when shown), then the task
+// name, and finally the elapsed timer — kept inline rather than
+// right-aligned to avoid large gaps on wide terminals.
+func (m tuiModel) renderRunningLeft(task *activeTask, spin, name, timer string) string {
+	left := spin
+	if m.projection.ShouldShowHostLabels() && task.target != "" {
+		left += " " + m.targetBadge(task.target)
+	}
+	return left + " " + name + "  " + timer
+}
+
 func (m tuiModel) renderFinalSummary() string {
 	if len(m.projection.FailedTasks()) == 0 && m.projection.Total() == 0 {
 		return ""
@@ -331,18 +368,20 @@ func (m tuiModel) renderFinalSummary() string {
 	totalElapsed := m.projection.Elapsed()
 
 	var b strings.Builder
+	b.WriteString(m.renderDivider())
 	b.WriteByte('\n')
 	b.WriteString("Recap\n")
 
-	overallIcon := tsOK.Render("✓")
+	overallIcon := S.OK.Render("✓")
 	statusWord := "complete"
 	if m.projection.FailedCount > 0 {
-		overallIcon = tsFailed.Render("x")
+		overallIcon = S.Failed.Render("x")
 		statusWord = "failed"
 	}
-	b.WriteString(tsRow(overallIcon, tsBold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), tsElapsed.Render(formatElapsed(totalElapsed))))
+	b.WriteString(tsRow(overallIcon, S.Bold.Render(titleRunMode(m.projection.Mode)+" "+statusWord), S.Elapsed.Render(formatElapsed(totalElapsed))))
 	b.WriteByte('\n')
 
+	// Task outcome tallies live in the recap.
 	totals := recapTotals([]struct{ ok, changed, failed, skipped int }{
 		{ok: m.projection.OkCount, changed: m.projection.ChangedCount, failed: m.projection.FailedCount, skipped: m.projection.SkippedCount},
 	})
@@ -353,80 +392,64 @@ func (m tuiModel) renderFinalSummary() string {
 		b.WriteString("Needs attention\n")
 		for _, failed := range m.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
-			b.WriteString("  [" + m.projection.DisplayTarget(failed.target) + "] " + path + "\n")
+			prefix := "  "
+			if m.projection.ShouldShowHostLabels() && failed.target != "" {
+				prefix = "  " + m.targetBadge(failed.target) + " "
+			}
+			b.WriteString(prefix + path + "\n")
 		}
-		if m.projection.RunDir != "" {
-			b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
-		}
+	}
+	if m.projection.RunDir != "" {
+		b.WriteString("  Run directory: " + m.projection.RunDir + "\n")
 	}
 	return b.String()
 }
 
+const maxDividerWidth = 80
+
 func (m tuiModel) renderDivider() string {
-	return tsDivider.Render(strings.Repeat("─", m.divWidth()))
+	width := min(m.widthWithFallback(), maxDividerWidth)
+	return S.Divider.Render(strings.Repeat("─", width))
 }
 
 func (m tuiModel) renderFooter(runningCount int) string {
 	if runningCount == 0 && m.projection.Total() == 0 {
 		return ""
 	}
-	done, failed := m.projection.TargetCounts()
-	waiting := 0
-	if len(m.projection.Targets) > 0 {
-		waiting = max(len(m.projection.Targets)-done-failed-runningCount, 0)
-	}
-	line1 := fmt.Sprintf(
-		"%s %s   Phase %s",
-		titleRunMode(m.projection.Mode),
-		formatElapsed(m.projection.Elapsed()),
-		titleRunMode(m.projection.Mode),
-	)
-	switch {
-	case len(m.projection.Targets) == 1:
-		line1 += "   Target " + m.projection.Targets[0]
-	case len(m.projection.Targets) > 1:
-		line1 += fmt.Sprintf("   Targets %d   Done %d   Running %d   Waiting %d   Failed %d", len(m.projection.Targets), done, runningCount, waiting, failed)
-	default:
-		line1 += fmt.Sprintf("   Running %d", runningCount)
+
+	// Multi-target: one line showing target progress only.
+	if len(m.projection.Targets) > 1 {
+		done, failed := m.projection.TargetCounts()
+		waiting := max(len(m.projection.Targets)-done-failed-runningCount, 0)
+		return fmt.Sprintf("targets: %d done · %d run · %d wait · %d fail", done, runningCount, waiting, failed)
 	}
 
-	changedLabel := "Changed"
-	if m.projection.IsCheckMode() {
-		changedLabel = "Would change"
-	}
-	line2 := fmt.Sprintf(
-		"Tasks %d done   OK %d   %s %d   Skipped %d   Failed %d",
-		m.projection.Total(),
-		m.projection.OkCount,
-		changedLabel,
-		m.projection.ChangedCount,
-		m.projection.SkippedCount,
-		m.projection.FailedCount,
-	)
+	// Single-target: near-empty footer (mode, elapsed, warnings).
+	line := fmt.Sprintf("%s %s", titleRunMode(m.projection.Mode), formatElapsed(m.projection.Elapsed()))
 	if m.projection.WarningCount > 0 {
-		line2 += fmt.Sprintf("   Warnings %d", m.projection.WarningCount)
+		line += fmt.Sprintf("   Warnings %d", m.projection.WarningCount)
 	}
-	return line1 + "\n" + line2
+	return line
 }
 
-func (m tuiModel) divWidth() int {
+func (m tuiModel) widthWithFallback() int {
 	if m.width <= 0 {
-		return 50
+		return 80
 	}
-	return min(m.width, 50)
+	return m.width
 }
 
 // statusStyle returns the styled glyph for a task outcome based on status.
 func statusStyle(status string) lipgloss.Style {
 	switch status {
 	case "ok":
-		return tsOK
+		return S.OK
 	case "changed":
-		return tsChanged
+		return S.Changed
 	case "failed":
-		return tsFailed
+		return S.Failed
 	case "skipped":
-		return tsSkipped
+		return S.Skipped
 	default:
 		return lipgloss.NewStyle()
 	}
