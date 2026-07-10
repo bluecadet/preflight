@@ -1,0 +1,24 @@
+services:
+  ubuntu:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    ports:
+      - "2222:22"
+
+  rocky:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocky
+    privileged: true
+    cgroup: host
+    tmpfs:
+      - /run
+      - /run/lock
+    ports:
+      - "2223:22"

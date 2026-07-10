@@ -269,6 +269,59 @@ If every test fails at the sacrificial-sentinel check — the first PowerShell c
 
 The tests register a `Close()` cleanup that releases each target's persistent shell, so a single suite run should no longer leak shells; reboot guidance applies mainly when a VM has been driven into a bad state by older runs or other workloads.
 
+## POSIX/SSH Integration Tests
+
+The `internal/target` package includes a POSIX integration suite that runs
+real Check/Apply/Check cycles over SSH against disposable Docker containers.
+Like the Windows suite, it is behind the `integration` build tag and skips at
+runtime when no endpoint is configured. Unlike the Windows suite, it runs in
+CI on every PR touching Go code.
+
+### Containers
+
+Two privileged systemd-enabled containers — Ubuntu 24.04 LTS (apt) and Rocky
+Linux 9 (dnf) — are defined in `test/posix/docker-compose.yml`. Each
+provisions three users (`pf-admin` with NOPASSWD sudo, `pf-sudopass` with
+password sudo, `pf-nosudo` with no sudo), disables root SSH login, and writes
+a sacrificial sentinel at `/etc/preflight-test-sacrificial`.
+
+### Running locally
+
+```bash
+make test-integration-posix
+```
+
+This brings up both containers, waits for sshd, runs the suite against each,
+and tears down. Requires Docker.
+
+To run against a single container:
+
+```bash
+docker compose -f test/posix/docker-compose.yml up -d --build ubuntu
+sh test/posix/wait-for-ssh.sh localhost 2222 90
+PREFLIGHT_TEST_SSH_POSIX_HOST=localhost \
+PREFLIGHT_TEST_SSH_POSIX_PORT=2222 \
+PREFLIGHT_TEST_SSH_POSIX_USER=pf-admin \
+PREFLIGHT_TEST_SSH_POSIX_PASS=preflight \
+    go test -tags integration -count=1 -run TestIntegration_POSIX -v ./internal/target/
+docker compose -f test/posix/docker-compose.yml down
+```
+
+### Environment variables
+
+The POSIX suite uses a separate namespace from the Windows SSH vars
+(`PREFLIGHT_TEST_SSH_POSIX_*` vs `PREFLIGHT_TEST_SSH_*`) so both suites can
+be configured independently:
+
+```
+PREFLIGHT_TEST_SSH_POSIX_HOST=localhost
+PREFLIGHT_TEST_SSH_POSIX_PORT=2222
+PREFLIGHT_TEST_SSH_POSIX_USER=pf-admin
+PREFLIGHT_TEST_SSH_POSIX_PASS=preflight
+```
+
+Tests skip cleanly when the required vars are unset.
+
 ---
 
 ## Architecture

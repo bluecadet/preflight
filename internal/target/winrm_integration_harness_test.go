@@ -187,23 +187,29 @@ Write-Output ('unexpected:' + $props.IsSacrificial)
 	}
 }
 
-// getSSHConfigFromEnv reads four env vars to build the SSH connection config.
-// Returns nil + false when any required var is missing so callers can t.Skip
-// cleanly. Mirrors the WinRM four-var contract.
-//
-// Required vars:
-//   - PREFLIGHT_TEST_SSH_HOST
-//   - PREFLIGHT_TEST_SSH_USER
-//   - PREFLIGHT_TEST_SSH_PASS
-//
-// Optional vars:
-//   - PREFLIGHT_TEST_SSH_PORT (default 22)
-//   - PREFLIGHT_TEST_SSH_KEY   (path to a private key file; password auth is
-//     always attempted when PREFLIGHT_TEST_SSH_PASS is set)
+// getSSHConfigFromEnv builds the SSH-to-Windows connection config from the
+// PREFLIGHT_TEST_SSH_* env vars. Returns nil + false when any required var is
+// missing so callers can t.Skip cleanly.
 func getSSHConfigFromEnv() (*SSHConfig, bool) {
-	host := os.Getenv("PREFLIGHT_TEST_SSH_HOST")
-	user := os.Getenv("PREFLIGHT_TEST_SSH_USER")
-	pass := os.Getenv("PREFLIGHT_TEST_SSH_PASS")
+	return sshConfigFromEnv("PREFLIGHT_TEST_SSH")
+}
+
+// sshConfigFromEnv reads SSH connection vars under the given env-var prefix
+// (e.g. "PREFLIGHT_TEST_SSH" or "PREFLIGHT_TEST_SSH_POSIX") and returns nil +
+// false when any required var is missing so callers can t.Skip cleanly.
+//
+// Required vars: <prefix>_HOST, <prefix>_USER, <prefix>_PASS.
+// Optional vars: <prefix>_PORT (default 22), <prefix>_KEY (private key file;
+// password auth is always attempted when <prefix>_PASS is set).
+//
+// The SSH-to-Windows vars (PREFLIGHT_TEST_SSH_*) and the SSH-to-POSIX vars
+// (PREFLIGHT_TEST_SSH_POSIX_*) share one implementation so the two suites can
+// be configured independently — a developer may have a Windows VM on one host
+// and a Linux container on another.
+func sshConfigFromEnv(prefix string) (*SSHConfig, bool) {
+	host := os.Getenv(prefix + "_HOST")
+	user := os.Getenv(prefix + "_USER")
+	pass := os.Getenv(prefix + "_PASS")
 	if host == "" || user == "" || pass == "" {
 		return nil, false
 	}
@@ -216,7 +222,7 @@ func getSSHConfigFromEnv() (*SSHConfig, bool) {
 		return nil, false
 	}
 	port := 22
-	if raw := os.Getenv("PREFLIGHT_TEST_SSH_PORT"); raw != "" {
+	if raw := os.Getenv(prefix + "_PORT"); raw != "" {
 		if p, err := strconv.Atoi(raw); err == nil && p > 0 {
 			port = p
 		}
@@ -226,12 +232,13 @@ func getSSHConfigFromEnv() (*SSHConfig, bool) {
 		Port:     port,
 		Username: user,
 		Password: pass,
-		// The lab VM's host key rotates whenever the VM is rebuilt, and the
-		// default accept-new policy would pin it into the developer's real
-		// ~/.ssh/known_hosts. Skip verification for the sacrificial test VM.
+		// Test-target host keys rotate whenever the VM or container is rebuilt,
+		// and the default accept-new policy would pin them into the developer's
+		// real ~/.ssh/known_hosts. Skip verification for sacrificial test
+		// targets.
 		HostKeyPolicy: HostKeyPolicyInsecure,
 	}
-	if key := os.Getenv("PREFLIGHT_TEST_SSH_KEY"); key != "" {
+	if key := os.Getenv(prefix + "_KEY"); key != "" {
 		cfg.PrivateKey = key
 	}
 	return cfg, true

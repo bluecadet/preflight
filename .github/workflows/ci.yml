@@ -30,6 +30,7 @@ jobs:
       go: ${{ steps.filter.outputs.go }}
       build: ${{ steps.filter.outputs.build }}
       winrm: ${{ steps.filter.outputs.winrm }}
+      posix: ${{ steps.filter.outputs.posix }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -54,6 +55,9 @@ jobs:
               - 'install.ps1'
               - '**/target/winrm*'
               - '**/target/persistent_ps*'
+              - .github/workflows/ci.yml
+            posix:
+              - 'test/posix/**'
               - .github/workflows/ci.yml
             build:
               - '**/*.go'
@@ -81,6 +85,45 @@ jobs:
 
       - name: Test
         run: go test ./...
+
+  test-posix-integration:
+    name: POSIX Integration (${{ matrix.container }})
+    needs: changes
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.posix == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - container: ubuntu
+            port: "2222"
+            service: ubuntu
+          - container: rocky
+            port: "2223"
+            service: rocky
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Build and start ${{ matrix.container }} container
+        working-directory: test/posix
+        run: docker compose up -d --build ${{ matrix.service }}
+
+      - name: Wait for sshd
+        working-directory: test/posix
+        run: sh wait-for-ssh.sh localhost ${{ matrix.port }} 90
+
+      - name: Run POSIX integration tests
+        env:
+          PREFLIGHT_TEST_SSH_POSIX_HOST: localhost
+          PREFLIGHT_TEST_SSH_POSIX_PORT: ${{ matrix.port }}
+          PREFLIGHT_TEST_SSH_POSIX_USER: pf-admin
+          PREFLIGHT_TEST_SSH_POSIX_PASS: preflight
+        run: go test -tags integration -count=1 -run TestIntegration_POSIX -v ./internal/target/
 
   lint:
     name: Lint
