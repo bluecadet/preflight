@@ -136,12 +136,16 @@ func classifyMissingModule(controllerRegistry ModuleRegistry, module string, kin
 }
 
 // ReasonCodeForError extracts a stable reason code from an error chain. It
-// recognizes *ModuleSupportError; other errors return the empty string so
-// callers can leave the reason field absent for untyped failures.
+// recognizes *ModuleSupportError and *BecomeEnvError; other errors return the
+// empty string so callers can leave the reason field absent for untyped
+// failures.
 func ReasonCodeForError(err error) string {
 	var mse *ModuleSupportError
 	if errors.As(err, &mse) {
 		return mse.ReasonCode()
+	}
+	if code, ok := reasonCodeFromBecomeEnv(err); ok {
+		return code
 	}
 	return ""
 }
