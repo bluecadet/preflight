@@ -118,6 +118,20 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
 
+	// POSIX privilege enforcement: fail the task before Check() when a
+	// requires_root module runs as a non-root effective user, or when become is
+	// enabled but sudo is missing. The probe is the cached runtime detection
+	// (one id -u + command -v sudo per target).
+	if rt, ok := runtime.(*sshPOSIXShellRuntime); ok {
+		probe, err := rt.ensureProbe(ctx)
+		if err != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+		}
+		if envErr := enforcePOSIXPrivilege(runtime.Kind(), module, become, probe); envErr != nil {
+			return Result{TaskID: taskID, Status: StatusFailed, Error: envErr}, envErr
+		}
+	}
+
 	registry := runtime.Registry()
 	if become != nil {
 		switch rt := runtime.(type) {

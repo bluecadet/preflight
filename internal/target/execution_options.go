@@ -64,9 +64,9 @@ func NormalizeExecutionOptions(raw map[string]any) (ExecutionOptions, error) {
 		loadProfile = &flag
 	}
 
-	if enabled && user == "" {
-		return ExecutionOptions{}, fmt.Errorf("become: user is required when enabled")
-	}
+	// A bare `become: {enabled: true}` with no user is allowed: on POSIX it means
+	// root (effectiveBecome defaults the user); Windows still requires an
+	// explicit user, enforced in effectiveBecome which knows the runtime kind.
 
 	return ExecutionOptions{
 		Become: &BecomeOptions{

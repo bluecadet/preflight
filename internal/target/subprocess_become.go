@@ -71,7 +71,9 @@ func (e *posixSudoElevation) Start(ctx context.Context, binary string, moduleNam
 	if e.password != "" {
 		args = []string{"-S", "-p", "", "-u", e.user, binary, "__module-exec", moduleName}
 	} else {
-		args = []string{"-u", e.user, binary, "__module-exec", moduleName}
+		// No password supplied: require NOPASSWD. `sudo -n` makes a
+		// password-requiring sudo fail deterministically.
+		args = []string{"-n", "-u", e.user, binary, "__module-exec", moduleName}
 	}
 	cmd := exec.CommandContext(ctx, "sudo", args...)
 	if e.password != "" {

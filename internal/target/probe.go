@@ -23,6 +23,16 @@ type Probe struct {
 	OSVersion      string // os-release VERSION_ID
 	PackageManager string // "apt" | "dnf" | ""
 	Init           string // "systemd" | ""
+
+	// EffectiveUID is the numeric effective user id of the session user (id -u).
+	// Internal runtime state, not exposed as facts in v1. Used by the
+	// requires_root pre-Check() probe to fail fast when a root-requiring module
+	// runs as a non-root user without become.
+	EffectiveUID string
+	// SudoAvailable reports whether the sudo binary is present on the target
+	// (command -v sudo). Internal runtime state, not exposed as facts. Used to
+	// raise sudo-missing before a become run attempts to invoke sudo.
+	SudoAvailable bool
 }
 
 // posixProbeScript is the single shell script that gathers every POSIX
@@ -63,6 +73,12 @@ printf 'os_name=%s\n' "$os_name"
 printf 'os_version=%s\n' "$os_version"
 printf 'package_manager=%s\n' "$package_manager"
 printf 'init=%s\n' "$init"
+printf 'euid=%s\n' "$(id -u 2>/dev/null)"
+if command -v sudo >/dev/null 2>&1; then
+	printf 'sudo=1\n'
+else
+	printf 'sudo=0\n'
+fi
 `
 
 // parsePOSIXProbe parses the output of posixProbeScript into a Probe. It is
@@ -93,6 +109,10 @@ func parsePOSIXProbe(stdout string) Probe {
 			p.PackageManager = val
 		case "init":
 			p.Init = val
+		case "euid":
+			p.EffectiveUID = val
+		case "sudo":
+			p.SudoAvailable = val == "1"
 		}
 	}
 	return p

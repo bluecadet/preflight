@@ -45,6 +45,8 @@ func TestSSHTarget_ExecuteShellPOSIX(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, `"echo" "hello"`):
 				return "", "", 0, nil
 			default:
@@ -75,6 +77,8 @@ func TestSSHTarget_ExecuteShellPOSIXWithBecomeUser(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, "sudo -S -p '' -u 'appuser' /bin/sh -lc"):
 				if string(stdin) != "hunter2\n" {
 					t.Fatalf("unexpected stdin %q", string(stdin))
@@ -117,6 +121,8 @@ func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
 			case command == "printf preflight":
 				detectionCount++
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\neuid=1000\nsudo=1\n", "", 0, nil
 			case strings.HasPrefix(command, "mkdir -p"):
 				if decoded, err := base64.StdEncoding.DecodeString(string(stdin)); err != nil || string(decoded) != "hello" {
 					t.Fatalf("unexpected stdin %q err=%v", string(stdin), err)
@@ -193,7 +199,7 @@ func TestSSHTarget_POSIXProbeCachedAcrossInfoCalls(t *testing.T) {
 				return "preflight", "", 0, nil
 			case strings.Contains(command, "os_name=") && strings.Contains(command, "package_manager="):
 				probeRuns++
-				return "hostname=kiosk-c\nkernel=Linux\narch=x86_64\nos_name=rocky\nos_version=9.3\npackage_manager=dnf\ninit=systemd\n", "", 0, nil
+				return "hostname=kiosk-c\nkernel=Linux\narch=x86_64\nos_name=rocky\nos_version=9.3\npackage_manager=dnf\ninit=systemd\neuid=0\nsudo=1\n", "", 0, nil
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -437,6 +443,8 @@ func TestSSHTarget_POSIXFileHashNoop(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/dst.txt"):
 				return "file", "", 0, nil
 			case strings.HasPrefix(command, "sha256sum "):
@@ -469,6 +477,8 @@ func TestSSHTarget_POSIXFileContentWritesStdin(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
 				return "missing", "", 0, nil
 			case strings.Contains(command, "cat > ") && strings.Contains(command, "/tmp/secret.txt"):
@@ -507,6 +517,8 @@ func TestSSHTarget_POSIXFileContentHashNoop(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
 				return "file", "", 0, nil
 			case strings.HasPrefix(command, "sha256sum "):
@@ -538,6 +550,9 @@ func TestSSHTarget_POSIXPowerShellModuleUsesRemoteBinary(t *testing.T) {
 			case !isEncodedPowerShellCommand(command):
 				if command == "printf preflight" {
 					return "preflight", "", 0, nil
+				}
+				if isPOSIXProbeCommand(command) {
+					return posixProbeOutput(), "", 0, nil
 				}
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -579,6 +594,8 @@ func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -606,6 +623,8 @@ func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -641,6 +660,8 @@ func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
 				return "", "not found", 127, nil
 			case command == "printf preflight":
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -667,6 +688,8 @@ func TestSSHTarget_POSIXUnsupportedModuleReturnsError(t *testing.T) {
 						return "", "not found", 127, nil
 					case command == "printf preflight":
 						return "preflight", "", 0, nil
+					case isPOSIXProbeCommand(command):
+						return posixProbeOutput(), "", 0, nil
 					default:
 						t.Fatalf("unexpected command %q", command)
 						return "", "", 0, nil
@@ -697,6 +720,8 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 			case command == "printf preflight":
 				detectionCount.Add(1)
 				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
 			case strings.Contains(command, `"echo" "hello"`):
 				return "", "", 0, nil
 			default:
@@ -731,6 +756,21 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 
 func isEncodedPowerShellCommand(command string) bool {
 	return strings.Contains(command, `"-EncodedCommand"`)
+}
+
+// isPOSIXProbeCommand reports whether command is the POSIX runtime detection
+// probe script (one id -u + command -v sudo round trip per target).
+func isPOSIXProbeCommand(command string) bool {
+	return strings.Contains(command, "$(hostname)") &&
+		strings.Contains(command, "$(uname -s)") &&
+		strings.Contains(command, "package_manager=")
+}
+
+// posixProbeOutput returns a probe response for an unprivileged session with
+// sudo available. Tests that need a different posture (root, no sudo) build
+// their own string.
+func posixProbeOutput() string {
+	return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\neuid=1000\nsudo=1\n"
 }
 
 func decodeEncodedPowerShellCommand(t *testing.T, command string) string {
