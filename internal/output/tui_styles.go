@@ -29,9 +29,7 @@ type TUIStyles struct {
 	Value     lipgloss.Style
 	TableHead lipgloss.Style
 
-	TransportLocal lipgloss.Style
-	TransportSSH   lipgloss.Style
-	TransportWinRM lipgloss.Style
+	HostColors []lipgloss.Style
 
 	RowInset       lipgloss.Style
 	CardTitleInset lipgloss.Style
@@ -71,12 +69,35 @@ func NewTUIStyles(p SemanticPalette, color bool) TUIStyles {
 		Value:     build(p.Value),
 		TableHead: build(p.TableHead),
 
-		TransportLocal: build(p.TransportLocal),
-		TransportSSH:   build(p.TransportSSH),
-		TransportWinRM: build(p.TransportWinRM),
+		HostColors: hostStyles(p.HostColors, color),
 
 		RowInset:       lipgloss.NewStyle().PaddingLeft(2),
 		CardTitleInset: lipgloss.NewStyle().PaddingLeft(2),
 		CardBodyInset:  lipgloss.NewStyle().PaddingLeft(2),
 	}
+}
+
+// hostStyles builds the per-host lipgloss style rotation from the palette.
+// When color is false, foreground colors are removed but attributes are
+// preserved (host colors carry none, so they degrade to plain text).
+func hostStyles(roles []ColorRole, color bool) []lipgloss.Style {
+	styles := make([]lipgloss.Style, len(roles))
+	for i, r := range roles {
+		if color {
+			styles[i] = r.LipglossStyle()
+		} else {
+			styles[i] = r.LipglossStyleNoColor()
+		}
+	}
+	return styles
+}
+
+// HostStyle resolves a host color slot index to a lipgloss.Style, wrapping
+// modulo the rotation length. Returns a plain style for unknown targets
+// (negative index) or an empty palette.
+func (s TUIStyles) HostStyle(idx int) lipgloss.Style {
+	if idx < 0 || len(s.HostColors) == 0 {
+		return lipgloss.NewStyle()
+	}
+	return s.HostColors[idx%len(s.HostColors)]
 }

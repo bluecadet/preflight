@@ -294,7 +294,7 @@ func (r *TextRenderer) flushRunStartHeader() {
 	}
 	if len(r.projection.Targets) > 1 {
 		r.writeLine(fmt.Sprintf("targets: %d", len(r.projection.Targets)))
-		for _, line := range buildTargetRosterLines(r.projection.TargetInfo) {
+		for _, line := range buildTargetRosterLines(r.projection.TargetInfo, r.rosterColorer()) {
 			r.writeLine(line)
 		}
 	}
@@ -366,7 +366,7 @@ func (r *TextRenderer) targetLabel(target string) string {
 	if !r.shouldShowHostLabels() || target == "" {
 		return ""
 	}
-	return " [" + r.displayTarget(target) + "]"
+	return " [" + r.coloredTarget(target) + "]"
 }
 
 // targetPrefix returns the inline [target] prefix prepended to task lines in
@@ -376,7 +376,47 @@ func (r *TextRenderer) targetPrefix(target string) string {
 	if !r.shouldShowHostLabels() || target == "" {
 		return ""
 	}
-	return "[" + r.displayTarget(target) + "] "
+	return "[" + r.coloredTarget(target) + "] "
+}
+
+// coloredTarget returns the display name for a target rendered in its
+// assigned host color. When color is disabled or the target has no color
+// slot, the plain display name is returned.
+func (r *TextRenderer) coloredTarget(target string) string {
+	name := r.displayTarget(target)
+	if !r.color {
+		return name
+	}
+	code := r.hostColorANSI(target)
+	if code == "" {
+		return name
+	}
+	return code + name + ansiReset
+}
+
+// hostColorANSI returns the ANSI escape code for a target's assigned host
+// color, or "" when the target has no color slot (unknown target).
+func (r *TextRenderer) hostColorANSI(target string) string {
+	c, ok := DefaultPalette().HostColor(r.projection.HostColorIndex(target))
+	if !ok {
+		return ""
+	}
+	return c.ANSI
+}
+
+// rosterColorer returns a function that renders a target's raw name in its
+// assigned host color, for coloring the run-start target roster.
+func (r *TextRenderer) rosterColorer() func(string) string {
+	return func(name string) string {
+		if !r.color {
+			return name
+		}
+		code := r.hostColorANSI(name)
+		if code == "" {
+			return name
+		}
+		return code + name + ansiReset
+	}
 }
 
 func (r *TextRenderer) writeLine(line string) {
@@ -439,7 +479,7 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 		for _, failed := range r.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
 			if showTarget {
-				r.writeLine("  [" + r.projection.DisplayTarget(failed.target) + "] " + path)
+				r.writeLine("  [" + r.coloredTarget(failed.target) + "] " + path)
 			} else {
 				r.writeLine("  " + path)
 			}

@@ -76,22 +76,6 @@ func TestRunProjection_RunStartIdempotent(t *testing.T) {
 	}
 }
 
-func TestRunProjection_TargetTransport(t *testing.T) {
-	p := NewRunProjection()
-	p.Apply(TargetStartEvent{Target: "host-a", Transport: "ssh", Address: "192.168.1.1"})
-	p.Apply(TargetStartEvent{Target: "host-b", Transport: "winrm", Address: "192.168.1.2"})
-
-	if got := p.TargetTransport("host-a"); got != "ssh" {
-		t.Errorf("TargetTransport(host-a) = %q, want %q", got, "ssh")
-	}
-	if got := p.TargetTransport("host-b"); got != "winrm" {
-		t.Errorf("TargetTransport(host-b) = %q, want %q", got, "winrm")
-	}
-	if got := p.TargetTransport("unknown"); got != "" {
-		t.Errorf("TargetTransport(unknown) = %q, want %q", got, "")
-	}
-}
-
 func TestRunProjection_TaskOK(t *testing.T) {
 	p := NewRunProjection()
 	p.Apply(TaskStartedEvent{Target: "host-a", TaskID: "t1", TaskName: "task-1"})
@@ -632,5 +616,50 @@ func TestRunProjection_ActionPathTakenFromActiveTask(t *testing.T) {
 	desc := descs[0].(TaskFinishedDescriptor)
 	if desc.ActionPath != "my-action" {
 		t.Errorf("expected ActionPath inherited from active task, got %q", desc.ActionPath)
+	}
+}
+
+func TestRunProjection_HostColorIndex_RosterOrder(t *testing.T) {
+	// Color index is assigned by roster order from RunStartEvent.Targets,
+	// regardless of when TargetStartEvents or tasks arrive. This keeps the
+	// assignment stable for the whole run.
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{PlaybookName: "play", Targets: []string{"web-01", "web-02", "db-01"}})
+
+	// Tasks start out of order to confirm the index is roster-anchored.
+	p.Apply(TaskStartedEvent{Target: "db-01", TaskID: "t3", TaskName: "task-3"})
+	p.Apply(TaskStartedEvent{Target: "web-01", TaskID: "t1", TaskName: "task-1"})
+
+	cases := []struct {
+		target string
+		want   int
+	}{
+		{"web-01", 0},
+		{"web-02", 1},
+		{"db-01", 2},
+	}
+	for _, tc := range cases {
+		if got := p.HostColorIndex(tc.target); got != tc.want {
+			t.Errorf("HostColorIndex(%q) = %d, want %d", tc.target, got, tc.want)
+		}
+	}
+}
+
+func TestRunProjection_HostColorIndex_UnknownTarget(t *testing.T) {
+	p := NewRunProjection()
+	p.Apply(RunStartEvent{Targets: []string{"web-01"}})
+	if got := p.HostColorIndex("web-01"); got != 0 {
+		t.Errorf("HostColorIndex(web-01) = %d, want 0", got)
+	}
+	if got := p.HostColorIndex("nope"); got != -1 {
+		t.Errorf("HostColorIndex(nope) = %d, want -1", got)
+	}
+}
+
+func TestRunProjection_HostColorIndex_BeforeRunStart(t *testing.T) {
+	// Before RunStart, no assignment exists.
+	p := NewRunProjection()
+	if got := p.HostColorIndex("web-01"); got != -1 {
+		t.Errorf("HostColorIndex before RunStart = %d, want -1", got)
 	}
 }

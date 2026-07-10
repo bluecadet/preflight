@@ -56,6 +56,18 @@ func (r ColorRole) LipglossStyleNoColor() lipgloss.Style {
 	return s
 }
 
+// HostColor resolves a host color slot index to a concrete ColorRole,
+// wrapping modulo the rotation length. The bool result is false when the
+// palette has no host colors or the index is negative (unknown target), so
+// callers can fall back to uncolored output. Overflow (more hosts than
+// colors) is handled by the wrap, not by returning false.
+func (p SemanticPalette) HostColor(idx int) (ColorRole, bool) {
+	if idx < 0 || len(p.HostColors) == 0 {
+		return ColorRole{}, false
+	}
+	return p.HostColors[idx%len(p.HostColors)], true
+}
+
 // SemanticPalette defines all color roles used in the output package. It is
 // the single source of truth for every color decision: status glyphs,
 // transport badges, task names, elapsed times, headers, separators, detail
@@ -84,10 +96,10 @@ type SemanticPalette struct {
 	Value     ColorRole
 	TableHead ColorRole
 
-	// Transport badge colors (reserved for future use).
-	TransportLocal ColorRole
-	TransportSSH   ColorRole
-	TransportWinRM ColorRole
+	// HostColors is the rotation palette used to distinguish hosts by
+	// color in multi-target runs. Renderers assign each target a slot by
+	// roster position and resolve it here, wrapping modulo the length.
+	HostColors []ColorRole
 }
 
 // DefaultPalette returns the standard semantic palette. Every role uses
@@ -118,9 +130,19 @@ func DefaultPalette() SemanticPalette {
 		Value:     ColorRole{Light: "252", Dark: "254"},             // light grey
 		TableHead: ColorRole{Light: "252", Dark: "254", Bold: true}, // bold light grey
 
-		// Transport badges (reserved — not yet used by any renderer).
-		TransportLocal: ColorRole{Light: "8", Dark: "245"},                  // grey
-		TransportSSH:   ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"}, // blue
-		TransportWinRM: ColorRole{Light: "6", Dark: "14", ANSI: "\033[36m"}, // cyan
+		// Host color rotation — eight visually distinct hues chosen to
+		// avoid the status outcome colors (green/yellow/red/grey) so a host
+		// badge is never confused with a status glyph. Color-only: in
+		// no-color mode each role degrades to plain text.
+		HostColors: []ColorRole{
+			{Light: "33", Dark: "81", ANSI: "\033[38;5;81m"},    // blue
+			{Light: "125", Dark: "213", ANSI: "\033[38;5;213m"}, // magenta
+			{Light: "30", Dark: "80", ANSI: "\033[38;5;80m"},    // teal
+			{Light: "130", Dark: "208", ANSI: "\033[38;5;208m"}, // orange
+			{Light: "91", Dark: "141", ANSI: "\033[38;5;141m"},  // purple
+			{Light: "162", Dark: "204", ANSI: "\033[38;5;204m"}, // rose
+			{Light: "37", Dark: "79", ANSI: "\033[38;5;79m"},    // aqua
+			{Light: "57", Dark: "99", ANSI: "\033[38;5;99m"},    // indigo
+		},
 	}
 }
