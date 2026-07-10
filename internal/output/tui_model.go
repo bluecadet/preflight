@@ -107,8 +107,6 @@ func (m tuiModel) applyEvent(event Event) (tuiModel, tea.Cmd) {
 		switch desc := d.(type) {
 		case *RunStartDescriptor:
 			cmds = append(cmds, m.renderRunStart(*desc))
-		case TargetRosterDescriptor:
-			cmds = append(cmds, m.renderTargetRoster(desc))
 		case TaskFinishedDescriptor:
 			cmds = append(cmds, m.renderTaskFinished(desc))
 		case CardDescriptor:
@@ -174,29 +172,11 @@ func (m tuiModel) renderRunStart(d RunStartDescriptor) tea.Cmd {
 		}
 		if len(d.Targets) > 1 {
 			lines = append(lines, fmt.Sprintf("targets: %d", len(d.Targets)))
+			lines = append(lines, buildTargetRosterLines(d.TargetInfos)...)
 		}
 	}
 	lines = append(lines, m.renderDivider())
 	return tea.Println(strings.Join(lines, "\n") + "\n")
-}
-
-func (m tuiModel) renderTargetRoster(d TargetRosterDescriptor) tea.Cmd {
-	maxName := 0
-	for _, ti := range d.Targets {
-		maxName = max(maxName, len(ti.Name))
-	}
-	var lines []string
-	lines = append(lines, "Targets:")
-	for _, ti := range d.Targets {
-		name := AlignLeft(ti.Name, maxName)
-		s := "  " + name + " (" + ti.Transport
-		if ti.Address != "" {
-			s += " • " + ti.Address
-		}
-		s += ")"
-		lines = append(lines, s)
-	}
-	return tea.Println(strings.Join(lines, "\n"))
 }
 
 func (m tuiModel) renderTaskFinished(d TaskFinishedDescriptor) tea.Cmd {

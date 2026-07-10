@@ -63,8 +63,9 @@ type RunProjection struct {
 	PlayStarted bool
 	RunDir      string
 
-	// bufferedRunStartDesc holds the RunStartDescriptor for single-target runs
-	// until the target info arrives via TargetStartEvent.
+	// bufferedRunStartDesc holds the RunStartDescriptor until target info
+	// arrives via TargetStartEvent (so the header can include the target
+	// roster inline). Set for both single- and multi-target runs.
 	bufferedRunStartDesc *RunStartDescriptor
 
 	OkCount      int
@@ -96,6 +97,10 @@ type RunStartDescriptor struct {
 	PlaybookPath string
 	PlaybookName string
 	Targets      []string
+	// TargetInfos carries the transport/address detail for each target. It is
+	// populated once the buffered header is flushed (after TargetStartEvents
+	// arrive) so the renderer can fold the target roster into the header block.
+	TargetInfos []TargetInfo
 	// SingleTarget is set only for single-target runs, carrying the target
 	// identity from the first TargetStartEvent. When set, the renderer should
 	// fold the header into one line: RUN  playbook → name (transport • address).
@@ -119,19 +124,12 @@ type CardDescriptor struct {
 	Event Event  // the original event for the sink to format
 }
 
-// TargetRosterDescriptor describes a multi-target run-start roster listing
-// each target with its transport and address.
-type TargetRosterDescriptor struct {
-	Targets []TargetInfo
-}
-
 // WarningDescriptor describes a warning to render.
 type WarningDescriptor struct {
 	Message string
 }
 
 func (RunStartDescriptor) isCommitDescriptor()     {}
-func (TargetRosterDescriptor) isCommitDescriptor() {}
 func (TaskFinishedDescriptor) isCommitDescriptor() {}
 func (CardDescriptor) isCommitDescriptor()         {}
 func (WarningDescriptor) isCommitDescriptor()      {}
@@ -160,6 +158,22 @@ func NewRunProjectionWithOptions(opts Options) *RunProjection {
 // descriptors for the scroll region. It never returns rendered strings
 // or bubbletea commands.
 func (p *RunProjection) Apply(event Event) []CommitDescriptor {
+	// If the run-start header is still buffered (waiting for target info to
+	// arrive via TargetStartEvent), flush it before any other event so the
+	// header and its inline target roster precede task/activity output.
+	if p.bufferedRunStartDesc != nil {
+		switch event.(type) {
+		case RunStartEvent, TargetStartEvent:
+			// keep buffering until target info arrives
+		default:
+			descs := p.flushBufferedRunStart()
+			return append(descs, p.applyEvent(event)...)
+		}
+	}
+	return p.applyEvent(event)
+}
+
+func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 	switch e := event.(type) {
 	case RunStartEvent:
 		return p.applyRunStart(e)
@@ -356,24 +370,29 @@ func (p *RunProjection) applyRunStart(e RunStartEvent) []CommitDescriptor {
 	p.Targets = append([]string(nil), e.Targets...)
 	p.StartedAt = time.Now()
 
-	// For single-target runs, buffer until we have the target identity from
-	// TargetStartEvent so the header can include transport and address.
-	if len(e.Targets) == 1 {
-		p.bufferedRunStartDesc = &RunStartDescriptor{
-			Mode:         e.Mode,
-			PlaybookPath: e.PlaybookPath,
-			PlaybookName: e.PlaybookName,
-			Targets:      e.Targets,
-		}
-		return nil
-	}
-
-	return []CommitDescriptor{&RunStartDescriptor{
+	// Buffer the run-start header until target info arrives via
+	// TargetStartEvent so the header can include the target roster inline.
+	p.bufferedRunStartDesc = &RunStartDescriptor{
 		Mode:         e.Mode,
 		PlaybookPath: e.PlaybookPath,
 		PlaybookName: e.PlaybookName,
 		Targets:      e.Targets,
-	}}
+	}
+	return nil
+}
+
+// flushBufferedRunStart emits the buffered run-start descriptor with the
+// target info collected so far and clears the buffer.
+func (p *RunProjection) flushBufferedRunStart() []CommitDescriptor {
+	if p.bufferedRunStartDesc == nil {
+		return nil
+	}
+	desc := p.bufferedRunStartDesc
+	p.bufferedRunStartDesc = nil
+	infos := make([]TargetInfo, len(p.TargetInfo))
+	copy(infos, p.TargetInfo)
+	desc.TargetInfos = infos
+	return []CommitDescriptor{desc}
 }
 
 func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor {
@@ -384,21 +403,20 @@ func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor 
 	}
 	p.TargetInfo = append(p.TargetInfo, info)
 
-	// Single-target: flush the buffered run start with target info.
-	if p.bufferedRunStartDesc != nil {
-		p.bufferedRunStartDesc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
-		desc := p.bufferedRunStartDesc
-		p.bufferedRunStartDesc = nil
-		return []CommitDescriptor{desc}
+	if p.bufferedRunStartDesc == nil {
+		return nil
 	}
 
-	// For multi-target runs, emit the roster once all targets have been seen.
-	if len(p.Targets) > 1 && len(p.TargetInfo) == len(p.Targets) {
-		targets := make([]TargetInfo, len(p.TargetInfo))
-		copy(targets, p.TargetInfo)
-		return []CommitDescriptor{TargetRosterDescriptor{
-			Targets: targets,
-		}}
+	// Single-target: fold the first target's identity into the header line.
+	if len(p.Targets) == 1 {
+		p.bufferedRunStartDesc.SingleTarget = &p.TargetInfo[len(p.TargetInfo)-1]
+		return p.flushBufferedRunStart()
+	}
+
+	// Multi-target: flush once all targets have reported so the roster can
+	// be folded into the header block in arrival order.
+	if len(p.TargetInfo) >= len(p.Targets) {
+		return p.flushBufferedRunStart()
 	}
 	return nil
 }

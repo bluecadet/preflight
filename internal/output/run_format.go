@@ -98,6 +98,31 @@ func renderTaskFailurePath(actionPath, taskName string) string {
 	return path + " > " + taskName
 }
 
+// buildTargetRosterLines renders the aligned multi-target roster rows
+// (name padded to the longest, followed by " (transport" and optional
+// " • address" and ")"), each prefixed with a two-space indent. Used by both
+// the TUI and text renderers to fold the roster into the run-start header.
+func buildTargetRosterLines(targets []TargetInfo) []string {
+	if len(targets) == 0 {
+		return nil
+	}
+	maxName := 0
+	for _, ti := range targets {
+		maxName = max(maxName, len(ti.Name))
+	}
+	lines := make([]string, 0, len(targets))
+	for _, ti := range targets {
+		name := AlignLeft(ti.Name, maxName)
+		s := "  " + name + " (" + ti.Transport
+		if ti.Address != "" {
+			s += " • " + ti.Address
+		}
+		s += ")"
+		lines = append(lines, s)
+	}
+	return lines
+}
+
 func formatElapsed(d time.Duration) string {
 	if d < time.Second {
 		return fmt.Sprintf("%.1fs", d.Seconds())
