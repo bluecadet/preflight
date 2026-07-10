@@ -283,7 +283,6 @@ func (m tuiModel) View() string {
 
 	if len(activities) > 0 && len(running) == 0 && m.projection.Total() == 0 {
 		var b strings.Builder
-		b.WriteString("In Progress\n")
 		for _, activity := range activities {
 			b.WriteString(m.renderActivity(activity))
 			b.WriteByte('\n')
@@ -295,9 +294,6 @@ func (m tuiModel) View() string {
 	dense := len(running)+len(activities) > maxLiveLines
 	visibleActivities, visibleRunning, hiddenCount := visibleLiveEntries(activities, running, maxLiveLines)
 	var b strings.Builder
-	if len(running)+len(activities) > 0 {
-		b.WriteString("In Progress\n")
-	}
 	for _, activity := range visibleActivities {
 		b.WriteString(m.renderActivity(activity))
 		b.WriteByte('\n')
