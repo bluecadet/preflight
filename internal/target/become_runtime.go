@@ -159,7 +159,16 @@ type posixTaskBackend struct {
 
 func (b *posixTaskBackend) RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
 	command, stdin = wrapPOSIXBecome(command, stdin, b.become)
-	return b.run(ctx, command, stdin)
+	stdout, stderr, code, err := b.run(ctx, command, stdin)
+	if err == nil && b.become != nil && code != 0 {
+		// Classify sudo-specific failures into typed environment errors so
+		// the run log carries sudo-password-required / sudo-auth-failed reason
+		// codes instead of a generic non-zero-exit message.
+		if sudoErr := classifySudoFailure(b.become, stderr, code); sudoErr != nil {
+			err = sudoErr
+		}
+	}
+	return stdout, stderr, code, err
 }
 
 func (b *posixTaskBackend) CopyFile(ctx context.Context, src, dst string) error {
@@ -234,6 +243,32 @@ func wrapPOSIXBecome(command string, stdin []byte, become *BecomeOptions) (strin
 	wrapped := fmt.Sprintf("sudo -S -p '' -u %s /bin/sh -lc %s", shellQuote(become.User), shellQuote(command))
 	withPassword := append([]byte(become.Password+"\n"), stdin...)
 	return wrapped, withPassword
+}
+
+// classifySudoFailure maps a non-zero sudo exit to a typed BecomeEnvError when
+// the failure is a sudo privilege problem (password required by `sudo -n`, or
+// a rejected password via `sudo -S`). Other non-zero exits are left to the
+// caller as generic command failures. sudo writes its diagnostics to stderr;
+// the strings matched are the stable messages emitted by sudo across
+// versions.
+func classifySudoFailure(become *BecomeOptions, stderr string, code int) error {
+	if become == nil {
+		return nil
+	}
+	lower := strings.ToLower(stderr)
+	// `sudo -n` exits non-zero with "a password is required" when NOPASSWD is
+	// not configured and no password was supplied.
+	if strings.TrimSpace(become.Password) == "" && strings.Contains(lower, "a password is required") {
+		return NewSudoPasswordRequiredError(RuntimeKindPOSIXShell)
+	}
+	// `sudo -S` with a bad/locked password prints "sorry, try again" (or the
+	// "incorrect password" / "authentication failure" variants) and exits
+	// non-zero.
+	if strings.TrimSpace(become.Password) != "" && (strings.Contains(lower, "sorry, try again") || strings.Contains(lower, "incorrect password") || strings.Contains(lower, "authentication failure")) {
+		return NewSudoAuthFailedError(RuntimeKindPOSIXShell)
+	}
+	_ = code
+	return nil
 }
 
 func shellQuote(value string) string {
