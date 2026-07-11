@@ -165,6 +165,10 @@ func runLogFixtureCases() []struct {
 			jsonl: `{"seq":41,"ts":"2026-06-24T14:13:06.000Z","type":"task_failed","level":"error","run_id":"r01","target":"kiosk-03","task_id":"drivers","msg":"failed"}`,
 		},
 		{
+			name:  "task-failed-with-reason",
+			jsonl: `{"seq":42,"ts":"2026-06-24T14:13:06.100Z","type":"task_failed","level":"error","run_id":"r01","target":"kiosk-03","task_id":"drivers","msg":"install display drivers failed","elapsed_ms":12000,"exit_code":1,"reason":"sudo_password_required"}`,
+		},
+		{
 			name:  "diagnostic",
 			jsonl: `{"seq":42,"ts":"2026-06-24T14:13:06.001Z","type":"diagnostic","level":"error","run_id":"r01","target":"kiosk-03","task_id":"drivers","msg":"DISM failed","summary":"DISM.exe failed: 0x800f0954","detail":"source files could not be downloaded","source":"command"}`,
 		},
