@@ -321,6 +321,10 @@
               "type": "string",
               "description": "Human-readable error message."
             },
+            "reason": {
+              "type": "string",
+              "description": "Stable reason code from the failure taxonomy (e.g. unsupported_on_runtime, missing_prerequisite, sudo_password_required). Absent for untyped failures."
+            },
             "output": {
               "type": "array",
               "items": { "type": "string" },
