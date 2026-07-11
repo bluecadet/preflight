@@ -33,7 +33,7 @@ var catalogModules = []catalogModule{
 	{Name: "remove_appx_packages", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "power_plan", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "windows_feature", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "environment", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
+	{Name: "environment", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows}, // POSIX environment module not implemented; classified Windows-only to match the registry
 	{Name: "firewall_rule", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "powershell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "shell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
