@@ -84,7 +84,7 @@ That split matters:
 
 - Windows-over-SSH uses the same built-in Windows module surface as WinRM.
 - POSIX-over-SSH focuses on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, and `powershell` when `pwsh` or `powershell` is installed. `service_running` and `reboot` require systemd; `reboot` also requires root.
-- Plugin modules are not yet supported over SSH.
+- Plugin modules run over SSH the same way they run locally and over WinRM: the plugin process runs controller-side and its target effects flow through the transport's handle ops. Nothing is ever delivered to the target.
 
 SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
 
@@ -104,7 +104,7 @@ SSH is now the default and primary remote transport, including for Windows hosts
 | `reboot` | yes (systemd; requires root) | yes |
 | `user` | no | yes |
 | `windows_feature` | no | yes |
-| plugin modules | no | no |
+| plugin modules | yes | yes |
 
 Unsupported module usage is caught at first task execution and returns a clear error. There is no silent fallback.
 
@@ -236,6 +236,8 @@ Because plugins satisfy the same `Check()` then `Apply()` shape:
 - staging still works
 - state tracking still works
 - the target layer does not need a second concept of "custom task"
+
+A plugin runs **controller-side with a target handle**: its `Check` and `Apply` receive a handle whose ops (`RunCommand`, `PutFile`, `GetFile`, `TargetInfo`) dispatch to whatever transport backs the target — local, SSH, or WinRM. The same plugin binary runs unchanged against any transport, and nothing is ever staged on or delivered to the target. Plugin+`become` is refused in v1 (the handle does not carry `ExecOpts`); that is a uniform limitation across transports, not a transport-specific gap.
 
 ## Why Safe Target Metadata Exists
 
