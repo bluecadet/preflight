@@ -59,6 +59,7 @@ or as explicit modules:
 | `power_plan` | Windows only | Yes | Windows-over-SSH only |
 | `windows_feature` | Windows only | Yes* | Windows-over-SSH only |
 | `firewall_rule` | Windows only | Yes | Windows-over-SSH only |
+| `system_package` | POSIX only | No | POSIX-over-SSH only (apt or dnf) |
 
 Notes:
 
@@ -66,7 +67,7 @@ Notes:
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
-- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, and `user` (requires root).
+- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), and `system_package` on targets with apt or dnf.
 - Plugin modules are not yet supported over SSH.
 
 ## Module Fields
@@ -187,6 +188,35 @@ Manage local MSI or EXE installations on Windows.
 | `ensure` | `present` or `absent` | Desired state (default: `present`) |
 
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
+
+### `system_package`
+
+Manage repo packages through `apt` or `dnf` on POSIX targets.
+
+```yaml
+- name: Install packages
+  system_package:
+    packages:
+      - name: tree
+      - name: jq
+        version: "1.6-2.1"
+      - name: legacy-tool
+        ensure: absent
+```
+
+The `packages` list is the primary interface. Each entry supports:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `name` | string (required) | Package name as known to the detected package manager |
+| `version` | string | Pin to an exact version, in the native manager format |
+| `ensure` | `present` or `absent` | Desired state (default: `present`) |
+
+`system_package` autodetects `apt` or `dnf` from the target's cached detection facts (`facts.os.package_manager`) and is POSIX-only. It mirrors the `winget_package` list shape but uses `name` instead of `id`. A task whose target has neither manager fails with a per-task environment-prerequisite error before `Check()` runs.
+
+`version` is compared as an exact string against the native version string: `dpkg-query ${Version}` for apt, and `rpm %{VERSION}-%{RELEASE}` for dnf. Supply the full native version string the manager reports, including epoch or release where relevant. Targets with a package manager other than `apt` or `dnf` are not supported; use the `shell` module as an escape hatch.
+
+`system_package` requires root. Run as root or set `become: {enabled: true}` to escalate to root; a non-root run fails with a `requires-root-violation` before `Check()`.
 
 ### `winget_package`
 

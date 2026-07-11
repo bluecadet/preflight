@@ -155,6 +155,7 @@ type posixTaskBackend struct {
 	readPlain        func(context.Context, string) ([]byte, error)
 	powerShellBinary string
 	probe            func(context.Context) (Probe, error)
+	packageManager   func(context.Context) (string, error)
 	become           *BecomeOptions
 }
 
@@ -222,6 +223,17 @@ func (b *posixTaskBackend) Probe(ctx context.Context) (Probe, error) {
 		return Probe{}, nil
 	}
 	return b.probe(ctx)
+}
+
+// PackageManager returns the cached package-manager fact. The become backend
+// delegates to the runtime's cached probe (the same one used without become);
+// package-manager detection is a property of the target, not the execution
+// identity.
+func (b *posixTaskBackend) PackageManager(ctx context.Context) (string, error) {
+	if b.packageManager == nil {
+		return "", nil
+	}
+	return b.packageManager(ctx)
 }
 
 func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {

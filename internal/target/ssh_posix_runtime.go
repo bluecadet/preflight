@@ -30,6 +30,17 @@ func (r *sshPOSIXShellRuntime) RunPOSIXCommand(ctx context.Context, command stri
 	return r.target.run(ctx, command, stdin)
 }
 
+// PackageManager returns the cached package-manager fact from the detection
+// probe. It reuses the same cached probe as Info() so there is no second
+// detection round trip.
+func (r *sshPOSIXShellRuntime) PackageManager(ctx context.Context) (string, error) {
+	p, err := r.ensureProbe(ctx)
+	if err != nil {
+		return "", err
+	}
+	return p.PackageManager, nil
+}
+
 func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) error {
 	info, err := os.Stat(src)
 	if err != nil {
