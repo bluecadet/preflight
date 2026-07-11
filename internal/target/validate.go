@@ -67,3 +67,13 @@ func ValidateModuleForPlan(module string, kind RuntimeKind, kindKnown bool, cont
 	}
 	return nil
 }
+
+// ValidateModuleForRuntime validates a module against the runtime kind resolved
+// at apply-start by Info(). The runtime is always known by then, so the full
+// matrix check runs — unlike ValidateModuleForPlan, which can only name-check
+// transports whose runtime is unknown until probe (SSH). Plugins bypass the
+// matrix: controller-side execution makes them supported on every runtime.
+// The apply-start support gate calls this for every runnable task.
+func ValidateModuleForRuntime(module string, kind RuntimeKind, controllerRegistry ModuleRegistry) error {
+	return ValidateModuleForPlan(module, kind, true, controllerRegistry)
+}

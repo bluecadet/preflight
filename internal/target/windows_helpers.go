@@ -95,12 +95,13 @@ func remoteWindowsTargetInfo(ctx context.Context, transport Transport, run windo
 	}
 
 	return TargetInfo{
-		Hostname:  payload.Hostname,
-		OSVersion: payload.Version,
-		OSBuild:   payload.Build,
-		Arch:      normalizeWindowsArch(payload.Arch),
-		OSFamily:  OSFamilyWindows,
-		Transport: transport,
+		Hostname:    payload.Hostname,
+		OSVersion:   payload.Version,
+		OSBuild:     payload.Build,
+		Arch:        normalizeWindowsArch(payload.Arch),
+		OSFamily:    OSFamilyWindows,
+		RuntimeKind: RuntimeKindWindowsPowerShell,
+		Transport:   transport,
 	}, nil
 }
 

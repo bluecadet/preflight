@@ -141,6 +141,7 @@ func (t *LocalTarget) Info(ctx context.Context) (TargetInfo, error) {
 		OSName:         p.OSName,
 		PackageManager: p.PackageManager,
 		Init:           p.Init,
+		RuntimeKind:    RuntimeKindPOSIXShell,
 		Transport:      t.Transport(),
 	}, nil
 }
@@ -151,11 +152,12 @@ func (t *LocalTarget) windowsInfo() TargetInfo {
 		hostname = ""
 	}
 	return TargetInfo{
-		Hostname:  hostname,
-		OSVersion: runtime.GOOS,
-		Arch:      runtime.GOARCH,
-		OSFamily:  normalizeOSFamily(runtime.GOOS),
-		Transport: t.Transport(),
+		Hostname:    hostname,
+		OSVersion:   runtime.GOOS,
+		Arch:        runtime.GOARCH,
+		OSFamily:    normalizeOSFamily(runtime.GOOS),
+		RuntimeKind: RuntimeKindWindowsPowerShell,
+		Transport:   t.Transport(),
 	}
 }
 
