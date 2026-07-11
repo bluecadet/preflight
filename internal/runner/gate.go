@@ -3,6 +3,7 @@ package runner
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/output"
@@ -78,11 +79,14 @@ func (g *GateRefusal) Event(targetName string) output.SupportGateEvent {
 // an unsupported module on a maybe-runnable task is a safe refusal. Returns a
 // non-nil *GateRefusal listing every violation when any runnable task is
 // unsupported; nil when the run may proceed.
-func (r *Runner) gateApplyStart(ordered []*PlanTask, kind target.RuntimeKind, rt *template.RuntimeContext) *GateRefusal {
+func (r *Runner) gateApplyStart(ordered []*PlanTask, kind target.RuntimeKind, targetName string, rt *template.RuntimeContext) *GateRefusal {
 	if kind == "" {
 		// Runtime unresolved (a transport that does not populate RuntimeKind).
 		// Skip the gate rather than refusing or panicking — keeps the gate
-		// target-agnostic.
+		// target-agnostic — but log it so a misconfigured transport is
+		// observable rather than silently disabling support validation.
+		slog.Warn("support gate skipped: target did not resolve a runtime kind; unsupported modules will fail at execution time",
+			"target", targetName)
 		return nil
 	}
 	reg := r.config.ModuleRegistry
