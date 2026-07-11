@@ -83,7 +83,6 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 	}
 }
 
-
 // serverHandle is the Handle given to a plugin's Check/Apply. Info returns the
 // TargetInfo delivered at initialize; Output emits an output notification;
 // RunCommand/PutFile/GetFile send requests to the host over the same codec.

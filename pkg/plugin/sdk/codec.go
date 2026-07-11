@@ -25,9 +25,9 @@ type rpcError struct {
 // notification (Method, no ID). ID is an int64 sequence number; both sides
 // generate int64 IDs starting at 1, so a zero ID marks a notification.
 type frame struct {
-	JSONRPC string `json:"jsonrpc"`
-	ID      int64  `json:"id,omitempty"`
-	Method  string `json:"method,omitempty"`
+	JSONRPC string          `json:"jsonrpc"`
+	ID      int64           `json:"id,omitempty"`
+	Method  string          `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *rpcError       `json:"error,omitempty"`
@@ -279,4 +279,3 @@ func (c *codec) Close() error {
 	})
 	return c.closeErr
 }
-
