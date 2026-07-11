@@ -56,7 +56,11 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 
 	case "check":
 		h := &serverHandle{info: s.info, codec: s.codec}
-		res, err := s.mod.Check(argsFromParams(params), h)
+		args, perr := argsFromParams(params)
+		if perr != nil {
+			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
+		}
+		res, err := s.mod.Check(args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -64,7 +68,11 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 
 	case "apply":
 		h := &serverHandle{info: s.info, codec: s.codec}
-		res, err := s.mod.Apply(argsFromParams(params), h)
+		args, perr := argsFromParams(params)
+		if perr != nil {
+			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
+		}
+		res, err := s.mod.Apply(args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -118,27 +126,30 @@ func (h *serverHandle) Output(line string) {
 	_ = h.codec.notify("output", map[string]any{"line": line})
 }
 
-// argsFromParams extracts the "args" key from JSON-RPC params, returning an
-// empty map when absent.
-func argsFromParams(params json.RawMessage) map[string]any {
+// argsFromParams extracts the "args" key from JSON-RPC params. Empty params
+// and a nil "args" key both legitimately yield an empty map; a malformed JSON
+// body surfaces as an error rather than silently running the plugin with no
+// args.
+func argsFromParams(params json.RawMessage) (map[string]any, error) {
 	if len(params) == 0 {
-		return map[string]any{}
+		return map[string]any{}, nil
 	}
 	var p struct {
 		Args map[string]any `json:"args"`
 	}
 	if err := json.Unmarshal(params, &p); err != nil {
-		return map[string]any{}
+		return nil, err
 	}
 	if p.Args == nil {
-		return map[string]any{}
+		return map[string]any{}, nil
 	}
-	return p.Args
+	return p.Args, nil
 }
 
-// encodeBase64 / decodeBase64 carry file bytes over JSON. PutFile/GetFile use
-// them so the host can chunk across high-latency transports without the plugin
-// caring about framing.
+// encodeBase64 / decodeBase64 carry file bytes over JSON-RPC. In v1, files are
+// sent as a single base64-encoded frame fully buffered in memory; chunked
+// streaming for large files is deferred to v2. Keep PutFile/GetFile payloads
+// small (a few MB at most).
 func encodeBase64(data []byte) string { return base64.StdEncoding.EncodeToString(data) }
 
 func decodeBase64(s string) ([]byte, error) {

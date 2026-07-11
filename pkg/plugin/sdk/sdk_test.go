@@ -89,6 +89,36 @@ func TestServe_UnknownMethod(t *testing.T) {
 	}
 }
 
+// TestServe_MalformedCheckParams asserts that params whose "args" key is the
+// wrong JSON type surface as a -32602 invalid-params error rather than
+// silently running the plugin with empty args (regression for the
+// argsFromParams silent fallback).
+func TestServe_MalformedCheckParams(t *testing.T) {
+	// args is a JSON array, but the handler expects an object → unmarshal error.
+	req := `{"jsonrpc":"2.0","id":4,"method":"check","params":{"args":[1,2,3]}}`
+	resp := runServe(t, mockModule{}, req)
+	if resp.Error == nil {
+		t.Fatal("expected rpc error for malformed params, got nil")
+	}
+	if resp.Error.Code != -32602 {
+		t.Fatalf("expected error code -32602, got %d (%q)", resp.Error.Code, resp.Error.Message)
+	}
+	if resp.Result != nil {
+		t.Errorf("expected no result, got %s", resp.Result)
+	}
+}
+
+func TestServe_MalformedApplyParams(t *testing.T) {
+	req := `{"jsonrpc":"2.0","id":6,"method":"apply","params":{"args":5}}`
+	resp := runServe(t, mockModule{}, req)
+	if resp.Error == nil {
+		t.Fatal("expected rpc error for malformed apply params, got nil")
+	}
+	if resp.Error.Code != -32602 {
+		t.Fatalf("expected error code -32602, got %d (%q)", resp.Error.Code, resp.Error.Message)
+	}
+}
+
 func TestServe_Initialize(t *testing.T) {
 	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":"1","target":{"family":"linux"}}}`
 	resp := runServe(t, mockModule{}, req)
