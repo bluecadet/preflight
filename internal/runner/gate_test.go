@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -239,6 +240,9 @@ func TestApplyGate_SupportedOnlyPasses(t *testing.T) {
 // TestApplyGate_RuntimeUnresolvedSkipsGate guards the no-op path: if a target
 // does not populate RuntimeKind (e.g. a future transport), the gate is skipped
 // rather than refusing or panicking. This keeps the gate target-agnostic.
+// The skip now logs a warning (see TestApplyGate_RuntimeUnresolvedLogsWarning)
+// so a misconfigured transport is observable instead of silently disabling
+// support validation.
 func TestApplyGate_RuntimeUnresolvedSkipsGate(t *testing.T) {
 	fake := &targettest.Fake{
 		InfoValue: target.TargetInfo{Transport: target.TransportSSH}, // RuntimeKind empty
@@ -253,6 +257,37 @@ func TestApplyGate_RuntimeUnresolvedSkipsGate(t *testing.T) {
 	}
 	if g := findGateEvent(rec); g != nil {
 		t.Fatalf("did not expect support_gate when runtime unresolved: %+v", g)
+	}
+}
+
+// TestApplyGate_RuntimeUnresolvedLogsWarning verifies that when RuntimeKind is
+// unresolved the gate skip is logged at warn level with the target name, so a
+// transport that forgets to populate RuntimeKind is not silently disabling the
+// support gate.
+func TestApplyGate_RuntimeUnresolvedLogsWarning(t *testing.T) {
+	var buf strings.Builder
+	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})
+	prev := slog.Default()
+	slog.SetDefault(slog.New(handler))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	fake := &targettest.Fake{
+		InfoValue: target.TargetInfo{Transport: target.TransportSSH, Hostname: "unresolved-host"},
+		Results:   []target.Result{{Status: target.StatusOK}},
+	}
+	plan := gatePlan(gateTask("t-reg", "windows task", "registry"))
+	r := New(fake, emptyResolver(), Config{Renderer: &recordingRenderer{}})
+
+	if err := r.Apply(context.Background(), plan); err != nil {
+		t.Fatalf("gate should be skipped when runtime is unresolved: %v", err)
+	}
+
+	logged := buf.String()
+	if !strings.Contains(logged, "level=WARN") {
+		t.Errorf("expected a WARN-level log, got: %s", logged)
+	}
+	if !strings.Contains(logged, "support gate skipped") {
+		t.Errorf("expected support gate skipped warning, got: %s", logged)
 	}
 }
 

@@ -40,7 +40,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		return err
 	}
 
-	if refusal := r.gateApplyStart(dag.TopologicalOrder(), info.RuntimeKind, rt); refusal != nil {
+	if refusal := r.gateApplyStart(dag.TopologicalOrder(), info.RuntimeKind, r.targetName(), rt); refusal != nil {
 		r.emit(refusal.Event(r.targetName()))
 		return refusal
 	}
