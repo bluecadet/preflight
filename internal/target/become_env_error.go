@@ -1,7 +1,6 @@
 package target
 
 import (
-	"errors"
 	"fmt"
 )
 
@@ -84,16 +83,6 @@ func (e *BecomeEnvError) Error() string {
 	}
 }
 
-// reasonCodeFromBecomeEnv is extracted so ReasonCodeForError can be extended
-// without a circular import.
-func reasonCodeFromBecomeEnv(err error) (string, bool) {
-	var be *BecomeEnvError
-	if errors.As(err, &be) {
-		return be.ReasonCode(), true
-	}
-	return "", false
-}
-
 // isRootUser reports whether a POSIX user name denotes the root account.
 // The bare-become-means-root default (§5) makes "root" the canonical root
 // name; a uid-0 account with a different name is a documented limitation.
@@ -101,17 +90,6 @@ func isRootUser(user string) bool {
 	return user == "root"
 }
 
-// enforcePOSIXPrivilege is the shared pre-Check() privilege probe. It runs
-// before module Check()/Apply() on every POSIX Execute path and fails the
-// task with a typed BecomeEnvError when the effective execution user is not
-// root for a requires_root module, or when become is enabled but sudo is
-// missing. It is a pure function over the cached probe + become options +
-// module name so it is unit-testable without a transport.
-//
-// Effective user = become.user when become is enabled, else the session user
-// (probe.EffectiveUID). become-to-non-root is caught by the same root check.
-// It returns nil for non-POSIX runtimes (Windows privilege is the transport
-// account's concern, not become's).
 // enforcePOSIXPrivilege is the shared pre-Check() privilege probe. It runs
 // before module Check()/Apply() on every POSIX Execute path and fails the
 // task with a typed BecomeEnvError when the effective execution user is not
