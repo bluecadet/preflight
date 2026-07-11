@@ -83,13 +83,10 @@ func (m *Plugin) Check(ctx context.Context, params map[string]any, out target.Ou
 		return target.CheckResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
-	res, err := client.Check(ctx, params, toSDKOut(out))
+	res, err := client.Check(ctx, params, sdk.OutputFunc(out))
 	if err != nil {
-		if pe := protocolError(m.name, err); pe != nil {
-			return target.CheckResult{}, pe
-		}
 		m.resetClient(client)
-		return target.CheckResult{}, fmt.Errorf("plugin %q check: %w", m.name, err)
+		return target.CheckResult{}, wrapPluginErr(m.name, "check", err)
 	}
 	return target.CheckResult{NeedsChange: res.NeedsChange, Message: res.Message}, nil
 }
@@ -104,25 +101,25 @@ func (m *Plugin) Apply(ctx context.Context, params map[string]any, out target.Ou
 		return target.ApplyResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
-	res, err := client.Apply(ctx, params, toSDKOut(out))
+	res, err := client.Apply(ctx, params, sdk.OutputFunc(out))
 	if err != nil {
-		if pe := protocolError(m.name, err); pe != nil {
-			return target.ApplyResult{}, pe
-		}
 		m.resetClient(client)
-		return target.ApplyResult{}, fmt.Errorf("plugin %q apply: %w", m.name, err)
+		return target.ApplyResult{}, wrapPluginErr(m.name, "apply", err)
 	}
 	return target.ApplyResult{Message: res.Message}, nil
 }
 
-// protocolError returns a typed plugin_protocol ModuleSupportError when err
-// chain contains a protocol-version failure, or nil otherwise. The host uses
-// the class to reject pre-v1 plugins with a clear, distinct error.
-func protocolError(name string, err error) error {
+// wrapPluginErr returns a typed plugin_protocol ModuleSupportError when err is
+// a protocol-version failure, otherwise a generic wrapped plugin error. op is
+// the call site ("check", "apply", or "" for client creation).
+func wrapPluginErr(name, op string, err error) error {
 	if sdk.IsProtocolError(err) {
 		return target.NewPluginProtocolError(name, err.Error())
 	}
-	return nil
+	if op == "" {
+		return fmt.Errorf("plugin %q: %w", name, err)
+	}
+	return fmt.Errorf("plugin %q %s: %w", name, op, err)
 }
 
 func (m *Plugin) Close() error {
@@ -152,10 +149,7 @@ func (m *Plugin) getOrCreateClient(ctx context.Context) (pluginClient, error) {
 	sdkInfo := toSDKTargetInfo(info)
 	client, err := m.newClient(ctx, m.path, sdkInfo, &opsHandleServer{ops: m.ops})
 	if err != nil {
-		if pe := protocolError(m.name, err); pe != nil {
-			return nil, pe
-		}
-		return nil, fmt.Errorf("plugin %q: %w", m.name, err)
+		return nil, wrapPluginErr(m.name, "", err)
 	}
 	m.client = client
 	return client, nil
@@ -170,15 +164,6 @@ func (m *Plugin) resetClient(client pluginClient) {
 	m.client = nil
 	m.mu.Unlock()
 	_ = client.Close()
-}
-
-// toSDKOut converts a target.OutputFunc to an sdk.OutputFunc, returning nil for
-// a nil input so the SDK skips the streaming callback entirely.
-func toSDKOut(out target.OutputFunc) sdk.OutputFunc {
-	if out == nil {
-		return nil
-	}
-	return sdk.OutputFunc(out)
 }
 
 // opsHandleServer adapts a target.TargetOps to the sdk.HandleServer interface
