@@ -39,11 +39,12 @@ func TestCatalogSupportedRuntimes_UnknownModuleReturnsNil(t *testing.T) {
 	}
 }
 
-// TestCatalogEnvironmentAndRebootAreWindowsOnly guards the drift fix: these
-// were BuiltinCommon but are not implemented on POSIX (reboot stubs error,
-// environment is a stated POSIX limitation). The catalog must reflect reality.
-func TestCatalogEnvironmentAndRebootAreWindowsOnly(t *testing.T) {
-	for _, name := range []string{"environment", "reboot"} {
+// TestCatalogEnvironmentIsWindowsOnly guards the drift fix: environment is a
+// stated POSIX limitation (ambient env is login-shell plumbing with no faithful
+// analog) and must not be marked supported on posix-shell. reboot is now
+// cross-platform (BuiltinCommon) with a POSIX implementation.
+func TestCatalogEnvironmentIsWindowsOnly(t *testing.T) {
+	for _, name := range []string{"environment"} {
 		if CatalogSupportsRuntime(name, RuntimeKindPOSIXShell) {
 			t.Errorf("module %q must not be marked supported on posix-shell", name)
 		}

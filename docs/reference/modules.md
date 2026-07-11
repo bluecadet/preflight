@@ -46,8 +46,8 @@ or as explicit modules:
 | `shell` | Yes | Yes | Yes |
 | `powershell` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH when `pwsh` or `powershell` is installed |
 | `environment` | Yes | Yes | Windows-over-SSH only |
-| `wait` | Yes | Yes | Yes on Windows-over-SSH; partial on POSIX-over-SSH (`file_exists`, `port_open`) |
-| `reboot` | Yes | Yes | Windows-over-SSH only |
+| `wait` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH (`file_exists`, `port_open`, `service_running`) |
+| `reboot` | Yes | Yes | Windows-over-SSH; POSIX-over-SSH (systemd) |
 | `registry` | Windows only | Yes | Windows-over-SSH only |
 | `service` | Windows only | Yes | Windows-over-SSH only |
 | `package` | Windows only | Yes | Windows-over-SSH only |
@@ -66,7 +66,7 @@ Notes:
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
-- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`), `powershell` when a remote PowerShell binary is available, and `user` (requires root).
+- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, and `user` (requires root).
 - Plugin modules are not yet supported over SSH.
 
 ## Module Fields
@@ -403,8 +403,17 @@ Request a reboot.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `condition` | `always` or `if_needed` | Reboot policy |
-| `timeout` | integer | Timeout in seconds |
+| `condition` | `always` or `if_needed` | Reboot policy (default: `if_needed`) |
+| `timeout` | integer | Reconnect-wait timeout in seconds (default: `300`) |
+
+On POSIX-over-SSH (systemd hosts), `condition: always` issues `systemctl reboot`
+and waits for the SSH connection to re-establish within `timeout`. `condition:
+if_needed` probes the distro reboot-required signal: `/var/run/reboot-required`
+(the apt convention, also honored as a plantable marker on any distro) and
+`needs-restarting -r` (dnf). When neither signal is available, no reboot is
+needed and the task output says so. `reboot` requires root on POSIX — run as
+root or with `become`. The real reboot+reconnect path is unit-tested against
+fakes only and is a stated limitation: it is not exercised end-to-end in CI.
 
 ### `wait`
 
@@ -422,7 +431,11 @@ The `target` field is required and interpreted per condition:
 | --- | --- | --- |
 | `port_open` | `address:port` TCP endpoint | `"localhost:8080"` |
 | `file_exists` | File system path | `"C:\\Exhibits\\ready.txt"` |
-| `service_running` | Windows service name | `"W32Time"` |
+| `service_running` | Windows service name or systemd unit name | `"W32Time"`, `"nginx.service"` |
+
+On POSIX-over-SSH, `service_running` probes `systemctl is-active --quiet`. It
+requires systemd; a host with no init system detected fails the task with the
+typed environment-prerequisite error (`missing_prerequisite`).
 
 ## Related Docs
 

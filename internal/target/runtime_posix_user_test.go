@@ -4,49 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 	"testing"
 )
-
-// fakePOSIXBackend is a minimal posixShellBackend for unit-testing POSIX
-// module logic without a real target. Only RunPOSIXCommand is driven; the
-// user module uses no other backend method, so the rest are stubs.
-type fakePOSIXBackend struct {
-	mu        sync.Mutex
-	commands  []string
-	stdins    [][]byte
-	responder func(command string, stdin []byte) (stdout, stderr string, code int)
-}
-
-func (f *fakePOSIXBackend) RunPOSIXCommand(_ context.Context, command string, stdin []byte) (string, string, int, error) {
-	f.mu.Lock()
-	f.commands = append(f.commands, command)
-	f.stdins = append(f.stdins, stdin)
-	f.mu.Unlock()
-	stdout, stderr, code := f.responder(command, stdin)
-	return stdout, stderr, code, nil
-}
-
-func (f *fakePOSIXBackend) RunPowerShellScript(context.Context, string, OutputFunc) (string, error) {
-	return "", nil
-}
-func (f *fakePOSIXBackend) CopyFile(context.Context, string, string) error { return nil }
-func (f *fakePOSIXBackend) ReadFile(context.Context, string) ([]byte, error) {
-	return nil, nil
-}
-func (f *fakePOSIXBackend) PowerShellBinary() string { return "" }
-
-// ranCommand reports whether a command matching substr was issued.
-func (f *fakePOSIXBackend) ranCommand(substr string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, c := range f.commands {
-		if strings.Contains(c, substr) {
-			return true
-		}
-	}
-	return false
-}
 
 // userStateResponder builds a responder for a user with the given existence
 // state and supplementary group list. It interprets the id-based probes the

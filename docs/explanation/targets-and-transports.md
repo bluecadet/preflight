@@ -83,7 +83,7 @@ SSH now auto-detects one of two runtimes on the remote host:
 That split matters:
 
 - Windows-over-SSH uses the same built-in Windows module surface as WinRM.
-- POSIX-over-SSH stays conservative and focuses on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
+- POSIX-over-SSH focuses on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, and `powershell` when `pwsh` or `powershell` is installed. `service_running` and `reboot` require systemd; `reboot` also requires root.
 - Plugin modules are not yet supported over SSH.
 
 SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
@@ -96,11 +96,12 @@ SSH is now the default and primary remote transport, including for Windows hosts
 | `file` | yes | yes |
 | `shell` | yes | yes |
 | `wait` (`file_exists`, `port_open`) | yes | yes |
+| `wait` (`service_running`) | yes (systemd) | yes |
 | `powershell` | yes (requires `pwsh` or `powershell` installed) | yes |
 | `environment` | no | yes |
 | `registry` | no | yes |
 | `service` | no | yes |
-| `reboot` | no | yes |
+| `reboot` | yes (systemd; requires root) | yes |
 | `user` | no | yes |
 | `windows_feature` | no | yes |
 | plugin modules | no | no |

@@ -153,6 +153,11 @@ func (r *sshPOSIXShellRuntime) PowerShellBinary() string {
 	return r.powerShellBinary
 }
 
+// Probe returns the cached POSIX detection signals for this target.
+func (r *sshPOSIXShellRuntime) Probe(ctx context.Context) (Probe, error) {
+	return r.ensureProbe(ctx)
+}
+
 func buildEncodedPowerShellCommand(binary, script string) string {
 	encoded := encodePowerShellScript(script)
 	return shellQuoteExec(binary, []string{"-NoProfile", "-NonInteractive", "-EncodedCommand", encoded})

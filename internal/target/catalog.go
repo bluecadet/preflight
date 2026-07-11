@@ -36,7 +36,7 @@ var catalogModules = []catalogModule{
 	{Name: "firewall_rule", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "powershell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "shell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
-	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
+	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon, RequiresRoot: true},
 	{Name: "wait", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 }
 
