@@ -135,10 +135,9 @@ func enforcePOSIXPrivilege(kind RuntimeKind, module string, become *BecomeOption
 }
 
 // enforcePrivilege is the catalog-decoupled core of enforcePOSIXPrivilege,
-// factored so the decision logic is unit-testable without a real catalog entry
-// that is both POSIX-supported and requires_root (none exists until the POSIX
-// service/user/system_package/reboot modules land). supportedOnRuntime is
-// precomputed by the caller from the catalog matrix.
+// factored so the decision logic is unit-testable without depending on a
+// specific catalog entry. supportedOnRuntime is precomputed by the caller from
+// the catalog matrix.
 func enforcePrivilege(kind RuntimeKind, module string, become *BecomeOptions, probe Probe, supportedOnRuntime bool) error {
 	if become != nil {
 		// become on POSIX always needs the sudo binary, regardless of the

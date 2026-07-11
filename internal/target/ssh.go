@@ -149,6 +149,7 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 				copyPlain:        rt.CopyFile,
 				readPlain:        rt.ReadFile,
 				powerShellBinary: rt.PowerShellBinary(),
+				probe:            rt.ensureProbe,
 				become:           become,
 			}
 			registry = newPOSIXShellRegistry(backend)

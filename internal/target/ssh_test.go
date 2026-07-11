@@ -585,7 +585,7 @@ func TestSSHTarget_POSIXPowerShellModuleUsesRemoteBinary(t *testing.T) {
 	}
 }
 
-func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
+func TestSSHTarget_POSIXWaitServiceRunning(t *testing.T) {
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
@@ -596,6 +596,8 @@ func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
 				return "preflight", "", 0, nil
 			case isPOSIXProbeCommand(command):
 				return posixProbeOutput(), "", 0, nil
+			case strings.Contains(command, "systemctl is-active --quiet"):
+				return "", "", 0, nil // active → exit 0
 			default:
 				t.Fatalf("unexpected command %q", command)
 				return "", "", 0, nil
@@ -603,12 +605,15 @@ func TestSSHTarget_POSIXWaitServiceRunningUnsupported(t *testing.T) {
 		},
 	}
 
-	_, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
+	result, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
 		"condition": "service_running",
 		"target":    "nginx",
 	}, ExecutionOptions{}, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Fatalf("expected unsupported error, got %v", err)
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if result.Status != StatusOK {
+		t.Fatalf("expected status OK for an already-running service, got %q: %s", result.Status, result.Message)
 	}
 }
 

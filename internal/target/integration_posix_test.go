@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 // TestIntegration_POSIXFile exercises the file module over SSH against a real
@@ -228,5 +229,86 @@ func TestIntegration_POSIXWait(t *testing.T) {
 			"target":    "localhost:8891",
 			"timeout":   "30s",
 		}, ExecutionOptions{}, false, StatusChanged)
+	})
+}
+
+// TestIntegration_POSIXWaitServiceRunning exercises the wait module's
+// service_running condition over SSH against a real POSIX target with systemd.
+// It starts a transient system service (via sudo), waits for it to reach
+// active, and asserts the condition reports met at check time (StatusOK); then
+// stops the service and asserts the wait times out with StatusFailed within a
+// short deadline.
+func TestIntegration_POSIXWaitServiceRunning(t *testing.T) {
+	forEachPOSIXTarget(t, func(t *testing.T, tgt *SSHTarget) {
+		ctx := context.Background()
+		svc := fmt.Sprintf("preflight-test-svc-%s.service", testRunID()[:8])
+
+		t.Cleanup(func() {
+			_, _, _, _ = tgt.run(ctx, fmt.Sprintf("sudo systemctl stop %q 2>/dev/null; sudo systemctl reset-failed %q 2>/dev/null; true", svc, svc), nil)
+		})
+
+		// Start a transient system service that sleeps long enough to stay active.
+		posixRun(t, tgt, fmt.Sprintf(
+			"sudo systemd-run --unit=%q --service-type=exec /bin/sh -c 'sleep 300'", svc))
+		// Wait for the unit to reach active before asserting.
+		posixRun(t, tgt, fmt.Sprintf(
+			"for i in 1 2 3 4 5; do sudo systemctl is-active --quiet %q && exit 0; sleep 1; done", svc))
+
+		// Condition met at check time → StatusOK.
+		mustExecute(t, tgt, "wait-svc-active", "wait", map[string]any{
+			"condition": "service_running",
+			"target":    svc,
+			"timeout":   "15s",
+		}, ExecutionOptions{}, false, StatusOK)
+
+		// Stop the service; the condition is no longer met. Apply polls until the
+		// short timeout expires → StatusFailed.
+		posixRun(t, tgt, fmt.Sprintf("sudo systemctl stop %q", svc))
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		res, err := tgt.Execute(ctx, "wait-svc-stopped", "wait", map[string]any{
+			"condition": "service_running",
+			"target":    svc,
+			"timeout":   "6s",
+		}, ExecutionOptions{}, false, nil)
+		if err == nil && res.Status != StatusFailed {
+			t.Fatalf("expected StatusFailed for a stopped service within timeout, got %q: %s", res.Status, res.Message)
+		}
+	})
+}
+
+// TestIntegration_POSIXRebootIfNeeded exercises the reboot module's if_needed
+// condition over SSH against a real POSIX target. The probe is driven by
+// planting/removing the /var/run/reboot-required marker signal (honored on both
+// apt and dnf hosts), so the test runs in both CI containers:
+//
+//   - marker absent  → no reboot needed (StatusOK)
+//   - marker planted → reboot needed (StatusChanged on a dry-run, which asserts
+//     detection without actually rebooting the target)
+//
+// reboot requires root, so the task runs with become enabled (pf-admin has
+// NOPASSWD sudo). The real reboot+reconnect path is not exercised here (stated
+// limitation); only the if_needed probe detection is covered.
+func TestIntegration_POSIXRebootIfNeeded(t *testing.T) {
+	forEachPOSIXTarget(t, func(t *testing.T, tgt *SSHTarget) {
+		ctx := context.Background()
+		marker := "/var/run/reboot-required"
+
+		t.Cleanup(func() {
+			_, _, _, _ = tgt.run(ctx, fmt.Sprintf("sudo rm -f %q", marker), nil)
+		})
+
+		// Ensure the marker is absent: if_needed → no reboot needed.
+		posixRun(t, tgt, fmt.Sprintf("sudo rm -f %q", marker))
+		mustExecute(t, tgt, "reboot-none", "reboot", map[string]any{
+			"condition": "if_needed",
+		}, ExecutionOptions{Become: &BecomeOptions{Enabled: true}}, false, StatusOK)
+
+		// Plant the marker: if_needed → reboot needed. Use dry-run so the change
+		// is detected (StatusChanged) without actually rebooting the target.
+		posixRun(t, tgt, fmt.Sprintf("sudo touch %q", marker))
+		mustExecute(t, tgt, "reboot-detected", "reboot", map[string]any{
+			"condition": "if_needed",
+		}, ExecutionOptions{Become: &BecomeOptions{Enabled: true}}, true, StatusChanged)
 	})
 }

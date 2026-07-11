@@ -11,6 +11,7 @@ RUN dnf install -y \
         sudo \
         systemd \
         nmap-ncat \
+        dnf-utils \
     && dnf clean all
 
 RUN echo "1" > /etc/preflight-test-sacrificial

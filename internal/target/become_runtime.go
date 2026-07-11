@@ -154,6 +154,7 @@ type posixTaskBackend struct {
 	copyPlain        func(context.Context, string, string) error
 	readPlain        func(context.Context, string) ([]byte, error)
 	powerShellBinary string
+	probe            func(context.Context) (Probe, error)
 	become           *BecomeOptions
 }
 
@@ -211,6 +212,16 @@ func (b *posixTaskBackend) ReadFile(ctx context.Context, path string) ([]byte, e
 
 func (b *posixTaskBackend) PowerShellBinary() string {
 	return b.powerShellBinary
+}
+
+// Probe returns the cached POSIX detection signals. The probe is gathered on
+// the underlying runtime before the become backend is built, so become
+// re-uses the same cached result rather than re-probing through sudo.
+func (b *posixTaskBackend) Probe(ctx context.Context) (Probe, error) {
+	if b.probe == nil {
+		return Probe{}, nil
+	}
+	return b.probe(ctx)
 }
 
 func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
