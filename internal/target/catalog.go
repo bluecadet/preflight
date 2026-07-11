@@ -27,7 +27,7 @@ var catalogModules = []catalogModule{
 	{Name: "package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "shortcut", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "scheduled_task", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "user", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
+	{Name: "user", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon, RequiresRoot: true},
 	{Name: "winget_package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "remove_appx_packages", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
 	{Name: "power_plan", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},

@@ -53,6 +53,14 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 				return ApplyResult{}, applyPOSIXWait(ctx, backend, params)
 			},
 		},
+		"user": moduleFuncs{
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
+				return checkPOSIXUser(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
+				return ApplyResult{}, applyPOSIXUser(ctx, backend, params)
+			},
+		},
 	}
 	if backend.PowerShellBinary() != "" {
 		supported["powershell"] = moduleFuncs{
