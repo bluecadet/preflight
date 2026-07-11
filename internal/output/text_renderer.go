@@ -111,6 +111,8 @@ func (r *TextRenderer) Emit(event Event) {
 		r.emitNewTaskFailed(e)
 	case DiagnosticEvent:
 		// Diagnostic detail is already carried in TaskFailedEvent; no render-time output.
+	case SupportGateEvent:
+		r.emitSupportGate(e)
 	case RunSummaryEvent:
 		r.emitRunSummary(e)
 	case TaskOutputEvent:
@@ -422,7 +424,6 @@ func (r *TextRenderer) rosterColorer() func(string) string {
 func (r *TextRenderer) writeLine(line string) {
 	_, _ = fmt.Fprintln(r.w, line)
 }
-
 func (r *TextRenderer) writeLines(lines []string) {
 	for _, line := range lines {
 		r.writeLine(line)
@@ -431,6 +432,16 @@ func (r *TextRenderer) writeLines(lines []string) {
 
 func (r *TextRenderer) writeBlank() {
 	r.writeLine("")
+}
+
+// emitSupportGate renders the apply-start support gate refusal: a summary
+// line naming the target and runtime, then one line per violation naming
+// the task and the uniform module-by-runtime message.
+func (r *TextRenderer) emitSupportGate(e SupportGateEvent) {
+	r.writeLine(r.colorize(ansiRed, fmt.Sprintf("support gate: %d task(s) cannot run on %s (%s)", len(e.Violations), e.Target, e.Runtime)))
+	for _, v := range e.Violations {
+		r.writeLine(fmt.Sprintf("  %s: %s", v.TaskName, v.Message))
+	}
 }
 
 func (r *TextRenderer) writeOutputLines(lines []string, indent int) {

@@ -216,6 +216,14 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 		if e.ActionPath != "" {
 			m["action_ref"] = e.ActionPath
 		}
+	case SupportGateEvent:
+		m["runtime"] = e.Runtime
+		if e.Reason != "" {
+			m["reason"] = e.Reason
+		}
+		if len(e.Violations) > 0 {
+			m["violations"] = e.Violations
+		}
 	case DiagnosticEvent:
 		m["summary"] = e.Summary
 		if e.Source != "" {

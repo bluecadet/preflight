@@ -204,6 +204,8 @@ func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 		return []CommitDescriptor{p.applyTaskFinished(e.Target, e.TaskID, e.TaskName, "", "skipped", e.Reason, nil, 0)}
 	case TaskFailedEvent:
 		return p.applyTaskFailed(e)
+	case SupportGateEvent:
+		return []CommitDescriptor{WarningDescriptor{Message: e.LogMessage()}}
 	case WarningEvent:
 		p.WarningCount++
 		return []CommitDescriptor{WarningDescriptor(e)}
