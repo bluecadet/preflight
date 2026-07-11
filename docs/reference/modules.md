@@ -55,7 +55,7 @@ or as explicit modules:
 | `remove_appx_packages` | Windows only | Yes* | Windows-over-SSH only |
 | `shortcut` | Windows only | Yes | Windows-over-SSH only |
 | `scheduled_task` | Windows only | Yes | Windows-over-SSH only |
-| `user` | Windows only | Yes | Windows-over-SSH only |
+| `user` | Windows only | Yes | Yes (Windows-over-SSH; POSIX-over-SSH, requires root) |
 | `power_plan` | Windows only | Yes | Windows-over-SSH only |
 | `windows_feature` | Windows only | Yes* | Windows-over-SSH only |
 | `firewall_rule` | Windows only | Yes | Windows-over-SSH only |
@@ -66,7 +66,7 @@ Notes:
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
-- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when a remote PowerShell binary is available.
+- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`), `powershell` when a remote PowerShell binary is available, and `user` (requires root).
 - Plugin modules are not yet supported over SSH.
 
 ## Module Fields
@@ -278,7 +278,7 @@ Manage Windows scheduled tasks.
 
 ### `user`
 
-Manage Windows local users.
+Manage local users.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -287,11 +287,24 @@ Manage Windows local users.
 | `groups` | string[] | Group memberships |
 | `ensure` | `present` or `absent` | Desired state |
 
-When `ensure: present` is used without a `password`, Preflight creates the user
-without a password if the account does not already exist. If the user already
-exists, omitting `password` leaves the current password unchanged. Requested
-`groups` are additive and ensure membership in those groups without removing
-other existing memberships.
+**Windows.** When `ensure: present` is used without a `password`, Preflight creates the
+user without a password if the account does not already exist. If the user
+already exists, omitting `password` leaves the current password unchanged.
+Requested `groups` are additive and ensure membership in those groups without
+removing other existing memberships.
+
+**POSIX (requires root).** Over SSH-POSIX the same schema drives
+`useradd`/`userdel`. `ensure: present` creates a missing user with `useradd`
+and, when a `password` is supplied, sets it via `chpasswd` **on creation only**.
+Group membership is additive (`usermod -aG`) and never strips existing
+memberships. `ensure: absent` runs `userdel`.
+
+*Known limitation — POSIX password drift.* The password of an existing user is
+never reset, even when `password` is supplied and `Apply` runs for another
+reason (for example, to add a group). Managed POSIX endpoints authenticate by
+SSH key, so password drift on existing accounts is documented rather than
+corrected. To force a password change, manage the password out of band (for
+example, via a `shell` task running `chpasswd`).
 
 ### `power_plan`
 
