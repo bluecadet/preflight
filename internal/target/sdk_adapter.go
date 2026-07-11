@@ -24,10 +24,6 @@ func (a *sdkModuleAdapter) Name() string    { return a.name }
 func (a *sdkModuleAdapter) Version() string { return "" }
 
 func (a *sdkModuleAdapter) Check(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
-	return a.CheckStreaming(args, h)
-}
-
-func (a *sdkModuleAdapter) CheckStreaming(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
 	var out OutputFunc
 	if h != nil {
 		out = OutputFunc(h.Output)
@@ -40,10 +36,6 @@ func (a *sdkModuleAdapter) CheckStreaming(args map[string]any, h sdk.Handle) (sd
 }
 
 func (a *sdkModuleAdapter) Apply(args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
-	return a.ApplyStreaming(args, h)
-}
-
-func (a *sdkModuleAdapter) ApplyStreaming(args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
 	var out OutputFunc
 	if h != nil {
 		out = OutputFunc(h.Output)

@@ -15,15 +15,6 @@ type elevationWrapper interface {
 	Start(ctx context.Context, binary string, moduleName string) (*sdk.Client, error)
 }
 
-// toSDKOut converts a target.OutputFunc to an sdk.OutputFunc, returning nil for a
-// nil input so the SDK skips the streaming callback entirely.
-func toSDKOut(out OutputFunc) sdk.OutputFunc {
-	if out == nil {
-		return nil
-	}
-	return sdk.OutputFunc(out)
-}
-
 // subprocessModule implements target.Module by re-invoking the preflight binary
 // under elevation via __module-exec.
 type subprocessModule struct {
@@ -39,8 +30,7 @@ func (m *subprocessModule) Check(ctx context.Context, params map[string]any, out
 	}
 	defer func() { _ = cli.Close() }()
 
-	sdkOut := toSDKOut(out)
-	sdkRes, err := cli.Check(ctx, params, sdkOut)
+	sdkRes, err := cli.Check(ctx, params, sdk.OutputFunc(out))
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -54,8 +44,7 @@ func (m *subprocessModule) Apply(ctx context.Context, params map[string]any, out
 	}
 	defer func() { _ = cli.Close() }()
 
-	sdkOut := toSDKOut(out)
-	sdkRes, err := cli.Apply(ctx, params, sdkOut)
+	sdkRes, err := cli.Apply(ctx, params, sdk.OutputFunc(out))
 	if err != nil {
 		return ApplyResult{}, err
 	}

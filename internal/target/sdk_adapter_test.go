@@ -63,7 +63,7 @@ func TestSDKModuleAdapter_Check(t *testing.T) {
 	}
 }
 
-func TestSDKModuleAdapter_CheckStreaming(t *testing.T) {
+func TestSDKModuleAdapter_CheckStreamingOutput(t *testing.T) {
 	mod := &mockAdapterModule{
 		checkResult: CheckResult{NeedsChange: false},
 		outputLines: []string{"line 1", "line 2"},
