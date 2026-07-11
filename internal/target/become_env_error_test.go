@@ -160,13 +160,33 @@ func TestEnforcePOSIXPrivilege_NonPOSIXIsNoop(t *testing.T) {
 }
 
 // TestEnforcePOSIXPrivilege_UnsupportedModuleNoViolation guards that a
-// requires_root module which is not supported on POSIX (e.g. "service" until
-// the POSIX impl lands) does NOT fire requires-root-violation — the
-// unsupported_on_runtime error wins downstream.
-func TestEnforcePOSIXPrivilege_UnsupportedModuleNoViolation(t *testing.T) {
-	err := enforcePOSIXPrivilege(RuntimeKindPOSIXShell, "service", nil, Probe{EffectiveUID: "1000", SudoAvailable: true})
-	if err != nil {
-		t.Fatalf("expected nil for unsupported-on-POSIX requires_root module, got %v", err)
+// requires_root module which is not supported on POSIX does NOT fire
+// requires-root-violation — the unsupported_on_runtime error wins downstream.
+//
+// There is no longer a real catalog module that is both RequiresRoot and
+// Windows-only: every requires_root module (service, user, reboot,
+// system_package) is supported on posix-shell. The catalog-decoupled
+// unsupported-on-runtime case is covered directly by TestEnforcePrivilege_Decision
+// (supportedOnRuntime=false), so this integration-style test is retired here
+// rather than twisting the catalog to manufacture an unsupported case.
+
+// TestEnforcePOSIXPrivilege_ServiceRequiresRootOnPOSIX guards that the service
+// module — now supported on posix-shell and marked requires_root — fires the
+// requires-root-violation for an unprivileged session, and passes for root.
+func TestEnforcePOSIXPrivilege_ServiceRequiresRootOnPOSIX(t *testing.T) {
+	unpriv := Probe{EffectiveUID: "1000", SudoAvailable: true}
+	root := Probe{EffectiveUID: "0", SudoAvailable: true}
+
+	if err := enforcePOSIXPrivilege(RuntimeKindPOSIXShell, "service", nil, unpriv); err == nil {
+		t.Fatal("expected requires-root-violation for unprivileged service, got nil")
+	} else {
+		var be *BecomeEnvError
+		if !errors.As(err, &be) || be.ReasonCode() != "requires-root-violation" {
+			t.Fatalf("expected requires-root-violation, got %v", err)
+		}
+	}
+	if err := enforcePOSIXPrivilege(RuntimeKindPOSIXShell, "service", nil, root); err != nil {
+		t.Fatalf("expected nil for root session service, got %v", err)
 	}
 }
 

@@ -152,6 +152,7 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 				probe:            rt.ensureProbe,
 				packageManager:   rt.PackageManager,
 				become:           become,
+				initSystem:       rt.InitSystem(),
 			}
 			registry = newPOSIXShellRegistry(backend)
 		}

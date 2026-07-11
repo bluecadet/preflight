@@ -49,7 +49,7 @@ or as explicit modules:
 | `wait` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH (`file_exists`, `port_open`, `service_running`) |
 | `reboot` | Yes | Yes | Windows-over-SSH; POSIX-over-SSH (systemd) |
 | `registry` | Windows only | Yes | Windows-over-SSH only |
-| `service` | Windows only | Yes | Windows-over-SSH only |
+| `service` | Windows only | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH over systemd (**requires root**) |
 | `package` | Windows only | Yes | Windows-over-SSH only |
 | `winget_package` | Windows only | Yes | Windows-over-SSH only |
 | `remove_appx_packages` | Windows only | Yes* | Windows-over-SSH only |
@@ -67,7 +67,7 @@ Notes:
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
-- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), and `system_package` on targets with apt or dnf.
+- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), `system_package` on targets with apt or dnf, and `service` over systemd (requires root).
 - Plugin modules are not yet supported over SSH.
 
 ## Module Fields
@@ -109,13 +109,42 @@ Use `patch` when a Windows setting is stored inside an existing binary registry 
 
 ### `service`
 
-Manage Windows services.
+Manage services. Same schema on Windows and POSIX; the runtime implementation
+is per-platform (Windows SCM on Windows, `systemctl` on POSIX-over-SSH).
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Service name |
 | `state` | `running`, `stopped`, or `disabled` | Desired service state |
 | `startup_type` | `automatic`, `manual`, or `disabled` | Startup behavior |
+
+**POSIX-over-SSH (systemd).** The target must run systemd (probed via
+`/run/systemd/system`); a host without systemd fails the task with a typed
+`missing_prerequisite` error naming what was probed. The module is
+`requires root`: run the session as root or set `become: {enabled: true}` to
+escalate (see [Become](../explanation/become.md)).
+
+`state` maps to `systemctl` active state:
+
+- `running` → the unit is active (`systemctl start`)
+- `stopped` → the unit is inactive (`systemctl stop`)
+- `disabled` → stop **and** mask in one step (`systemctl stop` + `systemctl
+  mask`), short-circuiting `startup_type` just like the Windows apply. Windows'
+  *disabled* service state corresponds to systemd *masked* (a unit that cannot
+  be started).
+
+`startup_type` maps to `systemctl` enable state:
+
+- `automatic` → `enabled` (`systemctl enable`)
+- `manual` → `disabled` (`systemctl disable`)
+- `disabled` → `masked` (`systemctl mask`)
+
+Enabling or disabling first unmasks the unit (a no-op when it is not masked)
+so a previously masked unit can transition back to `enabled` or `disabled`.
+
+The local POSIX target does not implement the service module; manage POSIX
+services over SSH. The `shell` module is the escape hatch for
+non-systemd init systems.
 
 ### `file`
 

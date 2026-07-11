@@ -70,6 +70,7 @@ func (f *fakePOSIXBackend) Probe(context.Context) (Probe, error) { return f.prob
 func (f *fakePOSIXBackend) PackageManager(context.Context) (string, error) {
 	return f.probe.PackageManager, nil
 }
+func (f *fakePOSIXBackend) InitSystem() string { return f.probe.Init }
 
 // ranCommand reports whether a command matching substr was issued.
 func (f *fakePOSIXBackend) ranCommand(substr string) bool {

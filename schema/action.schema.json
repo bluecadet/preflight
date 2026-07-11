@@ -235,7 +235,7 @@
     },
     "moduleService": {
       "type": "object",
-      "description": "Manage Windows services",
+      "description": "Manage services",
       "additionalProperties": false,
       "properties": {
         "name": {

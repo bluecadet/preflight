@@ -683,7 +683,7 @@ func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
 }
 
 func TestSSHTarget_POSIXUnsupportedModuleReturnsError(t *testing.T) {
-	for _, module := range []string{"environment", "service"} {
+	for _, module := range []string{"environment", "registry"} {
 		t.Run(module, func(t *testing.T) {
 			tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 			tgt.runner = &fakeSSHRunner{
