@@ -7,6 +7,24 @@ import (
 	"time"
 )
 
+// requireSystemd is the single systemd-prerequisite check shared by every
+// POSIX module whose path depends on systemd (reboot, wait service_running,
+// service). It reads the cached runtime-detection probe rather than
+// re-probing, preserving one detection path per target (spec §6). An absent
+// or non-systemd init signal surfaces a typed missing_prerequisite error so
+// the run log carries the reason code.
+func requireSystemd(ctx context.Context, backend posixShellBackend, module string) error {
+	probe, err := backend.Probe(ctx)
+	if err != nil {
+		return fmt.Errorf("%s: probe failed: %w", module, err)
+	}
+	if probe.Init != "systemd" {
+		return NewMissingPrerequisiteError(module, RuntimeKindPOSIXShell,
+			"requires systemd; no init system detected on the target")
+	}
+	return nil
+}
+
 // --- reboot ----------------------------------------------------------------
 
 // checkPOSIXReboot decides whether a reboot is needed. condition "always"
@@ -28,9 +46,8 @@ func checkPOSIXReboot(ctx context.Context, backend posixShellBackend, params map
 	if err != nil {
 		return CheckResult{}, err
 	}
-	if probe.Init != "systemd" {
-		return CheckResult{}, NewMissingPrerequisiteError("reboot", RuntimeKindPOSIXShell,
-			"requires systemd; no init system detected on the target")
+	if err := requireSystemd(ctx, backend, "reboot"); err != nil {
+		return CheckResult{}, err
 	}
 
 	if condition == "always" {
@@ -119,13 +136,8 @@ func applyPOSIXReboot(ctx context.Context, backend posixShellBackend, params map
 		timeout = int(raw)
 	}
 
-	probe, err := backend.Probe(ctx)
-	if err != nil {
+	if err := requireSystemd(ctx, backend, "reboot"); err != nil {
 		return ApplyResult{}, err
-	}
-	if probe.Init != "systemd" {
-		return ApplyResult{}, NewMissingPrerequisiteError("reboot", RuntimeKindPOSIXShell,
-			"requires systemd; no init system detected on the target")
 	}
 
 	// Issue the reboot. systemctl reboot does not return until shutdown begins;

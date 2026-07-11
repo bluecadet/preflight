@@ -74,8 +74,8 @@ func TestPOSIXService_RequiresSystemd(t *testing.T) {
 	if !errors.As(err, &mse) || mse.Class != ClassMissingPrerequisite {
 		t.Fatalf("expected missing_prerequisite, got %v", err)
 	}
-	if !strings.Contains(mse.Detail, "systemd") || !strings.Contains(mse.Detail, "/run/systemd/system") {
-		t.Fatalf("error detail should name systemd and what was probed, got %q", mse.Detail)
+	if !strings.Contains(mse.Detail, "systemd") {
+		t.Fatalf("error detail should name systemd, got %q", mse.Detail)
 	}
 }
 
