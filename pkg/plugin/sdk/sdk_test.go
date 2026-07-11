@@ -42,7 +42,7 @@ func runServe(t *testing.T, m Module, reqJSON string) rpcResponse {
 }
 
 func TestServe_Check(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"1","method":"check","params":{"args":{}}}`
+	req := `{"jsonrpc":"2.0","id":1,"method":"check","params":{"args":{}}}`
 	resp := runServe(t, mockModule{}, req)
 
 	if resp.Error != nil {
@@ -59,13 +59,10 @@ func TestServe_Check(t *testing.T) {
 	if result.NeedsChange {
 		t.Errorf("expected NeedsChange=false, got true")
 	}
-	if result.State["status"] != "ok" {
-		t.Errorf("expected state.status=ok, got %v", result.State["status"])
-	}
 }
 
 func TestServe_Apply(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"2","method":"apply","params":{"args":{}}}`
+	req := `{"jsonrpc":"2.0","id":2,"method":"apply","params":{"args":{}}}`
 	resp := runServe(t, mockModule{}, req)
 
 	if resp.Error != nil {
@@ -79,13 +76,10 @@ func TestServe_Apply(t *testing.T) {
 	if err := json.Unmarshal(raw, &result); err != nil {
 		t.Fatalf("unmarshal ApplyResult: %v", err)
 	}
-	if result.State["status"] != "applied" {
-		t.Errorf("expected state.status=applied, got %v", result.State["status"])
-	}
 }
 
 func TestServe_UnknownMethod(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"3","method":"bogus","params":{}}`
+	req := `{"jsonrpc":"2.0","id":3,"method":"bogus","params":{}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error == nil {
 		t.Fatal("expected rpc error for unknown method, got nil")
@@ -96,7 +90,7 @@ func TestServe_UnknownMethod(t *testing.T) {
 }
 
 func TestServe_Initialize(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"0","method":"initialize","params":{"protocol_version":"1","target":{"family":"linux"}}}`
+	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":"1","target":{"family":"linux"}}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
@@ -156,7 +150,7 @@ func runServeMulti(t *testing.T, m Module, reqs []string) []string {
 }
 
 func TestServe_StreamingCheck(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"10","method":"check","params":{"args":{}}}`
+	req := `{"jsonrpc":"2.0","id":10,"method":"check","params":{"args":{}}}`
 	lines := runServeMulti(t, streamingModule{}, []string{req})
 	// 2 output notifications + 1 response
 	if len(lines) != 3 {
@@ -178,7 +172,7 @@ func TestServe_StreamingCheck(t *testing.T) {
 }
 
 func TestServe_StreamingApply(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":"11","method":"apply","params":{"args":{}}}`
+	req := `{"jsonrpc":"2.0","id":11,"method":"apply","params":{"args":{}}}`
 	lines := runServeMulti(t, streamingModule{}, []string{req})
 	if len(lines) != 4 {
 		t.Fatalf("expected 4 output lines, got %d: %v", len(lines), lines)

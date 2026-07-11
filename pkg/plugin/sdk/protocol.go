@@ -48,17 +48,15 @@ type InitializeResult struct {
 
 // CheckResult is returned by a module's Check method.
 type CheckResult struct {
-	NeedsChange bool           `json:"needs_change"`
-	Message     string         `json:"message,omitempty"`
-	State       map[string]any `json:"state,omitempty"`
-	Error       string         `json:"error,omitempty"`
+	NeedsChange bool   `json:"needs_change"`
+	Message     string `json:"message,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // ApplyResult is returned by a module's Apply method.
 type ApplyResult struct {
-	Message string         `json:"message,omitempty"`
-	State   map[string]any `json:"state,omitempty"`
-	Error   string         `json:"error,omitempty"`
+	Message string `json:"message,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // OutputFunc is called for each line of streaming output emitted during Check
