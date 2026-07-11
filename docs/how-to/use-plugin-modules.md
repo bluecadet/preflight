@@ -9,6 +9,10 @@ Use this guide when you want a playbook or action to call an external executable
 
 For the protocol details, see [Plugin reference](../reference/plugins.md).
 
+## How Plugins Run
+
+Plugins execute **controller-side**: the plugin process runs on the machine running `preflight`, not on the target. A plugin's `Check` and `Apply` receive a target handle and all target effects flow through it — including when the target is the local machine. A plugin therefore works the same way over local, SSH, and WinRM; you do not pick a transport-specific plugin path. (For the protocol details, see [Plugin reference](../reference/plugins.md).)
+
 ## 1. Confirm Discovery And Initialization
 
 List discovered plugins:

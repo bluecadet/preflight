@@ -71,13 +71,25 @@ Plugin-backed modules are discovered at runtime, so they do not appear as static
 
 ## JSON-RPC Methods
 
-The runner uses these methods:
+The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the plugin's stdin/stdout. Both sides act as client and server: the host sends `initialize`/`check`/`apply` requests, and the plugin sends `run_command`/`put_file`/`get_file` requests back to the host for handle ops. Request IDs are correlated on both sides; one target op is in flight per session (a stated limitation).
 
-| Method | Purpose |
-| --- | --- |
-| `initialize` | Report plugin name and version |
-| `check` | Report whether change is needed |
-| `apply` | Perform the change |
+| Method | Direction | Purpose |
+| --- | --- | --- |
+| `initialize` | host → plugin | Carry `protocol_version` and the enriched `TargetInfo`; plugin echoes `protocol_version` back with name/version |
+| `check` | host → plugin | Report whether change is needed; plugin may issue handle ops |
+| `apply` | host → plugin | Perform the change; plugin may issue handle ops |
+| `output` | plugin → host | Notification carrying one streaming line; no response |
+| `run_command` | plugin → host | Run a script in the target's native shell, returning stdout/stderr/exit code |
+| `put_file` | plugin → host | Write bytes to a path on the target (host does the chunking) |
+| `get_file` | plugin → host | Read a path's bytes from the target |
+
+### Protocol Version
+
+`initialize` carries `protocol_version` (currently `"1"`). The plugin must echo it back in its `initialize` response. A pre-v1 plugin (no `protocol_version` or a different one) is rejected with a `plugin_protocol` error — there is no compatibility mode.
+
+### TargetInfo
+
+`initialize` delivers the enriched `TargetInfo` to the plugin: `{family, name, version, arch, hostname, package_manager, init, runtime_kind}`. Absent signals are empty strings, never missing keys. `runtime_kind` (`posix-shell` or `windows-powershell`) tells the plugin which shell `run_command` speaks; the plugin should not re-probe what the controller already cached.
 
 The bundled Go SDK lives in [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/plugin/sdk).
 
@@ -87,10 +99,20 @@ Plugin authors implement:
 
 - `Name() string`
 - `Version() string`
-- `Check(args map[string]any) (CheckResult, error)`
-- `Apply(args map[string]any) (ApplyResult, error)`
+- `Check(args map[string]any, h Handle) (CheckResult, error)`
+- `Apply(args map[string]any, h Handle) (ApplyResult, error)`
 
-Then call `sdk.Serve(module)` from `main()`.
+Then call `sdk.Serve(module)` from `main()`. The `Handle` exposes `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`; see [Write a plugin](../how-to/write-a-plugin.md) for the handle API and batching guidance.
+
+## Execution Model
+
+Plugins execute **controller-side**: the plugin process always runs on the machine running `preflight`, never on the target. `Check`/`Apply` receive a target handle and all target effects flow through it — including when the target is local. This makes plugins uniform over local, SSH, and WinRM; the plugin does not know (or need to know) which transport it is on.
+
+Process lifetime is run-scoped: a plugin is spawned lazily on first use, reused across every task in the run that invokes that module, and hard-killed at the end of the run.
+
+## `become` Limitation
+
+A plugin task with `become` enabled is refused with a typed `plugin_become` error before the plugin runs. Privilege escalation through the plugin handle is planned for a future protocol version; for now, run plugins as the connection user (or root directly).
 
 ## Bundle Behavior
 
