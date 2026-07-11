@@ -74,6 +74,8 @@ Notes:
 
 ### `registry`
 
+**Supported runtimes:** `windows-powershell`
+
 Manage Windows registry keys and values.
 
 | Field | Type | Meaning |
@@ -108,6 +110,8 @@ Use `patch` when a Windows setting is stored inside an existing binary registry 
 ```
 
 ### `service`
+
+**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
 
 Manage services. Same schema on Windows and POSIX; the runtime implementation
 is per-platform (Windows SCM on Windows, `systemctl` on POSIX-over-SSH).
@@ -148,6 +152,8 @@ non-systemd init systems.
 
 ### `file`
 
+**Supported runtimes:** `windows-powershell`, `posix-shell`
+
 Manage files.
 
 | Field | Type | Meaning |
@@ -185,6 +191,8 @@ the rendered file body.
 
 ### `directory`
 
+**Supported runtimes:** `windows-powershell`, `posix-shell`
+
 Manage directories.
 
 | Field | Type | Meaning |
@@ -193,6 +201,8 @@ Manage directories.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `package`
+
+**Supported runtimes:** `windows-powershell`
 
 Manage local MSI or EXE installations on Windows.
 
@@ -219,6 +229,8 @@ Manage local MSI or EXE installations on Windows.
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
 
 ### `system_package`
+
+**Supported runtimes:** `posix-shell` · **requires root**
 
 Manage repo packages through `apt` or `dnf` on POSIX targets.
 
@@ -248,6 +260,8 @@ The `packages` list is the primary interface. Each entry supports:
 `system_package` requires root. Run as root or set `become: {enabled: true}` to escalate to root; a non-root run fails with a `requires-root-violation` before `Check()`.
 
 ### `winget_package`
+
+**Supported runtimes:** `windows-powershell`
 
 Manage packages through `winget`.
 
@@ -282,6 +296,8 @@ Put package-specific `winget` flags under `args` on that package entry. Do not a
 
 ### `remove_appx_packages`
 
+**Supported runtimes:** `windows-powershell`
+
 Remove built-in Windows Store-style packages.
 
 ```yaml
@@ -305,6 +321,8 @@ Installed Appx packages that Windows marks `NonRemovable` are ignored so checks 
 
 ### `shortcut`
 
+**Supported runtimes:** `windows-powershell`
+
 Manage Windows `.lnk` shortcuts.
 
 | Field | Type | Meaning |
@@ -315,6 +333,8 @@ Manage Windows `.lnk` shortcuts.
 | `icon` | string | Optional icon path |
 
 ### `scheduled_task`
+
+**Supported runtimes:** `windows-powershell`
 
 Manage Windows scheduled tasks.
 
@@ -336,6 +356,8 @@ Manage Windows scheduled tasks.
 `delay` accepts ISO-8601 duration strings such as `PT30S`.
 
 ### `user`
+
+**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
 
 Manage local users.
 
@@ -367,6 +389,8 @@ example, via a `shell` task running `chpasswd`).
 
 ### `power_plan`
 
+**Supported runtimes:** `windows-powershell`
+
 Manage named Windows power plans.
 
 | Field | Type | Meaning |
@@ -388,6 +412,8 @@ Each entry in `settings` supports:
 
 ### `windows_feature`
 
+**Supported runtimes:** `windows-powershell`
+
 Manage Windows optional features.
 
 | Field | Type | Meaning |
@@ -396,6 +422,8 @@ Manage Windows optional features.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `environment`
+
+**Supported runtimes:** `windows-powershell`
 
 Manage environment variables.
 
@@ -407,6 +435,8 @@ Manage environment variables.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `firewall_rule`
+
+**Supported runtimes:** `windows-powershell`
 
 Manage Windows firewall rules.
 
@@ -420,6 +450,8 @@ Manage Windows firewall rules.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `powershell`
+
+**Supported runtimes:** `windows-powershell`, `posix-shell`
 
 Run PowerShell.
 
@@ -444,6 +476,8 @@ When `working_dir` is set, relative `creates` paths are checked from that direct
 
 ### `shell`
 
+**Supported runtimes:** `windows-powershell`, `posix-shell`
+
 Run a shell command.
 
 | Field | Type | Meaning |
@@ -457,6 +491,8 @@ Run a shell command.
 When `working_dir` is set, relative `creates` paths are checked from that directory.
 
 ### `reboot`
+
+**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
 
 Request a reboot.
 
@@ -475,6 +511,8 @@ root or with `become`. The real reboot+reconnect path is unit-tested against
 fakes only and is a stated limitation: it is not exercised end-to-end in CI.
 
 ### `wait`
+
+**Supported runtimes:** `windows-powershell`, `posix-shell`
 
 Wait for a condition to be met before continuing.
 
