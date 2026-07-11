@@ -427,6 +427,8 @@ Manage Windows optional features.
 
 Manage environment variables.
 
+*Known limitation — POSIX.* `environment` is unsupported over POSIX-over-SSH: ambient environment is login-shell plumbing with no faithful analog, and per-service environment belongs in unit files (managed with `file` + `service`). The local POSIX target registers an `os.Setenv`-backed implementation that only affects the preflight process, which is rarely what you want; for managed endpoints use `file` + `service` instead.
+
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Variable name |
