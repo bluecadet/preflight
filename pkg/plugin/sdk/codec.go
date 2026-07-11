@@ -125,11 +125,9 @@ func (c *codec) readLoop() {
 				c.replyRaw(f.ID, nil, &rpcError{Code: -32600, Message: "invalid request id"})
 				continue
 			}
-			c.handlerWG.Add(1)
-			go func() {
-				defer c.handlerWG.Done()
+			c.handlerWG.Go(func() {
 				c.serveRequest(id, f.ID, f.Method, f.Params)
-			}()
+			})
 		case f.Method != "":
 			// Notification.
 			if c.notifHandler != nil {

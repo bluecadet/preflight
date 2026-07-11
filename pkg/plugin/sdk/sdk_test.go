@@ -163,7 +163,7 @@ func TestServe_StreamingCheck(t *testing.T) {
 		t.Fatalf("expected 3 output lines, got %d: %v", len(lines), lines)
 	}
 	var notif1 struct {
-		Method string          `json:"method"`
+		Method string         `json:"method"`
 		Params map[string]any `json:"params"`
 	}
 	if err := json.Unmarshal([]byte(lines[0]), &notif1); err != nil {

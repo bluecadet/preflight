@@ -25,7 +25,7 @@ func (fakePluggableModule) Check(context.Context, map[string]any, OutputFunc) (C
 func (fakePluggableModule) Apply(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
 	return ApplyResult{}, nil
 }
-func (m fakePluggableModule) PluginPath() string        { return m.path }
+func (m fakePluggableModule) PluginPath() string              { return m.path }
 func (m fakePluggableModule) BindTarget(ops TargetOps) Module { return m }
 
 type fakeSSHRunner struct {

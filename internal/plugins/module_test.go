@@ -51,16 +51,18 @@ type fakeOps struct {
 	info target.TargetInfo
 }
 
-func (f *fakeOps) Exec(context.Context, string) (target.ExecResult, error) { return target.ExecResult{}, nil }
-func (f *fakeOps) PutFile(context.Context, string, []byte) error             { return nil }
-func (f *fakeOps) GetFile(context.Context, string) ([]byte, error)          { return nil, nil }
-func (f *fakeOps) Info(context.Context) (target.TargetInfo, error)           { return f.info, nil }
+func (f *fakeOps) Exec(context.Context, string) (target.ExecResult, error) {
+	return target.ExecResult{}, nil
+}
+func (f *fakeOps) PutFile(context.Context, string, []byte) error   { return nil }
+func (f *fakeOps) GetFile(context.Context, string) ([]byte, error) { return nil, nil }
+func (f *fakeOps) Info(context.Context) (target.TargetInfo, error) { return f.info, nil }
 
 func newTestPlugin(name string, client pluginClient) *Plugin {
 	return &Plugin{
-		name:  name,
-		path:  "/tmp/plugin",
-		ops:   &fakeOps{},
+		name: name,
+		path: "/tmp/plugin",
+		ops:  &fakeOps{},
 		newClient: func(context.Context, string, sdk.TargetInfo, sdk.HandleServer) (pluginClient, error) {
 			return client, nil
 		},

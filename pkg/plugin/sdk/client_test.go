@@ -78,15 +78,15 @@ func (m *handleModule) Apply(_ map[string]any, h Handle) (ApplyResult, error) {
 
 // fakeHandleServer is an in-process HandleServer for protocol tests.
 type fakeHandleServer struct {
-	cmdStdout   string
-	cmdStderr   string
-	cmdExit     int
-	cmdScript   string
-	putPath     string
-	putData     []byte
-	getPath     string
-	getData     []byte
-	getErr      error
+	cmdStdout string
+	cmdStderr string
+	cmdExit   int
+	cmdScript string
+	putPath   string
+	putData   []byte
+	getPath   string
+	getData   []byte
+	getErr    error
 }
 
 func (s *fakeHandleServer) RunCommand(_ context.Context, script string) (CommandResult, error) {
@@ -240,7 +240,7 @@ func rawFrameServer(t *testing.T, initResp string) (r io.Reader, w io.Writer, cl
 	clientRead, srvWrite := io.Pipe()
 	go func() {
 		// Read and discard the initialize request, then send the canned response.
-		go io.Copy(io.Discard, srvRead)
+		go func() { _, _ = io.Copy(io.Discard, srvRead) }()
 		_ = json.NewEncoder(srvWrite).Encode(map[string]any{
 			"jsonrpc": "2.0",
 			"id":      json.Number("1"),
