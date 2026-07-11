@@ -110,7 +110,7 @@ func TestClassifySudoFailure(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := classifySudoFailure(tc.become, tc.stderr, 1)
+			err := classifySudoFailure(tc.become, tc.stderr)
 			if tc.want == "" {
 				if err != nil {
 					t.Fatalf("expected nil, got %v", err)

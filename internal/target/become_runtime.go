@@ -171,7 +171,7 @@ func (b *posixTaskBackend) RunPOSIXCommand(ctx context.Context, command string, 
 		// Classify sudo-specific failures into typed environment errors so
 		// the run log carries sudo-password-required / sudo-auth-failed reason
 		// codes instead of a generic non-zero-exit message.
-		if sudoErr := classifySudoFailure(b.become, stderr, code); sudoErr != nil {
+		if sudoErr := classifySudoFailure(b.become, stderr); sudoErr != nil {
 			err = sudoErr
 		}
 	}
@@ -286,7 +286,11 @@ func wrapPOSIXBecome(command string, stdin []byte, become *BecomeOptions) (strin
 // caller as generic command failures. sudo writes its diagnostics to stderr;
 // the strings matched are the stable messages emitted by sudo across
 // versions.
-func classifySudoFailure(become *BecomeOptions, stderr string, code int) error {
+//
+// Classification is best-effort and matches English sudo stderr messages.
+// Non-English locales may not be classified and will fall through to a generic
+// failure. Locale-stable exit-code classification is a future improvement.
+func classifySudoFailure(become *BecomeOptions, stderr string) error {
 	if become == nil {
 		return nil
 	}
@@ -302,7 +306,6 @@ func classifySudoFailure(become *BecomeOptions, stderr string, code int) error {
 	if strings.TrimSpace(become.Password) != "" && (strings.Contains(lower, "sorry, try again") || strings.Contains(lower, "incorrect password") || strings.Contains(lower, "authentication failure")) {
 		return NewSudoAuthFailedError(RuntimeKindPOSIXShell)
 	}
-	_ = code
 	return nil
 }
 
