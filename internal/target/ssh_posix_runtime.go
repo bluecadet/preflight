@@ -106,6 +106,7 @@ func (r *sshPOSIXShellRuntime) Info(ctx context.Context) (TargetInfo, error) {
 		OSName:         p.OSName,
 		PackageManager: p.PackageManager,
 		Init:           p.Init,
+		RuntimeKind:    RuntimeKindPOSIXShell,
 		Transport:      r.target.Transport(),
 	}, nil
 }

@@ -116,6 +116,11 @@ const (
 // POSIX fields (OSName, PackageManager, Init) are populated by the cached
 // runtime detection probe and are empty on Windows. Plugins receive this
 // struct so they branch on enriched OS facts without re-detecting.
+//
+// RuntimeKind is the resolved runtime the target's modules speak
+// (windows-powershell or posix-shell), set by every Info() implementation
+// after the runtime is probed. The apply-start support gate reads it to
+// validate every runnable task against the support matrix.
 type TargetInfo struct {
 	Hostname       string
 	OSVersion      string
@@ -125,6 +130,7 @@ type TargetInfo struct {
 	OSFamily       OSFamily
 	PackageManager string // apt | dnf | "" (POSIX only)
 	Init           string // systemd | "" (POSIX only)
+	RuntimeKind    RuntimeKind
 	Transport      Transport
 }
 
