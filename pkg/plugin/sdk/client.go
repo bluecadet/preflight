@@ -123,7 +123,7 @@ func (c *Client) handleRequest(ctx context.Context, method string, params json.R
 		if err != nil {
 			return nil, &rpcError{Code: -32000, Message: err.Error()}
 		}
-		return map[string]any{"data": encodeBase64(data)}, nil
+		return getFileResult{Data: encodeBase64(data)}, nil
 	default:
 		return nil, &rpcError{Code: -32601, Message: "method not found: " + method}
 	}
