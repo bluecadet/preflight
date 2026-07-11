@@ -136,7 +136,7 @@ These are documented, not coded around; the per-module notes in the [built-in mo
 | `windows_feature` | no | yes |
 | plugin modules | yes | yes |
 
-Unsupported module usage is caught before the task runs and returns a clear, typed error. There is no silent fallback. See [Validation UX](#validation-ux) below for what plan-time catches versus the apply-start gate, and [Built-in module reference](../reference/modules.md) for the authoritative per-module `Supported runtimes` lines and `requires_root` markers.
+Unsupported module usage is caught before the task runs and returns a clear, typed error. There is no silent fallback. See [Validation UX](#validation-ux-how-module-by-runtime-gaps-are-surfaced) for what plan-time catches versus the apply-start gate; the authoritative per-module `Supported runtimes` lines and `requires_root` markers live in the [built-in module reference](../reference/modules.md).
 
 ### SSH Authentication
 

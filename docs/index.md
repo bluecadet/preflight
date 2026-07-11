@@ -22,6 +22,8 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Provision a user and run tasks as that user | [Run tasks as another user](./how-to/run-tasks-as-another-user.md) |
 | Clone and update git repositories on targets | [Run git operations on a target](./how-to/git-operations.md) |
 | Schedule recurring Windows reboots | [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md) |
+| Run the POSIX/SSH integration suite locally | [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md) |
+| Run the Windows/WinRM integration suite against a VM | [Run the integration test suite](./how-to/winrm-integration-testing.md) |
 
 ## Tutorials
 
@@ -42,6 +44,8 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Run tasks as another user](./how-to/run-tasks-as-another-user.md)
 - [Run git operations on a target](./how-to/git-operations.md)
 - [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md)
+- [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md)
+- [Run the integration test suite (Windows/WinRM)](./how-to/winrm-integration-testing.md)
 
 ## Reference
 
@@ -101,4 +105,6 @@ The codebase already supports:
 
 Important current limits:
 
-- SSH auto-detects a Windows PowerShell or POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH stays focused on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed. Plugin modules are not yet supported over SSH.
+- POSIX-over-SSH support is capability-based, not a distro allowlist. Official tier: any Linux meeting the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`). Best-effort tier: macOS and other POSIX systems (no CI, no version claims). See [Targets, transports, and plugins](./explanation/targets-and-transports.md#posix-capability-baseline-and-tiers).
+- `environment` is unsupported on POSIX-over-SSH; `user` sets a password on creation only; non-`apt`/`dnf` package managers and non-systemd init are unsupported (the `shell` module is the escape hatch); the real `reboot`+reconnect path is unit-tested against fakes only. See [Consolidated POSIX limitations](./explanation/targets-and-transports.md#consolidated-posix-limitations).
+- Plugins run uniformly over local, SSH, and WinRM (controller-side execution). Plugin+`become` is refused in v1; plugin State plumbing is absent (params-only state transfer); one in-flight target op per plugin session. Protocol v1 is a clean break — pre-v1 plugins are rejected with a clear error.
