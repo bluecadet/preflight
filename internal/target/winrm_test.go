@@ -1106,30 +1106,58 @@ func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 		}
 	})
 
-	// With a controller registry, WinRM must distinguish a known plugin from a
-	// genuinely unknown module: the plugin surfaces unsupported_on_runtime
-	// (recognized but not runnable over this transport yet), not unknown_module.
-	t.Run("plugin distinguished from unknown", func(t *testing.T) {
+	// With a controller registry, a bound plugin now runs over WinRM
+	// (controller-side execution) rather than surfacing
+	// unsupported_on_runtime. Only a genuinely unknown module is refused.
+	t.Run("plugin runs over winrm", func(t *testing.T) {
+		plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
 		tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, ModuleRegistry{
-			"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
+			"custom": plugin,
 		})
 		tgt.client = &fakeWinRMClient{}
 
-		_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
-		if err == nil {
-			t.Fatal("expected error for plugin over winrm, got nil")
+		res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
+		if err != nil {
+			t.Fatalf("plugin should run over winrm, got error: %v", err)
 		}
-		var mse *ModuleSupportError
-		if !errors.As(err, &mse) {
-			t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+		if !plugin.bound {
+			t.Error("plugin was not bound to the WinRM target ops backend")
 		}
-		if mse.Class != ClassUnsupportedOnRuntime {
-			t.Errorf("plugin over winrm: class = %q, want %q", mse.Class, ClassUnsupportedOnRuntime)
+		if !plugin.checked {
+			t.Error("plugin Check was not invoked")
 		}
-		if mse.RuntimeKind != RuntimeKindWindowsPowerShell {
-			t.Errorf("runtime kind = %q, want %q", mse.RuntimeKind, RuntimeKindWindowsPowerShell)
+		if res.Status != StatusOK {
+			t.Errorf("status = %q, want %q", res.Status, StatusOK)
 		}
 	})
+}
+
+func TestWinRMTarget_PluginBecomeRefused(t *testing.T) {
+	// Plugin+become is refused in v1 with a uniform plugin_become error across
+	// transports. Over WinRM the plugin is deliberately not merged into the
+	// registry when become is set, so the unsupported callback classifies it.
+	plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
+	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, ModuleRegistry{
+		"custom": plugin,
+	})
+	tgt.client = &fakeWinRMClient{}
+
+	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{
+		Become: &BecomeOptions{Enabled: true, User: "Administrator"},
+	}, false, nil)
+	if err == nil {
+		t.Fatal("expected plugin+become to be refused, got nil")
+	}
+	var mse *ModuleSupportError
+	if !errors.As(err, &mse) {
+		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+	}
+	if mse.Class != ClassPluginBecome {
+		t.Errorf("class = %q, want %q", mse.Class, ClassPluginBecome)
+	}
+	if mse.ReasonCode() != "plugin_become" {
+		t.Errorf("reason = %q, want plugin_become", mse.ReasonCode())
+	}
 }
 
 func TestLineStreamWriterSplitsOnNewline(t *testing.T) {

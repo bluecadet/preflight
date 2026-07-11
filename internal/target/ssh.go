@@ -68,6 +68,8 @@ type sshRuntime interface {
 	Reachable(ctx context.Context) (bool, error)
 	Info(ctx context.Context) (TargetInfo, error)
 	RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error)
+	ExecScript(ctx context.Context, script string) (ExecResult, error)
+	PutBytes(ctx context.Context, path string, data []byte) error
 }
 
 type sshCloser interface {
@@ -92,11 +94,27 @@ type SSHTarget struct {
 var errSSHTargetClosed = errors.New("ssh: target is closed")
 
 func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
-	return &SSHTarget{
+	if registry == nil {
+		registry = make(ModuleRegistry)
+	}
+	t := &SSHTarget{
 		config:        cfg,
 		registry:      registry,
 		runnerFactory: defaultSSHRunnerFactory,
 	}
+	// Each target binds plugins to its own ops backend so the plugin's target
+	// effects flow through the handle over SSH. *SSHTarget implements TargetOps
+	// by dispatching to the detected runtime (POSIX sh or Windows PowerShell).
+	bound := make(ModuleRegistry, len(registry))
+	for name, mod := range registry {
+		if pluggable, ok := mod.(PluggableModule); ok {
+			bound[name] = pluggable.BindTarget(t)
+			continue
+		}
+		bound[name] = mod
+	}
+	t.registry = bound
+	return t
 }
 
 // Config returns the SSHConfig that was used to construct this target.
@@ -156,11 +174,16 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 			}
 			registry = newPOSIXShellRegistry(backend)
 		}
+		// Plugins are deliberately NOT merged into the become registry:
+		// plugin+become is refused in v1, surfaced via the refusePluginBecome
+		// callback below. (ExecOpts-through-backend is the intended v2.)
+	} else {
+		registry = mergePlugins(registry, t.registry)
 	}
 
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
 		if become != nil {
-			return t.pluginBecomeError(module)
+			return refusePluginBecome(t.registry, module, "ssh")
 		}
 		return t.unsupportedModuleError(module, runtime.Kind())
 	})
@@ -206,6 +229,33 @@ func (t *SSHTarget) RunPowerShell(ctx context.Context, script string) (string, e
 	return runtime.RunPowerShellScript(ctx, script, nil)
 }
 
+// Exec implements TargetOps: runs script in the target's native shell (POSIX sh
+// or PowerShell per the detected runtime) and returns separated stdout/stderr
+// and the exit code. A non-zero exit is a result, not an error.
+func (t *SSHTarget) Exec(ctx context.Context, script string) (ExecResult, error) {
+	runtime, err := t.runtimeForUse(ctx)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	return runtime.ExecScript(ctx, script)
+}
+
+// PutFile implements TargetOps: writes data to path on the remote host,
+// creating parent directories as needed. Dispatches to the detected runtime.
+func (t *SSHTarget) PutFile(ctx context.Context, path string, data []byte) error {
+	runtime, err := t.runtimeForUse(ctx)
+	if err != nil {
+		return err
+	}
+	return runtime.PutBytes(ctx, path, data)
+}
+
+// GetFile implements TargetOps: reads the contents of path on the remote
+// host. The plugin's target effects flow through the handle even remotely.
+func (t *SSHTarget) GetFile(ctx context.Context, path string) ([]byte, error) {
+	return t.ReadFile(ctx, path)
+}
+
 func (t *SSHTarget) Close() error {
 	t.runtimeMu.Lock()
 	runtime := t.runtime
@@ -225,7 +275,9 @@ func (t *SSHTarget) Close() error {
 	if closer, ok := runner.(sshCloser); ok {
 		err = errors.Join(err, closer.Close())
 	}
-	return err
+	// Drain lazily-spawned plugin subprocesses bound to this target so they
+	// are torn down at end of run, never leaked past Close.
+	return errors.Join(err, drainRegistry(t.registry))
 }
 
 func (t *SSHTarget) clientRunner() (sshRunner, error) {
@@ -431,23 +483,9 @@ if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
 }
 
 // unsupportedModuleError constructs the typed gap error for a module that the
-// SSH target's runtime registry could not resolve. See classifyMissingModule for
-// the plugin-vs-unknown distinction shared with WinRM.
+// SSH target's runtime registry could not resolve. With plugins bound into
+// the registry, this is reached only by genuinely unknown module names; a
+// known plugin is found in the merged registry and dispatched.
 func (t *SSHTarget) unsupportedModuleError(module string, runtimeKind RuntimeKind) error {
 	return classifyMissingModule(t.registry, module, runtimeKind)
-}
-
-// pluginBecomeError refuses a plugin module invoked with become enabled.
-// Plugin+become is refused in v1. For non-plugin modules that cannot be
-// elevated, a plain message is returned (not a matrix gap).
-func (t *SSHTarget) pluginBecomeError(module string) error {
-	if t.registry != nil {
-		if mod, ok := t.registry[module]; ok {
-			if _, isPlugin := mod.(PluggableModule); isPlugin {
-				return NewPluginBecomeError(module)
-			}
-			return fmt.Errorf("ssh: module %q does not support become", module)
-		}
-	}
-	return NewUnknownModuleError(module)
 }

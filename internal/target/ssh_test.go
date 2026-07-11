@@ -14,9 +14,10 @@ import (
 	"unicode/utf16"
 )
 
-// fakePluggableModule lets ssh_test exercise the PluggableModule branch in
-// SSHTarget.unsupportedModuleError without depending on the plugins package
-// (which would create a target → plugins → target import cycle).
+// fakePluggableModule lets target tests exercise the PluggableModule branch
+// without depending on the plugins package (which would create a target →
+// plugins → target import cycle). Its BindTarget returns itself unbound so it
+// can stand in for a plugin in tests that only need the type distinction.
 type fakePluggableModule struct{ path string }
 
 func (fakePluggableModule) Check(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
@@ -27,6 +28,24 @@ func (fakePluggableModule) Apply(context.Context, map[string]any, OutputFunc) (A
 }
 func (m fakePluggableModule) PluginPath() string              { return m.path }
 func (m fakePluggableModule) BindTarget(ops TargetOps) Module { return m }
+
+// recordingPluggableModule is a fakePluggableModule that records whether its
+// ops backend was bound and its Check/Apply invoked. Used to assert plugins
+// are dispatched (not refused) over a transport.
+type recordingPluggableModule struct {
+	fakePluggableModule
+	bound   bool
+	checked bool
+}
+
+func (m *recordingPluggableModule) BindTarget(ops TargetOps) Module {
+	m.bound = true
+	return m
+}
+func (m *recordingPluggableModule) Check(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
+	m.checked = true
+	return m.fakePluggableModule.Check(ctx, params, out)
+}
 
 type fakeSSHRunner struct {
 	run func(context.Context, string, []byte) (string, string, int, error)
@@ -617,9 +636,14 @@ func TestSSHTarget_POSIXWaitServiceRunning(t *testing.T) {
 	}
 }
 
-func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
+func TestSSHTarget_PluginModulesRunOverSSH(t *testing.T) {
+	// Plugins execute controller-side with a target handle, so a plugin bound
+	// into the SSH target's registry is dispatched through executeModule like
+	// any built-in — the former "cannot run over this transport" refusal is
+	// gone. The fake plugin records that it was bound and that Check ran.
+	plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, ModuleRegistry{
-		"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
+		"custom": plugin,
 	})
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
@@ -637,22 +661,61 @@ func TestSSHTarget_PluginModulesDeferred(t *testing.T) {
 		},
 	}
 
-	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
-	if err == nil {
-		t.Fatalf("expected plugin deferral error, got nil")
+	res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
+	if err != nil {
+		t.Fatalf("plugin should run over SSH, got error: %v", err)
 	}
-	// A known plugin is distinguished from a genuinely unknown module: the
-	// plugin surfaces unsupported_on_runtime (it is recognized but cannot run
-	// over this transport yet), not unknown_module.
+	if !plugin.bound {
+		t.Error("plugin was not bound to the SSH target ops backend")
+	}
+	if !plugin.checked {
+		t.Error("plugin Check was not invoked")
+	}
+	// The fake plugin reports no needed change, so the task is ok.
+	if res.Status != StatusOK {
+		t.Errorf("status = %q, want %q", res.Status, StatusOK)
+	}
+}
+
+func TestSSHTarget_PluginBecomeRefused(t *testing.T) {
+	// Plugin+become is refused in v1 with a uniform plugin_become error across
+	// transports. Over SSH the plugin is deliberately not merged into the
+	// become registry, so the unsupported callback fires and classifies it.
+	plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
+	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, ModuleRegistry{
+		"custom": plugin,
+	})
+	tgt.runner = &fakeSSHRunner{
+		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
+			switch {
+			case isEncodedPowerShellCommand(command):
+				return "", "not found", 127, nil
+			case command == "printf preflight":
+				return "preflight", "", 0, nil
+			case isPOSIXProbeCommand(command):
+				return posixProbeOutput(), "", 0, nil
+			default:
+				t.Fatalf("unexpected command %q", command)
+				return "", "", 0, nil
+			}
+		},
+	}
+
+	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{
+		Become: &BecomeOptions{Enabled: true, User: "root"},
+	}, false, nil)
+	if err == nil {
+		t.Fatal("expected plugin+become to be refused, got nil")
+	}
 	var mse *ModuleSupportError
 	if !errors.As(err, &mse) {
 		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
 	}
-	if mse.Class != ClassUnsupportedOnRuntime {
-		t.Errorf("plugin over remote: class = %q, want %q", mse.Class, ClassUnsupportedOnRuntime)
+	if mse.Class != ClassPluginBecome {
+		t.Errorf("class = %q, want %q", mse.Class, ClassPluginBecome)
 	}
-	if mse.Module != "custom" {
-		t.Errorf("plugin over remote: module = %q, want %q", mse.Module, "custom")
+	if mse.ReasonCode() != "plugin_become" {
+		t.Errorf("reason = %q, want plugin_become", mse.ReasonCode())
 	}
 }
 

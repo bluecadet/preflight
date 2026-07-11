@@ -160,6 +160,33 @@ func (r *sshPOSIXShellRuntime) RunPowerShellScript(ctx context.Context, script s
 	return stdout, nil
 }
 
+// ExecScript runs script in the target's native POSIX shell and returns
+// separated stdout/stderr and the exit code. A non-zero exit is a result, not
+// an error — matching LocalTarget.Exec semantics so plugins can branch on it.
+func (r *sshPOSIXShellRuntime) ExecScript(ctx context.Context, script string) (ExecResult, error) {
+	stdout, stderr, code, err := r.target.run(ctx, script, nil)
+	if err != nil {
+		return ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, wrapSSHTargetError("exec", err)
+	}
+	return ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
+}
+
+// PutBytes writes data to path on the remote host via base64-over-stdin, the
+// same transport as CopyFile but without a local source file. Parent
+// directories are created; the file lands with the umask default mode.
+func (r *sshPOSIXShellRuntime) PutBytes(ctx context.Context, path string, data []byte) error {
+	encoded := base64.StdEncoding.EncodeToString(data)
+	cmd := fmt.Sprintf("mkdir -p %q && base64 -d > %q", shellDir(path), path)
+	stdout, stderr, code, err := r.target.run(ctx, cmd, []byte(encoded))
+	if err != nil {
+		return wrapSSHTargetError(fmt.Sprintf("write %q", path), err)
+	}
+	if code != 0 {
+		return wrapSSHTargetError(fmt.Sprintf("write %q", path), fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr+stdout)))
+	}
+	return nil
+}
+
 func (r *sshPOSIXShellRuntime) PowerShellBinary() string {
 	return r.powerShellBinary
 }
