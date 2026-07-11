@@ -146,11 +146,27 @@ func NewWinRMTarget(cfg WinRMConfig, registry ModuleRegistry) *WinRMTarget {
 			cfg.Port = 5985
 		}
 	}
-	return &WinRMTarget{
+	if registry == nil {
+		registry = make(ModuleRegistry)
+	}
+	t := &WinRMTarget{
 		config:        cfg,
 		registry:      registry,
 		clientFactory: defaultWinRMClientFactory,
 	}
+	// Each target binds plugins to its own ops backend so the plugin's target
+	// effects flow through the handle over WinRM. *WinRMTarget implements
+	// TargetOps (Exec/PutFile/GetFile/Info) over the existing WinRM machinery.
+	bound := make(ModuleRegistry, len(registry))
+	for name, mod := range registry {
+		if pluggable, ok := mod.(PluggableModule); ok {
+			bound[name] = pluggable.BindTarget(t)
+			continue
+		}
+		bound[name] = mod
+	}
+	t.registry = bound
+	return t
 }
 
 func (t *WinRMTarget) Transport() Transport {
@@ -181,6 +197,16 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		become:    become,
 	}
 	registry := newWindowsPowerShellRegistry(backend)
+	if become == nil {
+		// Plugins bypass the runtime matrix (controller-side execution) and are
+		// bound into the registry so they dispatch through executeModule like
+		// any built-in. Plugin+become is refused in v1 (handled below).
+		registry = mergePlugins(registry, t.registry)
+	}
+	unsupported := t.unsupportedModuleError
+	if become != nil {
+		unsupported = func(module string) error { return refusePluginBecome(t.registry, module, "winrm") }
+	}
 	return executeModule(
 		ctx,
 		taskID,
@@ -189,14 +215,15 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		dryRun,
 		onOutput,
 		registry,
-		t.unsupportedModuleError,
+		unsupported,
 	)
 }
 
-// unsupportedModuleError distinguishes a discovered plugin from a genuinely
-// unknown module. See classifyMissingModule for the plugin-vs-unknown
-// distinction shared with SSH; this retires WinRM's former conflation of the
-// two.
+// unsupportedModuleError distinguishes a genuinely unknown module from a
+// discovered plugin that is not bound on this transport. With plugins bound
+// into the registry (NewWinRMTarget), a known plugin is found and dispatched;
+// this is reached only by unknown names. The former plugin/unknown conflation
+// is retired as a side effect.
 func (t *WinRMTarget) unsupportedModuleError(module string) error {
 	return classifyMissingModule(t.registry, module, RuntimeKindWindowsPowerShell)
 }
@@ -249,6 +276,65 @@ func (t *WinRMTarget) RunPowerShell(ctx context.Context, script string) (string,
 
 func (t *WinRMTarget) RunPowerShellScript(ctx context.Context, script string) (string, error) {
 	return t.runPS(ctx, script, nil)
+}
+
+// Exec implements TargetOps: runs script in the target's native PowerShell and
+// returns separated stdout/stderr and the exit code. A non-zero exit is a
+// result, not an error. Uses the per-invocation path (not the persistent
+// session) because plugin scripts may call `exit N`, which is incompatible
+// with a persistent PowerShell REPL (a non-zero exit kills the host process).
+// The winrm library drains stdout and stderr concurrently, so this path
+// respects the channel discipline without a long-lived shell to keepalive.
+func (t *WinRMTarget) Exec(ctx context.Context, script string) (ExecResult, error) {
+	if shouldStageWinRMPowerShellScript(script) {
+		stdout, err := t.runPSViaTempFile(ctx, script)
+		if err != nil {
+			return ExecResult{}, err
+		}
+		return ExecResult{Stdout: stdout, ExitCode: 0}, nil
+	}
+	client, err := t.clientForUse()
+	if err != nil {
+		return ExecResult{}, err
+	}
+	if streamer, ok := client.(winRMStreamRunner); ok {
+		var stdout, stderr bytes.Buffer
+		encoded := winrm.Powershell(script)
+		if encoded == "" {
+			return ExecResult{}, wrapWinRMTargetError("powershell failed", fmt.Errorf("cannot encode script"))
+		}
+		t.roundTrips.Add(1)
+		code, err := streamer.RunWithContextWithInput(ctx, encoded, &stdout, &stderr, nil)
+		return ExecResult{Stdout: stdout.String(), Stderr: stderr.String(), ExitCode: code}, err
+	}
+	t.roundTrips.Add(1)
+	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
+	return ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, err
+}
+
+// PutFile implements TargetOps: writes data to path on the remote host,
+// creating parent directories as needed. Reuses the chunked upload machinery
+// (32 KiB chunks over the persistent session, 1.5 KiB fallback), respecting
+// the WinRM envelope limit and concurrent-stderr-drain discipline.
+func (t *WinRMTarget) PutFile(ctx context.Context, path string, data []byte) error {
+	ps, err := t.getOrCreatePSSession(ctx)
+	if err == nil && ps != nil {
+		if err := t.copyBytesViaSession(ctx, ps, data, path); err == nil {
+			return nil
+		} else if !isSessionError(err) {
+			return wrapWinRMTargetError(fmt.Sprintf("write %q", path), err)
+		}
+		t.resetPSSession()
+	}
+	if err := t.copyBytes(ctx, data, path); err != nil {
+		return wrapWinRMTargetError(fmt.Sprintf("write %q", path), err)
+	}
+	return nil
+}
+
+// GetFile implements TargetOps: reads the contents of path on the remote host.
+func (t *WinRMTarget) GetFile(ctx context.Context, path string) ([]byte, error) {
+	return t.ReadFile(ctx, path)
 }
 
 func (t *WinRMTarget) RemoteTempDir() string {
@@ -329,11 +415,13 @@ func (t *WinRMTarget) resetPSSession() {
 	}
 }
 
-// Close releases the persistent PS session if one was created. The underlying
-// WinRM connection is managed by the client and is not explicitly closed.
+// Close releases the persistent PS session if one was created and tears down
+// any lazily-spawned plugin subprocesses bound to this target. The
+// underlying WinRM connection is managed by the client and is not explicitly
+// closed.
 func (t *WinRMTarget) Close() error {
 	t.resetPSSession()
-	return nil
+	return drainRegistry(t.registry)
 }
 
 // runPS executes a PowerShell script on the remote host. It first tries the

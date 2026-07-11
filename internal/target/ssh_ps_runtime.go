@@ -166,8 +166,29 @@ func (r *sshWindowsPowerShellRuntime) CopyFile(ctx context.Context, src, dst str
 	if err != nil {
 		return err
 	}
+	return r.PutBytes(ctx, dst, data)
+}
+
+// ExecScript runs script in the target's native PowerShell and returns
+// separated stdout/stderr and the exit code. A non-zero exit is a result, not
+// an error. Uses the per-invocation path (not the persistent REPL) because
+// plugin scripts may call `exit N`, which is incompatible with a persistent
+// PowerShell session (a non-zero exit kills the host process).
+func (r *sshWindowsPowerShellRuntime) ExecScript(ctx context.Context, script string) (ExecResult, error) {
+	stdout, stderr, code, err := r.target.run(ctx, buildEncodedPowerShellCommand(r.binary, script), nil)
+	if err != nil {
+		return ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, wrapSSHTargetError("powershell failed", err)
+	}
+	return ExecResult{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
+}
+
+// PutBytes writes data to path on the remote Windows host by base64-encoding
+// the bytes and piping them to a PowerShell script that writes them via
+// [IO.File]::WriteAllBytes. Parent directories are created. Shares the
+// transport with CopyFile but takes bytes directly (no local source file).
+func (r *sshWindowsPowerShellRuntime) PutBytes(ctx context.Context, path string, data []byte) error {
 	encoded := base64.StdEncoding.EncodeToString(data)
-	script, err := powershellJSONVar("path", dst)
+	script, err := powershellJSONVar("path", path)
 	if err != nil {
 		return err
 	}
@@ -180,14 +201,14 @@ $payload = [Console]::In.ReadToEnd()
 [IO.File]::WriteAllBytes($path, [Convert]::FromBase64String($payload))
 `), []byte(encoded))
 	if err != nil {
-		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), err)
+		return wrapSSHTargetError(fmt.Sprintf("write %q", path), err)
 	}
 	if code != 0 {
 		message := strings.TrimSpace(stderr)
 		if message == "" {
 			message = strings.TrimSpace(stdout)
 		}
-		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), fmt.Errorf("exited with code %d: %s", code, message))
+		return wrapSSHTargetError(fmt.Sprintf("write %q", path), fmt.Errorf("exited with code %d: %s", code, message))
 	}
 	return nil
 }

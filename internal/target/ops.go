@@ -12,10 +12,10 @@ type ExecResult struct {
 }
 
 // TargetOps is the backend a plugin handle binds to. Every transport
-// implements it (Local now; SSH and WinRM follow). The plugin's target effects
-// all flow through it — including against the local target — so plugins are
-// brought in line with first-party modules. Info returns the same enriched
-// TargetInfo delivered to a plugin at initialize.
+// implements it (Local, SSH-POSIX, SSH-Windows, WinRM). The plugin's target
+// effects all flow through it — including against the local target — so
+// plugins are brought in line with first-class modules. Info returns the same
+// enriched TargetInfo delivered to a plugin at initialize.
 type TargetOps interface {
 	Exec(ctx context.Context, script string) (ExecResult, error)
 	PutFile(ctx context.Context, path string, data []byte) error
