@@ -191,13 +191,6 @@ func (c *Client) Close() error {
 	return c.codec.Close()
 }
 
-// NewClient starts the plugin at executablePath for inspection (plugin
-// list/info/staging): no target is bound, so a noop HandleServer is used and
-// TargetInfo is empty. Use NewClientContext for runtime use against a target.
-func NewClient(executablePath string) (*Client, error) {
-	return NewClientForInspection(context.Background(), executablePath)
-}
-
 // NewClientForInspection starts a plugin with no target bound, for plugin
 // list/info/staging paths that only read name/version.
 func NewClientForInspection(ctx context.Context, executablePath string) (*Client, error) {
