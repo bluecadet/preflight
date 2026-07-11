@@ -371,17 +371,12 @@ func posixWaitCondition(ctx context.Context, backend posixShellBackend, conditio
 }
 
 // posixServiceRunning checks whether a systemd service is active via
-// `systemctl is-active --quiet`. It requires the init signal to be systemd;
-// an empty init signal fails per-task with the typed environment-prerequisite
-// error so the run log carries the missing_prerequisite reason code.
+// `systemctl is-active --quiet`. It requires systemd; an empty init signal
+// fails per-task with the typed environment-prerequisite error so the run log
+// carries the missing_prerequisite reason code.
 func posixServiceRunning(ctx context.Context, backend posixShellBackend, name string) (bool, error) {
-	probe, err := backend.Probe(ctx)
-	if err != nil {
+	if err := requireSystemd(ctx, backend, "wait"); err != nil {
 		return false, err
-	}
-	if probe.Init != "systemd" {
-		return false, NewMissingPrerequisiteError("wait", RuntimeKindPOSIXShell,
-			"service_running requires systemd; no init system detected on the target")
 	}
 	_, _, code, err := backend.RunPOSIXCommand(ctx, fmt.Sprintf("systemctl is-active --quiet %q", name), nil)
 	if err != nil {

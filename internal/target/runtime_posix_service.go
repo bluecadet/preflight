@@ -6,21 +6,6 @@ import (
 	"strings"
 )
 
-// posixServicePrerequisiteDetail names what was probed and what the service
-// module requires, so the missing_prerequisite error is actionable.
-const posixServicePrerequisiteDetail = "systemd not detected (probed /run/systemd/system); service module requires systemd"
-
-// posixServiceRequireSystemd returns a typed missing_prerequisite error when
-// the cached init-system signal is absent. The spec (§6) has modules read the
-// runtime detection probe rather than re-probing, so there is no second
-// detection path here.
-func posixServiceRequireSystemd(backend posixShellBackend) error {
-	if backend.InitSystem() != "systemd" {
-		return NewMissingPrerequisiteError("service", RuntimeKindPOSIXShell, posixServicePrerequisiteDetail)
-	}
-	return nil
-}
-
 // parsePOSIXServiceParams validates the service module params. state and
 // startup_type are both optional; an empty pair is a no-op (nothing to
 // converge), mirroring the Windows module.
@@ -96,7 +81,7 @@ func checkPOSIXService(ctx context.Context, backend posixShellBackend, params ma
 	if err != nil {
 		return CheckResult{}, err
 	}
-	if err := posixServiceRequireSystemd(backend); err != nil {
+	if err := requireSystemd(ctx, backend, "service"); err != nil {
 		return CheckResult{}, err
 	}
 	// Nothing to converge: no state and no startup_type requested.
@@ -145,7 +130,7 @@ func applyPOSIXService(ctx context.Context, backend posixShellBackend, params ma
 	if err != nil {
 		return err
 	}
-	if err := posixServiceRequireSystemd(backend); err != nil {
+	if err := requireSystemd(ctx, backend, "service"); err != nil {
 		return err
 	}
 	if state == "" && startupType == "" {

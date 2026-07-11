@@ -454,6 +454,37 @@ func TestPOSIXRebootReconnect_TimesOut(t *testing.T) {
 	}
 }
 
+// TestRequireSystemd_NoSystemdReturnsMissingPrerequisite guards the shared
+// systemd-prerequisite helper: a probe whose Init signal is not systemd
+// surfaces a typed *ModuleSupportError with the missing_prerequisite reason
+// code, regardless of which module name is passed in.
+func TestRequireSystemd_NoSystemdReturnsMissingPrerequisite(t *testing.T) {
+	backend := &fakePOSIXBackend{probe: Probe{Init: ""}}
+	err := requireSystemd(context.Background(), backend, "reboot")
+	if err == nil {
+		t.Fatal("expected missing_prerequisite error when systemd is absent")
+	}
+	var mse *ModuleSupportError
+	if !errors.As(err, &mse) {
+		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
+	}
+	if mse.Class != ClassMissingPrerequisite {
+		t.Fatalf("class = %q, want %q", mse.Class, ClassMissingPrerequisite)
+	}
+	if mse.Module != "reboot" {
+		t.Fatalf("module = %q, want %q", mse.Module, "reboot")
+	}
+}
+
+// TestRequireSystemd_SystemdPresentReturnsNil guards the happy path: a probe
+// whose Init signal is systemd returns nil.
+func TestRequireSystemd_SystemdPresentReturnsNil(t *testing.T) {
+	backend := &fakePOSIXBackend{probe: Probe{Init: "systemd"}}
+	if err := requireSystemd(context.Background(), backend, "service"); err != nil {
+		t.Fatalf("expected nil when systemd is present, got %v", err)
+	}
+}
+
 func mustParseTime(hms string) time.Time {
 	t, err := time.Parse("15:04:05", hms)
 	if err != nil {
