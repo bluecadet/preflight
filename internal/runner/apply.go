@@ -23,7 +23,8 @@ func (r *Runner) emit(evt output.Event) {
 }
 
 // apply executes the task graph against the target. It acquires the runtime
-// context from the live target, then delegates to the pure applyResolved loop.
+// context from the live target, runs the apply-start support gate, then
+// delegates to the pure applyResolved loop.
 func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -34,9 +35,14 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("apply: build DAG: %w", err)
 	}
 
-	rt, err := r.buildExecutionContext(ctx)
+	rt, info, err := r.buildExecutionContext(ctx)
 	if err != nil {
 		return err
+	}
+
+	if refusal := r.gateApplyStart(dag.TopologicalOrder(), info.RuntimeKind, rt); refusal != nil {
+		r.emit(refusal.Event(r.targetName()))
+		return refusal
 	}
 
 	return r.applyResolved(ctx, dag, rt)
@@ -341,15 +347,16 @@ func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[str
 }
 
 // buildExecutionContext connects to the live target, gathers facts, and
-// returns a RuntimeContext for template binding. This is the only apply step
-// that requires a real target connection.
-func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeContext, error) {
+// returns a RuntimeContext for template binding plus the resolved TargetInfo
+// (whose RuntimeKind the apply-start gate validates against). This is the only
+// apply step that requires a real target connection.
+func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeContext, target.TargetInfo, error) {
 	targetVars := cloneMap(r.config.TargetVars)
 	r.emitActivityStart("connecting")
 	info, err := r.target.Info(ctx)
 	if err != nil {
 		r.emitActivityResult("connecting", "failed")
-		return nil, fmt.Errorf("apply: target info: %w", err)
+		return nil, target.TargetInfo{}, fmt.Errorf("apply: target info: %w", err)
 	}
 
 	if targetVars == nil {
@@ -366,7 +373,7 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeCo
 	collected, err := gatherer.Gather(ctx)
 	if err != nil {
 		r.emitActivityResult("connecting", "failed")
-		return nil, fmt.Errorf("apply: gather facts: %w", err)
+		return nil, info, fmt.Errorf("apply: gather facts: %w", err)
 	}
 	r.emitActivityResult("connecting", "ok")
 
@@ -374,7 +381,7 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeCo
 		Target: targetVars,
 		Facts:  collected.AsMap(),
 		Env:    collected.Env,
-	}, nil
+	}, info, nil
 }
 
 // PreviewTask renders a single PlanTask against the given target vars using
