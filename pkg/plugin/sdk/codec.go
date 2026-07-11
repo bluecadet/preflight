@@ -22,12 +22,12 @@ type rpcError struct {
 
 // frame is the unified JSON-RPC 2.0 envelope used by the codec. A frame is
 // a request (Method + ID), a response (ID + Result/Error, no Method), or a
-// notification (Method, no ID). ID is carried as raw JSON so incoming request
-// IDs are echoed back byte-for-byte in the response.
+// notification (Method, no ID). ID is an int64 sequence number; both sides
+// generate int64 IDs starting at 1, so a zero ID marks a notification.
 type frame struct {
-	JSONRPC string          `json:"jsonrpc"`
-	ID      json.RawMessage `json:"id,omitempty"`
-	Method  string          `json:"method,omitempty"`
+	JSONRPC string `json:"jsonrpc"`
+	ID      int64  `json:"id,omitempty"`
+	Method  string `json:"method,omitempty"`
 	Params  json.RawMessage `json:"params,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
 	Error   *rpcError       `json:"error,omitempty"`
@@ -88,7 +88,6 @@ type codec struct {
 // loop. closeFn (if non-nil) releases the underlying transport on Close.
 func newCodec(r io.Reader, w io.Writer, reqHandler requestHandler, notifHandler notificationHandler, closeFn func() error) *codec {
 	dec := json.NewDecoder(r)
-	dec.UseNumber()
 	ctx, cancel := context.WithCancel(context.Background())
 	return &codec{
 		r:            r,
@@ -117,29 +116,21 @@ func (c *codec) readLoop() {
 			return
 		}
 		switch {
-		case f.Method != "" && len(f.ID) > 0:
+		case f.Method != "" && f.ID > 0:
 			// Incoming request. Handle in a goroutine so the read loop keeps
 			// draining; the handler may issue outgoing calls (handle ops).
-			id, ok := parseID(f.ID)
-			if !ok {
-				c.replyRaw(f.ID, nil, &rpcError{Code: -32600, Message: "invalid request id"})
-				continue
-			}
+			id := f.ID
 			c.handlerWG.Go(func() {
-				c.serveRequest(id, f.ID, f.Method, f.Params)
+				c.serveRequest(id, f.Method, f.Params)
 			})
 		case f.Method != "":
 			// Notification.
 			if c.notifHandler != nil {
 				c.notifHandler(f.Params)
 			}
-		case len(f.ID) > 0:
+		case f.ID > 0:
 			// Response to one of our calls.
-			id, ok := parseID(f.ID)
-			if !ok {
-				continue
-			}
-			ch := c.takePending(id)
+			ch := c.takePending(f.ID)
 			if ch != nil {
 				ch <- &f
 			}
@@ -150,9 +141,9 @@ func (c *codec) readLoop() {
 // serveRequest runs the request handler for an incoming request and writes the
 // response. The read loop increments c.handlerWG before launching this so
 // Wait cannot observe a zero counter before a handler is tracked.
-func (c *codec) serveRequest(_ int64, rawID json.RawMessage, method string, params json.RawMessage) {
+func (c *codec) serveRequest(id int64, method string, params json.RawMessage) {
 	result, rpcErr := c.reqHandler(c.ctx, method, params)
-	c.replyRaw(rawID, result, rpcErr)
+	c.replyRaw(id, result, rpcErr)
 }
 
 // call sends a request, waits for the correlated response, and decodes the
@@ -164,14 +155,10 @@ func (c *codec) call(ctx context.Context, method string, params any, out any) er
 	defer c.callMu.Unlock()
 
 	id := c.seq.Add(1)
-	idRaw, err := json.Marshal(id)
-	if err != nil {
-		return err
-	}
 
 	f := frame{
 		JSONRPC: "2.0",
-		ID:      idRaw,
+		ID:      id,
 		Method:  method,
 	}
 	if params != nil {
@@ -229,9 +216,9 @@ func (c *codec) notify(method string, params any) error {
 	return c.writeFrame(f)
 }
 
-// replyRaw writes a response for the given (echoed) request ID.
-func (c *codec) replyRaw(rawID json.RawMessage, result any, rpcErr *rpcError) {
-	f := frame{JSONRPC: "2.0", ID: rawID}
+// replyRaw writes a response for the given request ID.
+func (c *codec) replyRaw(id int64, result any, rpcErr *rpcError) {
+	f := frame{JSONRPC: "2.0", ID: id}
 	if rpcErr != nil {
 		f.Error = rpcErr
 	} else if result != nil {
@@ -293,16 +280,3 @@ func (c *codec) Close() error {
 	return c.closeErr
 }
 
-// parseID decodes a JSON-RPC id raw value into an int64. Both sides generate
-// int64 sequence IDs, so ids are always JSON numbers.
-func parseID(raw json.RawMessage) (int64, bool) {
-	var n json.Number
-	if err := json.Unmarshal(raw, &n); err != nil {
-		return 0, false
-	}
-	i, err := n.Int64()
-	if err != nil {
-		return 0, false
-	}
-	return i, true
-}

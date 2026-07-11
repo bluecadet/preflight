@@ -17,14 +17,11 @@ func (mockModule) Version() string { return "2.3.4" }
 func (mockModule) Check(_ map[string]any, _ Handle) (CheckResult, error) {
 	return CheckResult{
 		NeedsChange: false,
-		State:       map[string]any{"status": "ok"},
 	}, nil
 }
 
 func (mockModule) Apply(_ map[string]any, _ Handle) (ApplyResult, error) {
-	return ApplyResult{
-		State: map[string]any{"status": "applied"},
-	}, nil
+	return ApplyResult{}, nil
 }
 
 // handleModule exercises the handle API: it records what it was called with so
@@ -154,21 +151,15 @@ func TestClientStream_Check(t *testing.T) {
 	if result.NeedsChange {
 		t.Errorf("expected NeedsChange=false, got true")
 	}
-	if result.State["status"] != "ok" {
-		t.Errorf("expected state.status=ok, got %v", result.State["status"])
-	}
 }
 
 func TestClientStream_Apply(t *testing.T) {
 	c := newClient(t, mockModule{}, TargetInfo{}, NoopHandleServer())
 	defer func() { _ = c.Close() }()
 
-	result, err := c.Apply(context.Background(), map[string]any{}, nil)
+	_, err := c.Apply(context.Background(), map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("Apply: %v", err)
-	}
-	if result.State["status"] != "applied" {
-		t.Errorf("expected state.status=applied, got %v", result.State["status"])
 	}
 }
 
