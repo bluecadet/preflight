@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
@@ -13,16 +14,29 @@ type fakePluginClient struct {
 	closeCalls  int
 	needsChange bool
 	name        string
+	checkMsg    string
+	applyMsg    string
+	outputLines []string
 }
 
-func (c *fakePluginClient) Check(_ map[string]any) (sdk.CheckResult, error) {
+func (c *fakePluginClient) Check(_ context.Context, _ map[string]any, out sdk.OutputFunc) (sdk.CheckResult, error) {
 	c.checkCalls++
-	return sdk.CheckResult{NeedsChange: c.needsChange}, nil
+	for _, line := range c.outputLines {
+		if out != nil {
+			out(line)
+		}
+	}
+	return sdk.CheckResult{NeedsChange: c.needsChange, Message: c.checkMsg}, nil
 }
 
-func (c *fakePluginClient) Apply(_ map[string]any) (sdk.ApplyResult, error) {
+func (c *fakePluginClient) Apply(_ context.Context, _ map[string]any, out sdk.OutputFunc) (sdk.ApplyResult, error) {
 	c.applyCalls++
-	return sdk.ApplyResult{}, nil
+	for _, line := range c.outputLines {
+		if out != nil {
+			out(line)
+		}
+	}
+	return sdk.ApplyResult{Message: c.applyMsg}, nil
 }
 
 func (c *fakePluginClient) Close() error {
@@ -31,6 +45,27 @@ func (c *fakePluginClient) Close() error {
 }
 
 func (c *fakePluginClient) Name() string { return c.name }
+
+// fakeOps is a minimal TargetOps for adapter tests.
+type fakeOps struct {
+	info target.TargetInfo
+}
+
+func (f *fakeOps) Exec(context.Context, string) (target.ExecResult, error) { return target.ExecResult{}, nil }
+func (f *fakeOps) PutFile(context.Context, string, []byte) error             { return nil }
+func (f *fakeOps) GetFile(context.Context, string) ([]byte, error)          { return nil, nil }
+func (f *fakeOps) Info(context.Context) (target.TargetInfo, error)           { return f.info, nil }
+
+func newTestPlugin(name string, client pluginClient) *Plugin {
+	return &Plugin{
+		name:  name,
+		path:  "/tmp/plugin",
+		ops:   &fakeOps{},
+		newClient: func(context.Context, string, sdk.TargetInfo, sdk.HandleServer) (pluginClient, error) {
+			return client, nil
+		},
+	}
+}
 
 func TestPluginReusesClientAcrossCalls(t *testing.T) {
 	var (
@@ -41,7 +76,8 @@ func TestPluginReusesClientAcrossCalls(t *testing.T) {
 	mod := &Plugin{
 		name: "custom",
 		path: "/tmp/plugin",
-		newClient: func(context.Context, string) (pluginClient, error) {
+		ops:  &fakeOps{},
+		newClient: func(context.Context, string, sdk.TargetInfo, sdk.HandleServer) (pluginClient, error) {
 			created++
 			return client, nil
 		},
@@ -96,13 +132,7 @@ func TestPluginReusesClientAcrossCalls(t *testing.T) {
 
 func TestPluginRejectsNameMismatch(t *testing.T) {
 	client := &fakePluginClient{name: "wrong"}
-	mod := &Plugin{
-		name: "custom",
-		path: "/tmp/plugin",
-		newClient: func(context.Context, string) (pluginClient, error) {
-			return client, nil
-		},
-	}
+	mod := newTestPlugin("custom", client)
 
 	if _, err := mod.Check(context.Background(), nil, nil); err == nil {
 		t.Fatal("Check() error = nil, want mismatch error")
@@ -122,7 +152,8 @@ func TestPluginCloseDropsCachedClient(t *testing.T) {
 	mod := &Plugin{
 		name: "custom",
 		path: "/tmp/plugin",
-		newClient: func(context.Context, string) (pluginClient, error) {
+		ops:  &fakeOps{},
+		newClient: func(context.Context, string, sdk.TargetInfo, sdk.HandleServer) (pluginClient, error) {
 			client := clients[created]
 			created++
 			return client, nil
@@ -157,5 +188,55 @@ func TestPluginCloseDropsCachedClient(t *testing.T) {
 	}
 	if clients[1].closeCalls != 0 {
 		t.Fatalf("second client Close called %d times before shutdown, want 0", clients[1].closeCalls)
+	}
+}
+
+func TestPluginForwardsMessageAndStreaming(t *testing.T) {
+	client := &fakePluginClient{
+		needsChange: true,
+		checkMsg:    "needs update",
+		applyMsg:    "applied ok",
+		outputLines: []string{"line-a", "line-b"},
+	}
+	mod := newTestPlugin("custom", client)
+
+	var checkOut []string
+	checkRes, err := mod.Check(context.Background(), nil, func(line string) { checkOut = append(checkOut, line) })
+	if err != nil {
+		t.Fatalf("Check error: %v", err)
+	}
+	if checkRes.Message != "needs update" {
+		t.Errorf("Check message = %q, want %q", checkRes.Message, "needs update")
+	}
+	if len(checkOut) != 2 {
+		t.Errorf("Check output lines = %v, want 2", checkOut)
+	}
+
+	var applyOut []string
+	applyRes, err := mod.Apply(context.Background(), nil, func(line string) { applyOut = append(applyOut, line) })
+	if err != nil {
+		t.Fatalf("Apply error: %v", err)
+	}
+	if applyRes.Message != "applied ok" {
+		t.Errorf("Apply message = %q, want %q", applyRes.Message, "applied ok")
+	}
+	if len(applyOut) != 2 {
+		t.Errorf("Apply output lines = %v, want 2", applyOut)
+	}
+}
+
+func TestPluginBindTarget(t *testing.T) {
+	unbound := NewModule("custom", "/tmp/plugin").(*Plugin)
+	if unbound.ops != nil {
+		t.Fatal("unbound plugin should have nil ops")
+	}
+	ops := &fakeOps{}
+	bound := unbound.BindTarget(ops).(*Plugin)
+	if bound.ops != ops {
+		t.Fatal("BindTarget did not bind ops")
+	}
+	// original stays unbound
+	if unbound.ops != nil {
+		t.Fatal("BindTarget mutated the unbound receiver")
 	}
 }

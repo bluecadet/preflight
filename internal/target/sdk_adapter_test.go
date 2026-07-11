@@ -3,6 +3,8 @@ package target
 import (
 	"context"
 	"testing"
+
+	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 type mockAdapterModule struct {
@@ -31,13 +33,25 @@ func (m *mockAdapterModule) Apply(_ context.Context, _ map[string]any, out Outpu
 	return m.applyResult, m.applyErr
 }
 
+// noopHandle is a Handle whose target ops are never exercised by built-in
+// modules; it only carries Output for streaming.
+type noopHandle struct{}
+
+func (noopHandle) RunCommand(context.Context, string) (sdk.CommandResult, error) {
+	return sdk.CommandResult{}, nil
+}
+func (noopHandle) PutFile(context.Context, string, []byte) error { return nil }
+func (noopHandle) GetFile(context.Context, string) ([]byte, error) { return nil, nil }
+func (noopHandle) Info() sdk.TargetInfo                              { return sdk.TargetInfo{} }
+func (noopHandle) Output(string)                                     {}
+
 func TestSDKModuleAdapter_Check(t *testing.T) {
 	mod := &mockAdapterModule{
 		checkResult: CheckResult{NeedsChange: true, Message: "needs update"},
 	}
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
-	result, err := adapter.Check(map[string]any{"key": "value"})
+	result, err := adapter.Check(map[string]any{"key": "value"}, noopHandle{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -57,9 +71,8 @@ func TestSDKModuleAdapter_CheckStreaming(t *testing.T) {
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
 	var received []string
-	result, err := adapter.CheckStreaming(map[string]any{}, func(line string) {
-		received = append(received, line)
-	})
+	h := recordingHandle{out: func(line string) { received = append(received, line) }}
+	result, err := adapter.Check(map[string]any{}, h)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -77,7 +90,7 @@ func TestSDKModuleAdapter_Apply(t *testing.T) {
 	}
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
-	result, err := adapter.Apply(map[string]any{})
+	result, err := adapter.Apply(map[string]any{}, noopHandle{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,16 +99,32 @@ func TestSDKModuleAdapter_Apply(t *testing.T) {
 	}
 }
 
-func TestSDKModuleAdapter_NilOutputFunc(t *testing.T) {
+func TestSDKModuleAdapter_NilHandleOutput(t *testing.T) {
 	mod := &mockAdapterModule{
 		checkResult: CheckResult{NeedsChange: true},
 		outputLines: []string{"some output"},
 	}
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
-	// Should not panic when out is nil
-	_, err := adapter.Check(map[string]any{})
+	// A nil handle (host passed nil) should not panic.
+	_, err := adapter.Check(map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+type recordingHandle struct {
+	out func(line string)
+}
+
+func (h recordingHandle) RunCommand(context.Context, string) (sdk.CommandResult, error) {
+	return sdk.CommandResult{}, nil
+}
+func (h recordingHandle) PutFile(context.Context, string, []byte) error { return nil }
+func (h recordingHandle) GetFile(context.Context, string) ([]byte, error) { return nil, nil }
+func (h recordingHandle) Info() sdk.TargetInfo                           { return sdk.TargetInfo{} }
+func (h recordingHandle) Output(line string) {
+	if h.out != nil {
+		h.out(line)
 	}
 }

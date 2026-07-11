@@ -132,5 +132,5 @@ func (fakePluggable) Check(context.Context, map[string]any, target.OutputFunc) (
 func (fakePluggable) Apply(context.Context, map[string]any, target.OutputFunc) (target.ApplyResult, error) {
 	return target.ApplyResult{}, nil
 }
-func (f fakePluggable) PluginPath() string         { return f.path }
-func (f fakePluggable) CloneModule() target.Module { return f }
+func (f fakePluggable) PluginPath() string             { return f.path }
+func (f fakePluggable) BindTarget(target.TargetOps) target.Module { return f }
