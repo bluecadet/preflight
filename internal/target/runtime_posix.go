@@ -121,9 +121,9 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 }
 
 func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
-	path, ok := params["path"].(string)
-	if !ok || path == "" {
-		return CheckResult{}, fmt.Errorf("directory: required param %q is missing", "path")
+	path, err := requireStringParam(params, "path", "directory")
+	if err != nil {
+		return CheckResult{}, err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -155,9 +155,9 @@ func checkPOSIXDirectory(ctx context.Context, backend posixShellBackend, params 
 }
 
 func applyPOSIXDirectory(ctx context.Context, backend posixShellBackend, params map[string]any) error {
-	path, ok := params["path"].(string)
-	if !ok || path == "" {
-		return fmt.Errorf("directory: required param %q is missing", "path")
+	path, err := requireStringParam(params, "path", "directory")
+	if err != nil {
+		return err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -174,9 +174,9 @@ func applyPOSIXDirectory(ctx context.Context, backend posixShellBackend, params 
 }
 
 func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
-	dest, ok := params["dest"].(string)
-	if !ok || dest == "" {
-		return CheckResult{}, fmt.Errorf("file: required param %q is missing", "dest")
+	dest, err := requireStringParam(params, "dest", "file")
+	if err != nil {
+		return CheckResult{}, err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -244,9 +244,9 @@ func checkPOSIXFile(ctx context.Context, backend posixShellBackend, params map[s
 }
 
 func applyPOSIXFile(ctx context.Context, backend posixShellBackend, params map[string]any) error {
-	dest, ok := params["dest"].(string)
-	if !ok || dest == "" {
-		return fmt.Errorf("file: required param %q is missing", "dest")
+	dest, err := requireStringParam(params, "dest", "file")
+	if err != nil {
+		return err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -287,9 +287,9 @@ func checkPOSIXShell(ctx context.Context, backend posixShellBackend, params map[
 }
 
 func applyPOSIXShell(ctx context.Context, backend posixShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
-	cmd, ok := params["cmd"].(string)
-	if !ok || cmd == "" {
-		return ApplyResult{}, fmt.Errorf("shell: required param %q is missing", "cmd")
+	cmd, err := requireStringParam(params, "cmd", "shell")
+	if err != nil {
+		return ApplyResult{}, err
 	}
 	args, err := paramStringSlice(params, "args")
 	if err != nil {

@@ -14,9 +14,9 @@ import (
 // probed — password drift on existing users is a stated limitation (see
 // applyPOSIXUser and docs/reference/modules.md).
 func checkPOSIXUser(ctx context.Context, backend posixShellBackend, params map[string]any) (CheckResult, error) {
-	name, ok := params["name"].(string)
-	if !ok || name == "" {
-		return CheckResult{}, fmt.Errorf("user: required param %q is missing", "name")
+	name, err := requireStringParam(params, "name", "user")
+	if err != nil {
+		return CheckResult{}, err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {
@@ -67,9 +67,9 @@ func checkPOSIXUser(ctx context.Context, backend posixShellBackend, params map[s
 // usermod -aG appends the desired groups without removing any the user
 // already holds.
 func applyPOSIXUser(ctx context.Context, backend posixShellBackend, params map[string]any) error {
-	name, ok := params["name"].(string)
-	if !ok || name == "" {
-		return fmt.Errorf("user: required param %q is missing", "name")
+	name, err := requireStringParam(params, "name", "user")
+	if err != nil {
+		return err
 	}
 	ensure, _ := params["ensure"].(string)
 	if ensure == "" {

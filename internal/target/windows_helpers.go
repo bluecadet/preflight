@@ -170,3 +170,37 @@ func paramStringRequired(params map[string]any, key string) (string, error) {
 	}
 	return text, nil
 }
+
+// requireStringParam reads a required string param and returns a module-prefixed
+// missing-param error when it is absent or empty. The error wording matches the
+// convention used across the POSIX modules ("<module>: required param <key> is
+// missing") so callers stay uniform.
+func requireStringParam(params map[string]any, key, module string) (string, error) {
+	v, ok := params[key].(string)
+	if !ok || v == "" {
+		return "", fmt.Errorf("%s: required param %q is missing", module, key)
+	}
+	return v, nil
+}
+
+// paramInt reads an optional integer param that may arrive as int, int64, or
+// float64 (YAML/JSON numeric decoders disagree on the concrete type). A
+// positive value overrides def; otherwise def is returned. Collapses the
+// repeated 3-arm type switch used by modules that accept a numeric timeout.
+func paramInt(params map[string]any, key string, def int) int {
+	switch raw := params[key].(type) {
+	case int:
+		if raw > 0 {
+			return raw
+		}
+	case int64:
+		if raw > 0 {
+			return int(raw)
+		}
+	case float64:
+		if raw > 0 {
+			return int(raw)
+		}
+	}
+	return def
+}

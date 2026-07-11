@@ -10,9 +10,9 @@ import (
 // startup_type are both optional; an empty pair is a no-op (nothing to
 // converge), mirroring the Windows module.
 func parsePOSIXServiceParams(params map[string]any) (name, state, startupType string, err error) {
-	name, ok := params["name"].(string)
-	if !ok || name == "" {
-		return "", "", "", fmt.Errorf("service: required param %q is missing", "name")
+	name, err = requireStringParam(params, "name", "service")
+	if err != nil {
+		return "", "", "", err
 	}
 	state, _ = params["state"].(string)
 	switch state {
