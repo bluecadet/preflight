@@ -88,6 +88,33 @@ That split matters:
 
 SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
 
+### POSIX Capability Baseline And Tiers
+
+POSIX-over-SSH support is **capability-based, not a distro allowlist**. A host is supported when it provides the capabilities the modules rely on, not when its distro name appears on a list. The docs may carry an informal "tested on" note, but that is not a contract.
+
+Capability baseline (Linux, the official tier):
+
+- **Shell** — strict POSIX `sh`. Modules and stdlib actions never assume Bash.
+- **Core utilities** — the standard POSIX toolset plus `base64` (already assumed for file transfer). `sha256sum`/`shasum` are probed with a read-and-hash-locally fallback, so neither is required.
+- **Init system** — systemd, for `service`, `wait`'s `service_running`, and `reboot`'s `if_needed` probe. Hosts without systemd fail those tasks with a typed `missing_prerequisite` error naming what was probed; everything else still works.
+- **Package managers** — `apt` and `dnf` officially, for `system_package`. Other managers are a stated limitation with the `shell` module as the escape hatch.
+- **`sudo`** — required only when `become` is used (see [How `become` works](./become.md)).
+
+Tiers:
+
+- **Official** — any Linux meeting the baseline. Static binaries mean musl/Alpine works; Alpine's OpenRC and `apk` fall under the stated limitations below.
+- **Best-effort** — macOS and other POSIX systems (BSDs, illumos). They may work via the same capability baseline, but there are no version claims, no CI, and no required builds. `family=darwin` with empty distro facts is the expected shape, not a bug.
+
+### Consolidated POSIX Limitations
+
+These are documented, not coded around; the per-module notes in the [built-in module reference](../reference/modules.md) colocate each one with the module it limits.
+
+- `environment` is unsupported on POSIX-over-SSH — ambient env is login-shell plumbing with no faithful analog; per-service env belongs in unit files (`file` + `service`).
+- `user` sets a password on creation only; an existing user's password is never reset, even when `password` is supplied and `Apply` runs for another reason. Managed POSIX endpoints authenticate by SSH key.
+- Non-`apt`/`dnf` package managers and non-systemd init are unsupported; the `shell` module is the escape hatch.
+- The real `reboot` + reconnect path is unit-tested against fakes only and is not exercised end-to-end in CI.
+- macOS/BSD is best-effort, as above.
+
 ### SSH Module Support Matrix
 
 | Module | POSIX shell | Windows PowerShell SSH |
@@ -100,13 +127,16 @@ SSH is now the default and primary remote transport, including for Windows hosts
 | `powershell` | yes (requires `pwsh` or `powershell` installed) | yes |
 | `environment` | no | yes |
 | `registry` | no | yes |
-| `service` | no | yes |
-| `reboot` | yes (systemd; requires root) | yes |
-| `user` | no | yes |
+| `service` | yes (systemd; **requires root**) | yes |
+| `reboot` | yes (systemd; **requires root**) | yes |
+| `user` | yes (**requires root**) | yes |
+| `system_package` | yes (apt or dnf; **requires root**) | no |
+| `package` | no | yes |
+| `winget_package` | no | yes |
 | `windows_feature` | no | yes |
 | plugin modules | yes | yes |
 
-Unsupported module usage is caught at first task execution and returns a clear error. There is no silent fallback.
+Unsupported module usage is caught before the task runs and returns a clear, typed error. There is no silent fallback. See [Validation UX](#validation-ux) below for what plan-time catches versus the apply-start gate, and [Built-in module reference](../reference/modules.md) for the authoritative per-module `Supported runtimes` lines and `requires_root` markers.
 
 ### SSH Authentication
 
@@ -191,6 +221,40 @@ inventory:
 
 Once connected, the SSH target sends an OpenSSH keepalive request every 30s (fixed, not configurable) to keep the connection alive across NAT/firewall idle timeouts during long-running playbooks. If a connection drops mid-run — the keepalive fails twice in a row, or any command hits a connection-level error such as a closed socket or `EOF` — Preflight transparently reconnects once and retries the failed command before giving up. Command-level failures (a non-zero exit code, a script error) and a cancelled/expired context are never retried.
 
+## Validation UX: How Module-By-Runtime Gaps Are Surfaced
+
+A module that is not supported on a target's runtime is never silently skipped. Gaps surface in three layers, and nothing executes if the plan can't complete.
+
+1. **Plan-time (offline).** Unknown module names — whether a catalog built-in or a discovered plugin — fail for all targets. Runtime-support violations also fail where the transport implies a runtime offline: WinRM is always `windows-powershell`, and the local target is `GOOS`-derived. SSH's runtime is only known after probing the remote host, so plan-time can only name-check SSH tasks. Plan violations exit non-zero like any plan error.
+2. **Apply-start gate.** After `Info()` resolves the runtime kind and facts are gathered — and before task 1 — every task that will actually run is validated against the support matrix. When any runnable task is unsupported, the whole run is refused with **all** violations listed, not just the first. The gate is `when`-aware (facts and vars are fixed by then, so `when: false` tasks are excluded) and `ignore_errors`-exempt (those tasks keep fail-and-continue at execution time). A cross-platform `when`-guarded playbook passes by construction. Gate refusal is its own run-log event, not synthetic task failures.
+3. **Per-task apply-time errors.** These remain only for environment prerequisites the matrix cannot know — no systemd, no `apt`/`dnf`, no `pwsh` binary, not root. They are probed inside module execution and surface as a typed `missing_prerequisite` (or privilege) error.
+
+### Reason codes
+
+Every transport surfaces the same typed error classes, so wording and run-log reason codes stay uniform across local, SSH, and WinRM. The JSON run-log carries a `reason` field on task-failed and gate-refusal events.
+
+| Reason code | Meaning |
+| --- | --- |
+| `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
+| `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
+| `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent (no systemd, no `apt`/`dnf`, no `pwsh`); the detail names what was probed |
+| `requires-root-violation` | a `requires_root` module (`service`, `user`, `system_package`, `reboot`) ran as a non-root effective user |
+| `sudo-missing` | `become` is enabled on POSIX but the target has no `sudo` binary |
+| `sudo-password-required` | a no-password `sudo -n` run needed a password; supply `become.password` or configure `NOPASSWD` |
+| `sudo-auth-failed` | `sudo` rejected the supplied password |
+| `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
+| `plugin_protocol` | a plugin failed the protocol handshake (version mismatch / pre-v1 plugin rejected) |
+
+Wording is complete facts, not a suggestion engine: every message names the module, the target's runtime, and (for `unsupported_on_runtime`) the supporting runtimes. No did-you-mean, no remediation prose. Example shapes:
+
+```
+task "install tools": module "system_package" is not supported on windows-powershell (supported: posix-shell)
+gate: 2 task(s) cannot run on this target (posix-shell)
+  task "install tools": module "system_package" is not supported on posix-shell (supported: posix-shell)
+```
+
+The matrix source of truth is [`internal/target/catalog.go`](../../internal/target/catalog.go)'s capability flags, and a unit drift test asserts the [built-in module reference](../reference/modules.md) matrix matches the catalog — so the docs cannot silently drift from the code.
+
 ## Persistent PowerShell Sessions
 
 Remote Windows tasks are slow if every Check and Apply call starts a fresh `powershell.exe` process. PowerShell startup takes 200–500 ms, and on WinRM each invocation also creates and tears down a WinRM shell — a further five HTTP round-trips. A 20-task playbook against a remote Windows host could spend 20 seconds doing nothing but process startup.
@@ -237,7 +301,7 @@ Because plugins satisfy the same `Check()` then `Apply()` shape:
 - state tracking still works
 - the target layer does not need a second concept of "custom task"
 
-A plugin runs **controller-side with a target handle**: its `Check` and `Apply` receive a handle whose ops (`RunCommand`, `PutFile`, `GetFile`, `TargetInfo`) dispatch to whatever transport backs the target — local, SSH, or WinRM. The same plugin binary runs unchanged against any transport, and nothing is ever staged on or delivered to the target. Plugin+`become` is refused in v1 (the handle does not carry `ExecOpts`); that is a uniform limitation across transports, not a transport-specific gap.
+A plugin runs **controller-side with a target handle**: its `Check` and `Apply` receive a handle whose ops (`RunCommand`, `PutFile`, `GetFile`, `TargetInfo`) dispatch to whatever transport backs the target — local, SSH, or WinRM. The same plugin binary runs unchanged against any transport, and nothing is ever staged on or delivered to the target. Because plugin effects flow through the handle rather than a runtime-specific registry, plugins **bypass the module×runtime support matrix** — a plugin is supported on every runtime the matrix knows, with no per-transport gating. Plugin+`become` is refused in v1 (the handle does not carry `ExecOpts`); that is a uniform limitation across transports, not a transport-specific gap.
 
 ## Why Safe Target Metadata Exists
 
