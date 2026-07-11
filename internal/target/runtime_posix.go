@@ -11,6 +11,7 @@ import (
 type posixShellBackend interface {
 	powerShellScriptBackend
 	RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (stdout string, stderr string, exitCode int, err error)
+	PackageManager(ctx context.Context) (string, error)
 	CopyFile(ctx context.Context, src, dst string) error
 	ReadFile(ctx context.Context, path string) ([]byte, error)
 	PowerShellBinary() string
@@ -72,6 +73,14 @@ func newPOSIXShellRegistry(backend posixShellBackend) ModuleRegistry {
 			},
 			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
 				return applyPOSIXReboot(ctx, backend, params)
+			},
+		},
+		"system_package": moduleFuncs{
+			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
+				return checkPOSIXSystemPackage(ctx, backend, params)
+			},
+			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+				return applyPOSIXSystemPackage(ctx, backend, params, out)
 			},
 		},
 	}

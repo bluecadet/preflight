@@ -67,6 +67,9 @@ func (f *fakePOSIXBackend) RunPowerShellScript(context.Context, string, OutputFu
 	return "", nil
 }
 func (f *fakePOSIXBackend) Probe(context.Context) (Probe, error) { return f.probe, nil }
+func (f *fakePOSIXBackend) PackageManager(context.Context) (string, error) {
+	return f.probe.PackageManager, nil
+}
 
 // ranCommand reports whether a command matching substr was issued.
 func (f *fakePOSIXBackend) ranCommand(substr string) bool {

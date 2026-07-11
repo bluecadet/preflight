@@ -11,6 +11,7 @@ const (
 	CapabilityRemote                                // usable over a remote transport (SSH, WinRM)
 	CapabilityBuiltinCommon                         // available on any platform
 	CapabilityBuiltinWindows                        // Windows-only
+	CapabilityBuiltinPOSIX                          // POSIX-only (posix-shell runtime)
 )
 
 type catalogModule struct {
@@ -38,6 +39,7 @@ var catalogModules = []catalogModule{
 	{Name: "shell", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "reboot", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon, RequiresRoot: true},
 	{Name: "wait", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
+	{Name: "system_package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinPOSIX, RequiresRoot: true},
 }
 
 // CatalogNames returns module names whose capability includes the given mask.
@@ -85,8 +87,12 @@ func CatalogSupportedRuntimes(name string) []RuntimeKind {
 	var runtimes []RuntimeKind
 	if cap&CapabilityBuiltinCommon != 0 {
 		runtimes = append(runtimes, RuntimeKindWindowsPowerShell, RuntimeKindPOSIXShell)
-	} else if cap&CapabilityBuiltinWindows != 0 {
+	}
+	if cap&CapabilityBuiltinWindows != 0 {
 		runtimes = append(runtimes, RuntimeKindWindowsPowerShell)
+	}
+	if cap&CapabilityBuiltinPOSIX != 0 {
+		runtimes = append(runtimes, RuntimeKindPOSIXShell)
 	}
 	return runtimes
 }

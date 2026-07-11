@@ -30,6 +30,20 @@ func TestCatalogSupportedRuntimes_WindowsModulesAreWindowsOnly(t *testing.T) {
 	}
 }
 
+// TestCatalogSupportedRuntimes_POSIXModulesArePOSIXOnly guards the
+// POSIX-only capability: a module marked BuiltinPOSIX runs on posix-shell
+// and nothing else. system_package is the first such module.
+func TestCatalogSupportedRuntimes_POSIXModulesArePOSIXOnly(t *testing.T) {
+	for _, name := range CatalogNames(CapabilityBuiltinPOSIX) {
+		if !CatalogSupportsRuntime(name, RuntimeKindPOSIXShell) {
+			t.Errorf("posix module %q should support posix-shell", name)
+		}
+		if CatalogSupportsRuntime(name, RuntimeKindWindowsPowerShell) {
+			t.Errorf("posix module %q must not be supported on windows-powershell", name)
+		}
+	}
+}
+
 func TestCatalogSupportedRuntimes_UnknownModuleReturnsNil(t *testing.T) {
 	if got := CatalogSupportedRuntimes("does_not_exist"); got != nil {
 		t.Errorf("expected nil for unknown module, got %v", got)
@@ -55,12 +69,23 @@ func TestCatalogEnvironmentIsWindowsOnly(t *testing.T) {
 }
 
 func TestCatalogMatrixIsPartitioned(t *testing.T) {
-	// Every catalog module must be supported on windows-powershell (windows is
-	// the superset). Only BuiltinCommon modules are additionally supported on
-	// posix-shell.
+	// Every remote module supports at least one runtime, and its builtin
+	// capability grants exactly one of: both runtimes (BuiltinCommon),
+	// windows-powershell only (BuiltinWindows), or posix-shell only
+	// (BuiltinPOSIX). Any other combination is an inconsistent partition.
 	for _, name := range CatalogNames(CapabilityRemote) {
-		if !CatalogSupportsRuntime(name, RuntimeKindWindowsPowerShell) {
-			t.Errorf("module %q is not supported on windows-powershell (windows is the baseline)", name)
+		runtimes := CatalogSupportedRuntimes(name)
+		if len(runtimes) == 0 {
+			t.Errorf("module %q is not supported on any runtime (orphan)", name)
+		}
+		common := CatalogSupportsRuntime(name, RuntimeKindWindowsPowerShell) &&
+			CatalogSupportsRuntime(name, RuntimeKindPOSIXShell)
+		winOnly := CatalogSupportsRuntime(name, RuntimeKindWindowsPowerShell) &&
+			!CatalogSupportsRuntime(name, RuntimeKindPOSIXShell)
+		posixOnly := !CatalogSupportsRuntime(name, RuntimeKindWindowsPowerShell) &&
+			CatalogSupportsRuntime(name, RuntimeKindPOSIXShell)
+		if !common && !winOnly && !posixOnly {
+			t.Errorf("module %q has an inconsistent runtime partition: %v", name, runtimes)
 		}
 	}
 }
@@ -68,7 +93,7 @@ func TestCatalogMatrixIsPartitioned(t *testing.T) {
 // TestCatalogRequiresRoot guards the requires_root flag: the modules that need
 // root on POSIX are marked, and no module is marked by accident.
 func TestCatalogRequiresRoot(t *testing.T) {
-	for _, name := range []string{"service", "user", "reboot"} {
+	for _, name := range []string{"service", "user", "reboot", "system_package"} {
 		if !CatalogRequiresRoot(name) {
 			t.Errorf("module %q should be marked requires_root", name)
 		}

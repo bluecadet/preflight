@@ -94,6 +94,7 @@
         "scheduled_task": { "$ref": "#/$defs/moduleScheduledTask" },
         "user": { "$ref": "#/$defs/moduleUser" },
         "winget_package": { "$ref": "#/$defs/moduleWingetPackage" },
+        "system_package": { "$ref": "#/$defs/moduleSystemPackage" },
         "remove_appx_packages": { "$ref": "#/$defs/moduleRemoveAppxPackages" },
         "power_plan": { "$ref": "#/$defs/modulePowerPlan" },
         "windows_feature": { "$ref": "#/$defs/moduleWindowsFeature" },
@@ -296,6 +297,27 @@
               "source": { "type": "string" },
               "args": { "type": "array", "items": { "type": "string" } },
               "scope": { "type": "string", "enum": ["machine", "user"], "default": "machine" },
+              "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+            }
+          }
+        }
+      }
+    },
+    "moduleSystemPackage": {
+      "type": "object",
+      "description": "Manage repo packages through apt or dnf (POSIX only)",
+      "additionalProperties": false,
+      "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of packages to manage",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "type": "string", "description": "Package name as known to the detected package manager" },
+              "version": { "type": "string", "description": "Pin to an exact version (native manager format; compared as a string)" },
               "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
             }
           }
