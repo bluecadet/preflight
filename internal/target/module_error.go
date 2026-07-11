@@ -144,8 +144,9 @@ func ReasonCodeForError(err error) string {
 	if errors.As(err, &mse) {
 		return mse.ReasonCode()
 	}
-	if code, ok := reasonCodeFromBecomeEnv(err); ok {
-		return code
+	var be *BecomeEnvError
+	if errors.As(err, &be) {
+		return be.ReasonCode()
 	}
 	return ""
 }
