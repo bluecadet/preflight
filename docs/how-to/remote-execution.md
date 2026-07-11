@@ -195,9 +195,11 @@ If you are validating from a Mac, work through [Validate a WinRM connection from
 That usually means the playbook is hitting a runtime-specific limit. SSH now auto-detects either a Windows PowerShell runtime or a POSIX shell runtime:
 
 - Windows-over-SSH supports the built-in Windows module set.
-- POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when `pwsh` or `powershell` is installed.
-- Plugin modules are not yet supported over SSH.
+- POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when `pwsh` or `powershell` is installed, `user` (requires root), `system_package` on targets with apt or dnf, and `service` over systemd (requires root). The full per-module matrix lives in the [built-in module reference](../reference/modules.md).
+- Plugin modules run over SSH the same way they run locally and over WinRM — the plugin process runs controller-side.
 - Using the `file` module with `ensure: absent` on a path that resolves to a directory returns an error. Use the `directory` module with `ensure: absent` instead.
+
+POSIX-over-SSH support is **capability-based, not a distro allowlist**: a host is supported when it provides the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`, `sudo` only when `become` is used). See [Targets, transports, and plugins](../explanation/targets-and-transports.md#posix-capability-baseline-and-tiers) for the full baseline and the official Linux / best-effort macOS-BSD tiers.
 
 On POSIX, a task that needs root fails **before `Check()`** with a typed reason code rather than a generic sudo error:
 
