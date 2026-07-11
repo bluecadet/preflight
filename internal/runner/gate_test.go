@@ -265,8 +265,8 @@ func (pluginStub) Check(context.Context, map[string]any, target.OutputFunc) (tar
 func (pluginStub) Apply(context.Context, map[string]any, target.OutputFunc) (target.ApplyResult, error) {
 	return target.ApplyResult{}, nil
 }
-func (pluginStub) PluginPath() string         { return "/tmp/custom" }
-func (pluginStub) CloneModule() target.Module { return pluginStub{} }
+func (pluginStub) PluginPath() string                            { return "/tmp/custom" }
+func (pluginStub) BindTarget(ops target.TargetOps) target.Module { return pluginStub{} }
 
 // Ensure the refusal error is typed so callers can distinguish a gate refusal
 // from a task-failure summary.

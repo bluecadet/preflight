@@ -1,6 +1,7 @@
 package target
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -32,15 +33,20 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 	if registry == nil {
 		registry = make(ModuleRegistry)
 	}
-	cloned := make(ModuleRegistry, len(registry))
+	t := &LocalTarget{registry: registry}
+	// Each target binds plugins to its own (local) ops backend so the plugin's
+	// target effects flow through the handle even locally. *LocalTarget itself
+	// implements TargetOps (Exec/PutFile/GetFile/Info).
+	bound := make(ModuleRegistry, len(registry))
 	for name, mod := range registry {
 		if pluggable, ok := mod.(PluggableModule); ok {
-			cloned[name] = pluggable.CloneModule()
+			bound[name] = pluggable.BindTarget(t)
 			continue
 		}
-		cloned[name] = mod
+		bound[name] = mod
 	}
-	return &LocalTarget{registry: cloned}
+	t.registry = bound
+	return t
 }
 
 // Transport identifies the local target connection type.
@@ -114,6 +120,66 @@ func (t *LocalTarget) ReadFile(_ context.Context, path string) ([]byte, error) {
 		return nil, wrapLocalTargetError(fmt.Sprintf("read %q", path), err)
 	}
 	return data, nil
+}
+
+// GetFile implements TargetOps: reads the contents of path on the local
+// machine. The plugin's target effects flow through the handle even locally.
+func (t *LocalTarget) GetFile(ctx context.Context, path string) ([]byte, error) {
+	return t.ReadFile(ctx, path)
+}
+
+// PutFile implements TargetOps: writes data to path on the local machine.
+func (t *LocalTarget) PutFile(_ context.Context, path string, data []byte) error {
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return wrapLocalTargetError(fmt.Sprintf("write %q", path), err)
+	}
+	return nil
+}
+
+// Exec implements TargetOps: runs script in the target's native shell (POSIX sh
+// or PowerShell per runtimeKindForLocal) and returns separated stdout/stderr
+// and the exit code.
+func (t *LocalTarget) Exec(ctx context.Context, script string) (ExecResult, error) {
+	if runtime.GOOS == "windows" {
+		return t.execPowerShell(ctx, script)
+	}
+	return t.execPOSIX(ctx, script)
+}
+
+func (t *LocalTarget) execPOSIX(ctx context.Context, script string) (ExecResult, error) {
+	cmd := exec.CommandContext(ctx, "sh", "-c", script)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
+		res.ExitCode = exitErr.ExitCode()
+		return res, nil
+	}
+	if err != nil {
+		return res, wrapLocalTargetError("exec", err)
+	}
+	return res, nil
+}
+
+func (t *LocalTarget) execPowerShell(ctx context.Context, script string) (ExecResult, error) {
+	cmd := exec.CommandContext(ctx, "powershell.exe",
+		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+		"-Command", script)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
+	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
+		res.ExitCode = exitErr.ExitCode()
+		return res, nil
+	}
+	if err != nil {
+		return res, wrapLocalTargetError("powershell failed", err)
+	}
+	return res, nil
 }
 
 // Reachable always returns true for the local target.

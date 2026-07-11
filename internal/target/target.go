@@ -79,8 +79,10 @@ type PluggableModule interface {
 	Module
 	// PluginPath is the path to the backing plugin executable.
 	PluginPath() string
-	// CloneModule returns a fresh adapter that owns no shared client state.
-	CloneModule() Module
+	// BindTarget returns a fresh adapter bound to the given target ops backend.
+	// The returned Module owns its own client state; the receiver stays unbound
+	// so another target can bind it independently.
+	BindTarget(ops TargetOps) Module
 }
 
 // Result holds the outcome of a single task execution.

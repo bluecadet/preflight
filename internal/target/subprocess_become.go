@@ -15,6 +15,15 @@ type elevationWrapper interface {
 	Start(ctx context.Context, binary string, moduleName string) (*sdk.Client, error)
 }
 
+// toSDKOut converts a target.OutputFunc to an sdk.OutputFunc, returning nil for a
+// nil input so the SDK skips the streaming callback entirely.
+func toSDKOut(out OutputFunc) sdk.OutputFunc {
+	if out == nil {
+		return nil
+	}
+	return sdk.OutputFunc(out)
+}
+
 // subprocessModule implements target.Module by re-invoking the preflight binary
 // under elevation via __module-exec.
 type subprocessModule struct {
@@ -30,11 +39,8 @@ func (m *subprocessModule) Check(ctx context.Context, params map[string]any, out
 	}
 	defer func() { _ = cli.Close() }()
 
-	var sdkOut sdk.OutputFunc
-	if out != nil {
-		sdkOut = sdk.OutputFunc(out)
-	}
-	sdkRes, err := cli.CheckStreaming(params, sdkOut)
+	sdkOut := toSDKOut(out)
+	sdkRes, err := cli.Check(ctx, params, sdkOut)
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -48,11 +54,8 @@ func (m *subprocessModule) Apply(ctx context.Context, params map[string]any, out
 	}
 	defer func() { _ = cli.Close() }()
 
-	var sdkOut sdk.OutputFunc
-	if out != nil {
-		sdkOut = sdk.OutputFunc(out)
-	}
-	sdkRes, err := cli.ApplyStreaming(params, sdkOut)
+	sdkOut := toSDKOut(out)
+	sdkRes, err := cli.Apply(ctx, params, sdkOut)
 	if err != nil {
 		return ApplyResult{}, err
 	}
@@ -79,7 +82,7 @@ func (e *posixSudoElevation) Start(ctx context.Context, binary string, moduleNam
 	if e.password != "" {
 		cmd.Stdin = strings.NewReader(e.password + "\n")
 	}
-	return sdk.NewClientFromCmd(cmd)
+	return sdk.NewClientFromCmd(cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
 }
 
 // windowsCredentialElevation spawns the binary under a different user account
@@ -106,7 +109,7 @@ func (e *windowsCredentialElevation) Start(ctx context.Context, binary string, m
 		"-ExecutionPolicy", "Bypass",
 		"-Command", script,
 	)
-	return sdk.NewClientFromCmd(cmd)
+	return sdk.NewClientFromCmd(cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
 }
 
 func buildWindowsElevatedSubprocessWrapper(binary, moduleName, user, password, loadProfile string) string {
@@ -176,6 +179,13 @@ func newSubprocessBecomeRegistry(source ModuleRegistry, kind RuntimeKind, become
 
 	reg := make(ModuleRegistry, len(source))
 	for name, mod := range source {
+		// plugin + become is refused in v1 (ExecOpts-through-backend is v2).
+		// Surface the typed plugin_become error instead of letting the plugin
+		// spawn and fail with a confusing local RPC error.
+		if _, isPlugin := mod.(PluggableModule); isPlugin {
+			reg[name] = unsupportedModule(NewPluginBecomeError(name))
+			continue
+		}
 		_ = mod // source module exists; wrap it in subprocess
 		reg[name] = &subprocessModule{
 			name:      name,

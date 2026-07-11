@@ -14,46 +14,57 @@ import (
 // real plugin subprocess.
 type pluginClient interface {
 	Name() string
-	Check(args map[string]any) (sdk.CheckResult, error)
-	Apply(args map[string]any) (sdk.ApplyResult, error)
+	Check(ctx context.Context, args map[string]any, out sdk.OutputFunc) (sdk.CheckResult, error)
+	Apply(ctx context.Context, args map[string]any, out sdk.OutputFunc) (sdk.ApplyResult, error)
 	Close() error
 }
 
-// Plugin adapts an executable plugin into target.Module. Each Plugin owns at
-// most one live client at a time; the client is lazily created on first Check
-// or Apply and reused across calls until reset or Close.
+// Plugin adapts an executable plugin into target.Module. It is created unbound
+// (path only) during BuildRegistry; a target binds it to its TargetOps backend
+// via BindTarget. Once bound, the lazily-created client carries protocol_version
+// and the enriched TargetInfo at initialize, and the plugin's handle-op
+// requests (RunCommand/PutFile/GetFile) flow through the bound ops backend —
+// including against the local target.
 //
-// Plugin satisfies target.PluggableModule: LocalTarget clones it per-instance
-// so each target keeps its own plugin client, and other transports use the
-// interface to report a friendlier "use local or a staged bundle" error when
-// a plugin is invoked over a transport that cannot delegate.
+// Plugin satisfies target.PluggableModule. It forwards Message and streams
+// output (the silent drops of the v0 adapter are fixed): Check/Apply use the
+// streaming SDK calls so plugin output notifications reach the runner.
 type Plugin struct {
-	name          string
-	path          string
-	newClient     func(context.Context, string) (pluginClient, error)
-	mu            sync.Mutex
-	client        pluginClient
-	closeClientFn func(pluginClient) error
+	name      string
+	path      string
+	ops       target.TargetOps
+	newClient func(ctx context.Context, path string, info sdk.TargetInfo, hs sdk.HandleServer) (pluginClient, error)
+
+	mu     sync.Mutex
+	client pluginClient
 }
 
-// NewModule adapts an executable plugin into target.Module.
+// NewModule adapts an executable plugin into an unbound target.Module. A target
+// must BindTarget it before use.
 func NewModule(name, path string) target.Module {
 	return &Plugin{
 		name:      name,
 		path:      path,
-		newClient: func(ctx context.Context, path string) (pluginClient, error) { return sdk.NewClientContext(ctx, path) },
+		newClient: defaultNewClient,
 	}
 }
 
-// CloneModule returns a fresh Plugin sharing the same name, path, and factory
-// but no live client. Used by LocalTarget so each target instance gets its
-// own plugin subprocess state.
-func (m *Plugin) CloneModule() target.Module {
+// defaultNewClient is the production client factory: it spawns the plugin and
+// performs the v1 initialize handshake (protocol_version + TargetInfo), binding
+// handle-op requests to hs. *sdk.Client satisfies pluginClient directly.
+func defaultNewClient(ctx context.Context, path string, info sdk.TargetInfo, hs sdk.HandleServer) (pluginClient, error) {
+	return sdk.NewClientContext(ctx, path, info, hs)
+}
+
+// BindTarget returns a fresh Plugin bound to the given target ops backend. The
+// returned Module owns its own (lazily-created) client state; the receiver
+// stays unbound so another target can bind it independently.
+func (m *Plugin) BindTarget(ops target.TargetOps) target.Module {
 	return &Plugin{
-		name:          m.name,
-		path:          m.path,
-		newClient:     m.newClient,
-		closeClientFn: m.closeClientFn,
+		name:      m.name,
+		path:      m.path,
+		ops:       ops,
+		newClient: m.newClient,
 	}
 }
 
@@ -62,53 +73,65 @@ func (m *Plugin) PluginPath() string {
 	return m.path
 }
 
-func (m *Plugin) Check(ctx context.Context, params map[string]any, _ target.OutputFunc) (target.CheckResult, error) {
+func (m *Plugin) Check(ctx context.Context, params map[string]any, out target.OutputFunc) (target.CheckResult, error) {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
-		return target.CheckResult{}, fmt.Errorf("plugin %q: %w", m.name, err)
+		return target.CheckResult{}, err
 	}
 	if name := client.Name(); name != "" && name != m.name {
 		_ = m.Close()
 		return target.CheckResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
-	result, err := client.Check(params)
+	res, err := client.Check(ctx, params, toSDKOut(out))
 	if err != nil {
+		if pe := protocolError(m.name, err); pe != nil {
+			return target.CheckResult{}, pe
+		}
 		m.resetClient(client)
 		return target.CheckResult{}, fmt.Errorf("plugin %q check: %w", m.name, err)
 	}
-	return target.CheckResult{NeedsChange: result.NeedsChange}, nil
+	return target.CheckResult{NeedsChange: res.NeedsChange, Message: res.Message}, nil
 }
 
-func (m *Plugin) Apply(ctx context.Context, params map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
+func (m *Plugin) Apply(ctx context.Context, params map[string]any, out target.OutputFunc) (target.ApplyResult, error) {
 	client, err := m.getOrCreateClient(ctx)
 	if err != nil {
-		return target.ApplyResult{}, fmt.Errorf("plugin %q: %w", m.name, err)
+		return target.ApplyResult{}, err
 	}
 	if name := client.Name(); name != "" && name != m.name {
 		_ = m.Close()
 		return target.ApplyResult{}, fmt.Errorf("plugin %q reported logical name %q", m.name, name)
 	}
 
-	if _, err := client.Apply(params); err != nil {
+	res, err := client.Apply(ctx, params, toSDKOut(out))
+	if err != nil {
+		if pe := protocolError(m.name, err); pe != nil {
+			return target.ApplyResult{}, pe
+		}
 		m.resetClient(client)
 		return target.ApplyResult{}, fmt.Errorf("plugin %q apply: %w", m.name, err)
 	}
-	return target.ApplyResult{}, nil
+	return target.ApplyResult{Message: res.Message}, nil
+}
+
+// protocolError returns a typed plugin_protocol ModuleSupportError when err
+// chain contains a protocol-version failure, or nil otherwise. The host uses
+// the class to reject pre-v1 plugins with a clear, distinct error.
+func protocolError(name string, err error) error {
+	if sdk.IsProtocolError(err) {
+		return target.NewPluginProtocolError(name, err.Error())
+	}
+	return nil
 }
 
 func (m *Plugin) Close() error {
 	m.mu.Lock()
 	client := m.client
 	m.client = nil
-	closeClientFn := m.closeClientFn
 	m.mu.Unlock()
-
 	if client == nil {
 		return nil
-	}
-	if closeClientFn != nil {
-		return closeClientFn(client)
 	}
 	return client.Close()
 }
@@ -116,19 +139,23 @@ func (m *Plugin) Close() error {
 func (m *Plugin) getOrCreateClient(ctx context.Context) (pluginClient, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
 	if m.client != nil {
 		return m.client, nil
 	}
-
-	newClient := m.newClient
-	if newClient == nil {
-		newClient = func(ctx context.Context, path string) (pluginClient, error) { return sdk.NewClientContext(ctx, path) }
+	if m.ops == nil {
+		return nil, fmt.Errorf("plugin %q: not bound to a target", m.name)
 	}
-
-	client, err := newClient(ctx, m.path)
+	info, err := m.ops.Info(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("plugin %q: target info: %w", m.name, err)
+	}
+	sdkInfo := toSDKTargetInfo(info)
+	client, err := m.newClient(ctx, m.path, sdkInfo, &opsHandleServer{ops: m.ops})
+	if err != nil {
+		if pe := protocolError(m.name, err); pe != nil {
+			return nil, pe
+		}
+		return nil, fmt.Errorf("plugin %q: %w", m.name, err)
 	}
 	m.client = client
 	return client, nil
@@ -141,12 +168,59 @@ func (m *Plugin) resetClient(client pluginClient) {
 		return
 	}
 	m.client = nil
-	closeClientFn := m.closeClientFn
 	m.mu.Unlock()
-
-	if closeClientFn != nil {
-		_ = closeClientFn(client)
-		return
-	}
 	_ = client.Close()
+}
+
+// toSDKOut converts a target.OutputFunc to an sdk.OutputFunc, returning nil for
+// a nil input so the SDK skips the streaming callback entirely.
+func toSDKOut(out target.OutputFunc) sdk.OutputFunc {
+	if out == nil {
+		return nil
+	}
+	return sdk.OutputFunc(out)
+}
+
+// opsHandleServer adapts a target.TargetOps to the sdk.HandleServer interface
+// so the SDK Client can dispatch plugin handle-op requests to the target
+// backend.
+type opsHandleServer struct {
+	ops target.TargetOps
+}
+
+func (o *opsHandleServer) RunCommand(ctx context.Context, script string) (sdk.CommandResult, error) {
+	res, err := o.ops.Exec(ctx, script)
+	if err != nil {
+		return sdk.CommandResult{}, err
+	}
+	return sdk.CommandResult{Stdout: res.Stdout, Stderr: res.Stderr, ExitCode: res.ExitCode}, nil
+}
+
+func (o *opsHandleServer) PutFile(ctx context.Context, path string, data []byte) error {
+	return o.ops.PutFile(ctx, path, data)
+}
+
+func (o *opsHandleServer) GetFile(ctx context.Context, path string) ([]byte, error) {
+	return o.ops.GetFile(ctx, path)
+}
+
+// toSDKTargetInfo converts the internal target.TargetInfo to the wire
+// TargetInfo delivered to a plugin at initialize. runtime_kind is derived from
+// the OS family (windows → windows-powershell, else posix-shell), matching the
+// transport runtime kinds. Absent POSIX signals stay empty strings.
+func toSDKTargetInfo(info target.TargetInfo) sdk.TargetInfo {
+	runtimeKind := "posix-shell"
+	if info.OSFamily == target.OSFamilyWindows {
+		runtimeKind = "windows-powershell"
+	}
+	return sdk.TargetInfo{
+		Family:         string(info.OSFamily),
+		Name:           info.OSName,
+		Version:        info.OSVersion,
+		Arch:           info.Arch,
+		Hostname:       info.Hostname,
+		PackageManager: info.PackageManager,
+		Init:           info.Init,
+		RuntimeKind:    runtimeKind,
+	}
 }
