@@ -173,6 +173,10 @@ func runLogFixtureCases() []struct {
 			jsonl: `{"seq":50,"ts":"2026-06-24T14:13:10.000Z","type":"target_unreachable","level":"error","run_id":"r01","target":"kiosk-04","task_id":null,"msg":"connection refused","reason":"connection refused"}`,
 		},
 		{
+			name:  "support-gate",
+			jsonl: `{"seq":49,"ts":"2026-06-24T14:13:09.000Z","type":"support_gate","level":"error","run_id":"r01","target":"posix-host","task_id":null,"msg":"gate: 1 task(s) cannot run on this target (posix-shell)","runtime":"posix-shell","reason":"unsupported_on_runtime","violations":[{"task":"install tools","module":"registry","reason":"unsupported_on_runtime","message":"module \"registry\" is not supported on posix-shell (supported: windows-powershell)"}]}`,
+		},
+		{
 			name:  "target-complete-ok",
 			jsonl: `{"seq":60,"ts":"2026-06-24T14:13:20.000Z","type":"target_complete","level":"info","run_id":"r01","target":"kiosk-01","task_id":null,"msg":"ok","outcome":"ok","counts":{"ok":5,"changed":1,"failed":0,"skipped":2},"elapsed_ms":46000}`,
 		},

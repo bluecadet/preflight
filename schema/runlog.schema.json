@@ -19,6 +19,7 @@
         { "$ref": "#/$defs/taskChangedEvent" },
         { "$ref": "#/$defs/taskSkippedEvent" },
         { "$ref": "#/$defs/taskFailedEvent" },
+        { "$ref": "#/$defs/supportGateEvent" },
         { "$ref": "#/$defs/diagnosticEvent" },
         { "$ref": "#/$defs/targetUnreachableEvent" },
         { "$ref": "#/$defs/targetCompleteEvent" },
@@ -369,6 +370,41 @@
             }
           },
           "required": ["type", "reason"]
+        }
+      ]
+    },
+
+    "supportGateEvent": {
+      "description": "Terminal target-level event: the apply-start support gate refused the run because one or more runnable tasks reference modules unsupported on the target's resolved runtime. No task events follow.",
+      "allOf": [
+        { "$ref": "#/$defs/envelope" },
+        {
+          "properties": {
+            "type": { "const": "support_gate" },
+            "runtime": {
+              "type": "string",
+              "description": "The resolved runtime kind that the tasks were validated against (e.g. posix-shell, windows-powershell)."
+            },
+            "reason": {
+              "type": "string",
+              "description": "Gate-level reason code (unsupported_on_runtime)."
+            },
+            "violations": {
+              "type": "array",
+              "description": "One entry per violated task.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "task": { "type": "string" },
+                  "module": { "type": "string" },
+                  "reason": { "type": "string" },
+                  "message": { "type": "string" }
+                },
+                "required": ["task", "module", "reason", "message"]
+              }
+            }
+          },
+          "required": ["type", "runtime", "reason", "violations"]
         }
       ]
     },
