@@ -40,10 +40,10 @@ type noopHandle struct{}
 func (noopHandle) RunCommand(context.Context, string) (sdk.CommandResult, error) {
 	return sdk.CommandResult{}, nil
 }
-func (noopHandle) PutFile(context.Context, string, []byte) error { return nil }
+func (noopHandle) PutFile(context.Context, string, []byte) error   { return nil }
 func (noopHandle) GetFile(context.Context, string) ([]byte, error) { return nil, nil }
-func (noopHandle) Info() sdk.TargetInfo                              { return sdk.TargetInfo{} }
-func (noopHandle) Output(string)                                     {}
+func (noopHandle) Info() sdk.TargetInfo                            { return sdk.TargetInfo{} }
+func (noopHandle) Output(string)                                   {}
 
 func TestSDKModuleAdapter_Check(t *testing.T) {
 	mod := &mockAdapterModule{
@@ -120,9 +120,9 @@ type recordingHandle struct {
 func (h recordingHandle) RunCommand(context.Context, string) (sdk.CommandResult, error) {
 	return sdk.CommandResult{}, nil
 }
-func (h recordingHandle) PutFile(context.Context, string, []byte) error { return nil }
+func (h recordingHandle) PutFile(context.Context, string, []byte) error   { return nil }
 func (h recordingHandle) GetFile(context.Context, string) ([]byte, error) { return nil, nil }
-func (h recordingHandle) Info() sdk.TargetInfo                           { return sdk.TargetInfo{} }
+func (h recordingHandle) Info() sdk.TargetInfo                            { return sdk.TargetInfo{} }
 func (h recordingHandle) Output(line string) {
 	if h.out != nil {
 		h.out(line)
