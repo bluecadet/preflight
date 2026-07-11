@@ -141,7 +141,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	r.emitTargetComplete(targetName, elapsedMs, hasFailure)
 
 	if applyErr != nil {
-		if !isApplyTaskFailureSummary(applyErr) {
+		if !isApplyTaskFailureSummary(applyErr) && !errIsGateRefusal(applyErr) {
 			slog.Error("apply phase failed", "error", applyErr)
 		}
 		return applyErr
@@ -221,7 +221,7 @@ func (r *Runner) PlannedTaskState(ctx context.Context, plan *ExecutionPlan) ([]P
 	if r.target == nil {
 		return nil, fmt.Errorf("state: target is not configured")
 	}
-	execCtx, err := r.buildExecutionContext(ctx)
+	execCtx, _, err := r.buildExecutionContext(ctx)
 	if err != nil {
 		return nil, err
 	}
