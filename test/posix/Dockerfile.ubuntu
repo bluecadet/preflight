@@ -8,15 +8,24 @@ FROM ubuntu:24.04
 ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
 
+# dbus is required so unprivileged users can reach systemd via the
+# D-Bus system bus: `systemctl is-active` as a non-root user (the path the
+# wait module's service_running condition takes) fails with "Failed to
+# connect to bus" without it. Root talks to systemd over /run/systemd/private
+# directly, so the sudo oracle path hides this — the module runs unprivileged.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         openssh-server \
         sudo \
         systemd \
         systemd-sysv \
+        dbus \
         netcat-openbsd \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean
+# NOTE: /var/lib/apt/lists/* is intentionally kept. apt (unlike dnf) does not
+# auto-refresh missing package indices, so system_package's `apt-get install`
+# would fail with "Unable to locate package" against a stripped image. A real
+# managed endpoint keeps these lists; the container matches that.
 
 # Sacrificial sentinel — the integration harness refuses to run without it.
 RUN echo "1" > /etc/preflight-test-sacrificial
