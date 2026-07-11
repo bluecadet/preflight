@@ -97,10 +97,11 @@ func TestApplyGate_RefusesUnsupportedPreTask1(t *testing.T) {
 
 func TestApplyGate_ListsAllViolations(t *testing.T) {
 	fake := posixFake()
-	// registry, service, package are all Windows-only on posix-shell.
+	// registry, shortcut, package are all Windows-only on posix-shell. (service
+	// is now BuiltinCommon and supported on posix-shell, so it no longer violates.)
 	plan := gatePlan(
 		gateTask("t-reg", "reg", "registry"),
-		gateTask("t-svc", "svc", "service"),
+		gateTask("t-short", "short", "shortcut"),
 		gateTask("t-pkg", "pkg", "package"),
 	)
 	rec := &recordingRenderer{}
@@ -117,7 +118,7 @@ func TestApplyGate_ListsAllViolations(t *testing.T) {
 	if len(g.Violations) != 3 {
 		t.Fatalf("violations = %d, want 3", len(g.Violations))
 	}
-	wantModules := map[string]bool{"registry": false, "service": false, "package": false}
+	wantModules := map[string]bool{"registry": false, "shortcut": false, "package": false}
 	for _, v := range g.Violations {
 		wantModules[v.Module] = true
 	}

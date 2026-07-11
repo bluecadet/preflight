@@ -22,7 +22,7 @@ type catalogModule struct {
 
 var catalogModules = []catalogModule{
 	{Name: "registry", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},
-	{Name: "service", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows, RequiresRoot: true},
+	{Name: "service", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon, RequiresRoot: true},
 	{Name: "file", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "directory", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinCommon},
 	{Name: "package", Capability: CapabilityInline | CapabilityRemote | CapabilityBuiltinWindows},

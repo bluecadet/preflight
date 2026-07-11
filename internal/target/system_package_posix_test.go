@@ -47,6 +47,7 @@ func (f *fakeSystemPackageBackend) ReadFile(context.Context, string) ([]byte, er
 
 func (f *fakeSystemPackageBackend) PowerShellBinary() string             { return "" }
 func (f *fakeSystemPackageBackend) Probe(context.Context) (Probe, error) { return Probe{}, nil }
+func (f *fakeSystemPackageBackend) InitSystem() string                   { return "" }
 
 func TestParseSystemPackageParams_DefaultsAndValidation(t *testing.T) {
 	t.Run("missing packages", func(t *testing.T) {

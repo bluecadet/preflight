@@ -24,8 +24,9 @@ func TestValidateModuleForRuntime_SupportedPasses(t *testing.T) {
 }
 
 func TestValidateModuleForRuntime_UnsupportedViolates(t *testing.T) {
-	// registry/service/package are Windows-only; on posix-shell they violate.
-	for _, module := range []string{"registry", "service", "package"} {
+	// registry/package are Windows-only; on posix-shell they violate. (service is
+	// now BuiltinCommon and supported on posix-shell — it no longer belongs here.)
+	for _, module := range []string{"registry", "package"} {
 		err := ValidateModuleForRuntime(module, RuntimeKindPOSIXShell, nil)
 		if err == nil {
 			t.Fatalf("expected unsupported error for %q on posix-shell", module)

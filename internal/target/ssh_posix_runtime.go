@@ -169,6 +169,19 @@ func (r *sshPOSIXShellRuntime) Probe(ctx context.Context) (Probe, error) {
 	return r.ensureProbe(ctx)
 }
 
+// InitSystem returns the cached init-system signal from the runtime detection
+// probe. The probe is populated by ensureProbe, which the SSH Execute path
+// runs (via enforcePOSIXPrivilege) before the module registry is built, so
+// this is non-empty for systemd hosts by the time any module reads it.
+func (r *sshPOSIXShellRuntime) InitSystem() string {
+	r.probeMu.Lock()
+	defer r.probeMu.Unlock()
+	if r.probe == nil {
+		return ""
+	}
+	return r.probe.Init
+}
+
 func buildEncodedPowerShellCommand(binary, script string) string {
 	encoded := encodePowerShellScript(script)
 	return shellQuoteExec(binary, []string{"-NoProfile", "-NonInteractive", "-EncodedCommand", encoded})

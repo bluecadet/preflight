@@ -157,6 +157,11 @@ type posixTaskBackend struct {
 	probe            func(context.Context) (Probe, error)
 	packageManager   func(context.Context) (string, error)
 	become           *BecomeOptions
+	// initSystem is the cached POSIX init-system signal from the runtime
+	// detection probe, captured when the backend is built in SSHTarget.Execute.
+	// It lets the become path report the same prerequisite as the non-become
+	// path without a second probe round trip.
+	initSystem string
 }
 
 func (b *posixTaskBackend) RunPOSIXCommand(ctx context.Context, command string, stdin []byte) (string, string, int, error) {
@@ -234,6 +239,13 @@ func (b *posixTaskBackend) PackageManager(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return b.packageManager(ctx)
+}
+
+// InitSystem returns the cached POSIX init-system signal captured when the
+// backend is built in SSHTarget.Execute. It lets the become path report the
+// same systemd prerequisite as the non-become path without a second probe.
+func (b *posixTaskBackend) InitSystem() string {
+	return b.initSystem
 }
 
 func (b *posixTaskBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
