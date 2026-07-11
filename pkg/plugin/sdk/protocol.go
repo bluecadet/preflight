@@ -31,6 +31,12 @@ type CommandResult struct {
 	ExitCode int    `json:"exit_code"`
 }
 
+// getFileResult is the wire shape of a get_file response: the file bytes
+// base64-encoded. Defined once so host and plugin sides agree on the field.
+type getFileResult struct {
+	Data string `json:"data"`
+}
+
 // InitializeParams is sent by the host in the initialize request.
 type InitializeParams struct {
 	ProtocolVersion string     `json:"protocol_version"`

@@ -25,7 +25,7 @@ type server struct {
 
 func newServer(m Module, r io.Reader, w io.Writer, closeFn func() error) *server {
 	s := &server{mod: m}
-	s.codec = newCodec(r, w, s.handleRequest, s.handleNotification, closeFn)
+	s.codec = newCodec(r, w, s.handleRequest, nil, closeFn)
 	return s
 }
 
@@ -83,9 +83,6 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 	}
 }
 
-func (s *server) handleNotification(_ json.RawMessage) {
-	// The host does not send notifications to the plugin in v1.
-}
 
 // serverHandle is the Handle given to a plugin's Check/Apply. Info returns the
 // TargetInfo delivered at initialize; Output emits an output notification;
@@ -111,9 +108,7 @@ func (h *serverHandle) PutFile(ctx context.Context, path string, data []byte) er
 }
 
 func (h *serverHandle) GetFile(ctx context.Context, path string) ([]byte, error) {
-	var res struct {
-		Data string `json:"data"`
-	}
+	var res getFileResult
 	if err := h.codec.call(ctx, "get_file", map[string]any{"path": path}, &res); err != nil {
 		return nil, err
 	}
