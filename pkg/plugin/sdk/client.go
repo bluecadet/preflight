@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
-	"sync"
+	"sync/atomic"
 )
 
 // Client is the runner-side handle for a JSON-RPC plugin peer. It is
@@ -28,8 +28,11 @@ type Client struct {
 	name    string
 	version string
 
-	outMu sync.RWMutex
-	out   OutputFunc
+	// out holds the current call's OutputFunc. It is swapped per Check/Apply
+	// under callMu (one outgoing call in flight at a time), so a single
+	// writer races only with the notification handler's read. An atomic
+	// pointer makes that read lock-free; a nil pointer means no output.
+	out atomic.Pointer[OutputFunc]
 }
 
 // NewClientStream connects a Client to a JSON-RPC plugin peer over the given
@@ -135,11 +138,8 @@ func (c *Client) handleNotification(params json.RawMessage) {
 	if err := json.Unmarshal(params, &p); err != nil {
 		return
 	}
-	c.outMu.RLock()
-	out := c.out
-	c.outMu.RUnlock()
-	if out != nil {
-		out(p.Line)
+	if outPtr := c.out.Load(); outPtr != nil {
+		(*outPtr)(p.Line)
 	}
 }
 
@@ -178,9 +178,11 @@ func (c *Client) Apply(ctx context.Context, args map[string]any, out OutputFunc)
 }
 
 func (c *Client) setOut(out OutputFunc) {
-	c.outMu.Lock()
-	c.out = out
-	c.outMu.Unlock()
+	if out == nil {
+		c.out.Store(nil)
+		return
+	}
+	c.out.Store(&out)
 }
 
 // Close terminates the plugin peer (hard kill on the transport, as before).
