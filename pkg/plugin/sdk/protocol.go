@@ -74,17 +74,13 @@ type OutputFunc func(line string)
 // wait for its result before issuing another op (or a PutFile/GetFile). For
 // high-latency transports, batch work into a single script-shaped RunCommand
 // rather than many round trips.
+//
+// File transfer is whole-file in v1: PutFile/GetFile carry the entire payload
+// as a single base64-encoded JSON-RPC frame buffered in memory. Chunked
+// streaming for large files is deferred to v2; keep payloads small (a few MB
+// at most).
 type Handle interface {
-	// RunCommand executes script in the target's native shell (POSIX sh or
-	// PowerShell per TargetInfo.RuntimeKind) and returns stdout, stderr, and
-	// the exit code. This is the batching lever for high-latency transports:
-	// prefer one script that does several things over several ops.
-	RunCommand(ctx context.Context, script string) (CommandResult, error)
-	// PutFile writes data to path on the target. The host handles chunking
-	// for high-latency transports; the plugin sees a single call.
-	PutFile(ctx context.Context, path string, data []byte) error
-	// GetFile reads the contents of path from the target.
-	GetFile(ctx context.Context, path string) ([]byte, error)
+	HandleServer
 	// Info returns the TargetInfo delivered at initialize.
 	Info() TargetInfo
 	// Output emits a streaming line back to the host's output channel.
@@ -93,10 +89,19 @@ type Handle interface {
 
 // HandleServer is the host-side backend a Client binds to. Every transport
 // (Local, SSH-POSIX, SSH-Windows, WinRM) implements it; the Client dispatches
-// plugin handle-op requests to it.
+// plugin handle-op requests to it. Handle embeds this so the subset
+// relationship between handle ops and the full plugin Handle stays explicit.
 type HandleServer interface {
+	// RunCommand executes script in the target's native shell (POSIX sh or
+	// PowerShell per TargetInfo.RuntimeKind) and returns stdout, stderr, and
+	// the exit code. This is the batching lever for high-latency transports:
+	// prefer one script that does several things over several ops.
 	RunCommand(ctx context.Context, script string) (CommandResult, error)
+	// PutFile writes data to path on the target. File transfer is whole-file
+	// in v1: the payload is base64-encoded into a single JSON-RPC frame
+	// buffered in memory; chunked streaming is deferred to v2.
 	PutFile(ctx context.Context, path string, data []byte) error
+	// GetFile reads the contents of path from the target (whole-file, v1).
 	GetFile(ctx context.Context, path string) ([]byte, error)
 }
 
