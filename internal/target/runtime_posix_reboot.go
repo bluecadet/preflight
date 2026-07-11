@@ -125,16 +125,7 @@ func posixRebootPending(ctx context.Context, backend posixShellBackend, pkgManag
 // The real reboot+reconnect path is unit-tested against fakes only and is a
 // stated limitation — it is not exercised end-to-end in CI.
 func applyPOSIXReboot(ctx context.Context, backend posixShellBackend, params map[string]any) (ApplyResult, error) {
-	timeout := 300
-	if raw, ok := params["timeout"].(int); ok && raw > 0 {
-		timeout = raw
-	}
-	if raw, ok := params["timeout"].(int64); ok && raw > 0 {
-		timeout = int(raw)
-	}
-	if raw, ok := params["timeout"].(float64); ok && raw > 0 {
-		timeout = int(raw)
-	}
+	timeout := paramInt(params, "timeout", 300)
 
 	if err := requireSystemd(ctx, backend, "reboot"); err != nil {
 		return ApplyResult{}, err
