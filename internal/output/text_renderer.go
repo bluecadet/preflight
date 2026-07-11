@@ -435,10 +435,11 @@ func (r *TextRenderer) writeBlank() {
 }
 
 // emitSupportGate renders the apply-start support gate refusal: a summary
-// line naming the target and runtime, then one line per violation naming
-// the task and the uniform module-by-runtime message.
+// line (reusing the event's LogMessage so wording stays consistent across
+// sinks) colored red, then one line per violation naming the task and the
+// uniform module-by-runtime message.
 func (r *TextRenderer) emitSupportGate(e SupportGateEvent) {
-	r.writeLine(r.colorize(ansiRed, fmt.Sprintf("support gate: %d task(s) cannot run on %s (%s)", len(e.Violations), e.Target, e.Runtime)))
+	r.writeLine(r.colorize(ansiRed, e.LogMessage()))
 	for _, v := range e.Violations {
 		r.writeLine(fmt.Sprintf("  %s: %s", v.TaskName, v.Message))
 	}

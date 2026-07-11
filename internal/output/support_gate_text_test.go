@@ -20,8 +20,9 @@ func TestTextRenderer_SupportGateEvent(t *testing.T) {
 	})
 	out := buf.String()
 
-	// Summary line naming the runtime and the count.
-	if !strings.Contains(out, "support gate: 2 task(s) cannot run on posix-host (posix-shell)") {
+	// Summary line reusing LogMessage (consistent across sinks), naming the
+	// runtime and the count.
+	if !strings.Contains(out, "gate: 2 task(s) cannot run on this target (posix-shell)") {
 		t.Errorf("missing summary line:\n%s", out)
 	}
 	// One line per violation, naming the task and module.
