@@ -235,7 +235,7 @@ and `t.Skip` with a clear reason rather than `t.Fatal`.
 | `timeout` | Firewall blocking the port, or VM unreachable |
 | Test skips on CI | Expected — env vars are not set in CI |
 
-Re-run `dev/bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
+Re-run `scripts/dev/bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
 configuration has drifted. For a completely fresh start, revert the VM to a snapshot or
 redeploy the evaluation image.
 
