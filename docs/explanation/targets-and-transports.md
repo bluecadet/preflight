@@ -88,6 +88,8 @@ That split matters:
 
 SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
 
+SSH is also the safer default to set up: it's encrypted out of the box, while the easy WinRM setup path (`winrm quickconfig`, HTTP with Basic auth) is not — credentials and command output travel unencrypted unless you configure a WinRM HTTPS listener yourself. See [Enable remote access on a Windows target](../how-to/enable-remote-access.md).
+
 ### POSIX Capability Baseline And Tiers
 
 POSIX-over-SSH support is **capability-based, not a distro allowlist**. A host is supported when it provides the capabilities the modules rely on, not when its distro name appears on a list. The docs may carry an informal "tested on" note, but that is not a contract.
