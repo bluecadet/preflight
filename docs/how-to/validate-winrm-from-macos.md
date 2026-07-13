@@ -186,6 +186,7 @@ That is expected for auth problems. `plan` is a pure planning step and does not 
 
 ## Related Docs
 
+- [Enable remote access on a Windows target](./enable-remote-access.md)
 - [Run a playbook against remote hosts](./remote-execution.md)
 - [Inventory reference](../reference/inventory.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

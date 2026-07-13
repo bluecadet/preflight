@@ -169,3 +169,7 @@ preflight --version
 ### I want the safest manual path
 
 Use the direct download flow, verify the checksum, verify the `cosign` bundle for the checksum file, then extract the binary yourself.
+
+## Related Docs
+
+- [Enable remote access on a Windows target](./enable-remote-access.md)
