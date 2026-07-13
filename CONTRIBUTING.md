@@ -172,8 +172,8 @@ New-NetFirewallRule -DisplayName "SSH (pf-test)" -Direction Inbound `
   -Protocol TCP -LocalPort 22 -Action Allow
 ```
 
-Three helper scripts under `scripts/` perform this setup, split by concern so
-identity and each transport are independent:
+Three helper scripts under `scripts/dev/` perform this setup, split by concern
+so identity and each transport are independent:
 
 - `bootstrap-user-vm.ps1` — creates the `pf-test` account and the sentinel
   (owns the password). Run this first.

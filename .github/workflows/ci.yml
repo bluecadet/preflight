@@ -51,7 +51,7 @@ jobs:
               - Makefile
               - .github/workflows/ci.yml
             winrm:
-              - 'scripts/bootstrap-winrm-vm.ps1'
+              - 'scripts/dev/bootstrap-winrm-vm.ps1'
               - 'install.ps1'
               - '**/target/winrm*'
               - '**/target/persistent_ps*'

@@ -60,10 +60,10 @@ want. Inside the Windows VM, open **PowerShell as Administrator**.
 # Set the password for the pf-test user (use a strong, unique password)
 $env:PREFLIGHT_TEST_WINRM_PASS = 'YourStrongPassword123!'
 
-# Run directly from the repo (or copy scripts/bootstrap-user-vm.ps1 to the VM first)
+# Run directly from the repo (or copy scripts/dev/bootstrap-user-vm.ps1 to the VM first)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 iex ((New-Object System.Net.WebClient).DownloadString(
-  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-user-vm.ps1'
+  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/dev/bootstrap-user-vm.ps1'
 ))
 ```
 
@@ -76,7 +76,7 @@ sentinel, then prints the connection vars (with the password) for your
 
 ```powershell
 iex ((New-Object System.Net.WebClient).DownloadString(
-  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-winrm-vm.ps1'
+  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/dev/bootstrap-winrm-vm.ps1'
 ))
 ```
 
@@ -88,7 +88,7 @@ from the provision step.
 
 ```powershell
 iex ((New-Object System.Net.WebClient).DownloadString(
-  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/bootstrap-ssh-vm.ps1'
+  'https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/dev/bootstrap-ssh-vm.ps1'
 ))
 ```
 
@@ -235,7 +235,7 @@ and `t.Skip` with a clear reason rather than `t.Fatal`.
 | `timeout` | Firewall blocking the port, or VM unreachable |
 | Test skips on CI | Expected — env vars are not set in CI |
 
-Re-run `bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
+Re-run `dev/bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
 configuration has drifted. For a completely fresh start, revert the VM to a snapshot or
 redeploy the evaluation image.
 
