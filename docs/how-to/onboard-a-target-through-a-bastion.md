@@ -165,8 +165,12 @@ lands on the museum PC's forwarded `sshd`.
 
 ## 6. Point Preflight's Inventory At The Same Path
 
-Preflight doesn't read `~/.ssh/config` `Include` files — give it the same
-two-hop path natively with a `jump` block. `address` here is resolved from
+Preflight connects with its own SSH client and doesn't read `~/.ssh/config`
+at all — the host aliases and `ProxyJump` from step 5 only apply to
+interactive `ssh`. Give Preflight the same two-hop path natively with a
+`jump` block. (Key auth still works the same way: Preflight uses your SSH
+agent and default `~/.ssh` keys automatically, or an explicit
+`private_key`.) `address` here is resolved from
 the *bastion's* perspective, which is why it's `127.0.0.1`, not the
 museum PC's real (unreachable) LAN address:
 
