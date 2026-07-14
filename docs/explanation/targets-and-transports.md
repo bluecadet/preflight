@@ -1,6 +1,6 @@
 # Targets, Transports, And Plugins
 
-Preflight is not just "local shell commands with YAML." The target layer is the abstraction that lets the same runner work locally, remotely, and through staged bundles.
+Preflight is not just "local shell commands with YAML." A **target** is the runtime abstraction the runner executes against — an inventory host resolved to a concrete transport (local, SSH, or WinRM). The target layer is what lets the same runner work locally, remotely, and through staged bundles.
 
 ## The `Target` Interface Is The Fulcrum
 

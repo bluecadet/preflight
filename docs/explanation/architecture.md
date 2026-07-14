@@ -4,6 +4,8 @@ Preflight is designed for a specific operational niche: Windows exhibit machines
 
 The architecture reflects that goal. It favors explicit phases, a target-agnostic runner, and a small number of durable abstractions over a large amount of hidden magic.
 
+One term used throughout the docs is defined here: the **controller** is the machine that runs the `preflight` CLI — usually an operator's workstation or a CI runner. Everything else (planning, transports, state) is described relative to it.
+
 ## The Core Model: Modules, Actions, Playbooks
 
 Preflight splits configuration into three layers:

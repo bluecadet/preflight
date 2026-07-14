@@ -498,7 +498,7 @@ memberships. `ensure: absent` runs `userdel`.
 
 *Known limitation — POSIX password drift.* The password of an existing user is
 never reset, even when `password` is supplied and `Apply` runs for another
-reason (for example, to add a group). Managed POSIX endpoints authenticate by
+reason (for example, to add a group). Managed POSIX hosts authenticate by
 SSH key, so password drift on existing accounts is documented rather than
 corrected. To force a password change, manage the password out of band (for
 example, via a `shell` task running `chpasswd`).

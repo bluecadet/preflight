@@ -94,7 +94,7 @@ That separation is useful when deployment windows are tight and operators need c
 
 Choose Preflight when most of these are true:
 
-- your critical targets are Windows kiosks, signage systems, exhibit PCs, or other managed endpoints
+- your critical targets are Windows kiosks, signage systems, exhibit PCs, or other dedicated endpoints
 - you need repeatable, idempotent machine configuration from versioned YAML
 - you want dry-run behavior that reflects real execution logic
 - your environment benefits from offline-ready staging

@@ -16,6 +16,12 @@ These flags are defined on the individual commands that use them.
 | `--output` |  | Output format: `text`, `tui`, or `json`. |
 | `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
 | `--timeout` |  | Overall run timeout such as `30m` or `1h`. |
+| `--fail-fast` |  | Stop all targets on the first failure. |
+| `--run-id` |  | Override the auto-generated run identifier. |
+| `--keep-runs` |  | Number of recent successful run directories to keep (default 20). |
+| `--max-fail-lines` |  | Max lines of output to show for a failed task (default 80). |
+| `--color` |  | Color output: `auto`, `always`, or `never`. |
+| `--no-color` |  | Disable color output (overrides `--color`). |
 
 ## Target Selection Rules
 
@@ -52,6 +58,8 @@ Command-specific flags:
 | Flag | Meaning |
 | --- | --- |
 | `--bundle` | Apply a staged bundle zip instead of a playbook |
+| `--secret-identity` | Path to an age identity file for decrypting bundle secrets (requires `--bundle`) |
+| `--state-file` | Override the state file path |
 
 ### `preflight check <playbook>`
 
@@ -116,6 +124,7 @@ Command-specific flags:
 | Flag | Meaning |
 | --- | --- |
 | `--bundle-output-dir` | Directory for generated bundle zips |
+| `--allow-plaintext-secrets-in-bundle` | Allow staging secrets into the bundle in plaintext |
 
 ## `action` Commands
 
@@ -262,3 +271,10 @@ Behavior notes:
 When a task streams output during `apply`, the `json` renderer emits `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
 
 For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, includes successful-task logs after completion when `--verbose` is enabled, and uses Lip Gloss cards, tables, and progress bars for plan and inspection commands.
+
+## Related Docs
+
+- [Run a playbook](../how-to/run-a-playbook.md) — when to use each run verb
+- [Run a playbook against remote hosts](../how-to/remote-execution.md)
+- [Inventory reference](./inventory.md) — selector resolution rules
+- [Error reference](./errors.md)

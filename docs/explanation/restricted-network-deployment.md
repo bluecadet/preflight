@@ -1,6 +1,6 @@
 # Deploy Across Restricted Networks
 
-When managed Windows endpoints live on secure networks, the first question is not "WinRM or SSH?" It is "who is allowed to initiate the connection?" Preflight's remote transports are controller-initiated today: the machine running `preflight` opens WinRM or SSH to each target. Preflight does not currently include a resident agent, a callback transport, or a built-in tunnel manager.
+When managed Windows hosts live on secure networks, the first question is not "WinRM or SSH?" It is "who is allowed to initiate the connection?" Preflight's remote transports are controller-initiated today: the machine running `preflight` opens WinRM or SSH to each target. Preflight does not currently include a resident agent, a callback transport, or a built-in tunnel manager.
 
 That still leaves several workable deployment patterns. The right choice depends on whether you can run Preflight from inside the secure network, whether the targets can open outbound SSH connections, and whether you can execute a staged bundle locally on each machine.
 
@@ -100,7 +100,7 @@ The main tradeoffs are operational:
 
 ## Practical Recommendation
 
-For managed Windows endpoints, use WinRM when you can place the controller on the right side of the network boundary. Use reverse SSH only as a narrow operator-managed escape hatch for SSH-friendly tasks. When the environment cannot support controller-initiated administration, staged bundles are usually the clearest and most supportable option.
+For managed Windows hosts, use WinRM when you can place the controller on the right side of the network boundary. Use reverse SSH only as a narrow operator-managed escape hatch for SSH-friendly tasks. When the environment cannot support controller-initiated administration, staged bundles are usually the clearest and most supportable option.
 
 ## Related Docs
 

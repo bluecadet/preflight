@@ -4,7 +4,7 @@ This page describes the `inventory:` block inside `preflight.yml`, parsed by [`i
 
 ## Purpose
 
-Inventory defines target hosts, assigns transports, carries inventory, group, and host variables, and supports selector-based fan-out from CLI commands such as `plan`, `check`, `apply`, and `facts`.
+A **host** is one entry in the inventory's `hosts:` list — the docs use the word in exactly that sense. Inventory defines hosts, assigns transports, carries inventory, group, and host variables, and supports selector-based fan-out from CLI commands such as `plan`, `check`, `apply`, and `facts`.
 
 ## Top-Level Shape
 
