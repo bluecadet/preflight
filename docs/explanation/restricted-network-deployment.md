@@ -70,6 +70,8 @@ This pattern is useful when outbound SSH is approved and the target fits one of 
 
 That is still the important limit. Reverse SSH tunneling can make SSH reachable, but it does not add plugin-module execution and it does not expand POSIX SSH into the full Windows management surface. If the environment cannot provide the right SSH runtime, use WinRM from a reachable controller or switch to bundle-based local execution.
 
+For the operational detail this section only sketches — hardening a shared bastion, scoping one key per target so machines can't reach each other's tunnels, and the manual-trigger model that keeps a tunnel from outliving the person who opened it — see [Set up a reverse-tunnel bastion](../how-to/set-up-a-tunnel-bastion.md) and [Onboard a target through a reverse-tunnel bastion](../how-to/onboard-a-target-through-a-bastion.md).
+
 ## Stage Bundles When No Inbound Management Path Is Available
 
 Staged bundles are usually the most robust answer when the target network cannot allow inbound administration at all. `preflight stage` renders a target-specific plan into a zip archive. `preflight apply --bundle` then runs locally on the target, so the apply step no longer depends on WinRM or SSH.
@@ -104,5 +106,7 @@ For managed Windows endpoints, use WinRM when you can place the controller on th
 
 - [Run a playbook against remote hosts](../how-to/remote-execution.md)
 - [Stage bundles for air-gapped deployment](../how-to/air-gapped-deployment.md)
+- [Set up a reverse-tunnel bastion](../how-to/set-up-a-tunnel-bastion.md)
+- [Onboard a target through a reverse-tunnel bastion](../how-to/onboard-a-target-through-a-bastion.md)
 - [Inventory reference](../reference/inventory.md)
 - [Targets, transports, and plugins](./targets-and-transports.md)
