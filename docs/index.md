@@ -55,7 +55,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [CLI reference](./reference/cli.md)
 - [Project config reference](./reference/config.md)
 - [Inventory reference](./reference/inventory.md)
-- [Playbook and action YAML reference](./reference/yaml.md)
+- [Playbook and action YAML reference](./reference/playbooks.md)
 - [Embedded stdlib action reference](./reference/stdlib-actions.md)
 - [Built-in module reference](./reference/modules.md)
 - [Templating and facts reference](./reference/templating.md)

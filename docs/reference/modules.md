@@ -93,7 +93,7 @@ Notes:
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
 - POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), `system_package` on targets with apt or dnf, and `service` over systemd (requires root).
-- Plugin modules run over every transport — local, SSH (POSIX and Windows), and WinRM — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See [Plugins](../explanation/targets-and-transports.md#why-plugin-modules-fit-cleanly).
+- Plugin modules run over every transport — local, SSH (POSIX and Windows), and WinRM — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See the [plugin reference](./plugins.md#execution-model).
 
 Unsupported module usage is caught before the task runs and returns a
 clear, typed error; there is no silent fallback. See the
@@ -654,6 +654,6 @@ typed environment-prerequisite error (`missing_prerequisite`).
 
 ## Related Docs
 
-- [Playbook and action YAML reference](./yaml.md)
+- [Playbook and action YAML reference](./playbooks.md)
 - [Error reference](./errors.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

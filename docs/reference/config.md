@@ -75,7 +75,9 @@ secrets:
 
 ## Variable Role
 
-`vars` is the project-wide baseline layer. During a normal inventory-backed run, it sits below inventory vars, playbook vars, and CLI `--var` overrides.
+`vars` is the project-wide baseline layer — the lowest-precedence layer in
+the [variable merge order](./inventory.md#variable-merge-order); every
+other variable source can override it.
 
 ## Secret Resolution Model
 

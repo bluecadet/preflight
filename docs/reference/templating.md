@@ -36,19 +36,9 @@ Important limit:
 
 ## Variable Precedence
 
-The merge layers are implemented by the variable store in this order:
-
-```text
-defaults
-  -> project vars
-    -> inventory.vars
-      -> group vars in each host's group order
-        -> host vars
-          -> playbook vars
-            -> CLI --var flags
-```
-
-At runtime, the effective merged variable map is exposed through `vars.*`.
+`vars.*` exposes the merged result of the project, inventory, group, host,
+playbook, and CLI variable layers. The authoritative merge order lives in
+the [inventory reference](./inventory.md#variable-merge-order).
 
 Undefined `vars.*` references are treated as errors so missing inventory,
 playbook, project, or CLI-provided values fail early instead of rendering as
@@ -63,7 +53,7 @@ The runner injects a `preflight` map into the project variable layer so playbook
 | `vars.preflight.project` | `project` field from `preflight.yml` |
 | `vars.preflight.environment` | `environment` field from `preflight.yml` |
 
-These sit at the project layer, so inventory vars, playbook vars, and CLI `--var` flags can override them.
+These are injected above host vars in the [merge order](./inventory.md#variable-merge-order), so playbook vars and CLI `--var` flags can override them, but inventory, group, and host vars cannot.
 
 ## Planning Versus Execution
 

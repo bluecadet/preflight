@@ -179,5 +179,5 @@ When `user` is set, user-scoped registry settings are written through the target
 ## Related Docs
 
 - [Built-in module reference](./modules.md)
-- [Playbook and action YAML reference](./yaml.md)
+- [Playbook and action YAML reference](./playbooks.md)
 - [Actions, stdlib, and lockfiles](../explanation/actions-and-lockfiles.md)

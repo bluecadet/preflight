@@ -212,14 +212,7 @@ The benefit is proportional to the number of tasks that reach a remote Windows t
 
 Plugin modules are adapted into the same module contract the targets already use. That is a strong architectural signal: plugins are not a sidecar feature. They are part of the execution model.
 
-Because plugins satisfy the same `Check()` then `Apply()` shape:
-
-- dry-run still works
-- staging still works
-- state tracking still works
-- the target layer does not need a second concept of "custom task"
-
-A plugin runs **controller-side with a target handle**: its `Check` and `Apply` receive a handle whose ops (`RunCommand`, `PutFile`, `GetFile`, `TargetInfo`) dispatch to whatever transport backs the target — local, SSH, or WinRM. The same plugin binary runs unchanged against any transport, and nothing is ever staged on or delivered to the target. Because plugin effects flow through the handle rather than a runtime-specific registry, plugins **bypass the module×runtime support matrix** — a plugin is supported on every runtime the matrix knows, with no per-transport gating. Plugin+`become` is refused in v1 (the handle does not carry `ExecOpts`); that is a uniform limitation across transports, not a transport-specific gap.
+Because plugins satisfy the same `Check()` then `Apply()` shape, dry-run, staging, and state tracking all work unchanged, and the target layer does not need a second concept of "custom task". And because a plugin runs controller-side, reaching the target only through transport-backed handle ops, the same plugin binary runs unchanged against local, SSH, and WinRM — plugins bypass the module×runtime support matrix entirely rather than adding per-transport rows to it. The mechanics — discovery, the JSON-RPC protocol, process lifetime, and the v1 limitations — live in the [plugin reference](../reference/plugins.md#execution-model).
 
 ## Why Safe Target Metadata Exists
 

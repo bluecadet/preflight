@@ -145,4 +145,4 @@ You now have a working mental model for the normal flow:
 
 ## Next Step
 
-Move on to [Run a playbook](../how-to/run-a-playbook.md) for everyday execution patterns, or jump to [Playbook and action YAML reference](../reference/yaml.md) when you need exact field names and task shapes.
+Move on to [Run a playbook](../how-to/run-a-playbook.md) for everyday execution patterns, or jump to [Playbook and action YAML reference](../reference/playbooks.md) when you need exact field names and task shapes.

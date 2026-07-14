@@ -267,4 +267,4 @@ See [Run tasks as another user](./run-tasks-as-another-user.md) for the full pro
 - [Built-in module reference](../reference/modules.md) — `shell`, `powershell`, `file` modules
 - [Run tasks as another user](./run-tasks-as-another-user.md) — using `become` with git tasks
 - [Manage secrets](./manage-secrets.md) — storing access tokens
-- [Playbook and action YAML reference](../reference/yaml.md) — `creates:`, `check_script`
+- [Playbook and action YAML reference](../reference/playbooks.md) — `creates:`, `check_script`

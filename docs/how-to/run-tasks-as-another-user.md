@@ -221,7 +221,7 @@ If a host's sudoers is configured with `NOPASSWD` for the SSH user, omit `become
 
 ## Related Docs
 
-- [Playbook and action YAML reference](../reference/yaml.md) — full `become` field reference
+- [Playbook and action YAML reference](../reference/playbooks.md) — full `become` field reference
 - [How `become` works](../explanation/become.md) — mechanics, method selection, inheritance
 - [Manage secrets](./manage-secrets.md) — store and resolve credentials
 - [Built-in module reference](../reference/modules.md) — `user` module

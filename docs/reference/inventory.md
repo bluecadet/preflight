@@ -110,18 +110,33 @@ For SSH hosts, when `private_key` and `password` are both omitted, Preflight als
 
 ## Variable Merge Order
 
-When a host is resolved:
+This section is the authoritative statement of variable precedence; other
+pages link here instead of restating it. Later layers win. When a host is
+resolved:
 
 ```text
 preflight.yml vars
   -> inventory.vars
     -> group vars in each host's group order
       -> host vars
-        -> playbook vars
-          -> --var CLI flags
+        -> built-in vars.preflight.* metadata
+          -> playbook vars
+            -> --var CLI flags
 ```
 
-All variable merges are deep merges, so nested maps keep keys from earlier layers unless a later layer overwrites the same key.
+All variable merges are deep merges, so nested maps keep keys from earlier
+layers unless a later layer overwrites the same key.
+
+The built-in `vars.preflight.*` map (see the
+[templating reference](./templating.md#built-in-preflight-variables))
+carries `project` and `environment` from `preflight.yml`. It sits above
+host vars, so playbook vars and CLI `--var` flags can override it but
+inventory, group, and host vars cannot.
+
+Action input defaults are separate machinery, not a layer in this chain:
+when a task invokes an action with `with:`, the action's declared input
+defaults and the task's `with:` values form a scope local to that action's
+tasks (a shallow overlay — `with:` beats input defaults).
 
 ## Selector Resolution
 
