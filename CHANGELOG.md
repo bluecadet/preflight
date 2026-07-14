@@ -1,5 +1,63 @@
 # Changelog
 
+## [1.0.0-beta.7](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-07-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* **sdk:** sdk.Module.Check/Apply now take a Handle. StreamingModule is removed (Output is on the Handle). The become and discovery paths are updated to the new constructor signatures in follow-up commits.
+
+### New Features
+
+* **inventory:** add host platforms ([366a004](https://github.com/bluecadet/preflight/commit/366a0042c1fcbe31c918f6f0b2d74ee64af246c3))
+* **output:** add support_gate run-log event for apply-start refusal ([3c647bb](https://github.com/bluecadet/preflight/commit/3c647bbbd76b0c6bb87d49ea9331caa915ccd8fd))
+* **runner,output:** plan-time module validation, task_failed reason ([664a6fa](https://github.com/bluecadet/preflight/commit/664a6faed30c5e4ef48908c0e5b5448d52184632))
+* **runner:** apply-start support gate refuses before task 1 ([5335b5b](https://github.com/bluecadet/preflight/commit/5335b5bb98d170fda7df60b7e5be77d384968488))
+* **scripts:** add user-facing setup-preflight-access.ps1 ([fe52d1d](https://github.com/bluecadet/preflight/commit/fe52d1da9335a13de08c5716891b9fa5297b46ea))
+* **sdk:** plugin protocol v1, bidirectional JSON-RPC ([0d5f1eb](https://github.com/bluecadet/preflight/commit/0d5f1ebb68c889dd3a462a56dbdd081426d9abe5))
+* **stage:** honor declared platforms ([47cda86](https://github.com/bluecadet/preflight/commit/47cda86780dd21598baf62757b5b41d2cf752535))
+* **target,plugins:** bind plugins to target ops, refuse become ([f537022](https://github.com/bluecadet/preflight/commit/f5370226ff4f16f9373e8e5e5995cba586d8268e))
+* **target:** add cached POSIX detection probe, enrich facts.os ([53f90de](https://github.com/bluecadet/preflight/commit/53f90dea4485df83b376dd5d3b714d7ac9a80a70))
+* **target:** add POSIX reboot + wait service_running ([ecc4fba](https://github.com/bluecadet/preflight/commit/ecc4fba8e4a7f996208c40fee510dfda9c09e7c0))
+* **target:** add POSIX service module over systemd ([4bd8b27](https://github.com/bluecadet/preflight/commit/4bd8b27b337258ddeaf7563d0d2b38f428ef6bda))
+* **target:** add POSIX user module over SSH ([63a7082](https://github.com/bluecadet/preflight/commit/63a7082d11772e90b6b1e8601894dab81ec985dc))
+* **target:** add system_package module (apt/dnf) ([506a8f2](https://github.com/bluecadet/preflight/commit/506a8f2d102e784565b9a18a2da8dcb6f2da0351))
+* **target:** catalog as module×runtime matrix, typed gap errors ([8933b27](https://github.com/bluecadet/preflight/commit/8933b27069d41dfdb703392032b46eb0be16fa40))
+* **target:** classify sudo failures into typed reason codes ([549cfd2](https://github.com/bluecadet/preflight/commit/549cfd2e58816aa5b53cd42eb5f6916334f3b9ed))
+* **target:** expose resolved RuntimeKind on TargetInfo, add apply-start validation fn ([ff4ad40](https://github.com/bluecadet/preflight/commit/ff4ad4078d4b31c745572143e40ce9a2207fbbab))
+* **target:** implement TargetOps on SSH and WinRM transports ([cda7486](https://github.com/bluecadet/preflight/commit/cda7486b6ef6a172f69e8bddd0835c10435df823))
+* **target:** POSIX privilege enforcement, bare-become root, sudo -n ([626c827](https://github.com/bluecadet/preflight/commit/626c827be64663c2fc9a0880f96b5e704627ce28))
+* **target:** requires_root flag in module catalog ([1ba3700](https://github.com/bluecadet/preflight/commit/1ba370026c04bbfa95c847630b05821aa63c48d5))
+* **target:** typed become env errors with reason codes ([b011a0f](https://github.com/bluecadet/preflight/commit/b011a0fdc8ed3abe4e8893a0c83a0da1fc9b1251))
+
+
+### Bug Fixes
+
+* **output:** reuse LogMessage for support gate summary ([2de860a](https://github.com/bluecadet/preflight/commit/2de860a859533951605427d0f0660a7bee436402))
+* **runner:** log warning when gate skips unresolved runtime ([d4ca496](https://github.com/bluecadet/preflight/commit/d4ca49665bc201f5edc6a37698ee385007235751))
+* **schema:** document reason on task_failed events ([ebf9c78](https://github.com/bluecadet/preflight/commit/ebf9c786219baaa3905194725d6ce772639cd92f))
+* **sdk:** surface malformed params as -32602 ([43ef20d](https://github.com/bluecadet/preflight/commit/43ef20df637306bba0a8fd421a11d1ab28517db8))
+* **stage:** reject foreign plugins ([56d376b](https://github.com/bluecadet/preflight/commit/56d376b85530a38d616ae021c2a6d40fd19cf5a6))
+* **stdlib:** use machine feeds policy ([ca7a710](https://github.com/bluecadet/preflight/commit/ca7a7106257de9eeb741cf32d0d2667effb8276e))
+* **test:** add dbus and keep apt lists in ubuntu container ([ccee9bd](https://github.com/bluecadet/preflight/commit/ccee9bd54afd4c6b677a1222b283e071efb50b36))
+
+
+### Maintenance
+
+* **plugins:** inline toSDKOut, add wrapPluginErr ([36cfc78](https://github.com/bluecadet/preflight/commit/36cfc78de28e47c21059054d27596f395484a568))
+* **sdk:** add stream-based plugin client ctor ([17ee832](https://github.com/bluecadet/preflight/commit/17ee832c788ca589d02d36e59cc9c5791a5269e1))
+* **sdk:** atomic pointer for per-call OutputFunc ([93e3ede](https://github.com/bluecadet/preflight/commit/93e3edeb72f3c8bfc0365d4e6704c1c2a58739f3))
+* **sdk:** embed HandleServer in Handle, honest file-transfer docs ([caba491](https://github.com/bluecadet/preflight/commit/caba491a2cc9a31817b552f1927c77454ca0e2fd))
+* **sdk:** int64 codec IDs and drop vestigial State ([5dabdf3](https://github.com/bluecadet/preflight/commit/5dabdf30b7ee3786e2618d76e1259b29ee8b81b8))
+* **sdk:** remove dead NewClient wrapper ([7699c16](https://github.com/bluecadet/preflight/commit/7699c1652324005b975212bc84971ac3dabc4f3c))
+* **sdk:** typed getFileResult, drop no-op notification stub ([c4e7b8d](https://github.com/bluecadet/preflight/commit/c4e7b8d4b103a62b0e5bb7000d0342456e112cf0))
+* **target:** add requireStringParam and paramInt helpers ([49521fd](https://github.com/bluecadet/preflight/commit/49521fd962d6931490f8a84b9e1b7515b8411287))
+* **target:** collapse systemd prereq checks into requireSystemd ([085973e](https://github.com/bluecadet/preflight/commit/085973e69e483e1a6b1dcdc8c8294164ee87c437))
+* **target:** drop unused code param from classifySudoFailure ([71b6995](https://github.com/bluecadet/preflight/commit/71b6995a2fca615c9f947663814db6bce3a2e6ef))
+* **target:** inline toSDKOut, drop dead *Streaming methods ([f1b60cd](https://github.com/bluecadet/preflight/commit/f1b60cdada0b53401f977bc73af1889e9dfada78))
+* **target:** remove dead code in become_env_error ([4c3fe5f](https://github.com/bluecadet/preflight/commit/4c3fe5fb145f2556efd133f9d99c131a7fe085d9))
+* **target:** split runtime_posix.go into reboot and service files ([e61da5d](https://github.com/bluecadet/preflight/commit/e61da5dd466974d174924fab6994c2815463b632))
+
 ## [1.0.0-beta.6](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.5...v1.0.0-beta.6) (2026-07-10)
 
 
