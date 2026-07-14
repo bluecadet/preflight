@@ -127,7 +127,7 @@ Reduce notifications, prompts, and recovery UI noise with machine-scoped Windows
 | --- | --- | --- |
 | `user` | string | Optional Windows user for user-scoped notification and prompt settings |
 | `disable_notifications` | bool | Disable toast and cloud notifications |
-| `disable_news_and_interests` | bool | Hide the Windows news and interests feed |
+| `disable_news_and_interests` | bool | Disable news and interests with the machine-scoped Windows policy |
 | `disable_error_reporting` | bool | Disable Windows Error Reporting |
 | `disable_windows_setup_prompt` | bool | Disable consumer and cloud-optimized Windows prompts |
 | `disable_app_restore_on_boot` | bool | Disable automatic restart sign-on after update reboots |

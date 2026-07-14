@@ -86,6 +86,54 @@ func TestStdlibHKCURegistryTasksForwardUser(t *testing.T) {
 	}
 }
 
+func TestWindowsQuietModeUsesMachinePolicyForNewsAndInterests(t *testing.T) {
+	data, err := stdlib.FS.ReadFile("actions/preflight/windows-quiet-mode/action.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := action.ParseAction(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		machinePath = `HKLM:\SOFTWARE\Policies\Microsoft\Windows\Windows Feeds`
+		userPath    = `HKCU:\Software\Microsoft\Windows\CurrentVersion\Feeds`
+	)
+	var foundMachinePolicy bool
+	for _, task := range a.Tasks {
+		params := task.InlineModules["registry"]
+		if params == nil {
+			continue
+		}
+
+		switch params["path"] {
+		case userPath:
+			t.Fatalf("task %q writes the access-restricted per-user Feeds key", task.Name)
+		case machinePath:
+			foundMachinePolicy = true
+			if task.When != "" {
+				t.Fatalf("machine policy task is conditional, so disabling the input cannot restore feeds")
+			}
+			values, ok := params["values"].([]any)
+			if !ok || len(values) != 1 {
+				t.Fatalf("machine policy values = %#v, want one EnableFeeds value", params["values"])
+			}
+			spec, ok := values[0].(map[string]any)
+			if !ok {
+				t.Fatalf("machine policy value = %#v, want a value spec", values[0])
+			}
+			if spec["name"] != "EnableFeeds" || spec["type"] != "dword" || spec["data"] != "{{ vars.disable_news_and_interests ? 0 : 1 }}" {
+				t.Fatalf("machine policy value = %#v, want EnableFeeds DWORD derived from disable_news_and_interests", spec)
+			}
+		}
+	}
+
+	if !foundMachinePolicy {
+		t.Fatal("missing news and interests machine policy task")
+	}
+}
+
 func TestDebloatGamingAndAIAppsAvoidsPersistentXboxWildcard(t *testing.T) {
 	data, err := stdlib.FS.ReadFile("actions/preflight/debloat/action.yml")
 	if err != nil {
