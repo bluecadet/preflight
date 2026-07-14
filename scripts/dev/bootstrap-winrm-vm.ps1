@@ -9,7 +9,7 @@
     pf-test user or write the sacrificial sentinel - bootstrap-user-vm.ps1 owns
     those. Run that first (it also prints the .env.test connection vars).
 .LINK
-    https://github.com/bluecadet/preflight/docs/how-to/winrm-integration-testing.md
+    https://github.com/bluecadet/preflight/blob/main/docs/development/winrm-integration-testing.md
 #>
 
 $ErrorActionPreference = 'Stop'

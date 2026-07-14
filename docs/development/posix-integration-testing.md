@@ -160,6 +160,6 @@ integration suite stays developer-run-only.
 ## Related Docs
 
 - [Run the integration test suite (Windows/WinRM)](./winrm-integration-testing.md)
-- [Run a playbook against remote hosts](./remote-execution.md)
+- [Run a playbook against remote hosts](../how-to/remote-execution.md)
 - [How `become` works](../explanation/become.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

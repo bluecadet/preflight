@@ -8,7 +8,7 @@ manage user accounts.
 > [!NOTE]
 > Setting up a disposable test VM for Preflight's own integration test suite
 > is a different task with its own scripts and guide — see
-> [Run the integration test suite](./winrm-integration-testing.md). This
+> [Run the integration test suite](../development/winrm-integration-testing.md). This
 > guide is for a target you actually intend to manage.
 
 ## Prerequisites

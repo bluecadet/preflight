@@ -25,8 +25,8 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Give targets credentials for private repos | [Configure git credentials for a target](./how-to/configure-git-credentials.md) |
 | Pin remote actions for reproducible runs | [Update and pin remote actions](./how-to/update-and-pin-actions.md) |
 | Schedule recurring Windows reboots | [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md) |
-| Run the POSIX/SSH integration suite locally | [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md) |
-| Run the Windows/WinRM integration suite against a VM | [Run the integration test suite](./how-to/winrm-integration-testing.md) |
+| Run the POSIX/SSH integration suite locally | [Run the POSIX/SSH integration tests](./development/posix-integration-testing.md) |
+| Run the Windows/WinRM integration suite against a VM | [Run the integration test suite](./development/winrm-integration-testing.md) |
 
 ## Tutorials
 
@@ -49,8 +49,8 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Configure git credentials for a target](./how-to/configure-git-credentials.md)
 - [Update and pin remote actions](./how-to/update-and-pin-actions.md)
 - [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md)
-- [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md)
-- [Run the integration test suite (Windows/WinRM)](./how-to/winrm-integration-testing.md)
+- [Run the POSIX/SSH integration tests](./development/posix-integration-testing.md)
+- [Run the integration test suite (Windows/WinRM)](./development/winrm-integration-testing.md)
 - [Set up a reverse-tunnel bastion](./how-to/set-up-a-tunnel-bastion.md)
 - [Onboard a target through a reverse-tunnel bastion](./how-to/onboard-a-target-through-a-bastion.md)
 
@@ -72,7 +72,6 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Architecture](./explanation/architecture.md)
 - [Why use Preflight (and when not to)](./explanation/why-preflight.md)
 - [Execution model](./explanation/execution-model.md)
-- [Actions, stdlib, and lockfiles](./explanation/actions-and-lockfiles.md)
 - [Deploy across restricted networks](./explanation/restricted-network-deployment.md)
 - [Targets, transports, and plugins](./explanation/targets-and-transports.md)
 - [Secrets and `age`](./explanation/secrets-and-age.md)

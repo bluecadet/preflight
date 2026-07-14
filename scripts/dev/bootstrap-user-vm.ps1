@@ -11,7 +11,7 @@
     The password is read from PREFLIGHT_TEST_WINRM_PASS (falling back to
     PREFLIGHT_TEST_SSH_PASS); if neither is set, you will be prompted.
 .LINK
-    https://github.com/bluecadet/preflight/docs/how-to/winrm-integration-testing.md
+    https://github.com/bluecadet/preflight/blob/main/docs/development/winrm-integration-testing.md
 #>
 
 $ErrorActionPreference = 'Stop'

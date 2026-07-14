@@ -118,209 +118,36 @@ CI runs tests, linting, and build jobs. Fixing failures locally is usually much 
 
 ---
 
-## Windows Integration Tests
+## Integration Tests
 
-The `internal/target` package includes a multi-transport integration suite that runs real Check/Apply/Check cycles against a Windows endpoint over WinRM and/or SSH-to-Windows. The suite is guarded two ways: it is behind the `integration` build tag, so it is excluded from the default `go test ./...` / `make test` run entirely, and each test additionally skips at runtime when no endpoint is configured. The result is that `make test` stays fast and the live suite only runs when you ask for it via `make test-integration`.
+Two live integration suites exercise real Check/Apply/Check cycles in
+`internal/target/`, both behind the `integration` build tag so a plain
+`go test ./...` / `make test` never runs them.
 
-### Setting up a disposable Windows VM
-
-You need a Windows 10 or 11 VM that you are willing to sacrifice — the suite will create and delete real registry keys, services, users, firewall rules, and scheduled tasks. A host-only or NAT network adapter is sufficient.
-
-Run the following in an elevated PowerShell session on the VM to prepare it:
-
-```powershell
-# Enable WinRM with HTTP + Basic auth (adequate for a loopback/host-only VM).
-Enable-PSRemoting -Force
-Set-Item WSMan:\localhost\Service\Auth\Basic $true
-Set-Item WSMan:\localhost\Service\AllowUnencrypted $true
-winrm set winrm/config/client/auth '@{Basic="true"}'
-
-# Create a throwaway admin account for the test suite.
-$pass = ConvertTo-SecureString "password" -AsPlainText -Force
-New-LocalUser "pf-test" -Password $pass -PasswordNeverExpires
-Add-LocalGroupMember -Group "Administrators" -Member "pf-test"
-
-# Create a second throwaway admin account for become tests. The become
-# integration tests exercise credential delegation to a non-connecting user,
-# which requires a separate OS account on the target.
-$pass2 = ConvertTo-SecureString "password" -AsPlainText -Force
-New-LocalUser "pf-become" -Password $pass2 -PasswordNeverExpires
-Add-LocalGroupMember -Group "Administrators" -Member "pf-become"
-
-# Allow remote token elevation (required for WinRM admin sessions).
-New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
-  -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force
-
-# Open the WinRM HTTP port.
-New-NetFirewallRule -DisplayName "WinRM HTTP (pf-test)" -Direction Inbound `
-  -Protocol TCP -LocalPort 5985 -Action Allow
-
-# Write the sacrificial sentinel — the suite refuses to run without this.
-New-Item -Path "HKLM:\SOFTWARE\PreflightTest" -Force | Out-Null
-New-ItemProperty -Path "HKLM:\SOFTWARE\PreflightTest" `
-  -Name IsSacrificial -Value 1 -PropertyType DWord -Force
-```
-
-To also test the SSH-to-Windows transport on the same VM, enable OpenSSH Server:
-
-```powershell
-# Install and start OpenSSH Server, then open port 22.
-Add-WindowsCapability -Online -Name (Get-WindowsCapability -Online -Name 'OpenSSH.Server*').Name
-Set-Service -Name sshd -StartupType Automatic
-Start-Service sshd
-New-NetFirewallRule -DisplayName "SSH (pf-test)" -Direction Inbound `
-  -Protocol TCP -LocalPort 22 -Action Allow
-```
-
-Three helper scripts under `scripts/dev/` perform this setup, split by concern
-so identity and each transport are independent:
-
-- `bootstrap-user-vm.ps1` — creates the `pf-test` account and the sentinel
-  (owns the password). Run this first.
-- `bootstrap-winrm-vm.ps1` — enables the WinRM transport only.
-- `bootstrap-ssh-vm.ps1` — enables the SSH transport only.
-
-The transport scripts are secret-free and reuse the `pf-test` account from the
-provision step.
-
-### Configuring the connection
-
-Create a `.env.test` file at the **repo root** (it is git-ignored; never commit it):
-
-```
-PREFLIGHT_TEST_WINRM_HOST=192.168.x.x
-PREFLIGHT_TEST_WINRM_PORT=5985
-PREFLIGHT_TEST_WINRM_USER=pf-test
-PREFLIGHT_TEST_WINRM_PASS=password
-
-# SSH-to-Windows (requires OpenSSH Server on the VM).
-# Four-var contract: HOST, PORT (default 22), USER, PASS.
-# SSH key authentication is optional — omit _KEY for password-only auth.
-PREFLIGHT_TEST_SSH_HOST=192.168.x.x
-PREFLIGHT_TEST_SSH_PORT=22
-PREFLIGHT_TEST_SSH_USER=pf-test
-PREFLIGHT_TEST_SSH_PASS=password
-# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa
-```
-
-Each transport follows the same four-var contract (`HOST`, `PORT`, `USER`,
-`PASS`) and is independently optional — set only the vars for the transports
-you want to test. `PREFLIGHT_TEST_SSH_PORT` defaults to 22 and
-`PREFLIGHT_TEST_WINRM_PORT` defaults to 5985. When `PREFLIGHT_TEST_SSH_PASS`
-is set the suite always attempts password authentication first; setting
-`PREFLIGHT_TEST_SSH_KEY` adds a private-key fallback.
-
-The test runner loads `.env.test` automatically at startup — no `source`,
-`set -a`, or direnv wrapper needed. Variables already exported in the
-environment take precedence over the file, so CI can override them cleanly.
-
-### Running the suite
-
-The whole suite, via the Makefile target (adds the build tag for you):
+**Windows (WinRM + SSH-to-Windows)** — runs against a disposable Windows
+VM you provide; it creates and deletes real registry keys, services,
+users, firewall rules, and scheduled tasks, and refuses to run without a
+sacrificial sentinel on the target. Developer-run only (never in CI):
 
 ```bash
 make test-integration
 ```
 
-The build tag is required — without `-tags integration` the files do not compile in, so a plain `go test` will report no integration tests.
+VM setup, bootstrap scripts, `.env.test` configuration, test anatomy, and
+troubleshooting:
+[docs/development/winrm-integration-testing.md](docs/development/winrm-integration-testing.md).
 
-#### Multi-transport tests (`TestIntegration_*`)
-
-Tests named `TestIntegration_*` exercise every configured transport (WinRM **and**
-SSH-to-Windows). Each transport runs as a subtest, so you can filter by
-transport name (`/winrm` or `/ssh`):
-
-```bash
-# Run the registry test over every configured transport.
-go test -tags integration ./internal/target/ -run TestIntegration_Registry -v
-
-# Run the registry test via SSH only.
-go test -tags integration ./internal/target/ -run TestIntegration_Registry/ssh -v
-
-# Run the registry test via WinRM only.
-go test -tags integration ./internal/target/ -run TestIntegration_Registry/winrm -v
-
-# Run all multi-transport tests on the SSH transport.
-go test -tags integration ./internal/target/ -run 'TestIntegration_.*/ssh' -v
-```
-
-#### WinRM-only tests (`TestWinRMIntegration_*`)
-
-Tests prefixed `TestWinRMIntegration_*` connect via WinRM directly and are not
-wrapped in per-transport subtests. They run only when
-`PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS` are set:
-
-```bash
-go test -tags integration ./internal/target/ -run TestWinRMIntegration_Streaming -v
-```
-
-**Important:** `TestWinRMIntegration_WindowsFeature` toggles a Windows optional feature (TelnetClient). Although TelnetClient itself does not require a reboot, DISM operations can occasionally trigger one on some Windows editions. Run this test alone or last so a surprise reboot does not kill other in-flight tests:
-
-```bash
-go test -tags integration ./internal/target/ -run TestWinRMIntegration_WindowsFeature -v -timeout 5m
-```
-
-### Troubleshooting
-
-If every test fails at the sacrificial-sentinel check — the first PowerShell call — with errors like `Starting the CLR failed with HRESULT 80004005`, `STATUS_DLL_INIT_FAILED` (`0xC0000142`), or `STATUS_COMMITMENT_LIMIT` (`0xC000012D`), the target itself can no longer launch `powershell.exe`. This is endpoint resource exhaustion, not a code failure: the VM is out of committed memory or its non-interactive desktop heap is exhausted, often after many runs have accumulated WinRM shells.
-
-1. **Reboot the VM** and re-run. This clears the exhaustion and is the usual fix.
-2. If it recurs across runs, raise the endpoint's WinRM quotas — `MaxShellsPerUser` and `MaxMemoryPerShellMB` under `WSMan:\localhost\Shell` — and, if process launches keep failing, the non-interactive desktop-heap `SharedSection` value under `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems\Windows`.
-
-The tests register a `Close()` cleanup that releases each target's persistent shell, so a single suite run should no longer leak shells; reboot guidance applies mainly when a VM has been driven into a bad state by older runs or other workloads.
-
-## POSIX/SSH Integration Tests
-
-The `internal/target` package includes a POSIX integration suite that runs
-real Check/Apply/Check cycles over SSH against disposable Docker containers.
-Like the Windows suite, it is behind the `integration` build tag and skips at
-runtime when no endpoint is configured. Unlike the Windows suite, it runs in
-CI on every PR touching Go code.
-
-### Containers
-
-Two privileged systemd-enabled containers — Ubuntu 24.04 LTS (apt) and Rocky
-Linux 9 (dnf) — are defined in `test/posix/docker-compose.yml`. Each
-provisions three users (`pf-admin` with NOPASSWD sudo, `pf-sudopass` with
-password sudo, `pf-nosudo` with no sudo), disables root SSH login, and writes
-a sacrificial sentinel at `/etc/preflight-test-sacrificial`.
-
-### Running locally
+**POSIX (SSH against Docker containers)** — runs against two disposable
+systemd-enabled containers (Ubuntu/apt and Rocky/dnf); requires Docker and
+runs in CI on every PR touching Go code:
 
 ```bash
 make test-integration-posix
 ```
 
-This brings up both containers, waits for sshd, runs the suite against each,
-and tears down. Requires Docker.
-
-To run against a single container:
-
-```bash
-docker compose -f test/posix/docker-compose.yml up -d --build ubuntu
-sh test/posix/wait-for-ssh.sh localhost 2222 90
-PREFLIGHT_TEST_SSH_POSIX_HOST=localhost \
-PREFLIGHT_TEST_SSH_POSIX_PORT=2222 \
-PREFLIGHT_TEST_SSH_POSIX_USER=pf-admin \
-PREFLIGHT_TEST_SSH_POSIX_PASS=preflight \
-    go test -tags integration -count=1 -run TestIntegration_POSIX -v ./internal/target/
-docker compose -f test/posix/docker-compose.yml down
-```
-
-### Environment variables
-
-The POSIX suite uses a separate namespace from the Windows SSH vars
-(`PREFLIGHT_TEST_SSH_POSIX_*` vs `PREFLIGHT_TEST_SSH_*`) so both suites can
-be configured independently:
-
-```
-PREFLIGHT_TEST_SSH_POSIX_HOST=localhost
-PREFLIGHT_TEST_SSH_POSIX_PORT=2222
-PREFLIGHT_TEST_SSH_POSIX_USER=pf-admin
-PREFLIGHT_TEST_SSH_POSIX_PASS=preflight
-```
-
-Tests skip cleanly when the required vars are unset.
+Containers, the three-user `become` matrix, environment variables, and
+adding new tests:
+[docs/development/posix-integration-testing.md](docs/development/posix-integration-testing.md).
 
 ---
 

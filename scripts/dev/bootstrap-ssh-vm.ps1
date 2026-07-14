@@ -13,7 +13,7 @@
     Preflight authenticates over SSH with password auth by default, so no key
     generation is required. Run this once inside the VM.
 .LINK
-    https://github.com/bluecadet/preflight/docs/how-to/winrm-integration-testing.md
+    https://github.com/bluecadet/preflight/blob/main/docs/development/winrm-integration-testing.md
 #>
 
 $ErrorActionPreference = 'Stop'

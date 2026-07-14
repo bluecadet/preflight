@@ -72,6 +72,21 @@ sentinel, then prints the connection vars (with the password) for your
 `.env.test`. If the VM has no internet access, copy the script over and run
 `.\bootstrap-user-vm.ps1` — you will be prompted for the password.
 
+Two setup steps are not covered by the scripts; run them manually in the
+same elevated PowerShell session:
+
+```powershell
+# A second throwaway admin account for the become integration tests, which
+# exercise credential delegation to a non-connecting user.
+$pass2 = ConvertTo-SecureString "password" -AsPlainText -Force
+New-LocalUser "pf-become" -Password $pass2 -PasswordNeverExpires
+Add-LocalGroupMember -Group "Administrators" -Member "pf-become"
+
+# Allow remote token elevation (required for WinRM admin sessions).
+New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
+  -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force
+```
+
 ### Enable WinRM
 
 ```powershell
@@ -130,9 +145,19 @@ set only the vars for the transports you want to test.
 The test runner loads `.env.test` automatically — no `source` or `direnv` needed.
 Variables already exported in your shell take precedence over the file.
 
+The suite is behind the `integration` build tag, so it is excluded from a
+plain `go test ./...` entirely. Run the whole suite through the Makefile
+target, which adds the tag for you:
+
 ```bash
-cd preflight
-go test -v -run TestIntegration_Registry ./internal/target/
+make test-integration
+```
+
+Or run a single test directly — the `-tags integration` flag is required,
+or `go test` reports no tests at all:
+
+```bash
+go test -tags integration -v -run TestIntegration_Registry ./internal/target/
 ```
 
 Expected output when both WinRM and SSH are configured:
@@ -150,8 +175,30 @@ To run all integration tests (both the multi-transport registry test and the
 WinRM-only tests for other modules):
 
 ```bash
-go test -v -run 'TestIntegration|TestWinRMIntegration' ./internal/target/
+go test -tags integration -v -run 'TestIntegration|TestWinRMIntegration' ./internal/target/
 ```
+
+Tests named `TestIntegration_*` run every configured transport as a
+subtest, so you can filter by transport name:
+
+```bash
+# Registry test via SSH only / WinRM only
+go test -tags integration ./internal/target/ -run TestIntegration_Registry/ssh -v
+go test -tags integration ./internal/target/ -run TestIntegration_Registry/winrm -v
+```
+
+Tests prefixed `TestWinRMIntegration_*` connect via WinRM directly and run
+only when `PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS` are set.
+
+> [!WARNING]
+> `TestWinRMIntegration_WindowsFeature` toggles a Windows optional feature
+> (TelnetClient). DISM operations can occasionally trigger a reboot on some
+> Windows editions — run this test alone or last so a surprise reboot does
+> not kill other in-flight tests:
+>
+> ```bash
+> go test -tags integration ./internal/target/ -run TestWinRMIntegration_WindowsFeature -v -timeout 5m
+> ```
 
 ### Skipping behaviour
 
@@ -235,12 +282,33 @@ and `t.Skip` with a clear reason rather than `t.Fatal`.
 | `timeout` | Firewall blocking the port, or VM unreachable |
 | Test skips on CI | Expected — env vars are not set in CI |
 
+If every test fails at the sacrificial-sentinel check — the first
+PowerShell call — with errors like `Starting the CLR failed with HRESULT
+80004005`, `STATUS_DLL_INIT_FAILED` (`0xC0000142`), or
+`STATUS_COMMITMENT_LIMIT` (`0xC000012D`), the VM itself can no longer
+launch `powershell.exe`. This is endpoint resource exhaustion, not a code
+failure: the VM is out of committed memory or its non-interactive desktop
+heap is exhausted, often after many runs have accumulated WinRM shells.
+
+1. **Reboot the VM** and re-run. This clears the exhaustion and is the
+   usual fix.
+2. If it recurs across runs, raise the VM's WinRM quotas —
+   `MaxShellsPerUser` and `MaxMemoryPerShellMB` under
+   `WSMan:\localhost\Shell` — and, if process launches keep failing, the
+   non-interactive desktop-heap `SharedSection` value under
+   `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\SubSystems\Windows`.
+
+The tests register a `Close()` cleanup that releases each target's
+persistent shell, so a single suite run should not leak shells; the reboot
+guidance applies mainly when a VM has been driven into a bad state by older
+runs or other workloads.
+
 Re-run `scripts/dev/bootstrap-winrm-vm.ps1` on the VM if you suspect the WinRM
 configuration has drifted. For a completely fresh start, revert the VM to a snapshot or
 redeploy the evaluation image.
 
 ## Related Docs
 
-- [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
-- [Run a playbook against remote hosts](./remote-execution.md)
+- [Troubleshoot remote connections](../how-to/troubleshoot-remote-connections.md)
+- [Run a playbook against remote hosts](../how-to/remote-execution.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)
