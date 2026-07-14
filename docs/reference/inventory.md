@@ -164,8 +164,8 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 
 - A host with no `transport` field connects over `ssh` on port 22, with `host_key_policy: accept-new` pinning the remote key on first connect. Inventories that relied on the old implicit WinRM default must now set `transport: winrm` explicitly.
 - `winrm` is the full Windows-native transport and supports all built-in modules.
-- For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Validate a WinRM connection from macOS](../how-to/validate-winrm-from-macos.md) for a concrete validation flow from a Mac controller.
-- The current WinRM path is easiest to use with a local Windows account. If an endpoint answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
+- For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Troubleshoot remote connections](../how-to/troubleshoot-remote-connections.md) for a concrete validation flow.
+- The current WinRM path is easiest to use with a local Windows account. If a host answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
 - `ssh` auto-detects either a Windows PowerShell runtime or a POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed.
 - `local` still participates in inventory selection, but execution happens on the initiating machine.
 - For locked-down environments where targets cannot accept controller-initiated access, see [Deploy across restricted networks](../explanation/restricted-network-deployment.md).
@@ -173,5 +173,5 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 ## Related Docs
 
 - [Run a playbook against remote hosts](../how-to/remote-execution.md)
-- [Validate a WinRM connection from macOS](../how-to/validate-winrm-from-macos.md)
+- [Troubleshoot remote connections](../how-to/troubleshoot-remote-connections.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

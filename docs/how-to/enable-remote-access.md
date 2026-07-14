@@ -72,9 +72,7 @@ If you enabled WinRM, the script prints a warning: HTTP with Basic auth
 sends credentials and command output unencrypted. Only run WinRM this way on
 a trusted or internal network. For an encrypted setup, configure a WinRM
 HTTPS listener yourself, then set `https: true` and `port: 5986` on the host
-in `preflight.yml` — see
-[Validate a WinRM connection from macOS](./validate-winrm-from-macos.md) for
-the listener commands. Where possible, prefer SSH instead.
+in `preflight.yml`. Where possible, prefer SSH instead.
 
 ## 4. Add The Host To `preflight.yml`
 
@@ -117,21 +115,21 @@ preflight facts my-workstation --output json
 
 A successful response confirms both authentication and remote execution. If
 you get a connection error or `401`, see
-[Validate a WinRM connection from macOS](./validate-winrm-from-macos.md) —
-its troubleshooting steps apply to both transports.
+[Troubleshoot remote connections](./troubleshoot-remote-connections.md).
 
 ## Troubleshooting
 
 | Symptom | Likely cause |
 |---------|--------------|
 | `connection refused` | The transport was never enabled, or the wrong port/address |
-| `401 Unauthorized` (WinRM) | Basic auth not enabled, or the wrong username/password |
-| SSH prompts for a host key you don't recognize | Expected on first connect; see [SSH host-key verification](../explanation/targets-and-transports.md#ssh-host-key-verification) |
 | Script requires elevation | Re-open PowerShell with "Run as Administrator" |
+
+For connection and authentication problems once a transport is enabled, see
+[Troubleshoot remote connections](./troubleshoot-remote-connections.md).
 
 ## Related Docs
 
-- [Validate a WinRM connection from macOS](./validate-winrm-from-macos.md)
+- [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
 - [Install Preflight](./install-preflight.md)
 - [Run a playbook against remote hosts](./remote-execution.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

@@ -114,7 +114,7 @@ The full docs live under [`docs/`](docs/):
 - [Quickstart](docs/tutorials/quickstart.md)
 - [Run a playbook](docs/how-to/run-a-playbook.md)
 - [Run against remote hosts](docs/how-to/remote-execution.md)
-- [Validate a WinRM connection from macOS](docs/how-to/validate-winrm-from-macos.md)
+- [Troubleshoot remote connections](docs/how-to/troubleshoot-remote-connections.md)
 - [Deploy across restricted networks](docs/explanation/restricted-network-deployment.md)
 - [Manage secrets](docs/how-to/manage-secrets.md)
 - [Write a plugin](docs/how-to/write-a-plugin.md)

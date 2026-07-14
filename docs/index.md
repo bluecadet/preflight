@@ -10,7 +10,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Install the CLI safely | [Install Preflight](./how-to/install-preflight.md) |
 | Run, dry-run, or inspect a playbook | [Run a playbook](./how-to/run-a-playbook.md) |
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
-| Validate a Windows host from a Mac before adding it to inventory | [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md) |
+| Validate or debug a host connection before trusting it | [Troubleshoot remote connections](./how-to/troubleshoot-remote-connections.md) |
 | Choose a deployment pattern for locked-down networks | [Deploy across restricted networks](./explanation/restricted-network-deployment.md) |
 | Reach a private-network target with no inbound access | [Set up a reverse-tunnel bastion](./how-to/set-up-a-tunnel-bastion.md), then [onboard a target through it](./how-to/onboard-a-target-through-a-bastion.md) |
 | Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
@@ -21,7 +21,9 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Browse the embedded `preflight/` action library | [Embedded stdlib action reference](./reference/stdlib-actions.md) |
 | Compare desired state to recorded state | [Inspect state and diffs](./how-to/inspect-state-and-diff.md) |
 | Provision a user and run tasks as that user | [Run tasks as another user](./how-to/run-tasks-as-another-user.md) |
-| Clone and update git repositories on targets | [Run git operations on a target](./how-to/git-operations.md) |
+| Keep a git checkout in sync on targets | [Sync a git repo on a target](./how-to/sync-a-git-repo.md) |
+| Give targets credentials for private repos | [Configure git credentials for a target](./how-to/configure-git-credentials.md) |
+| Pin remote actions for reproducible runs | [Update and pin remote actions](./how-to/update-and-pin-actions.md) |
 | Schedule recurring Windows reboots | [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md) |
 | Run the POSIX/SSH integration suite locally | [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md) |
 | Run the Windows/WinRM integration suite against a VM | [Run the integration test suite](./how-to/winrm-integration-testing.md) |
@@ -35,7 +37,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Install Preflight](./how-to/install-preflight.md)
 - [Run a playbook](./how-to/run-a-playbook.md)
 - [Run a playbook against remote hosts](./how-to/remote-execution.md)
-- [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md)
+- [Troubleshoot remote connections](./how-to/troubleshoot-remote-connections.md)
 - [Manage secrets](./how-to/manage-secrets.md)
 - [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md)
 - [Write a plugin](./how-to/write-a-plugin.md)
@@ -43,7 +45,9 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Write an action](./how-to/write-an-action.md)
 - [Inspect state and diffs](./how-to/inspect-state-and-diff.md)
 - [Run tasks as another user](./how-to/run-tasks-as-another-user.md)
-- [Run git operations on a target](./how-to/git-operations.md)
+- [Sync a git repo on a target](./how-to/sync-a-git-repo.md)
+- [Configure git credentials for a target](./how-to/configure-git-credentials.md)
+- [Update and pin remote actions](./how-to/update-and-pin-actions.md)
 - [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md)
 - [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md)
 - [Run the integration test suite (Windows/WinRM)](./how-to/winrm-integration-testing.md)

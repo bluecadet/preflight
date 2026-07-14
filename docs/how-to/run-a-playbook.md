@@ -1,194 +1,120 @@
 # Run A Playbook
 
-Use this guide when you already have a playbook and want to validate it, inspect the plan, dry-run it, or apply it with the right flags.
+Use this guide when you have a playbook and want to run it on the
+controller itself, or against a small default inventory, and need the
+validate, plan, check, and apply loop explained end to end. If you are
+fanning a playbook out across many inventory hosts, use
+[Run a playbook against remote hosts](./remote-execution.md) instead;
+this page teaches the loop that guide builds on.
 
 ## Prerequisites
 
 - An installed `preflight` binary
 - A playbook file
-- A `preflight.yml` file if you rely on shared vars, secrets, or inventory-backed hosts
+- A `preflight.yml` file if you rely on shared vars, secrets, or a
+  default inventory
 
-If you need an end-to-end onboarding path first, use [Quickstart](../tutorials/quickstart.md).
+If you need an end-to-end onboarding path first, use
+[Quickstart](../tutorials/quickstart.md).
 
-## Validate Before Execution
-
-Check that the playbook parses and direct `uses:` references resolve:
+## 1. Validate The Playbook
 
 ```bash
 preflight validate playbooks/lobby.yml
 ```
 
-This is the fastest sanity check, but it is intentionally shallow. It does not gather facts, contact targets, or prove that a task will succeed at runtime.
+`validate` parses the playbook and resolves every `uses:` action
+reference, recursively, without executing anything. It is the fastest
+sanity check, but it is intentionally shallow: it does not gather
+facts, contact targets, or prove that a task will succeed at runtime.
 
-## Inspect The Flattened Plan
-
-Preview the expanded task list:
+## 2. Inspect The Plan
 
 ```bash
 preflight plan playbooks/lobby.yml
 ```
 
-Add variables at planning time:
+`plan` prints the flattened task list after action expansion and
+playbook imports, in execution order, with each task's rendered name,
+module, `when:` expression, and tags. It stays pure: no target is
+contacted, so `{{ facts.* }}` expressions can remain as literal
+placeholders until `check` or `apply` runs.
+
+Add a variable at planning time:
 
 ```bash
-preflight plan playbooks/lobby.yml --var content_root=D:\\Exhibits\\Content
+preflight plan playbooks/lobby.yml -e content_root='C:\Exhibits\Content'
 ```
 
-Why `plan` matters:
+`-e`/`--var` is repeatable and works the same way on `plan`, `check`,
+and `apply`. It is the fastest way to override a single value for one
+run without editing the playbook or `preflight.yml`.
 
-- It shows the order of execution after action expansion and playbook imports.
-- It lets you verify tag filters and rendered task names.
-- It stays pure, so `facts.*` expressions may remain unresolved until `check` or `apply`.
-
-## Dry-Run The Real Execution Path
+## 3. Dry-Run With Check
 
 ```bash
 preflight check playbooks/lobby.yml
 ```
 
-This runs the normal runner pipeline in dry-run mode. Tasks still go through dependency ordering and execution-time rendering, but changes are not applied.
+`check` runs the real runner pipeline in dry-run mode: dependency
+ordering, execution-time template rendering, and fact gathering all
+happen, but no module applies a change. Use `check` when you want to
+confirm `when:` conditions and rendered values against a real target
+before committing to `apply`.
 
-## Apply The Playbook
-
-Run the normal apply:
+## 4. Apply The Playbook
 
 ```bash
 preflight apply playbooks/lobby.yml
 ```
 
-By default, Preflight stops on the first task failure. Set `ignore_errors: true`
-on a task only when later tasks should continue running after that failure.
+By default, Preflight stops on the first task failure on a target. Set
+`ignore_errors: true` on a task only when later tasks should keep
+running after that one fails. `--fail-fast` stops the whole run as
+soon as any target fails; on a single local target it behaves the same
+as the default, but it matters once you fan a playbook out to more
+than one host (see
+[Run a playbook against remote hosts](./remote-execution.md)).
 
-Override variables from the CLI when needed:
+Override variables the same way as during `plan` and `check`:
 
 ```bash
 preflight apply playbooks/lobby.yml \
-  --var content_root=D:\\Exhibits\\Content \
-  --var app_env=production
+  -e content_root='C:\Exhibits\Content' \
+  -e app_env=production
 ```
 
-Later variable layers win. For a normal inventory-backed run the precedence is:
+Choose an output renderer with `--output text|tui|json`. Interactive
+terminals default to `tui`; non-TTY output falls back to `text`. Add
+`--verbose` to see captured output for every completed task, not just
+failed ones — useful when a `shell` or `powershell` task succeeds but
+you still want to see what it printed.
 
-```text
-preflight.yml vars
-  -> inventory.vars
-    -> group vars in each host's group order
-      -> host vars
-        -> playbook vars
-          -> --var flags
-```
+## Narrow A Run
 
-## Filter By Tags
-
-Run only selected tasks:
+Run only tasks tagged for the museum lobby kiosks:
 
 ```bash
 preflight apply playbooks/lobby.yml --tags kiosk,display
 ```
 
-Skip selected tasks:
+Skip a tag instead:
 
 ```bash
 preflight apply playbooks/lobby.yml --skip-tags reboot
 ```
 
-Tag filtering happens in the runner after the plan has been built, so skipped tasks still appear in the plan but are recorded as skipped during execution.
+Tag filtering happens after the plan is built, so a skipped task still
+appears in `plan` output but is recorded as skipped during `check` or
+`apply`. Combine `--tags`/`--skip-tags` with `-e`/`--var` to rehearse a
+narrow slice of a playbook — for example, checking only the `kiosk`
+tasks with a non-default `content_root` before touching the rest of
+the lobby.
 
-## Select Inventory Hosts
-
-Pick one host, one group, or several selectors:
-
-```bash
-preflight check playbooks/lobby.yml
-preflight apply playbooks/lobby.yml --target lobby
-preflight check playbooks/lobby.yml --target lobby-pc-01
-preflight apply playbooks/lobby.yml --target lobby --target gallery
-```
-
-Selector rules:
-
-- A selector may be a host name, a group name, or `all`.
-- Repeating `--target` builds a union.
-- Hosts are deduplicated by name.
-- With `preflight.yml` inventory available, no `--target` means all inventory hosts.
-- Without inventory, no `--target` means the local target.
-- Use `--target local` to force a local run when inventory is present.
-
-For a complete inventory example, see [Run a playbook against remote hosts](./remote-execution.md).
-
-## Stage Offline Bundles
-
-Use the dedicated `stage` command when you want offline bundles:
-
-```bash
-preflight stage playbooks/lobby.yml
-```
-
-Use bundle apply later with:
-
-```bash
-preflight apply --bundle dist/bundles/<bundle>.zip
-```
-
-If you are staging for an isolated site, follow [Stage bundles for air-gapped deployment](./air-gapped-deployment.md).
-
-## Choose An Output Format
-
-Examples:
-
-```bash
-preflight apply playbooks/lobby.yml --output text
-preflight apply playbooks/lobby.yml --output tui
-preflight apply playbooks/lobby.yml --output json
-```
-
-Notes:
-
-- `text` is the plain renderer.
-- `tui` is the interactive terminal UI renderer.
-- `json` emits newline-delimited JSON events.
-- With no explicit flag, interactive terminals auto-select `tui`; non-TTY output falls back to `text`.
-
-When a module supports streamed output, Preflight forwards each line while the task is still running:
-
-- `text` shows captured failure logs below failed tasks by default. With `--verbose`, it prints logs below every completed task that produced output.
-- `tui` shows a rolling preview of the last three lines for running tasks and prints captured output blocks on failures. With `--verbose`, it also prints captured output blocks for successful tasks after they complete.
-- `json` emits `task_output` events with `task_id`, `task`, `target`, and `lines`. Failed `task_result` events may also include an `output` array with the captured task output.
-
-## Control Host Parallelism
-
-Cap concurrent host execution:
-
-```bash
-preflight apply playbooks/lobby.yml --target all --concurrency 5
-```
-
-`0` means unlimited host concurrency.
-
-This setting only affects fan-out across resolved hosts. Inside each host run, task execution still follows the playbook DAG order.
-
-## Inspect Recorded State
-
-Look at the latest recorded state:
-
-```bash
-preflight state show
-```
-
-Compare the current plan to recorded state:
-
-```bash
-preflight state diff playbooks/lobby.yml
-```
-
-For per-host inventory-backed state:
-
-```bash
-preflight state show --state-file state/targets/lobby-pc-01.json
-preflight state diff playbooks/lobby.yml --target lobby-pc-01 --state-file state/targets/lobby-pc-01.json
-```
-
-See [Inspect state and diffs](./inspect-state-and-diff.md) for a task-focused workflow.
+Preflight also merges variables from several other layers ahead of
+`-e`/`--var` (inventory, groups, hosts, the playbook itself). See
+[Variable Merge Order](../reference/inventory.md#variable-merge-order)
+for the full precedence chain.
 
 ## Troubleshooting
 
@@ -209,4 +135,13 @@ preflight action fetch github.com/myorg/actions/signage@v2.1
 
 ### `plan` still shows `{{ facts... }}`
 
-That is expected. `plan` does not contact targets. Final fact-dependent rendering happens during `check` and `apply`.
+That is expected. `plan` does not contact targets. Final
+fact-dependent rendering happens during `check` and `apply`.
+
+## Related Docs
+
+- [Run a playbook against remote hosts](./remote-execution.md)
+- [Inspect state and diffs](./inspect-state-and-diff.md)
+- [Stage bundles for air-gapped deployment](./air-gapped-deployment.md)
+- [Variable Merge Order](../reference/inventory.md#variable-merge-order)
+- [Quickstart](../tutorials/quickstart.md)

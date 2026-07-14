@@ -241,6 +241,6 @@ redeploy the evaluation image.
 
 ## Related Docs
 
-- [Validate a WinRM connection from macOS](./validate-winrm-from-macos.md)
+- [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
 - [Run a playbook against remote hosts](./remote-execution.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)
