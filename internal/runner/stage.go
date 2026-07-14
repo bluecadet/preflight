@@ -12,6 +12,7 @@ import (
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/plugins"
+	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
@@ -28,15 +29,9 @@ func (r *Runner) stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: bundle output directory is not configured")
 	}
 
-	r.emitActivityStart("connecting")
-	info, err := r.target.Info(ctx)
+	info, err := r.stageTargetInfo(ctx)
 	if err != nil {
-		r.emitActivityResult("connecting", "failed")
-	} else {
-		r.emitActivityResult("connecting", "ok")
-	}
-	if err != nil {
-		return fmt.Errorf("stage: target info: %w", err)
+		return err
 	}
 
 	stageSecrets, err := r.analyzeStagePlan(ctx, plan)
@@ -108,6 +103,38 @@ func (r *Runner) stage(ctx context.Context, plan *ExecutionPlan) error {
 		r.emitWarning("bundle contains plaintext secrets")
 	}
 	return nil
+}
+
+func (r *Runner) stageTargetInfo(ctx context.Context) (target.TargetInfo, error) {
+	if r.config.StagePlatform != nil {
+		runtimeKind, err := runtimeForStagePlatform(r.config.StagePlatform)
+		if err != nil {
+			return target.TargetInfo{}, fmt.Errorf("stage: %w", err)
+		}
+		return target.TargetInfo{
+			OSVersion:   string(r.config.StagePlatform.OS),
+			OSFamily:    r.config.StagePlatform.OS,
+			Arch:        r.config.StagePlatform.Arch,
+			RuntimeKind: runtimeKind,
+		}, nil
+	}
+
+	r.emitActivityStart("connecting")
+	info, err := r.target.Info(ctx)
+	if err != nil {
+		r.emitActivityResult("connecting", "failed")
+		return target.TargetInfo{}, fmt.Errorf("stage: target info: %w", err)
+	}
+	r.emitActivityResult("connecting", "ok")
+	return info, nil
+}
+
+func runtimeForStagePlatform(platform *target.Platform) (target.RuntimeKind, error) {
+	runtimeKind, ok := platform.RuntimeKind()
+	if !ok {
+		return "", fmt.Errorf("declared platform has unsupported OS %q", platform.OS)
+	}
+	return runtimeKind, nil
 }
 
 type stageSecretBundle struct {

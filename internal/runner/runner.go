@@ -18,18 +18,20 @@ import (
 
 // Config holds the options that control runner behavior.
 type Config struct {
-	DryRun                        bool
-	Tags                          []string
-	SkipTags                      []string
-	Concurrency                   int
-	ProjectDir                    string
-	ProjectName                   string
-	ProjectEnv                    string
-	ProjectVars                   map[string]any
-	InventoryVars                 map[string]any
-	Vars                          map[string]any // from --var CLI flags
-	TargetVars                    map[string]any
-	TargetName                    string
+	DryRun        bool
+	Tags          []string
+	SkipTags      []string
+	Concurrency   int
+	ProjectDir    string
+	ProjectName   string
+	ProjectEnv    string
+	ProjectVars   map[string]any
+	InventoryVars map[string]any
+	Vars          map[string]any // from --var CLI flags
+	TargetVars    map[string]any
+	TargetName    string
+	// StagePlatform overrides live target discovery only while assembling a bundle.
+	StagePlatform                 *target.Platform
 	Phase                         string // "plan", "fetch", "stage", "apply" (empty = all)
 	SkipFetch                     bool
 	Renderer                      output.Renderer

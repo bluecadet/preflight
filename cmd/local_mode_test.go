@@ -281,6 +281,45 @@ func TestRunStageWritesBundle(t *testing.T) {
 	}
 }
 
+func TestRunStageUsesDeclaredInventoryPlatform(t *testing.T) {
+	dir := t.TempDir()
+	playbookPath := filepath.Join(dir, "provision.yml")
+	if err := os.WriteFile(playbookPath, []byte(`
+name: windows provisioning
+tasks:
+  - name: Configure Windows long paths
+    registry:
+      path: 'HKLM:\\SYSTEM\\CurrentControlSet\\Control\\FileSystem'
+      ensure: present
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(playbook): %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "preflight.yml"), []byte(`
+inventory:
+  hosts:
+    - name: TS1
+      transport: local
+      platform:
+        os: windows
+        arch: amd64
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(config): %v", err)
+	}
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("target", "TS1"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+	if err := runStage(cmd, []string{playbookPath}); err != nil {
+		t.Fatalf("stage Windows bundle: %v", err)
+	}
+
+	bundlePath := mustOneBundleMatch(t, dir)
+	if got := filepath.Base(bundlePath); !strings.Contains(got, "ts1-windows-amd64") {
+		t.Fatalf("bundle filename = %q, want declared Windows platform", got)
+	}
+}
+
 func TestRunApplyBundleRoundTrip(t *testing.T) {
 	playbookPath := writeTestPlaybook(t)
 	stageCmd := newTestCommand()

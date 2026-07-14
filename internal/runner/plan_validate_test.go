@@ -106,6 +106,30 @@ func TestPlan_SSHNameChecksOnly(t *testing.T) {
 	}
 }
 
+func TestPlan_StagePlatformOverridesTransportRuntime(t *testing.T) {
+	r := New(&planValidationTarget{transport: target.TransportWinRM}, action.Chain{}, Config{
+		Phase:         "stage",
+		StagePlatform: &target.Platform{OS: target.OSFamilyLinux, Arch: "amd64"},
+	})
+
+	_, err := r.Plan(context.Background(), singleTaskPlaybook("registry"))
+	if err == nil || !strings.Contains(err.Error(), "not supported on posix-shell") {
+		t.Fatalf("expected declared Linux platform to reject registry, got %v", err)
+	}
+}
+
+func TestPlan_StagePlatformValidatesWithoutTarget(t *testing.T) {
+	r := New(nil, action.Chain{}, Config{
+		Phase:         "stage",
+		StagePlatform: &target.Platform{OS: target.OSFamilyLinux, Arch: "amd64"},
+	})
+
+	_, err := r.Plan(context.Background(), singleTaskPlaybook("registry"))
+	if err == nil || !strings.Contains(err.Error(), "not supported on posix-shell") {
+		t.Fatalf("expected declared Linux platform to reject registry, got %v", err)
+	}
+}
+
 func TestPlan_PluginBypassesMatrix(t *testing.T) {
 	pluginReg := target.ModuleRegistry{
 		"custom": fakePluggable{path: "/tmp/custom"},

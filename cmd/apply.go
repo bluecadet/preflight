@@ -172,6 +172,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		}
 		if opts.stageOnly {
 			cfg.Phase = "stage"
+			cfg.StagePlatform = host.InventoryRef.Platform
 		}
 
 		r := runner.New(host.Target, session.Chain, cfg)

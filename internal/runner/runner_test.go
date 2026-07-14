@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"path/filepath"
@@ -1521,6 +1522,53 @@ func TestRunFetchAndStagePhases(t *testing.T) {
 	}
 	if len(matches) != 1 {
 		t.Fatalf("expected one staged bundle, got %d", len(matches))
+	}
+}
+
+func TestRunStageUsesDeclaredPlatformWithoutTargetInfo(t *testing.T) {
+	dir := t.TempDir()
+	tgt := &targettest.Fake{
+		InfoValue: target.TargetInfo{Transport: target.TransportLocal},
+		InfoErr:   errors.New("target is offline"),
+	}
+	r := New(tgt, emptyResolver(), Config{
+		Phase:           "stage",
+		StagePlatform:   &target.Platform{OS: target.OSFamilyWindows, Arch: "amd64"},
+		TargetName:      "TS1",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"registry": noopModule{}},
+	})
+	playbook := singleTaskPlaybook("registry")
+
+	if err := r.Run(context.Background(), playbook); err != nil {
+		t.Fatalf("stage with declared platform: %v", err)
+	}
+
+	extracted, err := bundle.Extract(mustOneBundlePath(t, dir))
+	if err != nil {
+		t.Fatalf("Extract: %v", err)
+	}
+	defer func() { _ = extracted.Cleanup() }()
+	if got := extracted.Manifest.TargetOS; got != "windows" {
+		t.Fatalf("manifest target OS = %q, want windows", got)
+	}
+	if got := extracted.Manifest.TargetArch; got != "amd64" {
+		t.Fatalf("manifest target arch = %q, want amd64", got)
+	}
+}
+
+func TestRunStageProbesTargetWithoutDeclaredPlatform(t *testing.T) {
+	dir := t.TempDir()
+	tgt := &targettest.Fake{InfoErr: errors.New("target is offline")}
+	r := New(tgt, emptyResolver(), Config{
+		Phase:           "stage",
+		BundleOutputDir: dir,
+		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
+	})
+
+	err := r.Run(context.Background(), newShellPlaybook("probe-target"))
+	if err == nil || !strings.Contains(err.Error(), "stage: target info: target is offline") {
+		t.Fatalf("stage error = %v, want target info failure", err)
 	}
 }
 

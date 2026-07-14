@@ -418,10 +418,21 @@ func cloneMap(src map[string]any) map[string]any {
 // local). SSH only name-checks because its runtime requires a remote probe.
 // Plugins (present in the controller registry) bypass the runtime matrix.
 func (r *Runner) validatePlanTasks(tasks []*PlanTask) error {
-	if r.target == nil {
-		return nil
+	var kind target.RuntimeKind
+	var kindKnown bool
+	if r.config.StagePlatform != nil {
+		var err error
+		kind, err = runtimeForStagePlatform(r.config.StagePlatform)
+		if err != nil {
+			return err
+		}
+		kindKnown = true
+	} else {
+		if r.target == nil {
+			return nil
+		}
+		kind, kindKnown = target.PlanRuntimeForTransport(r.target.Transport())
 	}
-	kind, kindKnown := target.PlanRuntimeForTransport(r.target.Transport())
 	for _, pt := range tasks {
 		if err := target.ValidateModuleForPlan(pt.Module, kind, kindKnown, r.config.ModuleRegistry); err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
