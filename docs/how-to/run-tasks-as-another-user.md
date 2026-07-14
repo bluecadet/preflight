@@ -20,7 +20,7 @@ The typical pattern has two phases:
 Avoid hardcoding passwords. Use a named secret reference instead:
 
 ```bash
-preflight secrets add exhibit-password
+preflight secret encrypt exhibit-password
 ```
 
 See [Manage secrets](./manage-secrets.md) if you have not set up `age` secrets yet.
@@ -155,11 +155,15 @@ By default, Windows `become` does not load the user's full profile (environment 
 
 ### `become: password is required for Windows user`
 
-Windows `runas` requires a password. Make sure `password` is set and the secret resolves correctly:
+Windows `runas` requires a password. Make sure `password` is set and the
+secret is configured in the project:
 
 ```bash
-preflight secrets show exhibit-password
+preflight secret list
 ```
+
+If the secret exists but holds the wrong value, update it with
+`preflight secret edit exhibit-password`.
 
 ### `become` is not taking effect
 
