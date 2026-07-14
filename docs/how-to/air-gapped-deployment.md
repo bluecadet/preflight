@@ -6,8 +6,9 @@ Use this guide when you want to prepare a run on one machine, transfer the resul
 
 - A working `preflight` binary on the staging machine
 - A working `preflight` binary on each offline target that will run `preflight apply --bundle`
-- A playbook that already plans or applies successfully in a connected environment
-- Any referenced plugin executables discoverable during staging
+- A playbook that passes `preflight validate`
+- Any referenced plugin executables discoverable during staging and built for
+  the destination OS and architecture
 - No tasks that would require embedding decrypted secret values into the bundle
 
 ## 1. Prepare Encrypted Secrets For Target-Side Apply
@@ -59,11 +60,31 @@ Adding a recipient to `preflight.yml` does not change existing encrypted files b
 
 ## 2. Stage The Bundles
 
+Declare each offline host's destination platform in `preflight.yml`. The
+transport may describe how the host is normally managed; staging does not
+connect through it when `platform` is present:
+
+```yaml
+inventory:
+  hosts:
+    - name: lobby-pc-01
+      address: 192.168.1.10
+      transport: winrm
+      platform:
+        os: windows
+        arch: amd64
+```
+
 Run:
 
 ```bash
-preflight stage playbooks/lobby.yml
+preflight stage playbooks/lobby.yml --target lobby-pc-01
 ```
+
+Preflight validates the plan for `windows-powershell` and creates the bundle
+without connecting to `lobby-pc-01`. This allows a macOS or Linux controller
+to stage Windows playbooks for an unreachable host. If `platform` is omitted,
+Preflight connects to the selected host to discover its OS and architecture.
 
 By default bundles are written under `dist/bundles/`.
 
@@ -130,7 +151,10 @@ Staging fails when:
 
 - a task would require embedding a decrypted secret value
 - the plan references an unknown module
-- a referenced plugin cannot be initialized, reports the wrong logical name, or cannot be copied into the bundle
+- a referenced plugin cannot be initialized, reports the wrong logical name,
+  or cannot be copied into the bundle
+- a referenced plugin is being staged for an OS or architecture different
+  from the controller
 
 Offline apply does not:
 
@@ -155,6 +179,10 @@ preflight plugin list
 ```
 
 Only plugins actually referenced by the staged plan are copied into the bundle, and each referenced plugin is initialized during staging to verify that its reported logical name matches the module name used by the plan.
+
+Cross-platform staging currently supports built-in modules only. A plugin
+bundle must be staged on the same OS and architecture as the destination
+because plugin discovery provides the controller-native executable.
 
 ### I am not sure which bundle belongs to which host
 

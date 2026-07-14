@@ -119,6 +119,11 @@ Assemble one staged bundle zip per resolved target.
 preflight stage playbooks/lobby.yml
 ```
 
+When an inventory host declares `platform`, staging uses that OS and
+architecture without connecting to the host. Without a declaration, staging
+probes the selected host. See the
+[inventory platform fields](./inventory.md#platform-fields).
+
 Command-specific flags:
 
 | Flag | Meaning |

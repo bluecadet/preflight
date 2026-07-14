@@ -15,10 +15,11 @@ cannot complete:
 1. **Plan-time (offline).** Unknown module names — whether a catalog
    built-in or a discovered plugin — fail for all targets.
    Runtime-support violations also fail where the transport implies a
-   runtime offline: WinRM is always `windows-powershell`, and the local
-   target is derived from the controller's OS. SSH's runtime is only known
-   after probing the remote host, so plan-time can only name-check SSH
-   tasks. Plan violations exit non-zero like any plan error.
+   runtime offline: WinRM is always `windows-powershell`, the local target
+   is derived from the controller's OS, and staging uses an inventory host's
+   declared platform when present. SSH's runtime is only known after probing
+   the remote host, so plan-time can only name-check SSH tasks when no staging
+   platform is declared. Plan violations exit non-zero like any plan error.
 2. **Apply-start gate.** After the runtime kind is resolved and facts are
    gathered — and before task 1 — every task that will actually run is
    validated against the support matrix. When any runnable task is

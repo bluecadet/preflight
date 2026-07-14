@@ -164,6 +164,11 @@ The stage phase does not archive the original source tree and ask the
 offline machine to re-plan later. It stages the rendered execution plan
 plus the runtime pieces needed to execute it.
 
+When inventory declares the host platform, stage uses that declaration for
+module validation and bundle metadata without contacting the host. Otherwise,
+it probes the host for the same information. See
+[Platform Fields](../reference/inventory.md#platform-fields).
+
 That choice keeps offline execution predictable:
 
 - no fresh action resolution

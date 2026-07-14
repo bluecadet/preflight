@@ -76,6 +76,11 @@ For the operational detail this section only sketches — hardening a shared bas
 
 Staged bundles are usually the most robust answer when the target network cannot allow inbound administration at all. `preflight stage` renders a target-specific plan into a zip archive. `preflight apply --bundle` then runs locally on the target, so the apply step no longer depends on WinRM or SSH.
 
+Inventory can declare the destination platform, allowing a controller on a
+different OS to stage the bundle without contacting the host. The
+[inventory reference](../reference/inventory.md#platform-fields) owns that
+configuration contract.
+
 This is a good fit when:
 
 - you can transfer files into the environment through an approved channel

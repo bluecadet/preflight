@@ -36,8 +36,8 @@ The manifest includes:
 | `created_at` | timestamp | Creation time |
 | `playbook_name` | string | Source playbook name |
 | `target_name` | string | Target name used during staging |
-| `target_os` | string | OS reported by the target |
-| `target_arch` | string | Architecture reported by the target |
+| `target_os` | string | OS declared in inventory or reported by the target |
+| `target_arch` | string | Architecture declared in inventory or reported by the target |
 | `build` | object | Version, commit, and build date of the staging binary |
 | `modules` | array | Referenced built-in and plugin modules |
 | `checksums` | object | File checksum map |
@@ -59,8 +59,16 @@ Each `modules[]` entry records:
 Staging fails when:
 
 - a task references an unknown module
-- a referenced plugin cannot be initialized, reports the wrong logical name, or cannot be copied
+- a referenced plugin cannot be initialized, reports the wrong logical name,
+  or cannot be copied
+- a referenced plugin targets a different OS or architecture than the
+  controller; cross-platform staging currently supports built-in modules only
 - a task preview contains secret values that would need to be embedded in the bundle
+
+An inventory host with a declared `platform` does not need to be reachable
+during staging. Without a declaration, Preflight connects to the host to
+discover the values recorded in `target_os` and `target_arch`. See the
+[inventory platform fields](./inventory.md#platform-fields).
 
 ## Bundle Apply
 

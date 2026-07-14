@@ -31,6 +31,9 @@ inventory:
     - name: lobby-pc-01
       address: 192.168.1.10
       transport: winrm
+      platform:
+        os: windows
+        arch: amd64
       username: exhibit-admin
       password: secret:winrm-password
       groups: [lobby, windows]
@@ -61,6 +64,7 @@ inventory:
 | `name` | string | Required unique host identifier |
 | `address` | string | Hostname or IP address. Defaults to `name` when omitted. |
 | `transport` | enum | `winrm`, `ssh`, or `local`. Defaults to `ssh` when omitted. |
+| `platform` | object | Optional destination OS and architecture used for connection-free bundle staging. See [Platform Fields](#platform-fields). |
 | `port` | integer | Explicit port override. Defaults to 22 for `ssh` (including the implicit default transport), 5985/5986 for `winrm`. |
 | `username` | string | Username for transport authentication |
 | `password` | string | Password or secret reference such as `secret:winrm-password` |
@@ -74,6 +78,27 @@ inventory:
 | `groups` | string[] | Group names applied in order for selector membership and variable precedence |
 | `vars` | object | Host-specific variable overrides |
 | `jump` | object | Optional single-hop SSH bastion to dial through before reaching this host. See [Jump Host Fields](#jump-host-fields) below. |
+
+### Platform Fields
+
+`platform` declares the host OS and architecture used by `preflight stage`.
+Both fields are required when the block is present:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `os` | enum | `windows`, `linux`, or `darwin` |
+| `arch` | enum | `amd64` or `arm64` |
+
+When a host declares `platform`, staging validates modules against that
+platform and writes it into the bundle without connecting to the host.
+Windows maps to the `windows-powershell` runtime; Linux and Darwin map to
+`posix-shell`.
+
+Without `platform`, staging preserves the live-discovery behavior: it probes
+the selected host for its OS and architecture. The declaration affects only
+staging. Commands such as `facts`, `check`, and `apply` continue to use the
+configured transport and the live host. In particular, `transport: local`
+still means the controller even when `platform` describes another OS.
 
 ### Jump Host Fields
 
