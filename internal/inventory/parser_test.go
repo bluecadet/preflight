@@ -57,6 +57,99 @@ func TestParse_HostFirstInventory(t *testing.T) {
 	}
 }
 
+func TestParse_HostPlatform(t *testing.T) {
+	inv, err := inventory.Parse([]byte(`
+hosts:
+  - name: ts1
+    transport: local
+    platform:
+      os: windows
+      arch: amd64
+`))
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	host := inv.Hosts[0]
+	if host.Platform == nil {
+		t.Fatal("expected declared platform")
+	}
+	if got := host.Platform.OS; got != "windows" {
+		t.Fatalf("platform OS = %q, want windows", got)
+	}
+	if got := host.Platform.Arch; got != "amd64" {
+		t.Fatalf("platform arch = %q, want amd64", got)
+	}
+}
+
+func TestParse_HostPlatformRequiresOSAndArch(t *testing.T) {
+	tests := map[string]string{
+		"missing os": `
+hosts:
+  - name: ts1
+    platform:
+      arch: amd64
+`,
+		"missing arch": `
+hosts:
+  - name: ts1
+    platform:
+      os: windows
+`,
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := inventory.Parse([]byte(data))
+			if err == nil {
+				t.Fatal("expected schema validation error")
+			}
+			if !strings.Contains(err.Error(), "inventory: schema validation failed") {
+				t.Fatalf("error = %q, want schema validation failure", err)
+			}
+		})
+	}
+}
+
+func TestParse_HostPlatformRejectsInvalidValues(t *testing.T) {
+	tests := map[string]string{
+		"unsupported os": `
+hosts:
+  - name: ts1
+    platform:
+      os: freebsd
+      arch: amd64
+`,
+		"unsupported arch": `
+hosts:
+  - name: ts1
+    platform:
+      os: windows
+      arch: "386"
+`,
+		"unknown field": `
+hosts:
+  - name: ts1
+    platform:
+      os: windows
+      arch: amd64
+      runtime: windows-powershell
+`,
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := inventory.Parse([]byte(data))
+			if err == nil {
+				t.Fatal("expected schema validation error")
+			}
+			if !strings.Contains(err.Error(), "inventory: schema validation failed") {
+				t.Fatalf("error = %q, want schema validation failure", err)
+			}
+		})
+	}
+}
+
 func TestHostsForTarget_Group(t *testing.T) {
 	inv, _ := inventory.Parse([]byte(sampleInventory))
 	hosts, err := inv.HostsForTarget("lobby")

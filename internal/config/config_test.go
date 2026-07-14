@@ -33,6 +33,9 @@ inventory:
   hosts:
     - name: lobby-pc-01
       transport: local
+      platform:
+        os: windows
+        arch: amd64
       groups: [lobby]
 `)
 
@@ -81,6 +84,9 @@ inventory:
 	}
 	if got := hosts[0].Vars["area"]; got != "lobby" {
 		t.Fatalf("Inventory host area = %#v, want lobby", got)
+	}
+	if hosts[0].Platform == nil || hosts[0].Platform.OS != "windows" || hosts[0].Platform.Arch != "amd64" {
+		t.Fatalf("Inventory host platform = %#v, want windows/amd64", hosts[0].Platform)
 	}
 }
 

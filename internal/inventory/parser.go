@@ -21,22 +21,23 @@ type rawGroup struct {
 }
 
 type rawHost struct {
-	Name                 string         `yaml:"name"`
-	Address              string         `yaml:"address"`
-	Transport            string         `yaml:"transport"`
-	Port                 int            `yaml:"port"`
-	Username             string         `yaml:"username"`
-	Password             string         `yaml:"password"`
-	PrivateKey           string         `yaml:"private_key"`
-	PrivateKeyPassphrase string         `yaml:"private_key_passphrase"`
-	KnownHostsFile       string         `yaml:"known_hosts_file"`
-	HostKeyPolicy        string         `yaml:"host_key_policy"`
-	HostKeyAlgorithms    []string       `yaml:"host_key_algorithms"`
-	HTTPS                bool           `yaml:"https"`
-	Groups               []string       `yaml:"groups"`
-	Vars                 map[string]any `yaml:"vars"`
-	Timeout              string         `yaml:"timeout"`
-	Jump                 *JumpHost      `yaml:"jump"`
+	Name                 string           `yaml:"name"`
+	Address              string           `yaml:"address"`
+	Transport            string           `yaml:"transport"`
+	Platform             *target.Platform `yaml:"platform"`
+	Port                 int              `yaml:"port"`
+	Username             string           `yaml:"username"`
+	Password             string           `yaml:"password"`
+	PrivateKey           string           `yaml:"private_key"`
+	PrivateKeyPassphrase string           `yaml:"private_key_passphrase"`
+	KnownHostsFile       string           `yaml:"known_hosts_file"`
+	HostKeyPolicy        string           `yaml:"host_key_policy"`
+	HostKeyAlgorithms    []string         `yaml:"host_key_algorithms"`
+	HTTPS                bool             `yaml:"https"`
+	Groups               []string         `yaml:"groups"`
+	Vars                 map[string]any   `yaml:"vars"`
+	Timeout              string           `yaml:"timeout"`
+	Jump                 *JumpHost        `yaml:"jump"`
 }
 
 // Parse parses inventory YAML data into an Inventory.
@@ -152,6 +153,7 @@ func hostFromRaw(rh rawHost, groups map[string]Group) (Host, error) {
 		Name:                 rh.Name,
 		Address:              rh.Address,
 		Transport:            defaultTransport(rh.Transport),
+		Platform:             rh.Platform,
 		Port:                 defaultPort(rh.Transport, rh.HTTPS, rh.Port),
 		Username:             rh.Username,
 		Password:             rh.Password,

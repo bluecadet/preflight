@@ -57,6 +57,9 @@
           "enum": ["winrm", "ssh", "local"],
           "description": "Connection transport. Defaults to \"ssh\" when omitted."
         },
+        "platform": {
+          "$ref": "#/$defs/platform"
+        },
         "port": {
           "type": "integer",
           "description": "Connection port (defaults vary by transport: SSH=22, WinRM=5985/5986)"
@@ -149,6 +152,24 @@
               "description": "SSH host-key verification policy for the jump host. accept-new (default) trusts unknown hosts on first connect and pins them; strict requires the jump host to already be in known_hosts_file; insecure disables verification entirely."
             }
           }
+        }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "description": "Declared destination platform used for connection-free bundle staging",
+      "required": ["os", "arch"],
+      "additionalProperties": false,
+      "properties": {
+        "os": {
+          "type": "string",
+          "enum": ["windows", "linux", "darwin"],
+          "description": "Destination operating system family"
+        },
+        "arch": {
+          "type": "string",
+          "enum": ["amd64", "arm64"],
+          "description": "Destination CPU architecture"
         }
       }
     }

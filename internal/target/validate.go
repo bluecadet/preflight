@@ -1,5 +1,19 @@
 package target
 
+// RuntimeKind derives the module runtime used by a declared destination
+// platform. Inventory schema validation keeps declarations within the known
+// OS families; false protects programmatic callers from an unknown value.
+func (p Platform) RuntimeKind() (RuntimeKind, bool) {
+	switch p.OS {
+	case OSFamilyWindows:
+		return RuntimeKindWindowsPowerShell, true
+	case OSFamilyLinux, OSFamilyDarwin:
+		return RuntimeKindPOSIXShell, true
+	default:
+		return "", false
+	}
+}
+
 // PlanRuntimeForTransport returns the runtime kind a transport implies at plan
 // time, before any remote probe. WinRM is always windows-powershell and local
 // is GOOS-derived; both are knowable offline. SSH returns ok=false because its

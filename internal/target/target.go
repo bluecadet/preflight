@@ -113,6 +113,14 @@ const (
 	OSFamilyDarwin  OSFamily = "darwin"
 )
 
+// Platform identifies the operating system family and architecture a staged
+// bundle will execute on. Inventory declarations use this when the target
+// cannot be probed during staging.
+type Platform struct {
+	OS   OSFamily `json:"os" yaml:"os"`
+	Arch string   `json:"arch" yaml:"arch"`
+}
+
 // TargetInfo holds basic facts about a target machine.
 //
 // POSIX fields (OSName, PackageManager, Init) are populated by the cached

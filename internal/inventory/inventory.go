@@ -20,20 +20,21 @@ const (
 
 // Host represents a single target machine.
 type Host struct {
-	Name                 string         `yaml:"name"`
-	Address              string         `yaml:"address,omitempty"`
-	Transport            Transport      `yaml:"transport,omitempty"`
-	Port                 int            `yaml:"port,omitempty"`
-	Username             string         `yaml:"username,omitempty"`
-	Password             string         `yaml:"password,omitempty"`
-	PrivateKey           string         `yaml:"private_key,omitempty"`
-	PrivateKeyPassphrase string         `yaml:"private_key_passphrase,omitempty"`
-	KnownHostsFile       string         `yaml:"known_hosts_file,omitempty"`
-	HostKeyPolicy        string         `yaml:"host_key_policy,omitempty"`
-	HostKeyAlgorithms    []string       `yaml:"host_key_algorithms,omitempty"`
-	HTTPS                bool           `yaml:"https,omitempty"`
-	Groups               []string       `yaml:"groups,omitempty"`
-	Vars                 map[string]any `yaml:"vars,omitempty"`
+	Name                 string           `yaml:"name"`
+	Address              string           `yaml:"address,omitempty"`
+	Transport            Transport        `yaml:"transport,omitempty"`
+	Platform             *target.Platform `yaml:"platform,omitempty"`
+	Port                 int              `yaml:"port,omitempty"`
+	Username             string           `yaml:"username,omitempty"`
+	Password             string           `yaml:"password,omitempty"`
+	PrivateKey           string           `yaml:"private_key,omitempty"`
+	PrivateKeyPassphrase string           `yaml:"private_key_passphrase,omitempty"`
+	KnownHostsFile       string           `yaml:"known_hosts_file,omitempty"`
+	HostKeyPolicy        string           `yaml:"host_key_policy,omitempty"`
+	HostKeyAlgorithms    []string         `yaml:"host_key_algorithms,omitempty"`
+	HTTPS                bool             `yaml:"https,omitempty"`
+	Groups               []string         `yaml:"groups,omitempty"`
+	Vars                 map[string]any   `yaml:"vars,omitempty"`
 	// Timeout is the connection/handshake timeout for SSH and WinRM
 	// transports. Zero means unset, which falls back to each transport's
 	// own default (30s for SSH).

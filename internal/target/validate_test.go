@@ -19,6 +19,29 @@ func TestPlanRuntimeForTransport(t *testing.T) {
 	}
 }
 
+func TestPlatformRuntimeKind(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform Platform
+		want     RuntimeKind
+		wantOK   bool
+	}{
+		{name: "windows", platform: Platform{OS: OSFamilyWindows, Arch: "amd64"}, want: RuntimeKindWindowsPowerShell, wantOK: true},
+		{name: "linux", platform: Platform{OS: OSFamilyLinux, Arch: "amd64"}, want: RuntimeKindPOSIXShell, wantOK: true},
+		{name: "darwin", platform: Platform{OS: OSFamilyDarwin, Arch: "arm64"}, want: RuntimeKindPOSIXShell, wantOK: true},
+		{name: "unknown", platform: Platform{OS: OSFamilyUnknown, Arch: "amd64"}, wantOK: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := tc.platform.RuntimeKind()
+			if got != tc.want || ok != tc.wantOK {
+				t.Fatalf("RuntimeKind() = %q, %v; want %q, %v", got, ok, tc.want, tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestValidateModuleForPlan_UnknownModuleFails(t *testing.T) {
 	err := ValidateModuleForPlan("nope", RuntimeKindPOSIXShell, true, nil)
 	var mse *ModuleSupportError
