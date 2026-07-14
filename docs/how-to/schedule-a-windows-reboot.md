@@ -1,8 +1,18 @@
 # Schedule A Windows Reboot
 
-Use this guide when a managed Windows endpoint should reboot on a regular schedule. The `preflight/windows-power` action manages power plans and screen saver settings; scheduled reboots are regular tasks, so define them with the `scheduled_task` module.
+Use this guide when a managed Windows target should reboot on a regular
+schedule — a common baseline for kiosks and exhibit PCs that run
+continuously. Scheduled reboots are regular Windows scheduled tasks, so
+define them with the `scheduled_task` module.
 
-## Add A Daily Reboot Task
+## Prerequisites
+
+- A working playbook and target connection (see
+  [Run a playbook](./run-a-playbook.md))
+- A transport account allowed to create scheduled tasks that run as
+  `SYSTEM`
+
+## 1. Add A Daily Reboot Task
 
 Create a playbook task that runs `shutdown.exe` from `C:\Windows\System32`:
 
@@ -25,9 +35,10 @@ tasks:
       ensure: present
 ```
 
-`/r` reboots, `/f` closes running applications, and `/t 30` gives Windows a 30-second delay before restarting.
+`/r` reboots, `/f` closes running applications, and `/t 30` gives Windows
+a 30-second delay before restarting.
 
-## Change The Time
+## 2. Set The Reboot Time
 
 Set `start_at` to the local target time when the reboot should run:
 
@@ -36,22 +47,10 @@ Set `start_at` to the local target time when the reboot should run:
       start_at: "04:30"
 ```
 
-## Remove The Reboot Task
+## 3. Combine With Power Settings (Optional)
 
-Use the same task identity with `ensure: absent`:
-
-```yaml
-tasks:
-  - name: Remove daily reboot
-    scheduled_task:
-      path: Preflight
-      name: Daily Reboot
-      ensure: absent
-```
-
-## Combine With Power Settings
-
-Keep power management and reboot scheduling as separate tasks:
+Reboot scheduling usually travels with a power baseline. Keep power
+management and reboot scheduling as separate tasks:
 
 ```yaml
 tasks:
@@ -77,3 +76,31 @@ tasks:
       enabled: true
       ensure: present
 ```
+
+## Remove The Reboot Task
+
+Use the same task identity (`path` and `name`) with `ensure: absent`:
+
+```yaml
+tasks:
+  - name: Remove daily reboot
+    scheduled_task:
+      path: Preflight
+      name: Daily Reboot
+      ensure: absent
+```
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---------|--------------|
+| The task exists but the machine never reboots | The task is disabled, or `start_at` is a time when the machine is powered off — check Task Scheduler under the `Preflight` folder on the target |
+| Re-applying creates a second task instead of updating the first | The task identity changed — `path` and `name` together identify the task, so keep both stable across runs |
+
+## Related Docs
+
+- [Built-in module reference](../reference/modules.md) — `scheduled_task`
+  fields
+- [Embedded stdlib action reference](../reference/stdlib-actions.md) —
+  `preflight/windows-power`
+- [Run a playbook](./run-a-playbook.md)
