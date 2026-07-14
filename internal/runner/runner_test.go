@@ -6,6 +6,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
+	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/bluecadet/preflight/internal/target"
@@ -1569,6 +1571,58 @@ func TestRunStageProbesTargetWithoutDeclaredPlatform(t *testing.T) {
 	err := r.Run(context.Background(), newShellPlaybook("probe-target"))
 	if err == nil || !strings.Contains(err.Error(), "stage: target info: target is offline") {
 		t.Fatalf("stage error = %v, want target info failure", err)
+	}
+}
+
+func TestStageRejectsPluginForForeignPlatform(t *testing.T) {
+	foreignOS := target.OSFamilyWindows
+	if runtime.GOOS == "windows" {
+		foreignOS = target.OSFamilyLinux
+	}
+	tests := map[string]struct {
+		target   target.Target
+		platform *target.Platform
+	}{
+		"declared": {
+			target:   &targettest.Fake{InfoErr: errors.New("must not probe")},
+			platform: &target.Platform{OS: foreignOS, Arch: runtime.GOARCH},
+		},
+		"probed": {
+			target: &targettest.Fake{InfoValue: target.TargetInfo{
+				OSFamily: foreignOS,
+				Arch:     runtime.GOARCH,
+			}},
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			r := New(tc.target, emptyResolver(), Config{
+				StagePlatform:   tc.platform,
+				BundleOutputDir: t.TempDir(),
+				ModuleRegistry: target.ModuleRegistry{
+					"custom": fakePluggable{path: "/missing/plugin"},
+				},
+				BundlePlugins: []plugins.LoadedPlugin{{
+					Name: "custom",
+					Path: "/missing/plugin",
+				}},
+			})
+			plan := &ExecutionPlan{
+				PlaybookName: "plugin-bundle",
+				Tasks: []*PlanTask{{
+					ID:     "task-0",
+					Name:   "custom task",
+					Module: "custom",
+					Scope:  template.NewScope(),
+				}},
+			}
+
+			err := r.Stage(context.Background(), plan)
+			if err == nil || !strings.Contains(err.Error(), "cross-platform plugin staging is not supported") {
+				t.Fatalf("stage error = %v, want cross-platform plugin rejection", err)
+			}
+		})
 	}
 }
 

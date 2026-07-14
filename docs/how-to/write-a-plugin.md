@@ -240,6 +240,13 @@ Common patterns:
 
 If you use `preflight stage`, the plugin must be discoverable on the staging machine. Preflight copies referenced plugin executables into the staged bundle automatically, but staging fails if the plugin cannot initialize or reports the wrong logical name.
 
+The discovered executable must also match the staged host's OS and
+architecture. During bundle apply, the destination host becomes the
+controller and starts that executable locally. Preflight rejects
+cross-platform plugin staging rather than copying a controller-native binary
+that cannot run on the destination. Stage plugin bundles from a matching
+platform; cross-platform staging currently supports built-in modules only.
+
 ## Troubleshooting
 
 ### `preflight plugin list` does not show the plugin

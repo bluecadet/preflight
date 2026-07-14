@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"time"
 
@@ -44,7 +45,7 @@ func (r *Runner) stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: marshal plan: %w", err)
 	}
 
-	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan)
+	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan, info)
 	if err != nil {
 		return err
 	}
@@ -269,7 +270,7 @@ func sanitizeStageSecretName(name string) string {
 	return sanitizeSlug(name, "secret")
 }
 
-func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
+func (r *Runner) stageModuleFiles(plan *ExecutionPlan, info target.TargetInfo) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
 	used := make(map[string]struct{})
 	for _, task := range plan.Tasks {
 		used[task.Module] = struct{}{}
@@ -288,8 +289,15 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan) ([]bundle.ModuleInfo, []b
 
 	modules := make([]bundle.ModuleInfo, 0, len(moduleNames))
 	files := make([]bundle.FileSpec, 0, len(moduleNames))
+	stagePlatform := target.Platform{OS: info.OSFamily, Arch: target.NormalizeArchitecture(info.Arch)}
 	for _, name := range moduleNames {
 		if plugin, ok := pluginIndex[name]; ok {
+			if stagePlatform.OS != target.OSFamily(runtime.GOOS) || stagePlatform.Arch != runtime.GOARCH {
+				return nil, nil, fmt.Errorf(
+					"stage: plugin %q targets %s/%s, but the discovered plugin is for %s/%s; cross-platform plugin staging is not supported",
+					name, stagePlatform.OS, stagePlatform.Arch, runtime.GOOS, runtime.GOARCH,
+				)
+			}
 			data, err := os.ReadFile(plugin.Path)
 			if err != nil {
 				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)

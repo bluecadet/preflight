@@ -461,16 +461,18 @@ func TestWinRMTarget_ReachableAndInfo(t *testing.T) {
 	}
 }
 
-func TestNormalizeWindowsArch(t *testing.T) {
+func TestNormalizeArchitecture(t *testing.T) {
 	cases := map[string]string{
-		"64-bit": "amd64",
-		"X64":    "amd64",
-		"Arm64":  "arm64",
-		"x86":    "386",
+		"64-bit":  "amd64",
+		"X64":     "amd64",
+		"x86_64":  "amd64",
+		"Arm64":   "arm64",
+		"aarch64": "arm64",
+		"x86":     "386",
 	}
 	for input, want := range cases {
-		if got := normalizeWindowsArch(input); got != want {
-			t.Fatalf("normalizeWindowsArch(%q) = %q, want %q", input, got, want)
+		if got := NormalizeArchitecture(input); got != want {
+			t.Fatalf("NormalizeArchitecture(%q) = %q, want %q", input, got, want)
 		}
 	}
 }

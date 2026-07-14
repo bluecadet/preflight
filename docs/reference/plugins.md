@@ -132,6 +132,11 @@ When a staged plan references a plugin module, the bundle includes:
 
 Staging fails if the plugin cannot be initialized, reports the wrong logical name, or cannot be copied.
 
+The plugin executable must match the staged host's OS and architecture because
+bundle apply runs it locally on that host. Preflight rejects cross-platform
+plugin staging; cross-platform bundles currently support built-in modules
+only.
+
 ## Related Commands
 
 | Command | Purpose |

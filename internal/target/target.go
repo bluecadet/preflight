@@ -1,6 +1,9 @@
 package target
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 // OutputFunc is a callback invoked with each line of output emitted by a module during execution.
 type OutputFunc func(line string)
@@ -119,6 +122,21 @@ const (
 type Platform struct {
 	OS   OSFamily `json:"os" yaml:"os"`
 	Arch string   `json:"arch" yaml:"arch"`
+}
+
+// NormalizeArchitecture converts common operating-system architecture names
+// to the Go architecture names used by platform declarations and bundles.
+func NormalizeArchitecture(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "x64", "x86_64", "amd64", "64-bit":
+		return "amd64"
+	case "arm64", "aarch64":
+		return "arm64"
+	case "x86", "386", "32-bit":
+		return "386"
+	default:
+		return strings.ToLower(strings.TrimSpace(raw))
+	}
 }
 
 // TargetInfo holds basic facts about a target machine.

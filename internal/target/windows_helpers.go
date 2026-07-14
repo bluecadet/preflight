@@ -98,24 +98,11 @@ func remoteWindowsTargetInfo(ctx context.Context, transport Transport, run windo
 		Hostname:    payload.Hostname,
 		OSVersion:   payload.Version,
 		OSBuild:     payload.Build,
-		Arch:        normalizeWindowsArch(payload.Arch),
+		Arch:        NormalizeArchitecture(payload.Arch),
 		OSFamily:    OSFamilyWindows,
 		RuntimeKind: RuntimeKindWindowsPowerShell,
 		Transport:   transport,
 	}, nil
-}
-
-func normalizeWindowsArch(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "x64", "amd64", "64-bit":
-		return "amd64"
-	case "arm64", "aarch64":
-		return "arm64"
-	case "x86", "386", "32-bit":
-		return "386"
-	default:
-		return strings.ToLower(strings.TrimSpace(raw))
-	}
 }
 
 func paramStringSlice(params map[string]any, key string) ([]string, error) {

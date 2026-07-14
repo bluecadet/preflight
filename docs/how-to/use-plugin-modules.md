@@ -81,6 +81,10 @@ preflight stage playbooks/lobby.yml
 
 Staging only succeeds if the plugin can be initialized, reports the expected logical name, and can be copied during the stage step.
 
+The staging controller and declared or discovered destination must have the
+same OS and architecture for plugin bundles. Cross-platform staging currently
+supports built-in modules only; stage a plugin bundle on a matching platform.
+
 ## Troubleshooting
 
 ### The task says the module is unknown
@@ -100,3 +104,7 @@ Rename the plugin. Built-in names are reserved.
 ### The plugin works locally but not in a staged bundle
 
 Make sure the staged plan actually references the plugin task and that you are applying the bundle generated for that target. Offline apply only sees the plugin files embedded in the bundle.
+
+Also compare the staging controller with the bundle destination. Preflight
+does not select a foreign plugin build: it rejects the bundle when their OS or
+architecture differs.
