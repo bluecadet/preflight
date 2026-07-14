@@ -1,6 +1,31 @@
 # Built-In Module Reference
 
-This page describes the built-in modules registered by [`internal/module/`](/Users/clay/repos/preflight/internal/module) and exposed through the runtime module registry.
+This page is the authoritative reference for the built-in modules: what
+each one does, which runtimes support it, its fields, and its known
+limitations. The per-module `Supported runtimes` lines below are asserted
+against the module catalog in code by a drift test, so this page cannot
+silently disagree with the binary.
+
+Modules on this page:
+[`registry`](#registry) ·
+[`service`](#service) ·
+[`file`](#file) ·
+[`directory`](#directory) ·
+[`package`](#package) ·
+[`system_package`](#system_package) ·
+[`winget_package`](#winget_package) ·
+[`remove_appx_packages`](#remove_appx_packages) ·
+[`shortcut`](#shortcut) ·
+[`scheduled_task`](#scheduled_task) ·
+[`user`](#user) ·
+[`power_plan`](#power_plan) ·
+[`windows_feature`](#windows_feature) ·
+[`environment`](#environment) ·
+[`firewall_rule`](#firewall_rule) ·
+[`powershell`](#powershell) ·
+[`shell`](#shell) ·
+[`reboot`](#reboot) ·
+[`wait`](#wait)
 
 ## Execution Contract
 
@@ -63,12 +88,103 @@ or as explicit modules:
 
 Notes:
 
-- \*`windows_feature` and `remove_appx_packages` are registered over WinRM but cannot complete their changes over a basic WinRM session (DISM symlink restriction; AppX all-users removal returns `0x80073D19`). See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations). Use the local target, a staged bundle, or Windows-over-SSH for these.
+- \*`windows_feature` and `remove_appx_packages` are registered over WinRM but cannot complete their changes over a basic WinRM session. See [WinRM session limitations](#winrm-session-limitations).
 - On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
 - SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
 - Windows-over-SSH shares the built-in Windows module surface with WinRM.
 - POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), `system_package` on targets with apt or dnf, and `service` over systemd (requires root).
 - Plugin modules run over every transport — local, SSH (POSIX and Windows), and WinRM — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See [Plugins](../explanation/targets-and-transports.md#why-plugin-modules-fit-cleanly).
+
+Unsupported module usage is caught before the task runs and returns a
+clear, typed error; there is no silent fallback. See the
+[error reference](./errors.md) for when each layer catches a violation and
+the reason codes involved.
+
+## WinRM Session Limitations
+
+The WinRM transport authenticates with NTLM/Negotiate and runs each
+operation under a non-interactive network logon. Some Windows operations
+require privileges or a user profile that this kind of session does not
+provide, so they cannot be performed over WinRM regardless of the module
+used:
+
+- **`windows_feature` (DISM online servicing)** — enabling or disabling an
+  optional feature fails with *"The symbolic link cannot be followed
+  because its type is disabled."* DISM follows symlinks in the component
+  store (WinSxS), and a network-logon token is not permitted to follow
+  them. Reading feature state works; changing it does not.
+- **`remove_appx_packages` with all-users scope** —
+  `Remove-AppxPackage -AllUsers` fails with HRESULT `0x80073D19` (*"An
+  error occurred because a user was logged off."*). All-users AppX removal
+  needs an interactive session context.
+- **Incremental output streaming** — over WinRM, the WS-Man channel
+  buffers a command's stdout and delivers it in a single batch when the
+  command completes. Output from the `powershell` module is still
+  delivered correctly and in order; it just does not arrive line-by-line
+  as it is produced.
+
+These are properties of the WinRM session, not defects in the modules, so
+Preflight cannot work around them in PowerShell. There is no CredSSP
+option in the WinRM transport (see
+[why CredSSP would not lift most of these](../explanation/targets-and-transports.md#would-credssp-help)).
+When you need these operations:
+
+- run them with the **local target** or a **staged bundle** executed on
+  the box, or
+- use an **interactive/elevated context** (for example a scheduled task),
+  or
+- for live streaming specifically, use **Windows-over-SSH**, where output
+  is delivered incrementally.
+
+## POSIX Capability Baseline And Tiers
+
+POSIX-over-SSH support is **capability-based, not a distro allowlist**. A
+host is supported when it provides the capabilities the modules rely on,
+not when its distro name appears on a list.
+
+Capability baseline (Linux, the official tier):
+
+- **Shell** — strict POSIX `sh`. Modules and stdlib actions never assume
+  Bash.
+- **Core utilities** — the standard POSIX toolset plus `base64` (already
+  assumed for file transfer). `sha256sum`/`shasum` are probed with a
+  read-and-hash-locally fallback, so neither is required.
+- **Init system** — systemd, for `service`, `wait`'s `service_running`,
+  and `reboot`'s `if_needed` probe. Hosts without systemd fail those tasks
+  with a typed `missing_prerequisite` error naming what was probed;
+  everything else still works.
+- **Package managers** — `apt` and `dnf` officially, for `system_package`.
+  Other managers are a stated limitation with the `shell` module as the
+  escape hatch.
+- **`sudo`** — required only when `become` is used (see
+  [How `become` works](../explanation/become.md)).
+
+Tiers:
+
+- **Official** — any Linux meeting the baseline. Static binaries mean
+  musl/Alpine works; Alpine's OpenRC and `apk` fall under the stated
+  limitations below.
+- **Best-effort** — macOS and other POSIX systems (BSDs, illumos). They
+  may work via the same capability baseline, but there are no version
+  claims, no CI, and no required builds. `family=darwin` with empty distro
+  facts is the expected shape, not a bug.
+
+## Consolidated POSIX Limitations
+
+These are documented, not coded around; the per-module notes below
+colocate each one with the module it limits.
+
+- `environment` is unsupported on POSIX-over-SSH — ambient env is
+  login-shell plumbing with no faithful analog; per-service env belongs in
+  unit files (`file` + `service`).
+- `user` sets a password on creation only; an existing user's password is
+  never reset, even when `password` is supplied and `Apply` runs for
+  another reason. Managed POSIX hosts authenticate by SSH key.
+- Non-`apt`/`dnf` package managers and non-systemd init are unsupported;
+  the `shell` module is the escape hatch.
+- The real `reboot` + reconnect path is unit-tested against fakes only and
+  is not exercised end-to-end in CI.
+- macOS/BSD is best-effort, as above.
 
 ## Module Fields
 
@@ -539,4 +655,5 @@ typed environment-prerequisite error (`missing_prerequisite`).
 ## Related Docs
 
 - [Playbook and action YAML reference](./yaml.md)
+- [Error reference](./errors.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

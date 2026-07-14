@@ -12,6 +12,7 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 | Run against inventory-backed hosts | [Run a playbook against remote hosts](./how-to/remote-execution.md) |
 | Validate a Windows host from a Mac before adding it to inventory | [Validate a WinRM connection from macOS](./how-to/validate-winrm-from-macos.md) |
 | Choose a deployment pattern for locked-down networks | [Deploy across restricted networks](./explanation/restricted-network-deployment.md) |
+| Reach a private-network target with no inbound access | [Set up a reverse-tunnel bastion](./how-to/set-up-a-tunnel-bastion.md), then [onboard a target through it](./how-to/onboard-a-target-through-a-bastion.md) |
 | Stage bundles for offline rollout | [Stage bundles for air-gapped deployment](./how-to/air-gapped-deployment.md) |
 | Manage encrypted repo-backed secrets | [Manage secrets](./how-to/manage-secrets.md) |
 | Write and distribute a custom plugin module | [Write a plugin](./how-to/write-a-plugin.md) |
@@ -46,6 +47,8 @@ Preflight is a Windows-first configuration management CLI for managed endpoints 
 - [Schedule a Windows reboot](./how-to/schedule-a-windows-reboot.md)
 - [Run the POSIX/SSH integration tests](./how-to/posix-integration-testing.md)
 - [Run the integration test suite (Windows/WinRM)](./how-to/winrm-integration-testing.md)
+- [Set up a reverse-tunnel bastion](./how-to/set-up-a-tunnel-bastion.md)
+- [Onboard a target through a reverse-tunnel bastion](./how-to/onboard-a-target-through-a-bastion.md)
 
 ## Reference
 
@@ -105,6 +108,6 @@ The codebase already supports:
 
 Important current limits:
 
-- POSIX-over-SSH support is capability-based, not a distro allowlist. Official tier: any Linux meeting the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`). Best-effort tier: macOS and other POSIX systems (no CI, no version claims). See [Targets, transports, and plugins](./explanation/targets-and-transports.md#posix-capability-baseline-and-tiers).
-- `environment` is unsupported on POSIX-over-SSH; `user` sets a password on creation only; non-`apt`/`dnf` package managers and non-systemd init are unsupported (the `shell` module is the escape hatch); the real `reboot`+reconnect path is unit-tested against fakes only. See [Consolidated POSIX limitations](./explanation/targets-and-transports.md#consolidated-posix-limitations).
+- POSIX-over-SSH support is capability-based, not a distro allowlist. Official tier: any Linux meeting the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`). Best-effort tier: macOS and other POSIX systems (no CI, no version claims). See [Targets, transports, and plugins](./reference/modules.md#posix-capability-baseline-and-tiers).
+- `environment` is unsupported on POSIX-over-SSH; `user` sets a password on creation only; non-`apt`/`dnf` package managers and non-systemd init are unsupported (the `shell` module is the escape hatch); the real `reboot`+reconnect path is unit-tested against fakes only. See [Consolidated POSIX limitations](./reference/modules.md#consolidated-posix-limitations).
 - Plugins run uniformly over local, SSH, and WinRM (controller-side execution). Plugin+`become` is refused in v1; plugin State plumbing is absent (params-only state transfer); one in-flight target op per plugin session. Protocol v1 is a clean break — pre-v1 plugins are rejected with a clear error.

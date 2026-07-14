@@ -199,7 +199,7 @@ That usually means the playbook is hitting a runtime-specific limit. SSH now aut
 - Plugin modules run over SSH the same way they run locally and over WinRM — the plugin process runs controller-side.
 - Using the `file` module with `ensure: absent` on a path that resolves to a directory returns an error. Use the `directory` module with `ensure: absent` instead.
 
-POSIX-over-SSH support is **capability-based, not a distro allowlist**: a host is supported when it provides the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`, `sudo` only when `become` is used). See [Targets, transports, and plugins](../explanation/targets-and-transports.md#posix-capability-baseline-and-tiers) for the full baseline and the official Linux / best-effort macOS-BSD tiers.
+POSIX-over-SSH support is **capability-based, not a distro allowlist**: a host is supported when it provides the baseline (strict POSIX `sh`, core utilities plus `base64`, systemd for service management, `apt`/`dnf` for `system_package`, `sudo` only when `become` is used). See [Targets, transports, and plugins](../reference/modules.md#posix-capability-baseline-and-tiers) for the full baseline and the official Linux / best-effort macOS-BSD tiers.
 
 On POSIX, a task that needs root fails **before `Check()`** with a typed reason code rather than a generic sudo error:
 
@@ -220,7 +220,7 @@ A few Windows operations cannot complete over a basic WinRM session because it r
 - `remove_appx_packages` with all-users scope fails with HRESULT `0x80073D19` (*"a user was logged off"*).
 - `powershell` output is delivered all at once at completion rather than streamed line-by-line.
 
-These are WinRM session limitations, not module bugs, and there is no CredSSP option in the transport. An interactive logon (for example CredSSP) would fix the DISM restriction but would **not** fix the AppX all-users restriction (which needs SYSTEM-level access to other user profiles) or the streaming limitation (WS-Man buffers output regardless of auth). Run these operations with the local target, a staged bundle executed on the box, or an interactive context (for example a scheduled task); live streaming works over Windows-over-SSH. See [WinRM Session Limitations](../explanation/targets-and-transports.md#winrm-session-limitations) for details.
+These are WinRM session limitations, not module bugs, and there is no CredSSP option in the transport. An interactive logon (for example CredSSP) would fix the DISM restriction but would **not** fix the AppX all-users restriction (which needs SYSTEM-level access to other user profiles) or the streaming limitation (WS-Man buffers output regardless of auth). Run these operations with the local target, a staged bundle executed on the box, or an interactive context (for example a scheduled task); live streaming works over Windows-over-SSH. See [WinRM session limitations](../reference/modules.md#winrm-session-limitations) for details.
 
 ### I expected one shared state file
 

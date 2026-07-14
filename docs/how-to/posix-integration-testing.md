@@ -26,7 +26,7 @@ runs against two privileged systemd-enabled Docker containers:
 These are CI images, not the support matrix. POSIX support is
 capability-based (strict POSIX `sh`, core utilities plus `base64`, systemd,
 `apt`/`dnf`); see
-[Targets, transports, and plugins](../explanation/targets-and-transports.md#posix-capability-baseline-and-tiers).
+[the built-in module reference](../reference/modules.md#posix-capability-baseline-and-tiers).
 
 ## Prerequisites
 

@@ -114,4 +114,5 @@ Setting `enabled: false` on a task disables the inherited `become` for that task
 
 - [Run tasks as another user](../how-to/run-tasks-as-another-user.md) — step-by-step how-to
 - [Playbook and action YAML reference](../reference/yaml.md) — `become` field reference
+- [Error reference](../reference/errors.md) — the `sudo-*` and `requires-root-violation` reason codes
 - [Manage secrets](../how-to/manage-secrets.md)

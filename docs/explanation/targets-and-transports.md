@@ -49,21 +49,11 @@ This is the right transport for:
 - Windows feature management
 - PowerShell-heavy configuration
 
-### WinRM Session Limitations
+### The Network-Logon Ceiling
 
-The WinRM transport authenticates with NTLM/Negotiate and runs each operation under a non-interactive network logon. Some Windows operations require privileges or a user profile that this kind of session does not provide, so they cannot be performed over WinRM today regardless of the module used:
+The WinRM transport authenticates with NTLM/Negotiate and runs each operation under a non-interactive network logon. That session class is a structural ceiling: some Windows operations require privileges or a user profile that a network logon cannot provide, so no amount of PowerShell inside the session can perform them. The authoritative list of affected modules and the workarounds lives in the [built-in module reference](../reference/modules.md#winrm-session-limitations).
 
-- **`windows_feature` (DISM online servicing)** — enabling or disabling an optional feature fails with *"The symbolic link cannot be followed because its type is disabled."* DISM follows symlinks in the component store (WinSxS), and a network-logon token is not permitted to follow them. Reading feature state works; changing it does not.
-- **`remove_appx_packages` with all-users scope** — `Remove-AppxPackage -AllUsers` fails with HRESULT `0x80073D19` (*"An error occurred because a user was logged off."*). All-users AppX removal needs an interactive session context.
-- **Incremental output streaming** — over WinRM, the WS-Man channel buffers a command's stdout and delivers it in a single batch when the command completes. Output from the `powershell` module is still delivered correctly and in order; it just does not arrive line-by-line as it is produced.
-
-These are properties of the WinRM session, not defects in the modules, so preflight cannot work around them in PowerShell. There is no CredSSP option in the WinRM transport. When you need these operations:
-
-- run them with the **local target** or a **staged bundle** executed on the box, or
-- use an **interactive/elevated context** (for example a scheduled task), or
-- for live streaming specifically, use **Windows-over-SSH**, where output is delivered incrementally.
-
-#### Would CredSSP Help?
+### Would CredSSP Help?
 
 CredSSP authentication (which preflight does not currently support) creates an interactive logon session on the target rather than a network logon. The following analysis explains whether adding CredSSP to the transport would lift each limitation:
 
@@ -90,55 +80,9 @@ SSH is now the default and primary remote transport, including for Windows hosts
 
 SSH is also the safer default to set up: it's encrypted out of the box, while the easy WinRM setup path (`winrm quickconfig`, HTTP with Basic auth) is not — credentials and command output travel unencrypted unless you configure a WinRM HTTPS listener yourself. See [Enable remote access on a Windows target](../how-to/enable-remote-access.md).
 
-### POSIX Capability Baseline And Tiers
+### Capability-Based POSIX Support
 
-POSIX-over-SSH support is **capability-based, not a distro allowlist**. A host is supported when it provides the capabilities the modules rely on, not when its distro name appears on a list. The docs may carry an informal "tested on" note, but that is not a contract.
-
-Capability baseline (Linux, the official tier):
-
-- **Shell** — strict POSIX `sh`. Modules and stdlib actions never assume Bash.
-- **Core utilities** — the standard POSIX toolset plus `base64` (already assumed for file transfer). `sha256sum`/`shasum` are probed with a read-and-hash-locally fallback, so neither is required.
-- **Init system** — systemd, for `service`, `wait`'s `service_running`, and `reboot`'s `if_needed` probe. Hosts without systemd fail those tasks with a typed `missing_prerequisite` error naming what was probed; everything else still works.
-- **Package managers** — `apt` and `dnf` officially, for `system_package`. Other managers are a stated limitation with the `shell` module as the escape hatch.
-- **`sudo`** — required only when `become` is used (see [How `become` works](./become.md)).
-
-Tiers:
-
-- **Official** — any Linux meeting the baseline. Static binaries mean musl/Alpine works; Alpine's OpenRC and `apk` fall under the stated limitations below.
-- **Best-effort** — macOS and other POSIX systems (BSDs, illumos). They may work via the same capability baseline, but there are no version claims, no CI, and no required builds. `family=darwin` with empty distro facts is the expected shape, not a bug.
-
-### Consolidated POSIX Limitations
-
-These are documented, not coded around; the per-module notes in the [built-in module reference](../reference/modules.md) colocate each one with the module it limits.
-
-- `environment` is unsupported on POSIX-over-SSH — ambient env is login-shell plumbing with no faithful analog; per-service env belongs in unit files (`file` + `service`).
-- `user` sets a password on creation only; an existing user's password is never reset, even when `password` is supplied and `Apply` runs for another reason. Managed POSIX endpoints authenticate by SSH key.
-- Non-`apt`/`dnf` package managers and non-systemd init are unsupported; the `shell` module is the escape hatch.
-- The real `reboot` + reconnect path is unit-tested against fakes only and is not exercised end-to-end in CI.
-- macOS/BSD is best-effort, as above.
-
-### SSH Module Support Matrix
-
-| Module | POSIX shell | Windows PowerShell SSH |
-|---|---|---|
-| `directory` | yes | yes |
-| `file` | yes | yes |
-| `shell` | yes | yes |
-| `wait` (`file_exists`, `port_open`) | yes | yes |
-| `wait` (`service_running`) | yes (systemd) | yes |
-| `powershell` | yes (requires `pwsh` or `powershell` installed) | yes |
-| `environment` | no | yes |
-| `registry` | no | yes |
-| `service` | yes (systemd; **requires root**) | yes |
-| `reboot` | yes (systemd; **requires root**) | yes |
-| `user` | yes (**requires root**) | yes |
-| `system_package` | yes (apt or dnf; **requires root**) | no |
-| `package` | no | yes |
-| `winget_package` | no | yes |
-| `windows_feature` | no | yes |
-| plugin modules | yes | yes |
-
-Unsupported module usage is caught before the task runs and returns a clear, typed error. There is no silent fallback. See [Validation UX](#validation-ux-how-module-by-runtime-gaps-are-surfaced) for what plan-time catches versus the apply-start gate; the authoritative per-module `Supported runtimes` lines and `requires_root` markers live in the [built-in module reference](../reference/modules.md).
+POSIX-over-SSH support is **capability-based, not a distro allowlist**. A host is supported when it provides the capabilities the modules rely on — POSIX `sh`, systemd where services matter, `apt`/`dnf` where packages matter — not when its distro name appears on a list. The docs may carry an informal "tested on" note, but that is not a contract. The concrete baseline, the official/best-effort tier split, and the consolidated list of POSIX limitations live in the [built-in module reference](../reference/modules.md#posix-capability-baseline-and-tiers).
 
 ### SSH Authentication
 
@@ -223,39 +167,11 @@ inventory:
 
 Once connected, the SSH target sends an OpenSSH keepalive request every 30s (fixed, not configurable) to keep the connection alive across NAT/firewall idle timeouts during long-running playbooks. If a connection drops mid-run — the keepalive fails twice in a row, or any command hits a connection-level error such as a closed socket or `EOF` — Preflight transparently reconnects once and retries the failed command before giving up. Command-level failures (a non-zero exit code, a script error) and a cancelled/expired context are never retried.
 
-## Validation UX: How Module-By-Runtime Gaps Are Surfaced
+## Why Unsupported Modules Fail Loudly
 
-A module that is not supported on a target's runtime is never silently skipped. Gaps surface in three layers, and nothing executes if the plan can't complete.
+A module that is not supported on a target's runtime is never silently skipped. Gaps surface in three layers — plan-time name checks, an apply-start gate that refuses the whole run with every violation listed, and typed per-task errors for environment prerequisites the matrix cannot know. Nothing executes if the plan can't complete, and a cross-platform `when`-guarded playbook passes by construction because the gate evaluates `when` after facts are fixed.
 
-1. **Plan-time (offline).** Unknown module names — whether a catalog built-in or a discovered plugin — fail for all targets. Runtime-support violations also fail where the transport implies a runtime offline: WinRM is always `windows-powershell`, and the local target is `GOOS`-derived. SSH's runtime is only known after probing the remote host, so plan-time can only name-check SSH tasks. Plan violations exit non-zero like any plan error.
-2. **Apply-start gate.** After `Info()` resolves the runtime kind and facts are gathered — and before task 1 — every task that will actually run is validated against the support matrix. When any runnable task is unsupported, the whole run is refused with **all** violations listed, not just the first. The gate is `when`-aware (facts and vars are fixed by then, so `when: false` tasks are excluded) and `ignore_errors`-exempt (those tasks keep fail-and-continue at execution time). A cross-platform `when`-guarded playbook passes by construction. Gate refusal is its own run-log event, not synthetic task failures.
-3. **Per-task apply-time errors.** These remain only for environment prerequisites the matrix cannot know — no systemd, no `apt`/`dnf`, no `pwsh` binary, not root. They are probed inside module execution and surface as a typed `missing_prerequisite` (or privilege) error.
-
-### Reason codes
-
-Every transport surfaces the same typed error classes, so wording and run-log reason codes stay uniform across local, SSH, and WinRM. The JSON run-log carries a `reason` field on task-failed and gate-refusal events.
-
-| Reason code | Meaning |
-| --- | --- |
-| `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
-| `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
-| `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent (no systemd, no `apt`/`dnf`, no `pwsh`); the detail names what was probed |
-| `requires-root-violation` | a `requires_root` module (`service`, `user`, `system_package`, `reboot`) ran as a non-root effective user |
-| `sudo-missing` | `become` is enabled on POSIX but the target has no `sudo` binary |
-| `sudo-password-required` | a no-password `sudo -n` run needed a password; supply `become.password` or configure `NOPASSWD` |
-| `sudo-auth-failed` | `sudo` rejected the supplied password |
-| `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
-| `plugin_protocol` | a plugin failed the protocol handshake (version mismatch / pre-v1 plugin rejected) |
-
-Wording is complete facts, not a suggestion engine: every message names the module, the target's runtime, and (for `unsupported_on_runtime`) the supporting runtimes. No did-you-mean, no remediation prose. Example shapes:
-
-```
-task "install tools": module "system_package" is not supported on windows-powershell (supported: posix-shell)
-gate: 2 task(s) cannot run on this target (posix-shell)
-  task "install tools": module "system_package" is not supported on posix-shell (supported: posix-shell)
-```
-
-The matrix source of truth is [`internal/target/catalog.go`](../../internal/target/catalog.go)'s capability flags, and a unit drift test asserts the [built-in module reference](../reference/modules.md) matrix matches the catalog — so the docs cannot silently drift from the code.
+The design bet is that complete facts beat suggestions: every message names the module, the target's runtime, and the supporting runtimes, with no did-you-mean heuristics. The layer-by-layer behavior and the full reason-code table live in the [error reference](../reference/errors.md).
 
 ## Persistent PowerShell Sessions
 
