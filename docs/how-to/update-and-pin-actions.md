@@ -34,7 +34,7 @@ tasks:
 
 The ref before `@` is `host/org/repo[/path/to/action]`; the part after
 `@` is a tag, branch, or commit SHA. See
-[Actions, stdlib, and lockfiles](../explanation/actions-and-lockfiles.md#how-remote-refs-work)
+[Why remote refs are pinned](../explanation/execution-model.md#why-remote-refs-are-pinned)
 for why this shape exists and how it fits alongside stdlib and local
 actions.
 
@@ -164,7 +164,8 @@ a committed lockfile, two controllers fetching a floating ref like
 
 ## Related Docs
 
-- [Actions, stdlib, and lockfiles](../explanation/actions-and-lockfiles.md)
+- [Execution model](../explanation/execution-model.md) — why the lockfile
+  and resolver order work the way they do
 - [Write an action](./write-an-action.md)
 - [Stage bundles for air-gapped deployment](./air-gapped-deployment.md)
 - [Playbook and action YAML reference](../reference/playbooks.md)

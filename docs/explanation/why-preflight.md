@@ -111,4 +111,4 @@ Consider alternatives first when most of these are true:
 - [Architecture](./architecture.md)
 - [Execution model](./execution-model.md)
 - [Targets, transports, and plugins](./targets-and-transports.md)
-- [Actions, stdlib, and lockfiles](./actions-and-lockfiles.md)
+- [Execution model](./execution-model.md)

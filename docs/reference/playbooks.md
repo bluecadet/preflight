@@ -280,4 +280,5 @@ name: myorg/my-action
 
 - [Project config reference](./config.md)
 - [Inventory reference](./inventory.md)
-- [Actions, stdlib, and lockfiles](../explanation/actions-and-lockfiles.md)
+- [Execution model](../explanation/execution-model.md) — action resolution
+  order and lockfile behavior

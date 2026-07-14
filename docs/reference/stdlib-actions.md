@@ -180,4 +180,5 @@ When `user` is set, user-scoped registry settings are written through the target
 
 - [Built-in module reference](./modules.md)
 - [Playbook and action YAML reference](./playbooks.md)
-- [Actions, stdlib, and lockfiles](../explanation/actions-and-lockfiles.md)
+- [Execution model](../explanation/execution-model.md) — why the stdlib is
+  embedded and how action resolution works

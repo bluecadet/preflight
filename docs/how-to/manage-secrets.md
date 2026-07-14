@@ -23,6 +23,11 @@ To print the public recipient for an existing identity file later:
 preflight secret identity recipient .age/keys.txt
 ```
 
+> [!WARNING]
+> The identity file is the secret. Treat it like a private key, keep
+> it out of Git, and distribute it only to people or systems that
+> should be able to decrypt project secrets.
+
 ## 1. Configure Secrets In `preflight.yml`
 
 Example:
