@@ -1,6 +1,6 @@
 # Project Config Reference
 
-This page describes `preflight.yml`, the project-level configuration file parsed by [`internal/config/`](/Users/clay/repos/preflight/internal/config).
+This page describes `preflight.yml`, the project-level configuration file parsed by [`internal/config/`](https://github.com/bluecadet/preflight/tree/main/internal/config).
 
 ## Purpose
 

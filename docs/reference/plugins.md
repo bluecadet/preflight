@@ -91,7 +91,7 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 
 `initialize` delivers the enriched `TargetInfo` to the plugin: `{family, name, version, arch, hostname, package_manager, init, runtime_kind}`. Absent signals are empty strings, never missing keys. `runtime_kind` (`posix-shell` or `windows-powershell`) tells the plugin which shell `run_command` speaks; the plugin should not re-probe what the controller already cached.
 
-The bundled Go SDK lives in [`pkg/plugin/sdk/`](/Users/clay/repos/preflight/pkg/plugin/sdk).
+The bundled Go SDK lives in [`pkg/plugin/sdk/`](https://github.com/bluecadet/preflight/tree/main/pkg/plugin/sdk).
 
 ## Go SDK Contract
 

@@ -4,7 +4,7 @@ param(
 )
 
 # Preflight installer for Windows
-# Usage: irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
+# Usage: irm https://preflight.bluecadet.com/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 

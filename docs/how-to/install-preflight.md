@@ -20,7 +20,7 @@ Use this guide to install the `preflight` CLI. For most users, the best path is 
 Run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
+curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 ```
 
 By default this installs to `/usr/local/bin/preflight`.
@@ -30,7 +30,7 @@ To install somewhere else:
 
 ```bash
 PREFLIGHT_INSTALL_DIR="$HOME/.local/bin" \
-  curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
+  curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 ```
 
 ### Windows PowerShell
@@ -38,7 +38,7 @@ PREFLIGHT_INSTALL_DIR="$HOME/.local/bin" \
 Run:
 
 ```powershell
-irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
+irm https://preflight.bluecadet.com/install.ps1 | iex
 ```
 
 By default this installs to `%LOCALAPPDATA%\preflight\preflight.exe` and adds that directory to your user `PATH`.
@@ -78,11 +78,11 @@ Re-run the install script to replace the installed binary with the latest
 release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
+curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 ```
 
 ```powershell
-irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
+irm https://preflight.bluecadet.com/install.ps1 | iex
 ```
 
 Set `PREFLIGHT_VERSION` (or `$env:PREFLIGHT_VERSION`) first to move to a

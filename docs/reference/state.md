@@ -1,6 +1,6 @@
 # State Reference
 
-This page describes the persisted runner state written by [`internal/runner/state.go`](/Users/clay/repos/preflight/internal/runner/state.go).
+This page describes the persisted runner state written by [`internal/runner/state.go`](https://github.com/bluecadet/preflight/blob/main/internal/runner/state.go).
 
 ## Default Locations
 

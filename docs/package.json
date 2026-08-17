@@ -1,0 +1,13 @@
+{
+  "name": "preflight-docs",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Docs site for Preflight, built with @bluecadet/docs.",
+  "scripts": {
+    "dev": "docs dev --config docs.config.yaml",
+    "build": "docs build --config docs.config.yaml"
+  },
+  "devDependencies": {
+    "@bluecadet/docs": "^1.0.0"
+  }
+}

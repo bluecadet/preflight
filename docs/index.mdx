@@ -1,0 +1,117 @@
+---
+title: Windows configuration management, one binary
+description: "For kiosks, signage, and exhibit PCs: no runtime dependencies."
+---
+
+import {
+  StatStrip, Stat,
+  TerminalBand,
+  Features, Feature,
+  GlyphList, GlyphItem,
+  CtaCards, CtaCard,
+  ClosingCta,
+  Hero, HeroEyebrows, HeroEyebrow, HeroActions, HeroInstall, HeroNotes, HeroNote,
+  OtherTools, OtherToolItem,
+  Button,
+} from "@bluecadet/docs/components";
+
+<Hero
+  lead="For kiosks, signage, and exhibit PCs: no runtime dependencies."
+>
+  <Fragment slot="title">Windows configuration management, <em>one binary</em>.</Fragment>
+  <HeroEyebrows>
+    <HeroEyebrow tone="state">windows-first</HeroEyebrow>
+    <HeroEyebrow>single binary</HeroEyebrow>
+    <HeroEyebrow>winrm or ssh</HeroEyebrow>
+  </HeroEyebrows>
+  <HeroActions>
+    <Button href="/how-to/install/" variant="primary">Install</Button>
+    <Button href="/tutorials/quickstart/" variant="secondary">Quickstart</Button>
+  </HeroActions>
+  <HeroNotes>
+    <HeroNote>No control plane. WinRM or SSH is the whole transport.</HeroNote>
+  </HeroNotes>
+</Hero>
+
+<StatStrip>
+  <Stat value="4" label="phases: fetch, plan, stage, apply" />
+  <Stat value="1" label="static binary, no runtime deps" />
+  <Stat value="6" label="posix-over-ssh modules" />
+  <Stat value="0" label="modules that skip Check() before Apply()" />
+</StatStrip>
+
+<Features>
+  <Feature title="Check() before Apply()">
+    Every built-in and plugin module answers `Check()` before `Apply()` ever runs. Dry-run and real
+    execution share one code path, not two.
+  </Feature>
+  <Feature title="Offline-capable staging">
+    `stage` writes a per-target bundle: plan, manifest, plugins, secrets. `apply --bundle` converges
+    a target with no network at all.
+  </Feature>
+  <Feature title="Explicit phases">
+    Fetch pins actions. Plan builds a DAG without touching targets. Stage writes the bundle. Apply is
+    the only phase that mutates anything.
+  </Feature>
+</Features>
+
+<GlyphList intro="What Preflight handles out of the box.">
+  <Fragment slot="title">
+    Preflight's <em>Key Features</em>
+  </Fragment>
+  <GlyphItem glyph="✓" lead="Run the same path everywhere.">
+    Local, remote, or staged-and-offline: `apply` converges the same playbook the same way.
+  </GlyphItem>
+  <GlyphItem glyph="✓" lead="Select targets by host, group, or tag.">
+    Inventory variables cascade from inventory to group to host, and CLI commands fan out across a
+    selector instead of one target at a time.
+  </GlyphItem>
+  <GlyphItem glyph="✓" lead="Facts and templating built in.">
+    `{{ facts.os.arch }}`, `{{ target.name }}`, and friends resolve at plan time, so one playbook
+    reads the same across every target.
+  </GlyphItem>
+  <GlyphItem glyph="✓" lead="Repo-backed, `age`-encrypted secrets.">
+    Secret values travel with the project's config and decrypt only at apply time. No plaintext,
+    no central vault.
+  </GlyphItem>
+  <GlyphItem glyph="✓" lead="Identity-aware execution.">
+    `become` runs a task under a different user account when the outcome depends on whose
+    registry keys or files get touched.
+  </GlyphItem>
+  <GlyphItem glyph="✓" lead="A stdlib that ships with the binary.">
+    Embedded actions like `windows-machine` and `autologin` are versioned with the release and
+    resolved before any project-local action.
+  </GlyphItem>
+</GlyphList>
+
+<CtaCards>
+  <CtaCard label="tutorial" title="Run your first playbook" href="tutorials/quickstart/">
+    Validate, plan, dry-run, and apply a minimal project in one sitting.
+  </CtaCard>
+  <CtaCard label="how-to" title="Deploy across an air gap" href="how-to/air-gapped-deployment/">
+    Stage a bundle, move it by hand, apply it with no network involved.
+  </CtaCard>
+  <CtaCard label="reference" title="CLI reference" href="reference/cli/">
+    Every command and flag, and which phase each one touches.
+  </CtaCard>
+  <CtaCard label="explanation" title="Why use Preflight (and when not to)" href="explanation/why-preflight/">
+    Where it fits, and where Ansible, DSC, or Intune fit better.
+  </CtaCard>
+</CtaCards>
+
+<OtherTools title="More tools from Bluecadet" subtitle="Other open source tools built for exhibit and installation work.">
+  <OtherToolItem
+    title="Launchpad"
+    subtitle="Content & App Orchestration"
+    url="https://launchpad.bluecadet.com"
+    description="Toolkit for exhibit and installation work: content syncing from your CMS, app launching and restart-on-crash, and logs forwarded somewhere you'll actually see them."
+  />
+  <OtherToolItem
+    title="Unity Packages"
+    subtitle="Installation Utilities"
+    url="https://unity.bluecadet.com"
+    description="Open source Unity packages for interactive installations: GPU-compressed HAP video, physics-based UI animation, multi-touch input, a client for Launchpad's staged content sync, and more."
+  />
+</OtherTools>
+
+<ClosingCta />

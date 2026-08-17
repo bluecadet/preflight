@@ -1,6 +1,6 @@
 # Playbook And Action YAML Reference
 
-This page describes the YAML shapes used for playbooks, actions, and tasks. The schemas live in [`schema/`](/Users/clay/repos/preflight/schema), and the runtime loaders live in [`internal/action/`](/Users/clay/repos/preflight/internal/action).
+This page describes the YAML shapes used for playbooks, actions, and tasks. The schemas live in [`schema/`](https://github.com/bluecadet/preflight/tree/main/schema), and the runtime loaders live in [`internal/action/`](https://github.com/bluecadet/preflight/tree/main/internal/action).
 
 ## `playbook.yml`
 

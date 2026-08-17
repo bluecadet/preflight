@@ -1,7 +1,7 @@
 # Preflight
 
 <p align="center">
-  <img src="docs/assets/header.gif" alt="preflight apply across a mixed-transport fleet" width="640" />
+  <img src="assets/header.gif" alt="preflight apply across a mixed-transport fleet" width="640" />
 </p>
 
 Preflight is a Windows-first configuration management CLI for managed endpoints such as kiosks, signage, exhibit PCs, and other dedicated systems. It compiles to a single static binary and is designed around idempotent modules, reusable YAML actions, and explicit execution phases.
@@ -65,13 +65,13 @@ tasks:
 ### macOS And Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
+curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 ```
 
 ### Windows PowerShell
 
 ```powershell
-irm https://raw.githubusercontent.com/bluecadet/preflight/main/install.ps1 | iex
+irm https://preflight.bluecadet.com/install.ps1 | iex
 ```
 
 For manual verification and source builds, see [Install Preflight](docs/how-to/install-preflight.md).
@@ -110,7 +110,6 @@ preflight apply --bundle dist/bundles/<bundle>.zip
 
 The full docs live under [`docs/`](docs/):
 
-- [Docs index](docs/index.md)
 - [Quickstart](docs/tutorials/quickstart.md)
 - [Run a playbook](docs/how-to/run-a-playbook.md)
 - [Run against remote hosts](docs/how-to/remote-execution.md)

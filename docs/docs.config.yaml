@@ -1,0 +1,115 @@
+title: Preflight
+repoUrl: https://github.com/bluecadet/preflight
+glyph: "✓"
+accent: "#8fb4d6"
+accent2: "#d98a6e"
+
+site: https://preflight.bluecadet.com
+
+landing: index.mdx
+
+content:
+  - files:
+      - "tutorials/**/*.md"
+      - "how-to/**/*.md"
+      - "reference/**/*.md"
+      - "explanation/**/*.md"
+      - "development/**/*.md"
+  - base: ".."
+    assets:
+      - "install.sh"
+      - "install.ps1"
+
+header:
+  links:
+    - label: github
+      href: https://github.com/bluecadet/preflight
+    - label: bluecadet
+      href: https://bluecadet.com
+
+footer:
+  groups:
+    - title: docs
+      links:
+        - label: quickstart
+          href: /tutorials/quickstart/
+        - label: install
+          href: /how-to/install-preflight/
+        - label: run a playbook
+          href: /how-to/run-a-playbook/
+    - title: Project
+      links:
+        - label: github
+          href: https://github.com/bluecadet/preflight
+        - label: changelog
+          href: https://github.com/bluecadet/preflight/blob/main/CHANGELOG.md
+        - label: license
+          href: https://github.com/bluecadet/preflight/blob/main/LICENSE
+        - label: contributing guide
+          href: https://github.com/bluecadet/preflight/blob/main/CONTRIBUTING.md
+    - title: Bluecadet
+      links:
+        - label: bluecadet.com
+          href: https://bluecadet.com
+          note: bluecadet.com
+        - label: launchpad
+          href: https://launchpad.bluecadet.com
+          note: launchpad.bluecadet.com
+        - label: unity packages
+          href: https://unity.bluecadet.com
+          note: unity.bluecadet.com
+  meta: ISC licensed
+
+sidebar:
+  - label: Tutorials
+    items:
+      - tutorials/quickstart
+  - label: How-to
+    items:
+      - how-to/install-preflight
+      - how-to/run-a-playbook
+      - how-to/remote-execution
+      - how-to/troubleshoot-remote-connections
+      - how-to/enable-remote-access
+      - how-to/onboard-a-target-through-a-bastion
+      - how-to/set-up-a-tunnel-bastion
+      - how-to/manage-secrets
+      - how-to/run-tasks-as-another-user
+      - how-to/sync-a-git-repo
+      - how-to/configure-git-credentials
+      - how-to/schedule-a-windows-reboot
+      - how-to/inspect-state-and-diff
+      - how-to/update-and-pin-actions
+      - how-to/air-gapped-deployment
+      - how-to/use-plugin-modules
+      - how-to/write-an-action
+      - how-to/write-a-plugin
+  - label: Reference
+    items:
+      - reference/cli
+      - reference/config
+      - reference/inventory
+      - reference/playbooks
+      - reference/modules
+      - reference/stdlib-actions
+      - reference/templating
+      - reference/plugins
+      - reference/bundles
+      - reference/state
+      - reference/errors
+  - label: Explanation
+    items:
+      - explanation/why-preflight
+      - explanation/architecture
+      - explanation/execution-model
+      - explanation/targets-and-transports
+      - explanation/become
+      - explanation/secrets-and-age
+      - explanation/restricted-network-deployment
+  - label: Development
+    items:
+      - development/winrm-integration-testing
+      - development/posix-integration-testing
+
+toc:
+  editLink: "https://github.com/bluecadet/preflight/edit/main/docs/{path}"

@@ -1,6 +1,6 @@
 # Templating And Facts Reference
 
-This page describes the template engine in [`internal/template/`](/Users/clay/repos/preflight/internal/template) and the facts model in [`internal/facts/`](/Users/clay/repos/preflight/internal/facts).
+This page describes the template engine in [`internal/template/`](https://github.com/bluecadet/preflight/tree/main/internal/template) and the facts model in [`internal/facts/`](https://github.com/bluecadet/preflight/tree/main/internal/facts).
 
 ## Template Syntax
 

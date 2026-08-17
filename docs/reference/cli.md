@@ -1,6 +1,6 @@
 # CLI Reference
 
-This page describes the command surface implemented under [`cmd/`](/Users/clay/repos/preflight/cmd).
+This page describes the command surface implemented under [`cmd/`](https://github.com/bluecadet/preflight/tree/main/cmd).
 
 ## Common Flags
 

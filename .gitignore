@@ -1,5 +1,10 @@
 dist/
+node_modules/
 state/
+# Points at a local file: dependency (../../docs) pending @bluecadet/docs
+# publication; not reproducible in CI or on other clones. Drop this once
+# the dependency resolves from a registry.
+docs/package-lock.json
 *.exe
 /sim
 !internal/target/

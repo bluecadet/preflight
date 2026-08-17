@@ -1,6 +1,6 @@
 # Bundle Reference
 
-This page describes the staged offline bundle format implemented by [`internal/bundle/`](/Users/clay/repos/preflight/internal/bundle).
+This page describes the staged offline bundle format implemented by [`internal/bundle/`](https://github.com/bluecadet/preflight/tree/main/internal/bundle).
 
 ## Purpose
 

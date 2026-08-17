@@ -1,6 +1,6 @@
 #!/bin/sh
 # Preflight installer for macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/bluecadet/preflight/main/install.sh | sh
+# Usage: curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 
 set -eu
 

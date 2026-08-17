@@ -248,6 +248,8 @@ Every merge to `main` that contains a `feat:`, `fix:`, or other release-relevant
 
 The checksum artifact name is `preflight_checksums.txt`. Installer and smoke-test changes should be verified against that filename and against the release workflow's Linux and Windows install checks.
 
+`install.sh` and `install.ps1` are served from `preflight.bluecadet.com` as a snapshot published by the docs site build, not read live from this repo. A change to either script only reaches that URL after the docs site rebuilds and republishes.
+
 Commit type determines the version bump (`fix:` → patch, `feat:` → minor, `!`/`BREAKING CHANGE:` → major); non-conventional commits are excluded from the changelog. Version state lives in `.release-please-manifest.json`.
 
 For significant changes (new modules, schema changes, changes to the action resolution chain), open an issue first to discuss the approach. Breaking changes to `action.yml` or `playbook.yml` schemas are treated with extra care — the schema is the public API.

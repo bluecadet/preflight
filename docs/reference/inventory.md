@@ -1,6 +1,6 @@
 # Inventory Reference
 
-This page describes the `inventory:` block inside `preflight.yml`, parsed by [`internal/inventory/`](/Users/clay/repos/preflight/internal/inventory).
+This page describes the `inventory:` block inside `preflight.yml`, parsed by [`internal/inventory/`](https://github.com/bluecadet/preflight/tree/main/internal/inventory).
 
 ## Purpose
 
