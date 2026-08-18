@@ -150,10 +150,11 @@ type SemanticPalette struct {
 	HostColors []ColorRole
 }
 
-// DefaultPalette returns the standard semantic palette. Every role uses
-// distinct light and dark values so the palette is adaptive for both light
-// and dark terminal backgrounds. Roles are strippable entirely when color
-// is disabled.
+// DefaultPalette returns the standard semantic palette. Status roles carry
+// distinct light and dark values so they adapt to the terminal background;
+// neutral roles resolve to a single base-16 index or the terminal default
+// foreground, which the theme already picks to suit its own background.
+// Roles are strippable entirely when color is disabled.
 func DefaultPalette() SemanticPalette {
 	// grey is the base-16 "mid-grey" slot (bright black) used for all
 	// "dim chrome" roles: decorative or peripheral text that should read as
