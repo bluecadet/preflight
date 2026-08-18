@@ -82,13 +82,12 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		err = errors.Join(err, r.closeTarget())
 	}()
 
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-
 	targetName := r.targetName()
 
 	if r.config.Phase == "plan" {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		slog.Debug("starting phase", "phase", "plan")
 		_, err := r.Plan(ctx, playbook)
 		if err != nil {
@@ -97,11 +96,23 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 		return err
 	}
 
+	// Past this point, Run is committed to the tallied pipeline: every
+	// return path must leave exactly one TargetStartEvent paired with
+	// exactly one TargetCompleteEvent, since TargetTallies (and the
+	// TUI/text renderer's live target roster) is folded purely from that
+	// pair. The normal pair is emitted just before apply, further down. A
+	// failure before that point (cancellation, Fetch, or Plan) would
+	// otherwise return with no target event at all, silently dropping the
+	// host from run.json's tallies — so planFailed emits the pair itself.
+	if err := ctx.Err(); err != nil {
+		return r.planFailed(targetName, err)
+	}
+
 	if !r.config.SkipFetch {
 		slog.Debug("starting phase", "phase", "fetch")
 		if err := r.Fetch(ctx, playbook); err != nil {
 			slog.Error("fetch phase failed", "error", err)
-			return err
+			return r.planFailed(targetName, err)
 		}
 	}
 
@@ -109,7 +120,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	plan, err := r.Plan(ctx, playbook)
 	if err != nil {
 		slog.Error("plan phase failed", "error", err)
-		return err
+		return r.planFailed(targetName, err)
 	}
 
 	if r.config.Phase == "fetch" {
@@ -184,6 +195,22 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 		ElapsedMs:       elapsedMs,
 		WinRMRoundTrips: winrmRoundTrips,
 	})
+}
+
+// planFailed emits a synthetic TargetStartEvent/TargetCompleteEvent pair for
+// a target that failed before reaching the apply phase (context
+// cancellation, Fetch, or Plan — including DAG cycles, template errors, and
+// validatePlanTasks rejections), then returns cause unchanged. Without this
+// pair, the failure would return with no target event at all: TargetTallies
+// is folded purely from TargetStart/TargetComplete, so the host would
+// silently vanish from run.json's tallies instead of counting as failed.
+// Callers must only use this on early-return paths that precede the normal
+// emitTargetStart/emitTargetComplete pair further down in Run — never
+// alongside it — or the target would be double-counted.
+func (r *Runner) planFailed(targetName string, cause error) error {
+	r.emitTargetStart(targetName)
+	r.emitTargetComplete(targetName, 0, true)
+	return cause
 }
 
 func (r *Runner) emitWarning(message string) {
