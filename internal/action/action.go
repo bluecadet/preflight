@@ -175,6 +175,14 @@ func ParseAction(data []byte) (*Action, error) {
 }
 
 // Playbook is the parsed representation of a playbook.yml file.
+//
+// loadPlaybookFile (playbook_loader.go) copies a Playbook by value with
+// `merged := *current` and then resets only Vars, Tasks, Defaults, and
+// Import to apply merge semantics — every other field rides along via the
+// shallow copy on the assumption that it is a plain scalar, safe to alias or
+// duplicate. Adding a new map/slice/pointer field here without also handling
+// it at that copy site will silently alias the importing and imported
+// playbooks' data with no compile error and no test failure.
 type Playbook struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`

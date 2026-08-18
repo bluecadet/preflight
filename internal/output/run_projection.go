@@ -299,18 +299,16 @@ func (p *RunProjection) TargetCounts() (done, failed int) {
 }
 
 // Tallies buckets the per-target outcomes reported via TargetCompleteEvent
-// into a TargetCounts, keyed off the Outcome string ("ok", "failed",
-// "unreachable"). Any other or empty outcome value is counted as ok, matching
-// TargetCounts's existing done/failed split. Used to populate
-// RunSummaryEvent.TargetTallies for the final run summary.
+// into a TargetCounts, keyed off the Outcome string ("ok" or "failed"). Any
+// other or empty outcome value is counted as ok, matching TargetCounts's
+// existing done/failed split. Used to populate RunSummaryEvent.TargetTallies
+// for the final run summary.
 func (p *RunProjection) Tallies() TargetCounts {
 	var tc TargetCounts
 	for _, oc := range p.targetOutcomes {
 		switch oc.outcome {
 		case "failed":
 			tc.Failed++
-		case "unreachable":
-			tc.Unreachable++
 		default:
 			tc.OK++
 		}

@@ -631,10 +631,16 @@ type DiagnosticEvent struct {
 }
 
 // TargetCounts holds per-target outcome counts for RunSummaryEvent.
+//
+// There is deliberately no Unreachable count: internal/target does not
+// currently surface connection/dial failures as a distinct, structured
+// classification (TargetError.Op is a freeform per-call-site string, not an
+// enum), so there is no non-string-matching way to populate one. Add it back
+// only once a transport can report "couldn't reach the box" as something
+// other than a message string.
 type TargetCounts struct {
-	OK          int `json:"ok"`
-	Failed      int `json:"failed"`
-	Unreachable int `json:"unreachable"`
+	OK     int `json:"ok"`
+	Failed int `json:"failed"`
 }
 
 // RunSummaryEvent is the final event in a run.

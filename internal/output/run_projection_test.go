@@ -420,11 +420,11 @@ func TestRunProjection_Tallies(t *testing.T) {
 	p := NewRunProjection()
 	p.Apply(TargetCompleteEvent{Target: "host-a", Outcome: "ok"})
 	p.Apply(TargetCompleteEvent{Target: "host-b", Outcome: "failed"})
-	p.Apply(TargetCompleteEvent{Target: "host-c", Outcome: "unreachable"})
+	p.Apply(TargetCompleteEvent{Target: "host-c", Outcome: "failed"})
 	p.Apply(TargetCompleteEvent{Target: "host-d", Outcome: "ok"})
 
 	got := p.Tallies()
-	want := TargetCounts{OK: 2, Failed: 1, Unreachable: 1}
+	want := TargetCounts{OK: 2, Failed: 2}
 	if got != want {
 		t.Errorf("Tallies() = %+v, want %+v", got, want)
 	}

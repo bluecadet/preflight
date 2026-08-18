@@ -311,9 +311,8 @@ func (s *RunLogSink) buildRunJSON(e *RunSummaryEvent) map[string]any {
 	}
 	// Target tallies.
 	m["tallies"] = map[string]int{
-		"ok":          e.TargetTallies.OK,
-		"failed":      e.TargetTallies.Failed,
-		"unreachable": e.TargetTallies.Unreachable,
+		"ok":     e.TargetTallies.OK,
+		"failed": e.TargetTallies.Failed,
 	}
 	return m
 }

@@ -724,7 +724,7 @@ inventory:
 	if !ok {
 		t.Fatalf("run.json tallies missing or wrong type: %v", summary["tallies"])
 	}
-	wantTallies := map[string]float64{"ok": 1, "failed": 1, "unreachable": 0}
+	wantTallies := map[string]float64{"ok": 1, "failed": 1}
 	for key, want := range wantTallies {
 		if got := tallies[key]; got != want {
 			t.Errorf("run.json tallies.%s = %v, want %v", key, got, want)

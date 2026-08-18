@@ -194,15 +194,15 @@ func runLogFixtureCases() []struct {
 		},
 		{
 			name:  "run-summary-success",
-			jsonl: `{"seq":80,"ts":"2026-06-24T14:14:12.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"success","status":"success","tallies":{"ok":2,"failed":0,"unreachable":0},"elapsed_ms":99000}`,
+			jsonl: `{"seq":80,"ts":"2026-06-24T14:14:12.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"success","status":"success","tallies":{"ok":2,"failed":0},"elapsed_ms":99000}`,
 		},
 		{
 			name:  "run-summary-partial",
-			jsonl: `{"seq":81,"ts":"2026-06-24T14:14:13.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"2 ok, 1 failed, 1 unreachable","status":"partial","tallies":{"ok":2,"failed":1,"unreachable":1},"elapsed_ms":99000}`,
+			jsonl: `{"seq":81,"ts":"2026-06-24T14:14:13.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"2 ok, 1 failed","status":"partial","tallies":{"ok":2,"failed":1},"elapsed_ms":99000}`,
 		},
 		{
 			name:  "run-summary-failed",
-			jsonl: `{"seq":82,"ts":"2026-06-24T14:14:14.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"all targets failed","status":"failed","tallies":{"ok":0,"failed":3,"unreachable":1},"elapsed_ms":120000}`,
+			jsonl: `{"seq":82,"ts":"2026-06-24T14:14:14.000Z","type":"run_summary","level":"info","run_id":"r01","target":null,"task_id":null,"msg":"all targets failed","status":"failed","tallies":{"ok":0,"failed":3},"elapsed_ms":120000}`,
 		},
 	}
 }
@@ -247,7 +247,7 @@ func TestRunLogSchema_ValidatesFixtureStream(t *testing.T) {
 {"seq":24,"ts":"2026-06-24T14:13:05.900Z","type":"task_failed","level":"error","run_id":"20260624-141233-9f2a","target":"kiosk-03","task_id":"drivers","msg":"install display drivers failed","elapsed_ms":14500,"exit_code":1}
 {"seq":25,"ts":"2026-06-24T14:13:05.901Z","type":"diagnostic","level":"error","run_id":"20260624-141233-9f2a","target":"kiosk-03","task_id":"drivers","msg":"DISM failed","summary":"DISM.exe failed: 0x800f0954","detail":"source files could not be downloaded ...","source":"command"}
 {"seq":40,"ts":"2026-06-24T14:13:20.000Z","type":"target_complete","level":"info","run_id":"20260624-141233-9f2a","target":"kiosk-03","task_id":null,"msg":"failed","outcome":"failed","counts":{"ok":18,"changed":0,"failed":1,"skipped":5},"elapsed_ms":47000}
-{"seq":58,"ts":"2026-06-24T14:14:12.000Z","type":"run_summary","level":"info","run_id":"20260624-141233-9f2a","target":null,"task_id":null,"msg":"2 ok, 1 failed, 1 unreachable","status":"partial","tallies":{"ok":2,"failed":1,"unreachable":1},"elapsed_ms":99000}
+{"seq":58,"ts":"2026-06-24T14:14:12.000Z","type":"run_summary","level":"info","run_id":"20260624-141233-9f2a","target":null,"task_id":null,"msg":"2 ok, 1 failed","status":"partial","tallies":{"ok":2,"failed":1},"elapsed_ms":99000}
 `)
 	lines := strings.Split(stream, "\n")
 	for i, line := range lines {

@@ -80,6 +80,13 @@ func loadPlaybookFile(path string, chain []string) (*Playbook, error) {
 // mergeTaskDefaults layers override's fields onto dst using the same
 // later-wins precedent as Vars above: keys present in override replace keys
 // of the same name already in dst, everything else in dst is preserved.
+//
+// Because the early return below is keyed on len(override.Become) == 0, an
+// importing/child playbook can only add or replace become keys, never
+// reset an imported defaults.become to empty — there is no way to represent
+// "clear this" versus "I didn't set this" with a plain map. This mirrors
+// Vars' merge semantics above and is presumed intentional; do not change it
+// without also revisiting Vars.
 func mergeTaskDefaults(dst *TaskDefaults, override TaskDefaults) {
 	if len(override.Become) == 0 {
 		return

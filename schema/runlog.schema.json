@@ -476,10 +476,9 @@
               "description": "Target-level outcome counts.",
               "properties": {
                 "ok": { "type": "integer" },
-                "failed": { "type": "integer" },
-                "unreachable": { "type": "integer" }
+                "failed": { "type": "integer" }
               },
-              "required": ["ok", "failed", "unreachable"]
+              "required": ["ok", "failed"]
             },
             "counts": {
               "type": "object",
