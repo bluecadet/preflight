@@ -7,12 +7,14 @@ on:
       - "docs/**"
       - "*.md"
       - "LICENSE"
+      - "!docs/reference/modules.md"
   pull_request:
     branches: [main]
     paths-ignore:
       - "docs/**"
       - "*.md"
       - "LICENSE"
+      - "!docs/reference/modules.md"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -29,8 +31,8 @@ jobs:
     outputs:
       go: ${{ steps.filter.outputs.go }}
       build: ${{ steps.filter.outputs.build }}
-      winrm: ${{ steps.filter.outputs.winrm }}
       posix: ${{ steps.filter.outputs.posix }}
+      docs_matrix: ${{ steps.filter.outputs.docs_matrix }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
@@ -50,14 +52,11 @@ jobs:
               - .golangci.json
               - Makefile
               - .github/workflows/ci.yml
-            winrm:
-              - 'scripts/dev/bootstrap-winrm-vm.ps1'
-              - 'install.ps1'
-              - '**/target/winrm*'
-              - '**/target/persistent_ps*'
-              - .github/workflows/ci.yml
             posix:
               - 'test/posix/**'
+              - .github/workflows/ci.yml
+            docs_matrix:
+              - 'docs/reference/modules.md'
               - .github/workflows/ci.yml
             build:
               - '**/*.go'
@@ -73,7 +72,7 @@ jobs:
   test:
     name: Test
     needs: changes
-    if: needs.changes.outputs.go == 'true'
+    if: needs.changes.outputs.go == 'true' || needs.changes.outputs.docs_matrix == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
