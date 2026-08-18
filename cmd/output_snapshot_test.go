@@ -181,6 +181,28 @@ func normalizeCommandSnapshot(s string) string {
 		}
 		lines[i] = line
 	}
+
+	// Bubble Tea's frame-rate renderer (60fps by default) can flush an
+	// invisible placeholder frame before the program's first real card is
+	// queued for printing: an empty View() is rendered internally as a
+	// single space, and that flush only happens if the renderer's ticker
+	// fires before our first tea.Println is queued. Whether it fires
+	// first depends on wall-clock timing between program start and the
+	// command's setup work (session load, plan resolution, etc.), not on
+	// anything this test exercises - so it shows up as a nondeterministic
+	// run of blank lines directly after the leading escape-sequence
+	// prefix line (cursor-hide / bracketed-paste-enable). Collapse that
+	// burst the same way duration values and box border widths are
+	// normalized above: it's rendering-pipeline noise, not content under
+	// test.
+	if len(lines) > 1 {
+		end := 1
+		for end < len(lines) && lines[end] == "" {
+			end++
+		}
+		lines = append(lines[:1], lines[end:]...)
+	}
+
 	return strings.TrimSpace(strings.Join(lines, "\n")) + "\n"
 }
 
