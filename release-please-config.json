@@ -4,6 +4,7 @@
   "versioning": "prerelease",
   "prerelease": true,
   "prerelease-type": "beta",
+  "last-release-sha": "14ca11cf7e35ec8e0293c935d2a3e9132c2aaa93",
   "include-component-in-tag": false,
   "changelog-sections": [
     { "type": "feat", "section": "New Features" },
