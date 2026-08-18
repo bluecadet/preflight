@@ -250,6 +250,77 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	}
 }
 
+func writeFile(t *testing.T, path, contents string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(contents)+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
+}
+
+// TestPlanAppliesLoadedPlaybookDefaultsBecome is a regression test for a bug
+// where LoadPlaybookFile silently dropped Playbook.Defaults during merge, so
+// a playbook declaring defaults.become had privilege escalation discarded
+// with no error. It loads a real playbook.yml file through the same code
+// path the CLI uses, then plans it, and asserts become actually took effect
+// on the resulting task -- not just that Defaults is non-nil after load.
+func TestPlanAppliesLoadedPlaybookDefaultsBecome(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.yml")
+	rootPath := filepath.Join(dir, "root.yml")
+
+	writeFile(t, basePath, `
+name: base
+defaults:
+  become:
+    method: sudo
+tasks:
+  - name: base task
+    shell:
+      cmd: echo
+`)
+	writeFile(t, rootPath, `
+name: root
+import:
+  - base.yml
+defaults:
+  become:
+    user: root-user
+tasks:
+  - name: root task
+    shell:
+      cmd: echo
+`)
+
+	pb, err := action.LoadPlaybookFile(rootPath)
+	if err != nil {
+		t.Fatalf("LoadPlaybookFile returned error: %v", err)
+	}
+
+	r := New(&mockTarget{}, emptyResolver(), Config{})
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		t.Fatalf("Plan returned error: %v", err)
+	}
+	if len(plan.Tasks) != 2 {
+		t.Fatalf("expected 2 tasks, got %d", len(plan.Tasks))
+	}
+
+	for _, pt := range plan.Tasks {
+		if got := pt.Become["enabled"]; got != true {
+			t.Fatalf("task %q: expected become enabled from loaded playbook defaults, got %#v", pt.Name, pt.Become)
+		}
+		if got := pt.Become["method"]; got != "sudo" {
+			t.Fatalf("task %q: expected imported become.method to survive load and apply, got %#v", pt.Name, pt.Become)
+		}
+		if got := pt.Become["user"]; got != "root-user" {
+			t.Fatalf("task %q: expected root become.user to survive load and apply, got %#v", pt.Name, pt.Become)
+		}
+	}
+}
+
 func TestPlanMergesBecomeDefaultsAcrossActionExpansion(t *testing.T) {
 	resolver := action.Chain{&staticResolver{
 		action: &action.Action{

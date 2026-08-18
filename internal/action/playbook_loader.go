@@ -37,12 +37,16 @@ func loadPlaybookFile(path string, chain []string) (*Playbook, error) {
 		return nil, fmt.Errorf("playbook: parse %q: %w", cleanPath, err)
 	}
 
-	merged := &Playbook{
-		Name:        current.Name,
-		Description: current.Description,
-		Vars:        make(map[string]any),
-		Tasks:       make([]Task, 0, len(current.Tasks)),
-	}
+	// Start from a full copy of the importing playbook so any field with
+	// plain "current wins" semantics rides along automatically, then reset
+	// the fields that need merge semantics instead of straight assignment
+	// (Vars, Tasks, Defaults) or that are meaningless post-merge (Import,
+	// already fully resolved into the fields above by the time we return).
+	merged := *current
+	merged.Vars = make(map[string]any)
+	merged.Tasks = make([]Task, 0, len(current.Tasks))
+	merged.Defaults = TaskDefaults{}
+	merged.Import = nil
 
 	nextChain := append(append([]string{}, chain...), cleanPath)
 	for _, rawImport := range current.Import {
@@ -63,10 +67,25 @@ func loadPlaybookFile(path string, chain []string) (*Playbook, error) {
 
 		maps.Copy(merged.Vars, imported.Vars)
 		merged.Tasks = append(merged.Tasks, imported.Tasks...)
+		mergeTaskDefaults(&merged.Defaults, imported.Defaults)
 	}
 
 	maps.Copy(merged.Vars, current.Vars)
 	merged.Tasks = append(merged.Tasks, current.Tasks...)
+	mergeTaskDefaults(&merged.Defaults, current.Defaults)
 
-	return merged, nil
+	return &merged, nil
+}
+
+// mergeTaskDefaults layers override's fields onto dst using the same
+// later-wins precedent as Vars above: keys present in override replace keys
+// of the same name already in dst, everything else in dst is preserved.
+func mergeTaskDefaults(dst *TaskDefaults, override TaskDefaults) {
+	if len(override.Become) == 0 {
+		return
+	}
+	if dst.Become == nil {
+		dst.Become = make(map[string]any, len(override.Become))
+	}
+	maps.Copy(dst.Become, override.Become)
 }

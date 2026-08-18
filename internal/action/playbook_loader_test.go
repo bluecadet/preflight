@@ -190,6 +190,77 @@ tasks: []
 	}
 }
 
+func TestLoadPlaybookFileDefaultsBecomeSurvivesMerge(t *testing.T) {
+	dir := t.TempDir()
+	rootPath := filepath.Join(dir, "root.yml")
+
+	writePlaybook(t, rootPath, `
+name: root
+defaults:
+  become:
+    user: root-user
+    method: sudo
+tasks:
+  - name: root task
+    shell:
+      cmd: echo
+`)
+
+	playbook, err := action.LoadPlaybookFile(rootPath)
+	if err != nil {
+		t.Fatalf("LoadPlaybookFile returned error: %v", err)
+	}
+
+	if got := playbook.Defaults.Become["user"]; got != "root-user" {
+		t.Fatalf("expected defaults.become.user to survive load, got %#v", got)
+	}
+	if got := playbook.Defaults.Become["method"]; got != "sudo" {
+		t.Fatalf("expected defaults.become.method to survive load, got %#v", got)
+	}
+}
+
+func TestLoadPlaybookFileDefaultsBecomeLayeredAcrossImports(t *testing.T) {
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "base.yml")
+	rootPath := filepath.Join(dir, "root.yml")
+
+	writePlaybook(t, basePath, `
+name: base
+defaults:
+  become:
+    user: base-user
+    method: sudo
+tasks:
+  - name: base task
+    shell:
+      cmd: echo
+`)
+	writePlaybook(t, rootPath, `
+name: root
+import:
+  - base.yml
+defaults:
+  become:
+    user: root-user
+tasks:
+  - name: root task
+    shell:
+      cmd: echo
+`)
+
+	playbook, err := action.LoadPlaybookFile(rootPath)
+	if err != nil {
+		t.Fatalf("LoadPlaybookFile returned error: %v", err)
+	}
+
+	if got := playbook.Defaults.Become["user"]; got != "root-user" {
+		t.Fatalf("expected importing playbook's become.user to win, got %#v", got)
+	}
+	if got := playbook.Defaults.Become["method"]; got != "sudo" {
+		t.Fatalf("expected imported become.method to survive when root doesn't override it, got %#v", got)
+	}
+}
+
 func writePlaybook(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
