@@ -10,29 +10,13 @@ import (
 	"github.com/bluecadet/preflight/internal/schemavalidation"
 )
 
-// Schema URLs and per-caller resource lists, mirroring the values each real
-// call site (internal/action, internal/config, internal/inventory) passes to
-// schemavalidation.ValidateYAML. See TestValidateYAML_ResourcesParameterHasNoEffect
-// for why these per-caller lists turn out not to matter.
+// Schema URLs, mirroring the values each real call site (internal/action,
+// internal/config, internal/inventory) passes to schemavalidation.ValidateYAML.
 const (
 	actionSchemaURL    = "https://preflight.dev/schema/action.schema.json"
 	playbookSchemaURL  = "https://preflight.dev/schema/playbook.schema.json"
 	configSchemaURL    = "https://preflight.dev/schema/config.schema.json"
 	inventorySchemaURL = "https://preflight.dev/schema/inventory.schema.json"
-)
-
-var (
-	actionResources = []schemavalidation.Resource{
-		{URL: actionSchemaURL, Path: "action.schema.json"},
-		{URL: playbookSchemaURL, Path: "playbook.schema.json"},
-	}
-	playbookResources = actionResources
-	configResources   = []schemavalidation.Resource{
-		{URL: configSchemaURL, Path: "config.schema.json"},
-	}
-	inventoryResources = []schemavalidation.Resource{
-		{URL: inventorySchemaURL, Path: "inventory.schema.json"},
-	}
 )
 
 // ---------------------------------------------------------------------------
@@ -186,17 +170,16 @@ func TestValidateYAML_ValidDocumentsPass(t *testing.T) {
 	tests := map[string]struct {
 		data      string
 		schemaURL string
-		resources []schemavalidation.Resource
 	}{
-		"action":    {validAction, actionSchemaURL, actionResources},
-		"playbook":  {validPlaybook, playbookSchemaURL, playbookResources},
-		"config":    {validConfig, configSchemaURL, configResources},
-		"inventory": {validInventory, inventorySchemaURL, inventoryResources},
+		"action":    {validAction, actionSchemaURL},
+		"playbook":  {validPlaybook, playbookSchemaURL},
+		"config":    {validConfig, configSchemaURL},
+		"inventory": {validInventory, inventorySchemaURL},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			if err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL, tt.resources); err != nil {
+			if err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL); err != nil {
 				t.Fatalf("expected valid %s document to pass, got: %v", name, err)
 			}
 		})
@@ -211,7 +194,6 @@ func TestValidateYAML_MissingRequiredFieldsRejected(t *testing.T) {
 	tests := map[string]struct {
 		data      string
 		schemaURL string
-		resources []schemavalidation.Resource
 		wantSub   string // substring expected somewhere in the error
 	}{
 		"action missing name": {
@@ -222,7 +204,6 @@ tasks:
       cmd: echo hi
 `,
 			schemaURL: actionSchemaURL,
-			resources: actionResources,
 			wantSub:   "'name'",
 		},
 		"action missing tasks": {
@@ -230,7 +211,6 @@ tasks:
 name: myorg/action
 `,
 			schemaURL: actionSchemaURL,
-			resources: actionResources,
 			wantSub:   "'tasks'",
 		},
 		"task missing name": {
@@ -241,7 +221,6 @@ tasks:
       cmd: echo hi
 `,
 			schemaURL: playbookSchemaURL,
-			resources: playbookResources,
 			wantSub:   "'name'",
 		},
 		"inventory host missing name": {
@@ -250,7 +229,6 @@ hosts:
   - address: 10.0.0.1
 `,
 			schemaURL: inventorySchemaURL,
-			resources: inventoryResources,
 			wantSub:   "'name'",
 		},
 		"platform missing arch": {
@@ -261,14 +239,13 @@ hosts:
       os: windows
 `,
 			schemaURL: inventorySchemaURL,
-			resources: inventoryResources,
 			wantSub:   "'arch'",
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL, tt.resources)
+			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL)
 			if err == nil {
 				t.Fatal("expected schema validation error, got nil")
 			}
@@ -286,33 +263,28 @@ func TestValidateYAML_WrongTypesRejected(t *testing.T) {
 	tests := map[string]struct {
 		data      string
 		schemaURL string
-		resources []schemavalidation.Resource
 	}{
 		"tasks not an array": {
 			data:      "name: p\ntasks: 5\n",
 			schemaURL: playbookSchemaURL,
-			resources: playbookResources,
 		},
 		"vars not an object": {
 			data:      "vars: []\n",
 			schemaURL: configSchemaURL,
-			resources: configResources,
 		},
 		"hosts not an array": {
 			data:      "hosts: {}\n",
 			schemaURL: inventorySchemaURL,
-			resources: inventoryResources,
 		},
 		"whole document a scalar": {
 			data:      "just a plain string\n",
 			schemaURL: playbookSchemaURL,
-			resources: playbookResources,
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL, tt.resources)
+			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL)
 			if err == nil {
 				t.Fatal("expected schema validation error, got nil")
 			}
@@ -334,19 +306,16 @@ func TestValidateYAML_UnknownFieldsRejected(t *testing.T) {
 	tests := map[string]struct {
 		data      string
 		schemaURL string
-		resources []schemavalidation.Resource
 		wantField string
 	}{
 		"unknown top-level config field": {
 			data:      "projct: typo\n", // typo of "project"
 			schemaURL: configSchemaURL,
-			resources: configResources,
 			wantField: "projct",
 		},
 		"unknown top-level playbook field": {
 			data:      "nam: typo\ntasks: []\n", // typo of "name"
 			schemaURL: playbookSchemaURL,
-			resources: playbookResources,
 			wantField: "nam",
 		},
 		"unknown field inside a module block": {
@@ -359,7 +328,6 @@ tasks:
       bogus_option: true
 `,
 			schemaURL: playbookSchemaURL,
-			resources: playbookResources,
 			wantField: "bogus_option",
 		},
 		"unknown field inside inventory host": {
@@ -369,7 +337,6 @@ hosts:
     hostname: h1.example.com
 `, // "hostname" is not a recognized key; the schema uses "address"
 			schemaURL: inventorySchemaURL,
-			resources: inventoryResources,
 			wantField: "hostname",
 		},
 		"unknown field inside action inputDef": {
@@ -382,14 +349,13 @@ inputs:
     fallback_value: bar
 `, // not a recognized inputDef key; the schema uses "default"
 			schemaURL: actionSchemaURL,
-			resources: actionResources,
 			wantField: "fallback_value",
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL, tt.resources)
+			err := schemavalidation.ValidateYAML([]byte(tt.data), tt.schemaURL)
 			if err == nil {
 				t.Fatalf("expected %q to be rejected as an unknown/additional property, but it validated", tt.wantField)
 			}
@@ -444,12 +410,10 @@ hosts:
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			url := playbookSchemaURL
-			resources := playbookResources
 			if strings.Contains(name, "inventory") {
 				url = inventorySchemaURL
-				resources = inventoryResources
 			}
-			err := schemavalidation.ValidateYAML([]byte(tt.data), url, resources)
+			err := schemavalidation.ValidateYAML([]byte(tt.data), url)
 			if err == nil {
 				t.Fatal("expected schema validation error, got nil")
 			}
@@ -505,7 +469,7 @@ tasks:
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := schemavalidation.ValidateYAML([]byte(tt.data), playbookSchemaURL, playbookResources)
+			err := schemavalidation.ValidateYAML([]byte(tt.data), playbookSchemaURL)
 			if err == nil {
 				t.Fatal("expected schema validation error, got nil")
 			}
@@ -531,7 +495,7 @@ tasks:
     reboot:
       timeout: not-a-number
 `
-	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL, playbookResources)
+	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
 	if err == nil {
 		t.Fatal("expected schema validation error, got nil")
 	}
@@ -551,7 +515,7 @@ tasks:
 
 func TestValidateYAML_MalformedYAMLDistinctFromSchemaViolation(t *testing.T) {
 	t.Run("malformed YAML", func(t *testing.T) {
-		err := schemavalidation.ValidateYAML([]byte("{{{"), playbookSchemaURL, playbookResources)
+		err := schemavalidation.ValidateYAML([]byte("{{{"), playbookSchemaURL)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -564,7 +528,7 @@ func TestValidateYAML_MalformedYAMLDistinctFromSchemaViolation(t *testing.T) {
 	})
 
 	t.Run("well-formed YAML violating the schema", func(t *testing.T) {
-		err := schemavalidation.ValidateYAML([]byte("tasks: 5\n"), playbookSchemaURL, playbookResources)
+		err := schemavalidation.ValidateYAML([]byte("tasks: 5\n"), playbookSchemaURL)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
@@ -586,7 +550,7 @@ func TestValidateYAML_MalformedYAMLDistinctFromSchemaViolation(t *testing.T) {
 // particular error carries no location information (no field name, no JSON
 // pointer) -- see the "weak error messages" finding in the review notes.
 func TestValidateYAML_NonStringMapKeyIsAParseError(t *testing.T) {
-	err := schemavalidation.ValidateYAML([]byte("name: p\nvars:\n  true: foo\ntasks: []\n"), playbookSchemaURL, playbookResources)
+	err := schemavalidation.ValidateYAML([]byte("name: p\nvars:\n  true: foo\ntasks: []\n"), playbookSchemaURL)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -606,19 +570,18 @@ func TestValidateYAML_EmptyDocument(t *testing.T) {
 	tests := map[string]struct {
 		data      []byte
 		schemaURL string
-		resources []schemavalidation.Resource
 		wantErr   bool
 	}{
-		"nil bytes against playbook (no required fields)":  {nil, playbookSchemaURL, playbookResources, false},
-		"empty bytes against playbook":                     {[]byte(""), playbookSchemaURL, playbookResources, false},
-		"whitespace-only against playbook":                 {[]byte("   \n\t\n"), playbookSchemaURL, playbookResources, false},
-		"nil bytes against config (no required fields)":    {nil, configSchemaURL, configResources, false},
-		"empty bytes against action (name+tasks required)": {[]byte(""), actionSchemaURL, actionResources, true},
+		"nil bytes against playbook (no required fields)":  {nil, playbookSchemaURL, false},
+		"empty bytes against playbook":                     {[]byte(""), playbookSchemaURL, false},
+		"whitespace-only against playbook":                 {[]byte("   \n\t\n"), playbookSchemaURL, false},
+		"nil bytes against config (no required fields)":    {nil, configSchemaURL, false},
+		"empty bytes against action (name+tasks required)": {[]byte(""), actionSchemaURL, true},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			err := schemavalidation.ValidateYAML(tt.data, tt.schemaURL, tt.resources)
+			err := schemavalidation.ValidateYAML(tt.data, tt.schemaURL)
 			if tt.wantErr && err == nil {
 				t.Fatal("expected error, got nil")
 			}
@@ -673,7 +636,7 @@ tasks:
 	}
 	for name, data := range valid {
 		t.Run(name, func(t *testing.T) {
-			if err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL, playbookResources); err != nil {
+			if err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL); err != nil {
 				t.Fatalf("expected template expression to validate, got: %v", err)
 			}
 		})
@@ -688,7 +651,7 @@ tasks:
     service:
       state: "{{ vars.desired_state"
 `
-		err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL, playbookResources)
+		err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
 		if err == nil {
 			t.Fatal("expected schema validation error for malformed template-like string, got nil")
 		}
@@ -710,7 +673,7 @@ func TestValidateDocument_NonStringKeyRejected(t *testing.T) {
 		},
 		"tasks": []any{},
 	}
-	err := schemavalidation.ValidateDocument(doc, playbookSchemaURL, playbookResources)
+	err := schemavalidation.ValidateDocument(doc, playbookSchemaURL)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -731,7 +694,7 @@ func TestValidateDocument_MapAnyAnyWithStringKeysNormalizes(t *testing.T) {
 			},
 		},
 	}
-	if err := schemavalidation.ValidateDocument(doc, playbookSchemaURL, playbookResources); err != nil {
+	if err := schemavalidation.ValidateDocument(doc, playbookSchemaURL); err != nil {
 		t.Fatalf("expected map[any]any document with string keys to validate, got: %v", err)
 	}
 }
@@ -763,7 +726,7 @@ tasks:
         - name: v1
           type: not-a-real-type
 `
-		err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL, playbookResources)
+		err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
 		if err == nil {
 			t.Fatal("expected invalid registry value type to be rejected")
 		}
@@ -777,62 +740,11 @@ inputs:
   foo:
     type: not-a-real-type
 `
-		err := schemavalidation.ValidateYAML([]byte(data), actionSchemaURL, actionResources)
+		err := schemavalidation.ValidateYAML([]byte(data), actionSchemaURL)
 		if err == nil {
 			t.Fatal("expected invalid input type to be rejected")
 		}
 	})
-}
-
-// ---------------------------------------------------------------------------
-// KNOWN BUG: the `resources []Resource` parameter accepted by ValidateYAML
-// and ValidateDocument has no effect on validation. compiledSchemas() always
-// compiles the package-level `allResources` var (all four schemas), ignoring
-// whatever the caller passed in. Every real call site (internal/action,
-// internal/config, internal/inventory) builds its own narrower resources
-// slice and passes it through, but that work is discarded.
-//
-// This is currently harmless only because `allResources` happens to already
-// contain every schema needed to resolve every cross-schema $ref (config.yml
-// embeds an inventory block via $ref into inventory.schema.json). If a new
-// schema were ever added without also updating the internal `allResources`
-// list, no caller-supplied `resources` argument -- however complete -- could
-// fix it, because the argument is never consulted.
-//
-// These tests are characterization tests: they document current behavior,
-// not a guarantee. They should be revisited (and likely simplified, e.g. by
-// dropping the parameter and using allResources directly, or by actually
-// threading it through compiledSchemas) if this is fixed.
-// ---------------------------------------------------------------------------
-
-func TestValidateYAML_ResourcesParameterHasNoEffect(t *testing.T) {
-	// config.schema.json's "inventory" property $refs into
-	// inventory.schema.json#/$defs/inventory. The config package's own
-	// resources list (mirrored in configResources above) does NOT include
-	// the inventory schema. If the `resources` argument were actually used
-	// to drive schema compilation, resolving that $ref would fail. It
-	// doesn't, because compiledSchemas() ignores the argument and always
-	// compiles the full package-level allResources set instead.
-	data := []byte(`
-project: p
-inventory:
-  hosts:
-    - name: h1
-`)
-
-	if err := schemavalidation.ValidateYAML(data, configSchemaURL, configResources); err != nil {
-		t.Fatalf("config's own (incomplete) resources list should validate the same as any other list, got: %v", err)
-	}
-
-	// Passing nil, or a completely fabricated/irrelevant list, produces an
-	// identical result -- proof the argument is inert.
-	if err := schemavalidation.ValidateYAML(data, configSchemaURL, nil); err != nil {
-		t.Fatalf("nil resources should behave identically to configResources, got: %v", err)
-	}
-	bogus := []schemavalidation.Resource{{URL: "https://example.invalid/nope.json", Path: "does-not-exist.json"}}
-	if err := schemavalidation.ValidateYAML(data, configSchemaURL, bogus); err != nil {
-		t.Fatalf("a resources list with no relevant entries should behave identically, got: %v", err)
-	}
 }
 
 // ---------------------------------------------------------------------------
@@ -868,7 +780,7 @@ func TestValidateDocument_TopLevelTypedStructIsNormalized(t *testing.T) {
 	}
 	// A nil/empty Tasks slice round-trips through YAML as `tasks: []`, which
 	// normalizes cleanly to []any{}.
-	if err := schemavalidation.ValidateDocument(doc{Name: "p"}, playbookSchemaURL, playbookResources); err != nil {
+	if err := schemavalidation.ValidateDocument(doc{Name: "p"}, playbookSchemaURL); err != nil {
 		t.Fatalf("expected top-level typed struct to normalize and validate, got: %v", err)
 	}
 }
@@ -883,7 +795,7 @@ func TestValidateDocument_NestedTypedSliceNotNormalized(t *testing.T) {
 		"import": []string{"a.yml"},
 		"tasks":  []any{},
 	}
-	err := schemavalidation.ValidateDocument(doc, playbookSchemaURL, playbookResources)
+	err := schemavalidation.ValidateDocument(doc, playbookSchemaURL)
 	if err == nil {
 		t.Fatal("expected an error: a nested []string value is not normalized to []any before validation")
 	}
@@ -907,7 +819,7 @@ func TestValidateDocument_NestedTypedSliceNotNormalized(t *testing.T) {
 func TestValidateDocument_UnmarshalableGoValuePanics(t *testing.T) {
 	panicked := func() (recovered any) {
 		defer func() { recovered = recover() }()
-		_ = schemavalidation.ValidateDocument(make(chan int), playbookSchemaURL, playbookResources)
+		_ = schemavalidation.ValidateDocument(make(chan int), playbookSchemaURL)
 		return nil
 	}()
 	if panicked == nil {
@@ -916,7 +828,7 @@ func TestValidateDocument_UnmarshalableGoValuePanics(t *testing.T) {
 }
 
 func TestValidateYAML_UnderlyingValidationErrorAccessibleViaErrorsAs(t *testing.T) {
-	err := schemavalidation.ValidateYAML([]byte("tasks: 5\n"), playbookSchemaURL, playbookResources)
+	err := schemavalidation.ValidateYAML([]byte("tasks: 5\n"), playbookSchemaURL)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}

@@ -11,7 +11,8 @@ import (
 	schemafiles "github.com/bluecadet/preflight/schema"
 )
 
-type Resource struct {
+// resource pairs a schema's canonical URL with its embedded file path.
+type resource struct {
 	URL  string
 	Path string
 }
@@ -20,7 +21,14 @@ var (
 	schemaOnce     sync.Once
 	schemaCache    map[string]*jsonschema.Schema
 	schemaCacheErr error
-	allResources   = []Resource{
+
+	// allResources is the single point where a schema must be registered to
+	// be resolvable by ValidateYAML/ValidateDocument, including as the target
+	// of a cross-schema $ref (e.g. config.schema.json's "inventory" property
+	// refs into inventory.schema.json#/$defs/inventory). Callers cannot
+	// influence which schemas get compiled; adding a new schemaURL requires
+	// adding it here.
+	allResources = []resource{
 		{URL: "https://preflight.dev/schema/action.schema.json", Path: "action.schema.json"},
 		{URL: "https://preflight.dev/schema/playbook.schema.json", Path: "playbook.schema.json"},
 		{URL: "https://preflight.dev/schema/inventory.schema.json", Path: "inventory.schema.json"},
@@ -28,9 +36,9 @@ var (
 	}
 )
 
-func ValidateYAML(data []byte, schemaURL string, resources []Resource) error {
+func ValidateYAML(data []byte, schemaURL string) error {
 	if len(bytes.TrimSpace(data)) == 0 {
-		return ValidateDocument(map[string]any{}, schemaURL, resources)
+		return ValidateDocument(map[string]any{}, schemaURL)
 	}
 
 	var doc any
@@ -38,10 +46,10 @@ func ValidateYAML(data []byte, schemaURL string, resources []Resource) error {
 		return fmt.Errorf("schema validation parse error: %w", err)
 	}
 
-	return ValidateDocument(doc, schemaURL, resources)
+	return ValidateDocument(doc, schemaURL)
 }
 
-func ValidateDocument(doc any, schemaURL string, resources []Resource) error {
+func ValidateDocument(doc any, schemaURL string) error {
 	normalized, err := normalizeDocument(doc)
 	if err != nil {
 		return fmt.Errorf("schema validation parse error: %w", err)
