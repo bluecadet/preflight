@@ -37,7 +37,10 @@ func (s *server) run() {
 	s.codec.handlerWG.Wait()
 }
 
-// handleRequest dispatches an incoming host→plugin request.
+// handleRequest dispatches an incoming host→plugin request. ctx is scoped to
+// this request: the codec cancels it when the host sends a cancel
+// notification for it, or when the host goes away. It is handed straight to
+// the module's Check/Apply so plugin authors can honour cancellation.
 func (s *server) handleRequest(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
 	switch method {
 	case "initialize":
@@ -60,7 +63,7 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 		if perr != nil {
 			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
 		}
-		res, err := s.mod.Check(args, h)
+		res, err := s.mod.Check(ctx, args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -72,7 +75,7 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 		if perr != nil {
 			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
 		}
-		res, err := s.mod.Apply(args, h)
+		res, err := s.mod.Apply(ctx, args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}

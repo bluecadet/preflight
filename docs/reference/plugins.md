@@ -78,6 +78,7 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 | `initialize` | host → plugin | Carry `protocol_version` and the enriched `TargetInfo`; plugin echoes `protocol_version` back with name/version |
 | `check` | host → plugin | Report whether change is needed; plugin may issue handle ops |
 | `apply` | host → plugin | Perform the change; plugin may issue handle ops |
+| `cancel` | both | Notification carrying the `id` of a request the sender is abandoning; no response |
 | `output` | plugin → host | Notification carrying one streaming line; no response |
 | `run_command` | plugin → host | Run a script in the target's native shell, returning stdout/stderr/exit code |
 | `put_file` | plugin → host | Write bytes to a path on the target (host does the chunking) |
@@ -85,7 +86,17 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 
 ### Protocol Version
 
-`initialize` carries `protocol_version` (currently `"1"`). The plugin must echo it back in its `initialize` response. A pre-v1 plugin (no `protocol_version` or a different one) is rejected with a `plugin_protocol` error — there is no compatibility mode.
+`initialize` carries `protocol_version` (currently `"2"`). The plugin must echo it back in its `initialize` response. A plugin reporting no `protocol_version`, or an older one, is rejected with a `plugin_protocol` error — there is no compatibility mode.
+
+### Cancellation
+
+`check` and `apply` receive a `context.Context`, and it is a real cancellation signal rather than an unused parameter. When the host abandons a call — a `--timeout` expiring, the run being torn down — it sends a `cancel` notification naming that request's `id`. The plugin SDK cancels the context it handed the module's `Check`/`Apply`.
+
+Cancellation is symmetric. If a plugin's `Check` is cancelled while it is waiting on a `run_command`, the plugin sends `cancel` for that op, and the host cancels the target operation it was running — so an interrupt reaches all the way down to the command executing over SSH or WinRM.
+
+After sending `cancel`, the sender waits up to a **two-second grace window** for the abandoned request to unwind and answer before giving up. That window is what a cancelled plugin has to release locks, remove half-written files, and return. It is an upper bound, not a promise: a plugin that ignores its context is killed with the session when the window closes.
+
+The plugin process is deliberately **not** bound to the operation context. If it were, the process would die the instant the operation was cancelled, and the context inside the plugin would never have a chance to fire.
 
 ### TargetInfo
 
@@ -99,10 +110,12 @@ Plugin authors implement:
 
 - `Name() string`
 - `Version() string`
-- `Check(args map[string]any, h Handle) (CheckResult, error)`
-- `Apply(args map[string]any, h Handle) (ApplyResult, error)`
+- `Check(ctx context.Context, args map[string]any, h Handle) (CheckResult, error)`
+- `Apply(ctx context.Context, args map[string]any, h Handle) (ApplyResult, error)`
 
 Then call `sdk.Serve(module)` from `main()`. The `Handle` exposes `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`; see [Write a plugin](../how-to/write-a-plugin.md) for the handle API and batching guidance.
+
+Pass `ctx` to every handle op. An op issued with `context.Background()` cannot be interrupted, and the plugin is torn down mid-flight instead of unwinding.
 
 ## Execution Model
 
@@ -116,12 +129,13 @@ A plugin task with `become` enabled is refused with a typed `plugin_become` erro
 
 ## Stated Limitations
 
-Protocol v1 carries a few deliberate limits, documented here so plugin authors can design around them rather than discover them at runtime:
+Protocol v2 carries a few deliberate limits, documented here so plugin authors can design around them rather than discover them at runtime:
 
 - **`become` is refused** — the handle does not carry `ExecOpts`; see the section above.
-- **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params only; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
+- **Cancellation is cooperative** — the host delivers `cancel` and waits a two-second grace window, but it cannot force a plugin that ignores its context to stop. Such a plugin is killed when the window closes.
+- **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params and a context; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
 - **One in-flight target op per session** — the protocol allows one `run_command`/`put_file`/`get_file` in flight at a time; do not issue a second before the first returns. Batching guidance in [Write a plugin](../how-to/write-a-plugin.md) shows the script-shaped-exec pattern that keeps this from dominating latency.
-- **Protocol v1 is a clean break** — pre-v1 plugins (no `protocol_version` or a different one) are rejected with a `plugin_protocol` error. There is no compatibility mode; update and rebuild.
+- **Protocol v2 is a clean break** — plugins reporting no `protocol_version`, or an older one, are rejected with a `plugin_protocol` error. There is no compatibility mode; update and rebuild.
 
 ## Bundle Behavior
 

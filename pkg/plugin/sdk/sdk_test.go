@@ -1,6 +1,7 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"strings"
@@ -120,7 +121,7 @@ func TestServe_MalformedApplyParams(t *testing.T) {
 }
 
 func TestServe_Initialize(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":"1","target":{"family":"linux"}}}`
+	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":"2","target":{"family":"linux"}}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
@@ -147,13 +148,13 @@ type streamingModule struct{}
 func (streamingModule) Name() string    { return "streaming-mock" }
 func (streamingModule) Version() string { return "1.0.0" }
 
-func (streamingModule) Check(_ map[string]any, h Handle) (CheckResult, error) {
+func (streamingModule) Check(_ context.Context, _ map[string]any, h Handle) (CheckResult, error) {
 	h.Output("check line 1")
 	h.Output("check line 2")
 	return CheckResult{NeedsChange: true, Message: "needs update"}, nil
 }
 
-func (streamingModule) Apply(_ map[string]any, h Handle) (ApplyResult, error) {
+func (streamingModule) Apply(_ context.Context, _ map[string]any, h Handle) (ApplyResult, error) {
 	h.Output("apply line 1")
 	h.Output("apply line 2")
 	h.Output("apply line 3")

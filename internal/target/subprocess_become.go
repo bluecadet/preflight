@@ -67,11 +67,15 @@ func (e *posixSudoElevation) Start(ctx context.Context, binary string, moduleNam
 		// password-requiring sudo fail deterministically.
 		args = []string{"-n", "-u", e.user, binary, "__module-exec", moduleName}
 	}
-	cmd := exec.CommandContext(ctx, "sudo", args...)
+	// exec.Command, not exec.CommandContext: binding the elevated process to
+	// the operation context would kill it the instant the operation is
+	// cancelled, before the cancel notification could reach the module running
+	// inside it. Teardown is the caller's deferred Close.
+	cmd := exec.Command("sudo", args...)
 	if e.password != "" {
 		cmd.Stdin = strings.NewReader(e.password + "\n")
 	}
-	return sdk.NewClientFromCmd(cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
+	return sdk.NewClientFromCmd(ctx, cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
 }
 
 // windowsCredentialElevation spawns the binary under a different user account
@@ -92,13 +96,14 @@ func (e *windowsCredentialElevation) Start(ctx context.Context, binary string, m
 	}
 
 	script := buildWindowsElevatedSubprocessWrapper(binary, moduleName, e.user, e.password, loadProfileStr)
-	cmd := exec.CommandContext(ctx, "powershell.exe",
+	// exec.Command, not exec.CommandContext: see posixSudoElevation.Start.
+	cmd := exec.Command("powershell.exe",
 		"-NoProfile",
 		"-NonInteractive",
 		"-ExecutionPolicy", "Bypass",
 		"-Command", script,
 	)
-	return sdk.NewClientFromCmd(cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
+	return sdk.NewClientFromCmd(ctx, cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
 }
 
 func buildWindowsElevatedSubprocessWrapper(binary, moduleName, user, password, loadProfile string) string {

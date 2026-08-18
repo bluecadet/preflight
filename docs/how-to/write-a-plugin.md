@@ -40,6 +40,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
@@ -49,14 +51,15 @@ type markerFileModule struct{}
 func (markerFileModule) Name() string    { return "marker_file" }
 func (markerFileModule) Version() string { return "0.1.0" }
 
-func (markerFileModule) Check(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
+func (markerFileModule) Check(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
 	path, _ := args["path"].(string)
 	if path == "" {
-		return sdk.CheckResult{}, fmt.Errorf("path is required")
+		return sdk.CheckResult{}, errors.New("path is required")
 	}
 
-	// Probe the target through the handle — never the local filesystem.
-	res, err := h.RunCommand(context.Background(), "test -f "+shellQuote(path)+" && echo yes || echo no")
+	// Probe the target through the handle — never the local filesystem — and
+	// pass ctx so the op can be interrupted.
+	res, err := h.RunCommand(ctx, "test -f "+shellQuote(path)+" && echo yes || echo no")
 	if err != nil {
 		return sdk.CheckResult{}, err
 	}
@@ -64,13 +67,18 @@ func (markerFileModule) Check(args map[string]any, h sdk.Handle) (sdk.CheckResul
 	return sdk.CheckResult{NeedsChange: !exists}, nil
 }
 
-func (markerFileModule) Apply(args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
+func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
 	path, _ := args["path"].(string)
 	script := "printf 'managed by preflight plugin\\n' > " + shellQuote(path)
-	if _, err := h.RunCommand(context.Background(), script); err != nil {
+	if _, err := h.RunCommand(ctx, script); err != nil {
 		return sdk.ApplyResult{}, err
 	}
 	return sdk.ApplyResult{Message: "created " + path}, nil
+}
+
+// shellQuote wraps s in POSIX single quotes so it is safe to interpolate.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 func main() {
@@ -79,12 +87,14 @@ func main() {
 ```
 
 Important details:
+Important details:
 
 - `Name()` is the module name users put in `module:`.
 - `Version()` is reported by `preflight plugin list` and `preflight plugin info`.
 - `Check()` must return `NeedsChange: true` only when `Apply()` should run.
 - `Apply()` receives the same `params:` map that was defined in YAML.
 - All target effects go through `h` (the handle). Use `h.RunCommand`, `h.PutFile`, `h.GetFile`, `h.Info`, and `h.Output`.
+- `ctx` is a real cancellation signal. Pass it to every handle op and check it around anything long-running. See [Honouring cancellation](#honouring-cancellation).
 
 ## 3. The Handle API
 
@@ -138,6 +148,37 @@ h.Output("progress: 50%")
 ```
 
 `Output` streams a line back to the host's output channel during `Check` or `Apply`. Call it for progress or diagnostics; the host surfaces lines to the user as they arrive.
+
+## Honouring Cancellation
+
+`Check` and `Apply` receive a `context.Context`. It is not a placeholder: when Preflight abandons the call — a `--timeout` expiring, the run being interrupted — it sends a protocol-level `cancel` notification and the SDK cancels the context inside your plugin process.
+
+Two rules follow.
+
+**Pass `ctx` to every handle op.** An op issued with `context.Background()` cannot be interrupted:
+
+```go
+// Good: interruptible.
+res, err := h.RunCommand(ctx, script)
+
+// Bad: this op runs to completion no matter what the host wants.
+res, err := h.RunCommand(context.Background(), script)
+```
+
+Passing `ctx` also cancels downward. If your `Check` is waiting on a `RunCommand` when cancellation arrives, the host cancels the command it was running on the target — the interrupt reaches the process on the far side of SSH or WinRM, not just your plugin.
+
+**Check `ctx` around long work of your own.** Anything that is not a handle op — a loop, a sleep, a local computation — should watch `ctx.Done()`:
+
+```go
+for _, item := range items {
+	if err := ctx.Err(); err != nil {
+		return sdk.ApplyResult{}, err
+	}
+	// ...
+}
+```
+
+You get a **two-second grace window** after cancellation to unwind: release locks, remove half-written files, and return. That window is an upper bound, not a promise. A plugin that ignores its context is killed when the window closes, mid-operation, with no chance to clean up.
 
 ## 4. Build The Executable With The Required Name
 
@@ -203,16 +244,27 @@ preflight plan playbooks/lobby.yml
 preflight apply playbooks/lobby.yml
 ```
 
-## Protocol Version 1 (Breaking Change)
+## Protocol Version 2 (Breaking Change)
 
-Plugin protocol v1 is a **clean break** from the pre-v1 protocol. If you have an existing plugin, you must update it:
+Plugin protocol v2 is a **clean break** from v1. If you have a v1 plugin, you must update it:
 
-- `Check` and `Apply` now take a `Handle` as their second argument. All target effects go through it.
-- `initialize` now carries `protocol_version` and the enriched `TargetInfo`; your plugin receives them automatically through the SDK.
-- Streaming output is no longer a separate `StreamingModule` interface — call `h.Output(line)` from `Check`/`Apply`.
-- `sdk.Serve` handles the wire protocol; your plugin only implements `Module`.
+- `Check` and `Apply` take a `context.Context` as their **first** argument. Pass it to every handle op instead of `context.Background()`.
+- The protocol gained a `cancel` notification, which is what makes that context fire; the SDK wires it up for you.
+- Everything else is unchanged: the `Handle` still carries all target effects, `initialize` still delivers `protocol_version` and `TargetInfo`, and streaming is still `h.Output(line)`.
 
-Pre-v1 plugins are rejected with a clear `plugin_protocol` error. There is no compatibility mode — update and rebuild.
+Migrating is mechanical:
+
+```go
+// v1
+func (m myModule) Check(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
+	res, err := h.RunCommand(context.Background(), script)
+
+// v2
+func (m myModule) Check(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
+	res, err := h.RunCommand(ctx, script)
+```
+
+v1 plugins are rejected with a clear `plugin_protocol` error. There is no compatibility mode — update and rebuild.
 
 ## Batching Guidance For High-Latency Transports
 
@@ -222,10 +274,11 @@ Every handle op is a transport round trip. Over SSH and especially WinRM, round 
 - **Avoid redundant `GetFile`.** If `RunCommand` can read what you need and include it in stdout, do that instead of a separate `GetFile` round trip.
 - **Cache `Info()` once.** Call `h.Info()` and keep the struct; do not re-fetch per op (it is in-memory, but the call pattern reads better).
 - **One in-flight op at a time.** The protocol allows one in-flight target op per session. Do not issue a second `RunCommand` before the first returns.
+- **Pass `ctx` to every op.** A long batched script is the right shape, but only if it can be interrupted.
 
 ## The `become` Limitation
 
-A plugin task cannot run with `become` enabled in v1. If you set `become: { enabled: true }` on a plugin task, Preflight refuses it with a typed `plugin_become` error before the plugin runs. Run plugins as the connection user (or root directly); privilege escalation through the plugin handle is planned for a future protocol version.
+A plugin task cannot run with `become` enabled. If you set `become: { enabled: true }` on a plugin task, Preflight refuses it with a typed `plugin_become` error before the plugin runs. Run plugins as the connection user (or root directly); privilege escalation through the plugin handle is planned for a future protocol version.
 
 ## 8. Distribute The Plugin
 
@@ -265,11 +318,11 @@ That reported name is what belongs in `module:`.
 
 ### `plugin_protocol` error at runtime
 
-Your plugin was built against a pre-v1 SDK. Update to the current SDK, add the `Handle` argument to `Check`/`Apply`, and rebuild.
+Your plugin was built against an older SDK. Update to the current SDK, add the `context.Context` first argument to `Check`/`Apply`, and rebuild.
 
 ### `plugin_become` error
 
-A plugin task had `become` enabled. Remove `become` from the task (or run the connection account with the privileges the plugin needs). Plugin+become is not supported in v1.
+A plugin task had `become` enabled. Remove `become` from the task (or run the connection account with the privileges the plugin needs). Plugin+become is not supported.
 
 ## Related Docs
 

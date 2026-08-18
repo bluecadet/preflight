@@ -9,6 +9,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/target"
@@ -153,4 +154,59 @@ func TestPluginHandle_ProtocolVersionRejection(t *testing.T) {
 	if mse.ReasonCode() != "plugin_protocol" {
 		t.Errorf("reason = %q, want plugin_protocol", mse.ReasonCode())
 	}
+}
+
+// TestPluginHandle_CancelCrossesProcessBoundary is the end-to-end proof that
+// the context.Context handed to a plugin's Check is not decorative. The plugin
+// runs in a separate process; it blocks until its context fires and only then
+// writes a marker file. If cancellation did not cross the process boundary the
+// plugin would sit until its 30s ceiling or be killed outright, and the marker
+// would never appear.
+func TestPluginHandle_CancelCrossesProcessBoundary(t *testing.T) {
+	tgt, _ := localTargetWithPlugin(t)
+	defer func() { _ = tgt.Close() }()
+
+	dir := t.TempDir()
+	startPath := filepath.Join(dir, "started")
+	markerPath := filepath.Join(dir, "cancelled")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := tgt.Execute(ctx, "task-cancel", "testhandle",
+			map[string]any{
+				"scenario":    "cancel",
+				"start_path":  startPath,
+				"marker_path": markerPath,
+			}, target.ExecutionOptions{}, true, nil)
+		errCh <- err
+	}()
+
+	waitForFile(t, startPath, 30*time.Second, "plugin never entered Check")
+	cancel()
+	waitForFile(t, markerPath, 10*time.Second, "plugin context never fired across the process boundary")
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Execute returned %v, want an error wrapping context.Canceled", err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Execute never returned after cancellation")
+	}
+}
+
+// waitForFile polls for path until it exists or the deadline passes.
+func waitForFile(t *testing.T, path string, within time.Duration, msg string) {
+	t.Helper()
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s (no %s after %s)", msg, path, within)
 }

@@ -41,15 +41,20 @@ type Client struct {
 // back), and binds the plugin's handle-op requests to ops. If closeFn is
 // non-nil it is invoked exactly once from Close (and on initialize failure).
 //
+// ctx bounds the handshake only. It deliberately does not govern the peer's
+// lifetime: a peer whose process died the instant an operation context was
+// cancelled could never honour the cancel notification, which is the whole
+// point of protocol v2. Peer teardown is Close's job.
+//
 // ops carries the target effects the plugin exercises (RunCommand/PutFile/GetFile).
 // For inspection paths with no target, pass NoopHandleServer(). info is the
 // TargetInfo delivered to the plugin at initialize.
-func NewClientStream(r io.Reader, w io.Writer, closeFn func() error, info TargetInfo, ops HandleServer) (*Client, error) {
+func NewClientStream(ctx context.Context, r io.Reader, w io.Writer, closeFn func() error, info TargetInfo, ops HandleServer) (*Client, error) {
 	c := &Client{ops: ops}
 	c.codec = newCodec(r, w, c.handleRequest, c.handleNotification, closeFn)
 	c.codec.start()
 
-	if err := c.initialize(info); err != nil {
+	if err := c.initialize(ctx, info); err != nil {
 		_ = c.codec.Close()
 		return nil, err
 	}
@@ -57,16 +62,16 @@ func NewClientStream(r io.Reader, w io.Writer, closeFn func() error, info Target
 }
 
 // initialize sends the initialize request with protocol_version and TargetInfo,
-// and requires the plugin's response to carry a matching protocol_version. A
-// pre-v1 plugin (no protocol_version or a different one) is rejected with a
+// and requires the plugin's response to carry a matching protocol_version. An
+// older plugin (no protocol_version or a different one) is rejected with a
 // ProtocolError so callers can surface the distinct plugin_protocol class.
-func (c *Client) initialize(info TargetInfo) error {
+func (c *Client) initialize(ctx context.Context, info TargetInfo) error {
 	params := InitializeParams{
 		ProtocolVersion: ProtocolVersion,
 		Target:          info,
 	}
 	var res InitializeResult
-	if err := c.codec.call(context.Background(), "initialize", params, &res); err != nil {
+	if err := c.codec.call(ctx, "initialize", params, &res); err != nil {
 		return fmt.Errorf("plugin initialize: %w", err)
 	}
 	if res.ProtocolVersion != ProtocolVersion {
@@ -150,6 +155,11 @@ func (c *Client) Name() string { return c.name }
 func (c *Client) Version() string { return c.version }
 
 // Check calls the plugin's check method, forwarding output to out.
+//
+// Cancelling ctx is not a local give-up: the codec sends a cancel notification
+// naming the in-flight request, which cancels the context the plugin's own
+// Check received, then waits up to CancelGrace for the plugin to unwind and
+// answer before returning ctx.Err().
 func (c *Client) Check(ctx context.Context, args map[string]any, out OutputFunc) (CheckResult, error) {
 	c.setOut(out)
 	defer c.setOut(nil)
@@ -163,7 +173,9 @@ func (c *Client) Check(ctx context.Context, args map[string]any, out OutputFunc)
 	return result, nil
 }
 
-// Apply calls the plugin's apply method, forwarding output to out.
+// Apply calls the plugin's apply method, forwarding output to out. Cancelling
+// ctx behaves as described on Check: the plugin's context is cancelled over
+// the wire and given CancelGrace to unwind.
 func (c *Client) Apply(ctx context.Context, args map[string]any, out OutputFunc) (ApplyResult, error) {
 	c.setOut(out)
 	defer c.setOut(nil)
@@ -197,22 +209,28 @@ func NewClientForInspection(ctx context.Context, executablePath string) (*Client
 	return startClient(ctx, executablePath, TargetInfo{}, NoopHandleServer())
 }
 
-// NewClientContext starts the plugin, performs the v1 initialize handshake
+// NewClientContext starts the plugin, performs the initialize handshake
 // (protocol_version + enriched TargetInfo), and binds the plugin's handle ops
-// to ops. Used by the runtime adapter against a real target.
+// to ops. Used by the runtime adapter against a real target. ctx bounds the
+// handshake; the plugin process lives until Close.
 func NewClientContext(ctx context.Context, executablePath string, info TargetInfo, ops HandleServer) (*Client, error) {
 	return startClient(ctx, executablePath, info, ops)
 }
 
 func startClient(ctx context.Context, executablePath string, info TargetInfo, ops HandleServer) (*Client, error) {
-	cmd := exec.CommandContext(ctx, executablePath)
-	return NewClientFromCmd(cmd, info, ops)
+	return NewClientFromCmd(ctx, exec.Command(executablePath), info, ops)
 }
 
 // NewClientFromCmd starts the given command and connects a Client to its
 // stdin/stdout for JSON-RPC communication. The command must not have been
 // started yet. info is delivered at initialize; ops answers handle-op requests.
-func NewClientFromCmd(cmd *exec.Cmd, info TargetInfo, ops HandleServer) (*Client, error) {
+//
+// Do not build cmd with exec.CommandContext on an operation context: that kills
+// the peer the moment the operation is cancelled, racing the cancel
+// notification to zero and making the plugin-side context.Context decorative.
+// The process is killed by Close instead, after the peer has had CancelGrace
+// to unwind.
+func NewClientFromCmd(ctx context.Context, cmd *exec.Cmd, info TargetInfo, ops HandleServer) (*Client, error) {
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("plugin stdin pipe: %w", err)
@@ -224,7 +242,7 @@ func NewClientFromCmd(cmd *exec.Cmd, info TargetInfo, ops HandleServer) (*Client
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start plugin: %w", err)
 	}
-	return NewClientStream(stdout, stdin, func() error {
+	return NewClientStream(ctx, stdout, stdin, func() error {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
 		}
@@ -233,8 +251,9 @@ func NewClientFromCmd(cmd *exec.Cmd, info TargetInfo, ops HandleServer) (*Client
 }
 
 // ProtocolError reports a plugin that failed the protocol-version handshake.
-// Pre-v1 plugins (no protocol_version) and protocol mismatches both surface as
-// this typed error so the host can raise the distinct plugin_protocol class.
+// Plugins that report no protocol_version and plugins that report an older one
+// both surface as this typed error so the host can raise the distinct
+// plugin_protocol class.
 type ProtocolError struct {
 	Got  string
 	Want string

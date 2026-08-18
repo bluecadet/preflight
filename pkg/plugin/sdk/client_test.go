@@ -14,13 +14,13 @@ type mockModule struct{}
 func (mockModule) Name() string    { return "mock" }
 func (mockModule) Version() string { return "2.3.4" }
 
-func (mockModule) Check(_ map[string]any, _ Handle) (CheckResult, error) {
+func (mockModule) Check(_ context.Context, _ map[string]any, _ Handle) (CheckResult, error) {
 	return CheckResult{
 		NeedsChange: false,
 	}, nil
 }
 
-func (mockModule) Apply(_ map[string]any, _ Handle) (ApplyResult, error) {
+func (mockModule) Apply(_ context.Context, _ map[string]any, _ Handle) (ApplyResult, error) {
 	return ApplyResult{}, nil
 }
 
@@ -39,20 +39,20 @@ type handleModule struct {
 func (m *handleModule) Name() string    { return "handle-mock" }
 func (m *handleModule) Version() string { return "1.0.0" }
 
-func (m *handleModule) Check(args map[string]any, h Handle) (CheckResult, error) {
+func (m *handleModule) Check(ctx context.Context, args map[string]any, h Handle) (CheckResult, error) {
 	m.checkCalls++
 	m.lastInfo = h.Info()
-	res, err := h.RunCommand(context.Background(), "echo hello")
+	res, err := h.RunCommand(ctx, "echo hello")
 	if err != nil {
 		return CheckResult{}, err
 	}
 	m.lastCmd = res
 	data := []byte("plugin-put-content")
-	if err := h.PutFile(context.Background(), "/tmp/pf-put", data); err != nil {
+	if err := h.PutFile(ctx, "/tmp/pf-put", data); err != nil {
 		return CheckResult{}, err
 	}
 	m.putData = data
-	got, err := h.GetFile(context.Background(), "/tmp/pf-get")
+	got, err := h.GetFile(ctx, "/tmp/pf-get")
 	if err != nil {
 		return CheckResult{}, err
 	}
@@ -67,7 +67,7 @@ func (m *handleModule) Check(args map[string]any, h Handle) (CheckResult, error)
 	return CheckResult{NeedsChange: needsChange, Message: "checked"}, nil
 }
 
-func (m *handleModule) Apply(_ map[string]any, h Handle) (ApplyResult, error) {
+func (m *handleModule) Apply(_ context.Context, _ map[string]any, h Handle) (ApplyResult, error) {
 	m.applyCalls++
 	h.Output("apply line")
 	return ApplyResult{Message: "applied"}, nil
@@ -121,7 +121,7 @@ func pipeTransport(t *testing.T, m Module) (r io.Reader, w io.Writer, closeFn fu
 func newClient(t *testing.T, m Module, info TargetInfo, ops HandleServer) *Client {
 	t.Helper()
 	r, w, closeFn := pipeTransport(t, m)
-	c, err := NewClientStream(r, w, closeFn, info, ops)
+	c, err := NewClientStream(context.Background(), r, w, closeFn, info, ops)
 	if err != nil {
 		t.Fatalf("NewClientStream: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
 	// A pre-v1 initialize response: name/version but no protocol_version.
 	preV1 := `{"name":"old","version":"0.1.0"}`
 	r, w, closeFn := rawFrameServer(t, preV1)
-	_, err := NewClientStream(r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
 	if err == nil {
 		t.Fatal("expected initialize failure for pre-v1 plugin, got nil")
 	}
@@ -261,7 +261,7 @@ func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
 func TestClientStream_RejectsProtocolMismatch(t *testing.T) {
 	mismatch := `{"name":"future","version":"9.0.0","protocol_version":"9"}`
 	r, w, closeFn := rawFrameServer(t, mismatch)
-	_, err := NewClientStream(r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
 	if err == nil {
 		t.Fatal("expected initialize failure for protocol mismatch, got nil")
 	}
@@ -272,7 +272,7 @@ func TestClientStream_RejectsProtocolMismatch(t *testing.T) {
 
 func TestClientStream_CloseCallsCloseFn(t *testing.T) {
 	r, w, closeFn := pipeTransport(t, mockModule{})
-	c, err := NewClientStream(r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	c, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
 	if err != nil {
 		t.Fatalf("NewClientStream: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestClientStream_InitFailureCallsCloseFn(t *testing.T) {
 	_ = clientWrite.Close()
 	closeCalls := 0
 	closeFn := func() error { closeCalls++; return nil }
-	_, err := NewClientStream(clientRead, clientWrite, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClientStream(context.Background(), clientRead, clientWrite, closeFn, TargetInfo{}, NoopHandleServer())
 	if err == nil {
 		t.Fatal("expected initialize failure, got nil error")
 	}

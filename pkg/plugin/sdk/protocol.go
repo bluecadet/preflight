@@ -1,11 +1,33 @@
 package sdk
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // ProtocolVersion is the wire-protocol version this host and SDK speak.
 // Plugins must echo it back in their initialize response; a mismatch or
-// absence is a plugin_protocol error (pre-v1 plugins are rejected).
-const ProtocolVersion = "1"
+// absence is a plugin_protocol error (older plugins are rejected).
+//
+// v2 adds the "cancel" notification, which is what makes the context.Context
+// passed to a plugin's Check/Apply real rather than decorative: without it,
+// cancellation could not cross the process boundary at all.
+const ProtocolVersion = "2"
+
+// CancelGrace is how long a peer waits, after sending a cancel notification
+// for an in-flight request, for that request to unwind and answer before it
+// gives up and returns the context error. It is the window in which a plugin's
+// cancelled Check/Apply can release locks, delete half-written files, and
+// return. A plugin that does not return within the window is torn down with
+// the session (a stated limitation).
+const CancelGrace = 2 * time.Second
+
+// cancelParams is the payload of the bidirectional "cancel" notification:
+// the ID of the request the sender is abandoning. The receiving side cancels
+// the context.Context it handed that request's handler.
+type cancelParams struct {
+	ID int64 `json:"id"`
+}
 
 // TargetInfo is the enriched target context delivered to a plugin at
 // initialize. Absent signals are empty strings, never missing keys, so plugin

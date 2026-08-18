@@ -45,7 +45,7 @@ cannot complete:
 | `sudo-password-required` | a no-password `sudo -n` run needed a password; supply `become.password` or configure `NOPASSWD` |
 | `sudo-auth-failed` | `sudo` rejected the supplied password |
 | `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
-| `plugin_protocol` | a plugin failed the protocol handshake (version mismatch / pre-v1 plugin rejected) |
+| `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
 ## Message Shapes
 

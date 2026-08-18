@@ -51,7 +51,7 @@ func TestSDKModuleAdapter_Check(t *testing.T) {
 	}
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
-	result, err := adapter.Check(map[string]any{"key": "value"}, noopHandle{})
+	result, err := adapter.Check(context.Background(), map[string]any{"key": "value"}, noopHandle{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestSDKModuleAdapter_CheckStreamingOutput(t *testing.T) {
 
 	var received []string
 	h := recordingHandle{out: func(line string) { received = append(received, line) }}
-	result, err := adapter.Check(map[string]any{}, h)
+	result, err := adapter.Check(context.Background(), map[string]any{}, h)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestSDKModuleAdapter_Apply(t *testing.T) {
 	}
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
-	result, err := adapter.Apply(map[string]any{}, noopHandle{})
+	result, err := adapter.Apply(context.Background(), map[string]any{}, noopHandle{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestSDKModuleAdapter_NilHandleOutput(t *testing.T) {
 	adapter := NewSDKModuleAdapter("test-module", mod)
 
 	// A nil handle (host passed nil) should not panic.
-	_, err := adapter.Check(map[string]any{}, nil)
+	_, err := adapter.Check(context.Background(), map[string]any{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -126,5 +126,48 @@ func (h recordingHandle) Info() sdk.TargetInfo                            { retu
 func (h recordingHandle) Output(line string) {
 	if h.out != nil {
 		h.out(line)
+	}
+}
+
+// ctxCapturingModule records the context it was handed so the adapter's
+// forwarding can be asserted.
+type ctxCapturingModule struct {
+	checkCtx context.Context
+	applyCtx context.Context
+}
+
+func (m *ctxCapturingModule) Check(ctx context.Context, _ map[string]any, _ OutputFunc) (CheckResult, error) {
+	m.checkCtx = ctx
+	return CheckResult{}, nil
+}
+
+func (m *ctxCapturingModule) Apply(ctx context.Context, _ map[string]any, _ OutputFunc) (ApplyResult, error) {
+	m.applyCtx = ctx
+	return ApplyResult{}, nil
+}
+
+// TestSDKModuleAdapter_ForwardsContext is a regression test: the adapter used
+// to hand built-in modules a context.TODO(), so a built-in run under become in
+// the elevated subprocess could not be cancelled at all. The context the SDK
+// server supplies must reach the module.
+func TestSDKModuleAdapter_ForwardsContext(t *testing.T) {
+	mod := &ctxCapturingModule{}
+	adapter := NewSDKModuleAdapter("test-module", mod)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := adapter.Check(ctx, map[string]any{}, noopHandle{}); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+	if mod.checkCtx == nil || mod.checkCtx.Err() == nil {
+		t.Error("Check did not receive the cancelled context")
+	}
+
+	if _, err := adapter.Apply(ctx, map[string]any{}, noopHandle{}); err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if mod.applyCtx == nil || mod.applyCtx.Err() == nil {
+		t.Error("Apply did not receive the cancelled context")
 	}
 }

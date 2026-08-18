@@ -8,11 +8,18 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // errHandleUnavailable is returned by noopHandleServer; defined here to keep the
 // protocol file free of imports beyond context.
 var errHandleUnavailable = errors.New("plugin handle: no target is bound")
+
+// methodCancel is the bidirectional notification a peer sends to abandon an
+// in-flight request. It is the only protocol message the codec handles itself
+// rather than delegating, because cancellation is transport-level: it must
+// work identically for host→plugin check/apply and plugin→host handle ops.
+const methodCancel = "cancel"
 
 // rpcError is a JSON-RPC 2.0 error object.
 type rpcError struct {
@@ -40,6 +47,10 @@ type frame struct {
 // round trip: a module's Check, while handling the host's "check" request,
 // calls RunCommand, which sends a request the host must answer while the
 // "check" call is still outstanding).
+//
+// ctx is scoped to this one request: it is cancelled when the peer sends a
+// cancel notification for the request ID, and when the connection dies. This
+// is the mechanism by which cancellation crosses the process boundary.
 type requestHandler func(ctx context.Context, method string, params json.RawMessage) (result any, rpcErr *rpcError)
 
 // notificationHandler dispatches an incoming notification (no ID, no response).
@@ -69,6 +80,12 @@ type codec struct {
 	pending   map[int64]chan *frame
 	seq       atomic.Int64
 
+	// inflight holds the cancel func for each incoming request currently
+	// being served, keyed by the peer's request ID, so a cancel notification
+	// can cancel exactly that request's context.
+	inflightMu sync.Mutex
+	inflight   map[int64]context.CancelFunc
+
 	handlerWG sync.WaitGroup
 
 	reqHandler   requestHandler
@@ -76,6 +93,10 @@ type codec struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// cancelGrace is how long abandon waits for the peer to unwind after a
+	// cancel notification. Defaults to CancelGrace; overridden in tests.
+	cancelGrace time.Duration
 
 	closeOnce sync.Once
 	closed    atomic.Bool
@@ -95,10 +116,12 @@ func newCodec(r io.Reader, w io.Writer, reqHandler requestHandler, notifHandler 
 		enc:          json.NewEncoder(w),
 		dec:          dec,
 		pending:      make(map[int64]chan *frame),
+		inflight:     make(map[int64]context.CancelFunc),
 		reqHandler:   reqHandler,
 		notifHandler: notifHandler,
 		ctx:          ctx,
 		cancel:       cancel,
+		cancelGrace:  CancelGrace,
 		closeFn:      closeFn,
 	}
 }
@@ -123,6 +146,11 @@ func (c *codec) readLoop() {
 			c.handlerWG.Go(func() {
 				c.serveRequest(id, f.Method, f.Params)
 			})
+		case f.Method == methodCancel:
+			// Protocol-level cancel notification: cancel the context handed
+			// to the named in-flight request handler. Handled by the codec
+			// itself in both directions, never forwarded to notifHandler.
+			c.cancelInflight(f.Params)
 		case f.Method != "":
 			// Notification.
 			if c.notifHandler != nil {
@@ -141,8 +169,19 @@ func (c *codec) readLoop() {
 // serveRequest runs the request handler for an incoming request and writes the
 // response. The read loop increments c.handlerWG before launching this so
 // Wait cannot observe a zero counter before a handler is tracked.
+//
+// The handler receives a context scoped to this request, derived from the
+// codec context. A cancel notification naming this ID cancels it; so does the
+// connection dying. Registration happens before the handler runs so a cancel
+// that arrives immediately cannot be missed.
 func (c *codec) serveRequest(id int64, method string, params json.RawMessage) {
-	result, rpcErr := c.reqHandler(c.ctx, method, params)
+	ctx, cancel := context.WithCancel(c.ctx)
+	c.putInflight(id, cancel)
+	defer func() {
+		c.takeInflight(id)
+		cancel()
+	}()
+	result, rpcErr := c.reqHandler(ctx, method, params)
 	c.replyRaw(id, result, rpcErr)
 }
 
@@ -194,9 +233,28 @@ func (c *codec) call(ctx context.Context, method string, params any, out any) er
 		}
 		return nil
 	case <-ctx.Done():
+		c.abandon(id, ch)
 		return ctx.Err()
 	case <-c.ctx.Done():
 		return errors.New("plugin connection closed")
+	}
+}
+
+// abandon tells the peer to stop working on request id and gives it
+// CancelGrace to unwind and answer before returning. Without this window the
+// context handed to the peer's handler would be cancelled microseconds before
+// the session is torn down, making it decorative; with it, a cancelled plugin
+// Check/Apply can actually release resources and return.
+func (c *codec) abandon(id int64, ch chan *frame) {
+	if err := c.notify(methodCancel, cancelParams{ID: id}); err != nil {
+		return
+	}
+	timer := time.NewTimer(c.cancelGrace)
+	defer timer.Stop()
+	select {
+	case <-ch:
+	case <-timer.C:
+	case <-c.ctx.Done():
 	}
 }
 
@@ -236,6 +294,35 @@ func (c *codec) writeFrame(f frame) error {
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	return c.enc.Encode(f)
+}
+
+// putInflight/takeInflight track the cancel func of an incoming request being
+// served, so a cancel notification can reach exactly that handler.
+func (c *codec) putInflight(id int64, cancel context.CancelFunc) {
+	c.inflightMu.Lock()
+	c.inflight[id] = cancel
+	c.inflightMu.Unlock()
+}
+
+func (c *codec) takeInflight(id int64) context.CancelFunc {
+	c.inflightMu.Lock()
+	cancel := c.inflight[id]
+	delete(c.inflight, id)
+	c.inflightMu.Unlock()
+	return cancel
+}
+
+// cancelInflight handles an incoming cancel notification. An unknown or
+// already-finished ID is ignored: cancel is advisory and racing with normal
+// completion is expected.
+func (c *codec) cancelInflight(params json.RawMessage) {
+	var p cancelParams
+	if err := json.Unmarshal(params, &p); err != nil || p.ID <= 0 {
+		return
+	}
+	if cancel := c.takeInflight(p.ID); cancel != nil {
+		cancel()
+	}
 }
 
 func (c *codec) putPending(id int64, ch chan *frame) {

@@ -23,24 +23,24 @@ func NewSDKModuleAdapter(name string, mod Module) sdk.Module {
 func (a *sdkModuleAdapter) Name() string    { return a.name }
 func (a *sdkModuleAdapter) Version() string { return "" }
 
-func (a *sdkModuleAdapter) Check(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
+func (a *sdkModuleAdapter) Check(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
 	var out OutputFunc
 	if h != nil {
 		out = OutputFunc(h.Output)
 	}
-	res, err := a.mod.Check(context.TODO(), args, out)
+	res, err := a.mod.Check(ctx, args, out)
 	return sdk.CheckResult{
 		NeedsChange: res.NeedsChange,
 		Message:     res.Message,
 	}, err
 }
 
-func (a *sdkModuleAdapter) Apply(args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
+func (a *sdkModuleAdapter) Apply(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
 	var out OutputFunc
 	if h != nil {
 		out = OutputFunc(h.Output)
 	}
-	res, err := a.mod.Apply(context.TODO(), args, out)
+	res, err := a.mod.Apply(ctx, args, out)
 	return sdk.ApplyResult{
 		Message: res.Message,
 	}, err

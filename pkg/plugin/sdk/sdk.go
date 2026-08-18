@@ -3,12 +3,22 @@
 package sdk
 
 import (
+	"context"
 	"os"
 )
 
 // Module is the interface plugin authors implement. Check and Apply receive a
 // Handle: ALL target effects flow through it, including against the local
 // target. This brings plugins in line with first-party modules.
+//
+// They also receive a context.Context scoped to that one operation. It is a
+// real cancellation signal, not a placeholder: the host sends a protocol-level
+// cancel notification when it abandons the call (run timeout, interrupt), and
+// the SDK cancels the context this side of the process boundary. Pass it to
+// every handle op — an op issued with a background context cannot be
+// interrupted, and the plugin will be torn down mid-flight instead of
+// unwinding cleanly. See CancelGrace for the window a cancelled call has to
+// return.
 //
 // One target op is in flight per session. For high-latency transports, batch
 // work into a single script-shaped RunCommand instead of many round trips.
@@ -19,11 +29,12 @@ type Module interface {
 	Version() string
 	// Check reports whether the system is already in the desired state.
 	// NeedsChange must be true if the system is NOT yet in the desired state
-	// (i.e., Apply should be called). Target effects go through h.
-	Check(args map[string]any, h Handle) (CheckResult, error)
+	// (i.e., Apply should be called). Target effects go through h, and ctx
+	// must be passed to each of them so they can be interrupted.
+	Check(ctx context.Context, args map[string]any, h Handle) (CheckResult, error)
 	// Apply brings the system into the desired state, using h for all target
-	// effects.
-	Apply(args map[string]any, h Handle) (ApplyResult, error)
+	// effects and ctx for cancellation.
+	Apply(ctx context.Context, args map[string]any, h Handle) (ApplyResult, error)
 }
 
 // Serve runs the JSON-RPC loop for the given module, reading requests from
