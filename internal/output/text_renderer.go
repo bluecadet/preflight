@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"time"
+
+	"github.com/muesli/termenv"
 )
 
 // ANSI color codes sourced from the semantic palette.
@@ -31,6 +33,7 @@ const (
 type TextRenderer struct {
 	w               io.Writer
 	color           bool
+	profile         termenv.Profile // color capability tier; narrows 8-bit codes, doesn't gate on/off
 	verbose         bool
 	maxFailLines    int
 	width           int
@@ -59,6 +62,7 @@ func NewTextRendererWithOptions(w io.Writer, opts Options) *TextRenderer {
 	r := &TextRenderer{
 		w:            w,
 		color:        colorMode.UseColor(),
+		profile:      detectColorProfile(w),
 		verbose:      opts.Verbose,
 		maxFailLines: opts.MaxFailLines,
 		width:        width,
@@ -397,13 +401,16 @@ func (r *TextRenderer) coloredTarget(target string) string {
 }
 
 // hostColorANSI returns the ANSI escape code for a target's assigned host
-// color, or "" when the target has no color slot (unknown target).
+// color, or "" when the target has no color slot (unknown target). The
+// escape is narrowed to the terminal's detected color tier so an 8-bit host
+// hue degrades to the nearest base-16 color on a 16-color terminal instead
+// of emitting a code that terminal doesn't understand.
 func (r *TextRenderer) hostColorANSI(target string) string {
 	c, ok := DefaultPalette().HostColor(r.projection.HostColorIndex(target))
 	if !ok {
 		return ""
 	}
-	return c.ANSI
+	return downgradeSGR(r.profile, c.ANSI)
 }
 
 // rosterColorer returns a function that renders a target's raw name in its
