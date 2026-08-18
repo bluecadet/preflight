@@ -2,14 +2,14 @@
 #
 # Renders a simulated `preflight apply` using the offline simulator
 # (tools/sim), which feeds fabricated task events into the *real* TUI
-# renderer. No live hosts are required. See docs/assets/sim-preflight.sh.
+# renderer. No live hosts are required. See assets/sim-preflight.sh.
 #
 #   vhs docs/assets/header.tape
 #
 # Rebuilds the simulator into /tmp/preflight-sim during a hidden setup step
 # so the on-screen run starts instantly.
 
-Output docs/assets/header.gif
+Output assets/header.gif
 
 Set Shell "bash"
 Set FontSize 22
@@ -28,7 +28,7 @@ Type "go build -o /tmp/preflight-sim ./tools/sim" Enter
 Sleep 6s
 Type "export PREFLIGHT_SIM_BIN=/tmp/preflight-sim" Enter
 Sleep 300ms
-Type "source ./docs/assets/sim-preflight.sh" Enter
+Type "source ./assets/sim-preflight.sh" Enter
 Sleep 300ms
 Type "clear" Enter
 Sleep 300ms
