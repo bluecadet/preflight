@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0-beta.8](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-08-18)
+
+
+### Bug Fixes
+
+* **output:** downconvert host colors on 16-color terminals ([aa3456d](https://github.com/bluecadet/preflight/commit/aa3456d2005595841be72e6841f1d948df4e4756))
+
+
+### Maintenance
+
+* **output:** move neutral roles to base-16 grey ([7ad0006](https://github.com/bluecadet/preflight/commit/7ad0006154dfb0ce94f43badd36dd996f296bd7b))
+
 ## [1.0.0-beta.7](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.6...v1.0.0-beta.7) (2026-07-14)
 
 
