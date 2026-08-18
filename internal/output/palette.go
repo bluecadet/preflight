@@ -1,25 +1,67 @@
 package output
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/charmbracelet/lipgloss"
+)
 
 // ColorRole defines the color values for a single semantic concept in the
 // output palette. Each role specifies colors for both TUI (lipgloss) and
 // text (ANSI) rendering, as well as non-color text attributes such as bold
 // and italic.
 type ColorRole struct {
-	// Light is the 256-color palette index for light terminal backgrounds.
+	// Light is the color palette index for light terminal backgrounds.
+	// Base-16 roles use "0"-"15"; a handful of roles (HostColors) still use
+	// 256-color indices. Empty means terminal default foreground.
 	Light string
-	// Dark is the 256-color palette index for dark terminal backgrounds.
+	// Dark is the color palette index for dark terminal backgrounds.
 	// When Light and Dark are identical, the role is fixed (non-adaptive).
 	Dark string
 
 	// ANSI is the ANSI escape code for text-mode rendering.
-	// An empty string means no color (terminal default foreground).
+	// An empty string means no color (terminal default foreground). For
+	// roles whose Light/Dark are equal, this is mechanically derivable via
+	// ansiForeground and should be set from that rather than hand-typed, so
+	// it can't drift from the index.
 	ANSI string
 
 	// Text attributes.
 	Bold   bool
 	Italic bool
+	// Dim renders the foreground in a dimmer shade (SGR 2 / lipgloss
+	// Faint). Used to carve a second tier out of the terminal default
+	// foreground when a role needs to read as more recessed than
+	// full-brightness text but doesn't warrant its own grey index.
+	Dim bool
+}
+
+// ansiForeground derives the ANSI SGR escape for a palette index string. It
+// is the single source of truth for turning a Light/Dark index into the
+// text-renderer escape code, so the two can never drift apart for roles
+// where Light == Dark.
+//
+// "" (terminal default foreground) maps to "". Indices 0-7 map to the
+// standard SGR 30-37 codes; 8-15 map to the bright SGR 90-97 codes. Indices
+// above 15 (256-color, used only by HostColors) fall back to the 8-bit
+// SGR 38;5;n form.
+func ansiForeground(index string) string {
+	if index == "" {
+		return ""
+	}
+	n, err := strconv.Atoi(index)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case n >= 0 && n <= 7:
+		return fmt.Sprintf("\033[%dm", 30+n)
+	case n >= 8 && n <= 15:
+		return fmt.Sprintf("\033[%dm", 90+(n-8))
+	default:
+		return fmt.Sprintf("\033[38;5;%dm", n)
+	}
 }
 
 // LipglossStyle returns a lipgloss.Style for this color role with foreground
@@ -39,12 +81,15 @@ func (r ColorRole) LipglossStyle() lipgloss.Style {
 	if r.Italic {
 		s = s.Italic(true)
 	}
+	if r.Dim {
+		s = s.Faint(true)
+	}
 	return s
 }
 
 // LipglossStyleNoColor returns a lipgloss.Style for this color role with only
-// non-color text attributes applied (bold, italic). The foreground color is
-// not set, so the terminal default is used.
+// non-color text attributes applied (bold, italic, dim). The foreground
+// color is not set, so the terminal default is used.
 func (r ColorRole) LipglossStyleNoColor() lipgloss.Style {
 	s := lipgloss.NewStyle()
 	if r.Bold {
@@ -52,6 +97,9 @@ func (r ColorRole) LipglossStyleNoColor() lipgloss.Style {
 	}
 	if r.Italic {
 		s = s.Italic(true)
+	}
+	if r.Dim {
+		s = s.Faint(true)
 	}
 	return s
 }
@@ -107,28 +155,48 @@ type SemanticPalette struct {
 // and dark terminal backgrounds. Roles are strippable entirely when color
 // is disabled.
 func DefaultPalette() SemanticPalette {
+	// grey is the base-16 "mid-grey" slot (bright black) used for all
+	// "dim chrome" roles: decorative or peripheral text that should read as
+	// recessed on both light and dark backgrounds. Color 7 (plain white) is
+	// too close to invisible on a light background, so 8 is the only
+	// base-16 index that works adaptively here. Light == Dark, so a single
+	// var covers both and ANSI is derived from it directly rather than
+	// hand-typed, so the two can't drift apart.
+	grey := "8"
+	greyANSI := ansiForeground(grey)
+
 	return SemanticPalette{
 		// Status outcomes — adaptive bright variants for dark terminals.
-		OK:      ColorRole{Light: "2", Dark: "10", ANSI: "\033[32m"},    // green
-		Changed: ColorRole{Light: "3", Dark: "11", ANSI: "\033[33m"},    // yellow
-		Failed:  ColorRole{Light: "1", Dark: "9", ANSI: "\033[31m"},     // red
-		Skipped: ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
+		OK:      ColorRole{Light: "2", Dark: "10", ANSI: "\033[32m"}, // green
+		Changed: ColorRole{Light: "3", Dark: "11", ANSI: "\033[33m"}, // yellow
+		Failed:  ColorRole{Light: "1", Dark: "9", ANSI: "\033[31m"},  // red
+		Skipped: ColorRole{Light: grey, Dark: grey, ANSI: greyANSI},  // grey
 
 		// UI elements.
-		TaskName: ColorRole{},                                            // terminal default foreground
-		Muted:    ColorRole{Light: "240", Dark: "247", ANSI: "\033[90m"}, // grey
-		Bold:     ColorRole{ANSI: "\033[1m", Bold: true},                 // no color, bold
-		Spin:     ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"},    // blue
-		Divider:  ColorRole{Light: "237", Dark: "240", ANSI: "\033[90m"}, // dim grey
-		Output:   ColorRole{Light: "241", Dark: "250", Italic: true},     // grey italic
-		Elapsed:  ColorRole{Light: "240", Dark: "246", ANSI: "\033[90m"}, // grey
+		TaskName: ColorRole{},                                         // terminal default foreground
+		Muted:    ColorRole{Light: grey, Dark: grey, ANSI: greyANSI},  // grey
+		Bold:     ColorRole{ANSI: "\033[1m", Bold: true},              // no color, bold
+		Spin:     ColorRole{Light: "4", Dark: "12", ANSI: "\033[34m"}, // blue
+		Divider:  ColorRole{Light: grey, Dark: grey, ANSI: greyANSI},  // grey
+		// Default foreground, dim + italic. Dim (rather than a grey index)
+		// keeps Output visually recessed without colliding with the
+		// Divider/Elapsed "dim chrome" tier below it.
+		Output:  ColorRole{Italic: true, Dim: true},
+		Elapsed: ColorRole{Light: grey, Dark: grey, ANSI: greyANSI}, // grey
 
 		// Card elements.
-		CardTitle: ColorRole{Light: "4", Dark: "12", Bold: true},    // bold blue
-		Label:     ColorRole{Light: "245", Dark: "250", Bold: true}, // bold grey
-		Key:       ColorRole{Light: "246", Dark: "250"},             // grey
-		Value:     ColorRole{Light: "252", Dark: "254"},             // light grey
-		TableHead: ColorRole{Light: "252", Dark: "254", Bold: true}, // bold light grey
+		CardTitle: ColorRole{Light: "4", Dark: "12", Bold: true}, // bold blue
+		// Label and Key are default foreground + dim: a "secondary text"
+		// tier that sits between the grey8 "dim chrome" tier (Divider,
+		// Elapsed, Muted, Skipped) and the full-brightness "primary
+		// content" tier (Value, TableHead). Putting them at grey8 instead
+		// would make Key visually identical to Divider/Elapsed — it
+		// carries no Bold to distinguish it, so the two tiers would
+		// collapse into one.
+		Label:     ColorRole{Bold: true, Dim: true}, // default foreground, bold + dim
+		Key:       ColorRole{Dim: true},             // default foreground, dim
+		Value:     ColorRole{},                      // default foreground
+		TableHead: ColorRole{Bold: true},            // default foreground, bold
 
 		// Host color rotation — eight visually distinct hues chosen to
 		// avoid the status outcome colors (green/yellow/red/grey) so a host
