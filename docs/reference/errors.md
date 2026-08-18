@@ -65,6 +65,35 @@ capability flags, and a drift test asserts the
 [built-in module reference](./modules.md) matches the catalog — so the
 docs cannot silently drift from the code.
 
+## Schema Validation Errors
+
+Playbooks, actions, inventory files, and `preflight.yml` are validated
+against embedded JSON Schemas before anything runs. A violation names the
+JSON Pointer path to the offending field and the concrete reason — never
+the raw schema-compiler tree used to find it. When a document has more than
+one simultaneous violation, all of them are reported, not just the first.
+Example shapes:
+
+```text
+schema validation failed: at '/tasks/0/service/state': value must be one of 'running', 'stopped', 'disabled' (got 'sideways')
+schema validation failed: 2 schema violations:
+  at '/tasks/0/service/state': value must be one of 'running', 'stopped', 'disabled' (got 'sideways')
+  at '/tasks/1/reboot/timeout': got string, want integer
+```
+
+Every field typed as a string, number, boolean, enum, or object also accepts
+a bare `"{{ ... }}"` template expression, so it can be filled in at run
+time — this is a blanket contract of every schema in this package, not a
+per-field detail, and it is not restated in each error message. A value that
+is neither the expected type nor a template expression is reported against
+the expected type; the fact that a template would also have been accepted is
+not repeated as a phantom alternative.
+
+Malformed YAML (a syntax error, or a non-string mapping key) is a distinct
+failure from a well-formed document that violates the schema — the message
+prefix (`schema validation parse error` vs. `schema validation failed`) is
+part of the contract callers rely on to tell the two apart.
+
 ## Related Docs
 
 - [Built-in module reference](./modules.md) — per-module supported

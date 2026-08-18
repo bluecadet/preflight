@@ -482,8 +482,10 @@ tasks:
 
 // TestValidateYAML_AllErrorsReportedNotJustFirst answers one of the specific
 // questions in the task: when a document has multiple independent problems,
-// the jsonschema library collects and reports all of them (nested under the
-// enclosing anyOf/array failures), not merely the first one encountered.
+// every one of them is reported as its own flat, actionable line -- not
+// merely the first one encountered, and not buried under the anyOf/oneOf
+// scaffolding allowTemplateExpressionsInSchema injects at every ancestor
+// level (see formatValidationError/flattenValidationMessages).
 func TestValidateYAML_AllErrorsReportedNotJustFirst(t *testing.T) {
 	data := `
 name: p
@@ -505,6 +507,173 @@ tasks:
 	}
 	if !strings.Contains(msg, "/tasks/1/reboot/timeout") {
 		t.Errorf("error missing second task's failure location: %q", msg)
+	}
+	if !strings.Contains(msg, "2 schema violations:") {
+		t.Errorf("error = %q, want a count summarizing multiple simultaneous violations", msg)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Error readability: allowTemplateExpressionsInSchema wraps every
+// non-string-typed schema node in `anyOf: [originalSchema,
+// templateStringPattern]` so that "{{ }}" template expressions type-check
+// anywhere. Left unprocessed, that turns every ordinary type/enum/required/
+// additionalProperties mismatch into a several-levels-deep anyOf failure
+// tree ("'anyOf' failed" / "got object, want string" at every ancestor on
+// the path to the root), with the actionable path+reason buried at the
+// bottom. simplifyValidationError/formatValidationError collapse those
+// synthetic wrappers away; these tests pin down that the collapse actually
+// happened, not just that the old substring checks still pass.
+// ---------------------------------------------------------------------------
+
+func TestValidateYAML_ErrorsDoNotLeakAnyOfScaffolding(t *testing.T) {
+	tests := map[string]string{
+		"wrong type on module param": `
+name: p
+tasks:
+  - name: t1
+    reboot:
+      timeout: not-a-number
+`,
+		"missing required field": `
+name: p
+tasks:
+  - shell:
+      cmd: echo hi
+`,
+		"unknown key": `
+name: p
+tasks:
+  - name: t1
+    shell:
+      cmd: echo hi
+      bogus_option: true
+`,
+		"wrong enum value": `
+name: p
+tasks:
+  - name: t1
+    service:
+      state: sideways
+`,
+		"deeply nested error": `
+name: p
+tasks:
+  - name: t1
+    registry:
+      path: HKLM:\SOFTWARE\x
+      values:
+        - name: v1
+          patch:
+            - offset: -1
+              data: 1
+`,
+	}
+
+	for name, data := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
+			if err == nil {
+				t.Fatal("expected schema validation error, got nil")
+			}
+			msg := err.Error()
+			if strings.Contains(msg, "anyOf") {
+				t.Errorf("error = %q, should not leak synthetic anyOf scaffolding", msg)
+			}
+			if strings.Contains(msg, "got object, want string") {
+				t.Errorf("error = %q, should not leak the synthetic template-branch's type mismatch", msg)
+			}
+			if strings.Contains(msg, "does not match pattern") {
+				t.Errorf("error = %q, should not leak the synthetic template-branch's pattern mismatch", msg)
+			}
+			if strings.Contains(msg, "jsonschema validation failed with") {
+				t.Errorf("error = %q, should not leak the library's generic root-schema preamble", msg)
+			}
+		})
+	}
+}
+
+// TestValidateYAML_FieldPathNearStartOfMessage asserts the offending field
+// path is not just present (that was already true, and buried, before this
+// change) but leads the message, immediately after the "schema validation
+// failed: " prefix -- so a user reading the first line sees exactly what to
+// fix, not several lines of "'anyOf' failed" noise first.
+func TestValidateYAML_FieldPathNearStartOfMessage(t *testing.T) {
+	data := `
+name: p
+tasks:
+  - name: t1
+    service:
+      state: sideways
+`
+	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
+	if err == nil {
+		t.Fatal("expected schema validation error, got nil")
+	}
+	const prefix = "schema validation failed: at '/tasks/0/service/state':"
+	if !strings.HasPrefix(err.Error(), prefix) {
+		t.Fatalf("error = %q, want it to start with %q", err.Error(), prefix)
+	}
+}
+
+// TestValidateYAML_EnumErrorIncludesOffendingValue pins down a deliberate
+// enrichment made alongside the anyOf-scaffolding cleanup: kind.Enum's own
+// message ("value must be one of ...") never names the value that was
+// actually given. Before this change that gap was accidentally papered over
+// by the (now-discarded) synthetic template branch's pattern-mismatch
+// message, which happened to echo the raw string. flattenValidationMessages
+// now appends it explicitly instead of depending on that side effect.
+func TestValidateYAML_EnumErrorIncludesOffendingValue(t *testing.T) {
+	data := `
+name: p
+tasks:
+  - name: t1
+    service:
+      state: sideways
+`
+	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
+	if err == nil {
+		t.Fatal("expected schema validation error, got nil")
+	}
+	const want = "(got 'sideways')"
+	if !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %q, want it to name the offending value with substring %q", err, want)
+	}
+}
+
+// TestValidateYAML_GenuineCompoundSchemaErrorsPreserved guards the other
+// side of the same design decision: a real, hand-authored oneOf/anyOf in the
+// schema itself (as opposed to the synthetic template-tolerance wrapper)
+// must NOT be collapsed away. registryBinaryPatchSpec.data is declared as
+// `oneOf: [{type: integer, minimum: 0, maximum: 255}, {type: string}]`; a
+// boolean value satisfies neither branch, and both branch failures (plus the
+// oneOf summary) should still be reported.
+func TestValidateYAML_GenuineCompoundSchemaErrorsPreserved(t *testing.T) {
+	data := `
+name: p
+tasks:
+  - name: t1
+    registry:
+      path: HKLM:\SOFTWARE\x
+      values:
+        - name: v1
+          patch:
+            - offset: 1
+              data: true
+`
+	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
+	if err == nil {
+		t.Fatal("expected schema validation error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "'oneOf' failed") {
+		t.Errorf("error = %q, expected the genuine oneOf failure to still be reported", msg)
+	}
+	if !strings.Contains(msg, "got boolean, want integer") {
+		t.Errorf("error = %q, expected the integer branch's reason to still be reported", msg)
+	}
+	if !strings.Contains(msg, "got boolean, want string") {
+		t.Errorf("error = %q, expected the string branch's reason to still be reported", msg)
 	}
 }
 
