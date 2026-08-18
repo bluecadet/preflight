@@ -2058,8 +2058,10 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(plan): %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("expected plaintext plan mode 0600, got %#o", info.Mode().Perm())
+	if runtime.GOOS != "windows" {
+		if info.Mode().Perm() != 0o600 {
+			t.Fatalf("expected plaintext plan mode 0600, got %#o", info.Mode().Perm())
+		}
 	}
 	secretBytes, err := os.ReadFile(filepath.Join(extracted.RootDir, filepath.FromSlash(extracted.Manifest.SecretEntries[0].Path)))
 	if err != nil {

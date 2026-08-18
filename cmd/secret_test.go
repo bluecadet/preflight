@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -133,8 +134,10 @@ func TestRunSecretIdentityGenerateWritesPrivateIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat(identity): %v", err)
 	}
-	if got := info.Mode().Perm(); got != 0o600 {
-		t.Fatalf("identity mode = %o, want 600", got)
+	if runtime.GOOS != "windows" {
+		if got := info.Mode().Perm(); got != 0o600 {
+			t.Fatalf("identity mode = %o, want 600", got)
+		}
 	}
 	data, err := os.ReadFile(identityPath)
 	if err != nil {
