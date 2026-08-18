@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -606,6 +607,128 @@ inventory:
 		return runFacts(cmd, nil)
 	}); err != nil {
 		t.Fatalf("runFacts: %v", err)
+	}
+}
+
+// TestRunApplyEmitsTrueRunSummaryCountsAcrossHosts is a regression test for
+// the release-blocking bug where cmd/apply.go hardcoded every RunSummaryEvent
+// count to zero. It runs apply over two concurrently-executed inventory
+// hosts whose tasks are engineered to land on each of the four possible
+// outcomes exactly once in total (ok, changed, skipped, failed), then
+// asserts the emitted RunSummaryEvent — and the persisted run.json it feeds
+// — carry the true aggregate counts and target tallies rather than zeros.
+//
+// Outcome design, per host (see internal/module/shell.go and
+// internal/target/runtime.go for the Check/Apply -> status mapping):
+//   - kiosk-a: "run-command" applies successfully (changed); "idempotent"
+//     has a `creates` path that already exists (ok); "conditionally-skipped"
+//     has when=false (skipped). No task fails, so all three run in order.
+//   - kiosk-b: "run-command" invokes a nonexistent binary (failed), which
+//     halts that host's apply loop immediately — its other two tasks never
+//     execute, so they contribute no extra counts.
+//
+// Expected totals: ok=1, changed=1, skipped=1, failed=1; target tallies
+// ok=1 (kiosk-a), failed=1 (kiosk-b).
+func TestRunApplyEmitsTrueRunSummaryCountsAcrossHosts(t *testing.T) {
+	dir := t.TempDir()
+
+	sentinelPath := filepath.Join(dir, "sentinel.txt")
+	if err := os.WriteFile(sentinelPath, []byte("already applied"), 0o644); err != nil {
+		t.Fatalf("WriteFile(sentinel): %v", err)
+	}
+
+	playbookPath := filepath.Join(dir, "playbook.yml")
+	if err := os.WriteFile(playbookPath, []byte(`
+name: multi-outcome
+tasks:
+  - name: run-command
+    shell:
+      cmd: "{{ vars.cmd }}"
+      args: []
+  - name: idempotent
+    shell:
+      cmd: echo
+      args: ["noop"]
+      creates: "{{ vars.sentinel }}"
+  - name: conditionally-skipped
+    when: "{{ vars.run_skip }}"
+    shell:
+      cmd: echo
+      args: ["skip-me"]
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(playbook): %v", err)
+	}
+
+	configPath := filepath.Join(dir, "preflight.yml")
+	if err := os.WriteFile(configPath, []byte(`
+inventory:
+  groups:
+    lab: {}
+  hosts:
+    - name: kiosk-a
+      transport: local
+      groups: [lab]
+      vars:
+        cmd: echo
+        sentinel: "`+sentinelPath+`"
+        run_skip: "false"
+    - name: kiosk-b
+      transport: local
+      groups: [lab]
+      vars:
+        cmd: preflight-test-command-does-not-exist-zzz
+        sentinel: "`+sentinelPath+`-missing"
+        run_skip: "true"
+`), 0o644); err != nil {
+		t.Fatalf("WriteFile(config): %v", err)
+	}
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("target", "lab"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+	if err := cmd.Flags().Set("run-id", "test-run"); err != nil {
+		t.Fatalf("Set run-id: %v", err)
+	}
+	if err := cmd.Flags().Set("state-file", filepath.Join(dir, "state", "provision.json")); err != nil {
+		t.Fatalf("Set state-file: %v", err)
+	}
+
+	// kiosk-b's task fails, so apply is expected to return an error even
+	// though the run summary must still reflect every host's true counts.
+	if err := runApply(cmd, []string{playbookPath}); err == nil {
+		t.Fatal("expected apply to report an error from kiosk-b's failing task")
+	}
+
+	runDir := filepath.Join(dir, ".preflight", "runs", "test-run")
+	data, err := os.ReadFile(filepath.Join(runDir, "run.json"))
+	if err != nil {
+		t.Fatalf("read run.json: %v", err)
+	}
+	var summary map[string]any
+	if err := json.Unmarshal(data, &summary); err != nil {
+		t.Fatalf("unmarshal run.json: %v", err)
+	}
+
+	wantCounts := map[string]float64{"ok": 1, "changed": 1, "skipped": 1, "failed": 1}
+	for key, want := range wantCounts {
+		if got := summary[key]; got != want {
+			t.Errorf("run.json %s = %v, want %v", key, got, want)
+		}
+	}
+	if got := summary["status"]; got != "failed" {
+		t.Errorf(`run.json status = %v, want "failed"`, got)
+	}
+
+	tallies, ok := summary["tallies"].(map[string]any)
+	if !ok {
+		t.Fatalf("run.json tallies missing or wrong type: %v", summary["tallies"])
+	}
+	wantTallies := map[string]float64{"ok": 1, "failed": 1, "unreachable": 0}
+	for key, want := range wantTallies {
+		if got := tallies[key]; got != want {
+			t.Errorf("run.json tallies.%s = %v, want %v", key, got, want)
+		}
 	}
 }
 

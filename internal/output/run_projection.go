@@ -29,8 +29,9 @@ type activeActivity struct {
 
 // targetOutcome tracks a completed target's result for footer display.
 type targetOutcome struct {
-	target string
-	failed bool
+	target  string
+	outcome string
+	failed  bool
 }
 
 // TargetInfo holds the identity and transport details of a single target.
@@ -156,6 +157,31 @@ func NewRunProjectionWithOptions(opts Options) *RunProjection {
 	}
 }
 
+// ProjectionSink adapts a RunProjection to the Renderer interface so it can
+// be registered directly on a Bus as a pure event-tallying sink — e.g. to
+// accumulate true OK/Changed/Failed/Skipped and target-tally counts for the
+// final RunSummaryEvent, using the same fold logic the TUI/text renderer use
+// for their live counters. A ProjectionSink is not itself safe for
+// concurrent Emit calls; wrap it with Synchronized when hosts run
+// concurrently on the same Bus.
+type ProjectionSink struct {
+	Projection *RunProjection
+}
+
+// NewProjectionSink creates a ProjectionSink wrapping p.
+func NewProjectionSink(p *RunProjection) *ProjectionSink {
+	return &ProjectionSink{Projection: p}
+}
+
+// Emit folds event into the wrapped projection, discarding the returned
+// commit descriptors (this sink has no display surface).
+func (s *ProjectionSink) Emit(event Event) {
+	s.Projection.Apply(event)
+}
+
+// Close is a no-op; ProjectionSink holds no external resources.
+func (s *ProjectionSink) Close() {}
+
 // Apply folds an event into the projection and returns structured commit
 // descriptors for the scroll region. It never returns rendered strings
 // or bubbletea commands.
@@ -270,6 +296,26 @@ func (p *RunProjection) TargetCounts() (done, failed int) {
 		}
 	}
 	return done, failed
+}
+
+// Tallies buckets the per-target outcomes reported via TargetCompleteEvent
+// into a TargetCounts, keyed off the Outcome string ("ok", "failed",
+// "unreachable"). Any other or empty outcome value is counted as ok, matching
+// TargetCounts's existing done/failed split. Used to populate
+// RunSummaryEvent.TargetTallies for the final run summary.
+func (p *RunProjection) Tallies() TargetCounts {
+	var tc TargetCounts
+	for _, oc := range p.targetOutcomes {
+		switch oc.outcome {
+		case "failed":
+			tc.Failed++
+		case "unreachable":
+			tc.Unreachable++
+		default:
+			tc.OK++
+		}
+	}
+	return tc
 }
 
 // RunningTaskCount returns the total number of currently active tasks.
@@ -438,8 +484,9 @@ func (p *RunProjection) applyTargetStart(e TargetStartEvent) []CommitDescriptor 
 
 func (p *RunProjection) applyTargetComplete(e TargetCompleteEvent) {
 	p.targetOutcomes = append(p.targetOutcomes, targetOutcome{
-		target: e.Target,
-		failed: e.Outcome == "failed",
+		target:  e.Target,
+		outcome: e.Outcome,
+		failed:  e.Outcome == "failed",
 	})
 }
 

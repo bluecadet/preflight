@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -67,6 +68,42 @@ func TestBus_FanOut(t *testing.T) {
 	if !strings.Contains(out2, "RUN") {
 		t.Errorf("sink 2 expected RUN heading, got: %q", out2)
 	}
+}
+
+// TestBus_ConcurrentEmitToStatefulSink hammers a Bus with a RunLogSink from
+// many goroutines, mirroring cmd.runHosts fanning multiple hosts out to one
+// Bus. RunLogSink mutates unguarded state (seq, summary) in Emit, so it must
+// be wrapped with Synchronized before being added to a Bus that sees
+// concurrent callers — this fails under `go test -race` without that
+// wrapping.
+func TestBus_ConcurrentEmitToStatefulSink(t *testing.T) {
+	dir := t.TempDir()
+	sink, err := NewRunLogSink("concurrent-run", dir+"/run.jsonl")
+	if err != nil {
+		t.Fatalf("NewRunLogSink: %v", err)
+	}
+
+	bus := NewBus(Synchronized(sink))
+
+	const goroutines = 8
+	const eventsPerGoroutine = 50
+
+	var wg sync.WaitGroup
+	for g := range goroutines {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			for i := range eventsPerGoroutine {
+				bus.Emit(TaskOKEvent{
+					TaskID:   fmt.Sprintf("host-%d-task-%d", id, i),
+					TaskName: "concurrent-task",
+					Target:   fmt.Sprintf("host-%d", id),
+				})
+			}
+		}(g)
+	}
+	wg.Wait()
+	bus.Close()
 }
 
 func TestRunLogSink_WritesJSONL(t *testing.T) {

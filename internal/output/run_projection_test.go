@@ -1,6 +1,8 @@
 package output
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 )
@@ -411,6 +413,110 @@ func TestRunProjection_TargetComplete(t *testing.T) {
 	}
 	if failed != 1 {
 		t.Errorf("expected 1 failed target, got %d", failed)
+	}
+}
+
+func TestRunProjection_Tallies(t *testing.T) {
+	p := NewRunProjection()
+	p.Apply(TargetCompleteEvent{Target: "host-a", Outcome: "ok"})
+	p.Apply(TargetCompleteEvent{Target: "host-b", Outcome: "failed"})
+	p.Apply(TargetCompleteEvent{Target: "host-c", Outcome: "unreachable"})
+	p.Apply(TargetCompleteEvent{Target: "host-d", Outcome: "ok"})
+
+	got := p.Tallies()
+	want := TargetCounts{OK: 2, Failed: 1, Unreachable: 1}
+	if got != want {
+		t.Errorf("Tallies() = %+v, want %+v", got, want)
+	}
+}
+
+func TestRunProjection_TalliesEmpty(t *testing.T) {
+	p := NewRunProjection()
+	got := p.Tallies()
+	want := TargetCounts{}
+	if got != want {
+		t.Errorf("Tallies() = %+v, want %+v", got, want)
+	}
+}
+
+// TestRunProjection_TaskOutcomeCounts verifies the OK/Changed/Failed/Skipped
+// counters fold correctly across events from multiple targets sharing one
+// projection — the same accounting cmd/apply.go relies on (via
+// ProjectionSink) to populate the final RunSummaryEvent counts.
+func TestRunProjection_TaskOutcomeCounts(t *testing.T) {
+	p := NewRunProjection()
+
+	// host-a: one ok, one changed.
+	p.Apply(TaskOKEvent{Target: "host-a", TaskID: "t1", TaskName: "ok-task"})
+	p.Apply(TaskChangedEvent{Target: "host-a", TaskID: "t2", TaskName: "changed-task"})
+
+	// host-b: one skipped, one failed.
+	p.Apply(TaskSkippedEvent{Target: "host-b", TaskID: "t1", TaskName: "skipped-task", Reason: "when-condition-false"})
+	p.Apply(TaskFailedEvent{Target: "host-b", TaskID: "t2", TaskName: "failed-task", FailMessage: "boom"})
+
+	if p.OkCount != 1 {
+		t.Errorf("OkCount = %d, want 1", p.OkCount)
+	}
+	if p.ChangedCount != 1 {
+		t.Errorf("ChangedCount = %d, want 1", p.ChangedCount)
+	}
+	if p.SkippedCount != 1 {
+		t.Errorf("SkippedCount = %d, want 1", p.SkippedCount)
+	}
+	if p.FailedCount != 1 {
+		t.Errorf("FailedCount = %d, want 1", p.FailedCount)
+	}
+	if total := p.Total(); total != 4 {
+		t.Errorf("Total() = %d, want 4", total)
+	}
+}
+
+func TestProjectionSink_FoldsEventsIntoWrappedProjection(t *testing.T) {
+	p := NewRunProjection()
+	sink := NewProjectionSink(p)
+
+	sink.Emit(TaskOKEvent{Target: "host-a", TaskID: "t1", TaskName: "ok-task"})
+	sink.Emit(TaskChangedEvent{Target: "host-a", TaskID: "t2", TaskName: "changed-task"})
+	sink.Emit(TargetCompleteEvent{Target: "host-a", Outcome: "ok"})
+	sink.Close() // no-op; must not panic
+
+	if p.OkCount != 1 || p.ChangedCount != 1 {
+		t.Errorf("expected sink Emit to fold into wrapped projection, got ok=%d changed=%d", p.OkCount, p.ChangedCount)
+	}
+	if got := p.Tallies(); got != (TargetCounts{OK: 1}) {
+		t.Errorf("Tallies() = %+v, want {OK:1}", got)
+	}
+}
+
+// TestProjectionSink_ConcurrentEmitViaSynchronized mirrors how cmd/apply.go
+// registers the tally ProjectionSink on the Bus: wrapped in Synchronized so
+// concurrent host goroutines can fold events into one shared projection
+// without racing. Run with -race to catch a regression here.
+func TestProjectionSink_ConcurrentEmitViaSynchronized(t *testing.T) {
+	p := NewRunProjection()
+	sink := Synchronized(NewProjectionSink(p))
+
+	const hosts = 8
+	const tasksPerHost = 5
+	var wg sync.WaitGroup
+	for h := range hosts {
+		wg.Add(1)
+		go func(host int) {
+			defer wg.Done()
+			target := fmt.Sprintf("host-%d", host)
+			for tsk := range tasksPerHost {
+				sink.Emit(TaskOKEvent{Target: target, TaskID: fmt.Sprintf("t%d", tsk), TaskName: "task"})
+			}
+			sink.Emit(TargetCompleteEvent{Target: target, Outcome: "ok"})
+		}(h)
+	}
+	wg.Wait()
+
+	if want := hosts * tasksPerHost; p.OkCount != want {
+		t.Errorf("OkCount = %d, want %d", p.OkCount, want)
+	}
+	if got := p.Tallies(); got.OK != hosts {
+		t.Errorf("Tallies().OK = %d, want %d", got.OK, hosts)
 	}
 }
 

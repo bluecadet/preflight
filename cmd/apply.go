@@ -113,7 +113,18 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return fmt.Errorf("create run log: %w", err)
 	}
 	termRenderer := newRendererWithOptions(cmd, runDir)
-	bus := output.NewBus(termRenderer, runLogSink)
+	// tally folds every event into a RunProjection purely to recover true
+	// OK/Changed/Failed/Skipped and target-tally counts for the final
+	// RunSummaryEvent below — the same fold logic the TUI/text renderer use
+	// for their live counters (internal/output/run_projection.go), so the
+	// persisted run.json matches what the operator saw on screen.
+	tally := output.NewRunProjection()
+	// runHosts fans concurrent hosts out to the same Bus, so every stateful
+	// sink (seq counter + captured summary in RunLogSink, fold state in the
+	// tally projection) needs the same Synchronized wrapping termRenderer
+	// already gets — Bus.Emit dispatches to sinks without holding its own
+	// lock.
+	bus := output.NewBus(termRenderer, output.Synchronized(runLogSink), output.Synchronized(output.NewProjectionSink(tally)))
 	defer bus.Close()
 
 	// Emit the version event.
@@ -189,15 +200,18 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 		return nil
 	})
 
-	// Emit run summary.
+	// Emit run summary. runHosts has already joined on every host goroutine
+	// (wg.Wait), so tally's fold state is done mutating and safe to read
+	// without further synchronization.
 	elapsedMs := time.Since(runStartTime).Milliseconds()
 	bus.Emit(output.RunSummaryEvent{
-		Status:       runStatus(hostErrors),
-		OKCount:      0,
-		ChangedCount: 0,
-		FailedCount:  0,
-		SkippedCount: 0,
-		ElapsedMs:    elapsedMs,
+		Status:        runStatus(hostErrors),
+		TargetTallies: tally.Tallies(),
+		OKCount:       tally.OkCount,
+		ChangedCount:  tally.ChangedCount,
+		FailedCount:   tally.FailedCount,
+		SkippedCount:  tally.SkippedCount,
+		ElapsedMs:     elapsedMs,
 	})
 
 	// Write run status files.
