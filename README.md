@@ -141,7 +141,7 @@ Implemented today:
 
 Important current limits:
 
-- SSH auto-detects either a Windows PowerShell or POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, and `powershell` when `pwsh` or `powershell` is installed. Plugin modules are not yet supported over SSH.
+- SSH auto-detects either a Windows PowerShell or POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports a narrower built-in set, and plugin modules run over every transport, including SSH. See the [module reference](docs/reference/modules.md#platform-and-transport-support) for the full per-module transport matrix.
 
 ## Build And Test
 

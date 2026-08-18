@@ -191,7 +191,7 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 - `winrm` is the full Windows-native transport and supports all built-in modules.
 - For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Troubleshoot remote connections](../how-to/troubleshoot-remote-connections.md) for a concrete validation flow.
 - The current WinRM path is easiest to use with a local Windows account. If a host answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
-- `ssh` auto-detects either a Windows PowerShell runtime or a POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`), and `powershell` when installed.
+- `ssh` auto-detects either a Windows PowerShell runtime or a POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports a narrower built-in set. See the [module reference](./modules.md#platform-and-transport-support) for the current per-module transport matrix.
 - `local` still participates in inventory selection, but execution happens on the initiating machine.
 - For locked-down environments where targets cannot accept controller-initiated access, see [Deploy across restricted networks](../explanation/restricted-network-deployment.md).
 
