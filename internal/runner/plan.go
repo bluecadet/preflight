@@ -107,18 +107,21 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *t
 		return err
 	}
 
-	if err := task.ResolveModule(); err != nil {
+	// Resolve without mutating: task points into a Playbook or Action that is
+	// shared read-only across concurrently planned hosts.
+	module, params, err := task.ResolvedModule()
+	if err != nil {
 		return fmt.Errorf("%s: %w", label, err)
 	}
 
-	segment := counter.next(taskLineageSegment(task))
+	segment := counter.next(taskLineageSegment(task, module))
 	currentLineage := append(append([]string{}, lineage...), segment)
-	displaySegment := taskDisplaySegment(task)
+	displaySegment := taskDisplaySegment(task, module)
 	currentDisplayLineage := append(append([]string{}, displayLineage...), displaySegment)
 	taskBecome := mergeBecome(inheritedBecome, task.Become)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, currentLineage, currentDisplayLineage, taskBecome, taskScope)
+		pt, err := buildPlanTask(task, module, params, currentLineage, currentDisplayLineage, taskBecome, taskScope)
 		if err != nil {
 			return err
 		}
@@ -181,7 +184,7 @@ func deriveActionScope(task *action.Task, resolved *action.Action, parent *templ
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, become map[string]any, taskScope *template.Scope) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, module string, params map[string]any, lineage []string, displayLineage []string, become map[string]any, taskScope *template.Scope) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
 	ancestorLineage := lineage[:max(len(lineage)-1, 0)]
 	// ActionPath is the display lineage minus the leaf (the task's own name).
@@ -189,7 +192,7 @@ func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, be
 	if len(displayLineage) > 1 {
 		actionPath = strings.Join(displayLineage[:len(displayLineage)-1], "/")
 	}
-	rawParams := cloneMap(t.Params)
+	rawParams := cloneMap(params)
 	dependsOn := make([]string, 0, len(t.DependsOn))
 	for _, dep := range t.DependsOn {
 		dependsOn = append(dependsOn, lineageDependencyRef(ancestorLineage, dep))
@@ -200,7 +203,7 @@ func buildPlanTask(t *action.Task, lineage []string, displayLineage []string, be
 		Name:         t.Name,
 		Ref:          lineageDependencyRef(ancestorLineage, t.Key()),
 		ActionPath:   actionPath,
-		Module:       t.Module,
+		Module:       module,
 		Params:       rawParams,
 		Become:       cloneMap(become),
 		Scope:        taskScope,
@@ -219,13 +222,13 @@ func lineageDependencyRef(lineage []string, ref string) string {
 }
 
 // taskDisplaySegment returns the human-readable label for a task in the display lineage.
-func taskDisplaySegment(task *action.Task) string {
+func taskDisplaySegment(task *action.Task, module string) string {
 	if task.Name != "" {
 		return task.Name
 	}
 	kind := task.Uses
 	if kind == "" {
-		kind = task.Module
+		kind = module
 	}
 	if kind == "" {
 		return "task"
@@ -236,13 +239,13 @@ func taskDisplaySegment(task *action.Task) string {
 	return kind
 }
 
-func taskLineageSegment(task *action.Task) string {
+func taskLineageSegment(task *action.Task, module string) string {
 	if task.Name != "" {
 		return sanitizeLineageSegment(task.Name)
 	}
 	kind := task.Uses
 	if kind == "" {
-		kind = task.Module
+		kind = module
 	}
 	if kind == "" {
 		return "task"

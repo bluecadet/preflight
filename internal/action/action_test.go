@@ -61,10 +61,14 @@ func TestParseAction_Valid(t *testing.T) {
 	if len(a.Tasks) != 1 {
 		t.Errorf("expected 1 task, got %d", len(a.Tasks))
 	}
-	if a.Tasks[0].Module != "shell" {
-		t.Errorf("expected canonical module shell, got %q", a.Tasks[0].Module)
+	module, params, err := a.Tasks[0].ResolvedModule()
+	if err != nil {
+		t.Fatalf("unexpected resolve error: %v", err)
 	}
-	if a.Tasks[0].Params == nil {
+	if module != "shell" {
+		t.Errorf("expected canonical module shell, got %q", module)
+	}
+	if params == nil {
 		t.Fatal("expected canonical params to be populated")
 	}
 	if a.Tasks[0].Key() != "shell-step" {
@@ -101,21 +105,22 @@ func TestParsePlaybook_Valid(t *testing.T) {
 	}
 }
 
-func TestTask_ResolveModule(t *testing.T) {
+func TestTask_ResolvedModule(t *testing.T) {
 	a, _ := action.ParseAction([]byte(sampleAction))
 	task := &a.Tasks[0]
-	if err := task.ResolveModule(); err != nil {
+	module, params, err := task.ResolvedModule()
+	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if task.Module != "shell" {
-		t.Errorf("expected module=shell, got %q", task.Module)
+	if module != "shell" {
+		t.Errorf("expected module=shell, got %q", module)
 	}
-	if task.Params == nil {
+	if params == nil {
 		t.Error("expected params to be set")
 	}
 }
 
-func TestTask_ResolveModule_BothUsesAndInline(t *testing.T) {
+func TestTask_ResolvedModule_BothUsesAndInline(t *testing.T) {
 	yaml := `
 name: test
 tasks:
@@ -143,11 +148,14 @@ tasks:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	task := a.Tasks[0]
-	if task.Module != "shell" {
-		t.Fatalf("expected module shell, got %q", task.Module)
+	module, params, err := a.Tasks[0].ResolvedModule()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if got := task.Params["cmd"]; got != "echo" {
+	if module != "shell" {
+		t.Fatalf("expected module shell, got %q", module)
+	}
+	if got := params["cmd"]; got != "echo" {
 		t.Fatalf("expected params.cmd=echo, got %#v", got)
 	}
 }

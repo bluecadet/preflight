@@ -27,9 +27,11 @@ var knownInlineModuleSet = target.CatalogSet(target.CapabilityInline)
 
 // Task is a single step inside an action or playbook.
 //
-// Module and Params are the canonical internal representation used after
-// parsing/normalization. InlineModules preserves decode-time sugar for known
-// inline module YAML keys.
+// A Task holds only decode-time state. The canonical module+params form is
+// derived on demand by ResolvedModule rather than cached on the Task, so a
+// Task reachable from a Playbook or Action shared across concurrently planned
+// hosts is never written to after parsing. InlineModules preserves decode-time
+// sugar for known inline module YAML keys.
 type Task struct {
 	Name         string         `yaml:"name"`
 	ID           string         `yaml:"id"`
@@ -38,8 +40,6 @@ type Task struct {
 	Become       map[string]any `yaml:"become" json:"become,omitempty"`
 	ModuleName   string         `yaml:"module"`
 	ModuleParams map[string]any `yaml:"params"`
-	Module       string         `yaml:"-"` // canonical module name
-	Params       map[string]any `yaml:"-"` // canonical module params
 	When         string         `yaml:"when"`
 	DependsOn    []string       `yaml:"depends_on"`
 	IgnoreErrors bool           `yaml:"ignore_errors"`
@@ -116,22 +116,22 @@ func (t *Task) Key() string {
 	return t.Name
 }
 
-// ResolveModule canonicalizes a task into its internal module+params form.
+// ResolvedModule returns the task's canonical module name and params without
+// mutating the task. Resolution reads only decode-time fields, so it is safe
+// to call concurrently on a Task shared read-only across hosts.
+//
 // Returns an error if more than one inline module field is set, or if both
-// "uses" and a concrete module are set.
-func (t *Task) ResolveModule() error {
+// "uses" and a concrete module are set. A task with neither (a pure "uses"
+// task) resolves to an empty module and nil params.
+func (t *Task) ResolvedModule() (string, map[string]any, error) {
 	module, params, found, err := resolveTaskModule(t)
 	if err != nil {
-		return err
+		return "", nil, err
 	}
 	if !found {
-		t.Module = ""
-		t.Params = nil
-		return nil
+		return "", nil, nil
 	}
-	t.Module = module
-	t.Params = params
-	return nil
+	return module, params, nil
 }
 
 // Action is the parsed representation of an action.yml file.
@@ -145,13 +145,14 @@ type Action struct {
 	Tasks       []Task           `yaml:"tasks"`
 }
 
-// Normalize canonicalizes all tasks in the action.
-func (a *Action) Normalize() error {
+// validateTasks rejects any task whose module declaration is ambiguous or
+// contradictory, so parse-time failures surface before planning.
+func (a *Action) validateTasks() error {
 	if a == nil {
 		return nil
 	}
 	for i := range a.Tasks {
-		if err := a.Tasks[i].ResolveModule(); err != nil {
+		if _, _, err := a.Tasks[i].ResolvedModule(); err != nil {
 			return err
 		}
 	}
@@ -167,7 +168,7 @@ func ParseAction(data []byte) (*Action, error) {
 	if err := yaml.Unmarshal(data, &a); err != nil {
 		return nil, fmt.Errorf("action: parse error: %w", err)
 	}
-	if err := a.Normalize(); err != nil {
+	if err := a.validateTasks(); err != nil {
 		return nil, err
 	}
 	return &a, nil
@@ -183,13 +184,14 @@ type Playbook struct {
 	Tasks       []Task         `yaml:"tasks"`
 }
 
-// Normalize canonicalizes all tasks in the playbook.
-func (p *Playbook) Normalize() error {
+// validateTasks rejects any task whose module declaration is ambiguous or
+// contradictory, so parse-time failures surface before planning.
+func (p *Playbook) validateTasks() error {
 	if p == nil {
 		return nil
 	}
 	for i := range p.Tasks {
-		if err := p.Tasks[i].ResolveModule(); err != nil {
+		if _, _, err := p.Tasks[i].ResolvedModule(); err != nil {
 			return err
 		}
 	}
@@ -205,7 +207,7 @@ func ParsePlaybook(data []byte) (*Playbook, error) {
 	if err := yaml.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("playbook: parse error: %w", err)
 	}
-	if err := p.Normalize(); err != nil {
+	if err := p.validateTasks(); err != nil {
 		return nil, err
 	}
 	return &p, nil
