@@ -10,6 +10,10 @@ $ErrorActionPreference = "Stop"
 
 $repo = "bluecadet/preflight"
 $checksumAsset = "preflight_checksums.txt"
+$sigstoreAsset = "preflight_checksums.txt.sigstore.json"
+$certIdentityRegexp = "^https://github\.com/$repo/\.github/workflows/release\.yml@refs/tags/.+`$"
+$certOidcIssuer = "https://token.actions.githubusercontent.com"
+$skipVerify = $env:PREFLIGHT_SKIP_VERIFY
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
     $InstallDir = Join-Path $env:LOCALAPPDATA "preflight"
 }
@@ -49,10 +53,33 @@ $tmp = Join-Path $env:TEMP "preflight-install"
 New-Item -ItemType Directory -Force -Path $tmp | Out-Null
 $zipPath = Join-Path $tmp $assetName
 $checksumPath = Join-Path $tmp $checksumAsset
+$sigstorePath = Join-Path $tmp $sigstoreAsset
 
 Write-Host "Downloading preflight $tag ($arch)..."
 Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath
 Invoke-WebRequest -Uri $checksum.browser_download_url -OutFile $checksumPath
+
+if (-not [string]::IsNullOrWhiteSpace($skipVerify)) {
+    Write-Warning "PREFLIGHT_SKIP_VERIFY is set; skipping cosign signature verification of $checksumAsset. The download will still be checksum-verified."
+} elseif (Get-Command cosign -ErrorAction SilentlyContinue) {
+    $sigstore = $release.assets | Where-Object { $_.name -eq $sigstoreAsset } | Select-Object -First 1
+    if (-not $sigstore) {
+        throw "Could not find signature asset: $sigstoreAsset"
+    }
+    Invoke-WebRequest -Uri $sigstore.browser_download_url -OutFile $sigstorePath
+
+    & cosign verify-blob `
+        --bundle $sigstorePath `
+        --certificate-identity-regexp $certIdentityRegexp `
+        --certificate-oidc-issuer $certOidcIssuer `
+        $checksumPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "cosign signature verification failed for $checksumAsset. Aborting install; refusing to trust an unverifiable release."
+    }
+    Write-Host "cosign signature verified for $checksumAsset."
+} else {
+    Write-Warning "cosign was not found; skipping signature verification of $checksumAsset. The download will still be checksum-verified, but its provenance (that it was built and signed by the official release workflow) was not confirmed. Install cosign (https://docs.sigstore.dev/system_config/installation/) to enable signature verification."
+}
 
 $expectedLine = Select-String -Path $checksumPath -Pattern ([regex]::Escape($assetName) + '$') | Select-Object -First 1
 if (-not $expectedLine) {

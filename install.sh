@@ -7,7 +7,11 @@ set -eu
 REPO="bluecadet/preflight"
 INSTALL_DIR="${PREFLIGHT_INSTALL_DIR:-/usr/local/bin}"
 VERSION="${PREFLIGHT_VERSION:-}"
+SKIP_VERIFY="${PREFLIGHT_SKIP_VERIFY:-}"
 CHECKSUM_ASSET="preflight_checksums.txt"
+SIGSTORE_ASSET="preflight_checksums.txt.sigstore.json"
+CERT_IDENTITY_REGEXP="^https://github\.com/${REPO}/\.github/workflows/release\.yml@refs/tags/.+\$"
+CERT_OIDC_ISSUER="https://token.actions.githubusercontent.com"
 
 fail() {
   echo "$1" >&2
@@ -68,10 +72,26 @@ trap 'rm -rf "$TMP"' EXIT
 
 ARCHIVE_PATH="$TMP/$ASSET"
 CHECKSUM_PATH="$TMP/$CHECKSUM_ASSET"
+SIGSTORE_PATH="$TMP/$SIGSTORE_ASSET"
 
 echo "Downloading preflight $TAG ($OS/$ARCH)..."
 curl -fsSL "$BASE_URL/$ASSET" -o "$ARCHIVE_PATH" || fail "Failed to download $ASSET for $TAG."
 curl -fsSL "$BASE_URL/$CHECKSUM_ASSET" -o "$CHECKSUM_PATH" || fail "Failed to download $CHECKSUM_ASSET for $TAG."
+
+if [ -n "$SKIP_VERIFY" ]; then
+  echo "WARNING: PREFLIGHT_SKIP_VERIFY is set; skipping cosign signature verification of $CHECKSUM_ASSET. The download will still be checksum-verified." >&2
+elif command -v cosign >/dev/null 2>&1; then
+  curl -fsSL "$BASE_URL/$SIGSTORE_ASSET" -o "$SIGSTORE_PATH" || fail "Failed to download $SIGSTORE_ASSET for $TAG."
+  cosign verify-blob \
+    --bundle "$SIGSTORE_PATH" \
+    --certificate-identity-regexp "$CERT_IDENTITY_REGEXP" \
+    --certificate-oidc-issuer "$CERT_OIDC_ISSUER" \
+    "$CHECKSUM_PATH" \
+    || fail "cosign signature verification failed for $CHECKSUM_ASSET. Aborting install; refusing to trust an unverifiable release."
+  echo "cosign signature verified for $CHECKSUM_ASSET."
+else
+  echo "WARNING: cosign was not found; skipping signature verification of $CHECKSUM_ASSET. The download will still be checksum-verified, but its provenance (that it was built and signed by the official release workflow) was not confirmed. Install cosign (https://docs.sigstore.dev/system_config/installation/) to enable signature verification." >&2
+fi
 
 EXPECTED="$(grep "[[:space:]]$ASSET\$" "$CHECKSUM_PATH" | awk '{print $1}' | head -n 1)"
 [ -n "$EXPECTED" ] || fail "Could not find checksum entry for $ASSET in $CHECKSUM_ASSET."
