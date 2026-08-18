@@ -8,6 +8,6 @@
     "build": "docs build --config docs.config.yaml"
   },
   "devDependencies": {
-    "@bluecadet/docs": "^1.0.0"
+    "@bluecadet/docs": "^1.1.0"
   }
 }

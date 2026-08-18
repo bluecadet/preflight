@@ -1,8 +1,8 @@
 title: Preflight
 repoUrl: https://github.com/bluecadet/preflight
-glyph: "✓"
 accent: "#8fb4d6"
 accent2: "#d98a6e"
+favicon: "favicon.svg"
 
 site: https://preflight.bluecadet.com
 
@@ -15,6 +15,9 @@ content:
       - "reference/**/*.md"
       - "explanation/**/*.md"
       - "development/**/*.md"
+    assets:
+      - "favicon.svg"
+      - "header.cast"
   - base: ".."
     assets:
       - "install.sh"
