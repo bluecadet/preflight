@@ -16,17 +16,17 @@ import (
 //
 // Coverage (acceptance criteria — create, group add, absent, password-on-create):
 //   - create:          ensure present with password + group → StatusChanged;
-//                      oracle confirms user exists, password is set, and group
-//                      membership is held.
+//     oracle confirms user exists, password is set, and group
+//     membership is held.
 //   - idempotent:      re-check and re-apply return StatusOK.
 //   - group add:       apply with a new group on the existing user →
-//                      StatusChanged; oracle confirms membership.
+//     StatusChanged; oracle confirms membership.
 //   - password drift:  apply with a *different* password (plus the group add,
-//                      so Apply actually runs) leaves the original password
-//                      hash untouched — existing-user password drift is a
-//                      documented limitation, not corrected.
+//     so Apply actually runs) leaves the original password
+//     hash untouched — existing-user password drift is a
+//     documented limitation, not corrected.
 //   - absent:          ensure absent removes the user → StatusChanged;
-//                      idempotent re-check returns OK.
+//     idempotent re-check returns OK.
 func TestIntegration_POSIXUser(t *testing.T) {
 	forEachPOSIXTarget(t, func(t *testing.T, tgt *SSHTarget) {
 		ctx := context.Background()

@@ -19,7 +19,7 @@ import (
 //   - absent:   initial apply removes the package, oracle confirms absent
 //   - idempotent: re-check and re-apply both return StatusOK
 //   - drift:    re-add the package via RegisterByFamilyName, Check detects
-//               the change, Apply removes it again
+//     the change, Apply removes it again
 func TestIntegration_RemoveAppxPackages(t *testing.T) {
 	forEachTransport(t, func(t *testing.T, runner PowerShellRunner, tgt Target) {
 		ctx := context.Background()

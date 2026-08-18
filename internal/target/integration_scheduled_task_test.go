@@ -22,7 +22,7 @@ import (
 //   - idempotent:  re-check and re-apply both return StatusOK
 //   - dry-run:     check-only predicts Changed, oracle confirms no mutation
 //   - drift:       modify execute/arguments behind module's back, check detects,
-//                  apply converges back
+//     apply converges back
 //   - absent:      remove the task, verify via oracle
 //
 // MUST run exclusively — never co-scheduled with other live-VM tests
