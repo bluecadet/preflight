@@ -2,8 +2,8 @@
 
 package module
 
-func platformPowerShellBinary() string {
-	return "powershell.exe"
+func platformPowerShellBinary() (string, error) {
+	return "powershell.exe", nil
 }
 
 func platformPowerShellArgs() []string {

@@ -161,7 +161,11 @@ func runPowerShellFile(ctx context.Context, file string, args []string, env map[
 }
 
 func runPowerShellCommand(ctx context.Context, env map[string]string, workingDir string, args ...string) ([]byte, error) {
-	out, err := powershellCommandOutput(ctx, platformPowerShellBinary(), args, env, workingDir)
+	binary, err := platformPowerShellBinary()
+	if err != nil {
+		return nil, err
+	}
+	out, err := powershellCommandOutput(ctx, binary, args, env, workingDir)
 	if err != nil {
 		return out, fmt.Errorf("powershell: command failed: %w\noutput: %s", err, string(out))
 	}
@@ -197,8 +201,12 @@ func runPowerShellFileWithOutput(ctx context.Context, file string, args []string
 }
 
 func runPowerShellCommandWithOutput(ctx context.Context, onOutput target.OutputFunc, env map[string]string, workingDir string, args ...string) ([]string, error) {
+	binary, err := platformPowerShellBinary()
+	if err != nil {
+		return nil, err
+	}
 	pw, done := NewOutputPipe(onOutput)
-	cmd := exec.CommandContext(ctx, platformPowerShellBinary(), args...)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	if workingDir != "" {
 		cmd.Dir = workingDir
 	}
