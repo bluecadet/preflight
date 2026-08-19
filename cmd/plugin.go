@@ -64,7 +64,7 @@ func runPluginList(cmd *cobra.Command, _ []string) error {
 	}
 
 	renderer := newTextJSONRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 	renderer.Emit(output.PluginListEvent{Entries: entries})
 
 	return nil
