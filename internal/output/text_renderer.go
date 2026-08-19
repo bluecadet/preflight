@@ -164,12 +164,12 @@ func (r *TextRenderer) emitNewTaskStarted(e TaskStartedEvent) {
 
 func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
-	elapsed := r.elapsedForTask(key)
+	elapsed, timed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiGreen, statusGlyph("ok", r.projection.IsCheckMode()))
 	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
-	if elapsed > 0 {
+	if timed {
 		left += "  " + formatElapsed(elapsed)
 	}
 	r.writeLine(left)
@@ -183,12 +183,12 @@ func (r *TextRenderer) emitNewTaskOK(e TaskOKEvent) {
 
 func (r *TextRenderer) emitNewTaskChanged(e TaskChangedEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
-	elapsed := r.elapsedForTask(key)
+	elapsed, timed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiYellow, statusGlyph("changed", r.projection.IsCheckMode()))
 	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
-	if elapsed > 0 {
+	if timed {
 		left += "  " + formatElapsed(elapsed)
 	}
 	r.writeLine(left)
@@ -221,12 +221,12 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 
 func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	key := taskBufferKey(e.TaskID, e.TaskName, e.Target)
-	elapsed := r.elapsedForTask(key)
+	elapsed, timed := r.elapsedForTask(key)
 	delete(r.activeTasks, key)
 
 	glyph := r.colorize(ansiRed, statusGlyph("failed", r.projection.IsCheckMode()))
 	left := glyph + r.targetLabel(e.Target) + " " + r.colorize(ansiTaskName, e.TaskName)
-	if elapsed > 0 {
+	if timed {
 		left += "  " + formatElapsed(elapsed)
 	}
 	r.writeLine(left)
@@ -245,15 +245,15 @@ func (r *TextRenderer) emitNewTaskFailed(e TaskFailedEvent) {
 	}
 }
 
-func (r *TextRenderer) elapsedForTask(key string) time.Duration {
+func (r *TextRenderer) elapsedForTask(key string) (time.Duration, bool) {
 	if key == "" {
-		return 0
+		return 0, false
 	}
 	started, ok := r.activeTasks[key]
 	if !ok {
-		return 0
+		return 0, false
 	}
-	return time.Since(started)
+	return time.Since(started), true
 }
 
 func (r *TextRenderer) emitRunStart(e RunStartEvent) {
