@@ -45,13 +45,15 @@ func TestDialSSHClient_HandshakeTimesOut(t *testing.T) {
 		t.Fatalf("Atoi: %v", err)
 	}
 
+	const dialTimeout = 300 * time.Millisecond
+
 	start := time.Now()
 	_, err = dialSSHClient(SSHConfig{
 		Host:          host,
 		Port:          port,
 		Username:      "user",
 		Password:      "x",
-		Timeout:       200 * time.Millisecond,
+		Timeout:       dialTimeout,
 		HostKeyPolicy: HostKeyPolicyInsecure,
 	})
 	elapsed := time.Since(start)
@@ -59,10 +61,12 @@ func TestDialSSHClient_HandshakeTimesOut(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a handshake timeout error, got nil")
 	}
-	// Generous upper bound to avoid flakes while still proving the handshake
-	// did not hang indefinitely (it would with unbounded ssh.Dial).
-	if elapsed > 3*time.Second {
-		t.Fatalf("expected the dial to fail quickly, took %s: %v", elapsed, err)
+	// Bound is a generous multiple of the configured dial timeout, not a
+	// fixed wall-clock constant, so scheduler contention under -race on
+	// loaded CI runners can't make this flaky: it still fails an unbounded
+	// ssh.Dial (which would hang forever) while tolerating slow scheduling.
+	if maxElapsed := 20 * dialTimeout; elapsed > maxElapsed {
+		t.Fatalf("expected the dial to fail within %s, took %s: %v", maxElapsed, elapsed, err)
 	}
 	msg := err.Error()
 	if !strings.Contains(msg, "timeout") && !strings.Contains(msg, "deadline") {
