@@ -15,7 +15,7 @@ install: build-local
 	go install
 
 test:
-	go test ./...
+	go test -race ./...
 
 # Live tests against a real Windows endpoint over WinRM/SSH. Gated behind the
 # `integration` build tag so they stay out of the default `test` target, and
@@ -35,6 +35,6 @@ vet:
 	go vet ./...
 
 lint:
-	golangci-lint run
+	go tool golangci-lint run
 
 verify: test lint vet

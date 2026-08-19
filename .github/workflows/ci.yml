@@ -83,7 +83,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Test
-        run: go test ./...
+        run: go test -race ./...
 
   test-windows:
     name: Test (Windows)
@@ -153,14 +153,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: go vet
+        run: go vet ./...
+
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
-        with:
-          version: v2.11
+        run: go tool golangci-lint run
 
   build:
     name: Build (${{ matrix.goos }}/${{ matrix.goarch }})
     needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
