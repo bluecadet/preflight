@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.0.0](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.8...v1.0.0) (2026-08-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **schema:** validation now rejects inline module blocks that omit runtime-required parameters.
+* **runlog:** activity_end replaces activity_result, the fields above are removed, and Close returns an error.
+* **target:** IsUnreachable no longer classifies by Op. Callers wrapping connection failures must mark them with ErrUnreachable.
+* **plugin:** Serve takes ServeOptions, Inspect and InspectPlugin take a context, and NewClientStream/NewClientForInspection/ NewClientContext are replaced by NewClient with ClientOptions. Plugins must complete initialize before any other method.
+* **plugin:** sdk.Module.Check and sdk.Module.Apply take a context.Context as their first argument, and ProtocolVersion is now "2". Plugins built against v1 are rejected with a plugin_protocol error. Add the ctx parameter, pass it to every handle op instead of context.Background(), and rebuild. sdk.NewClientStream and sdk.NewClientFromCmd also take a leading context.Context, which bounds the initialize handshake only.
+
+### New Features
+
+* **plugin:** negotiate protocol version and capabilities ([627a855](https://github.com/bluecadet/preflight/commit/627a855f9bb9536bb076773b2649564301cdc3dd))
+* **plugin:** pass context to Check and Apply ([fc76cc3](https://github.com/bluecadet/preflight/commit/fc76cc33d314e9448110b477d9f56ec164c91a25))
+
+
+### Bug Fixes
+
+* **action:** keep playbook defaults through load ([3d5e00a](https://github.com/bluecadet/preflight/commit/3d5e00a831a9d37816e0bd4d58801b748186bc7c))
+* **module:** resolve pwsh before powershell on macOS/Linux ([b74d244](https://github.com/bluecadet/preflight/commit/b74d2444c5b423a06d481b5fd47b007783459f51))
+* **output:** render zero task durations ([0434b22](https://github.com/bluecadet/preflight/commit/0434b227a189c40babe68168269c1acdd413cfbb))
+* **output:** report true run summary counts ([6595053](https://github.com/bluecadet/preflight/commit/65950534a756828c23d2386ab5c9641e7b53dfce))
+* **plugin:** discard no-op renderer Close error ([cda5316](https://github.com/bluecadet/preflight/commit/cda53166dca5433e6f3f3586168b45fb50fd0b07))
+* **runlog:** validate schema against real output ([848cc22](https://github.com/bluecadet/preflight/commit/848cc228f155e45a9ea02ebc0e26254164ee13c2))
+* **runner:** stop mutating shared task state ([4ee45df](https://github.com/bluecadet/preflight/commit/4ee45df0af77c38c33c3e308e1f0892053bd88e8))
+* **runner:** tally targets that fail before apply ([33b744b](https://github.com/bluecadet/preflight/commit/33b744b4c64a80988f6b5ad28d85295c4de460a4))
+* **schema:** require runtime module params ([ad4a29f](https://github.com/bluecadet/preflight/commit/ad4a29fbf123256d36b3f83533124bec6a7964ac))
+* **schemavalidation:** flatten anyOf error noise ([9ec4e02](https://github.com/bluecadet/preflight/commit/9ec4e02d0b862ca2bbacb45eb4fc8ba9c38a63b4))
+* **ssh:** secure Windows upload modes ([6d81223](https://github.com/bluecadet/preflight/commit/6d81223defae2b530062bc90e27e8e9bf06c6f84))
+* **target,module,cmd:** recover panics in remaining goroutines ([f2a7eb8](https://github.com/bluecadet/preflight/commit/f2a7eb8e1b7257dc0abdee7b6af90111b8f15697))
+* **target:** classify unreachable targets by sentinel ([87e2db0](https://github.com/bluecadet/preflight/commit/87e2db0d6acf687156386166a9095aa64f800edd))
+
+
+### Maintenance
+
+* **output:** remove card frames ([69d5082](https://github.com/bluecadet/preflight/commit/69d5082653879b1b5fbd2a67d58a2fb374068d6a))
+* **schemavalidation:** drop dead resources ([26aa44f](https://github.com/bluecadet/preflight/commit/26aa44fc95592e247bf7ef33a862423af0ca3b5d))
+
 ## [1.0.0-beta.8](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.7...v1.0.0-beta.8) (2026-08-18)
 
 
