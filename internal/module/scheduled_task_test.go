@@ -47,15 +47,16 @@ func TestScheduledTaskModule_NoCmdExecWrapper(t *testing.T) {
 		t.Errorf("script must not use '/c <command>' pattern:\n%s", capturedScript)
 	}
 
-	// The script must use -Execute with the command param directly.
-	if !strings.Contains(capturedScript, "-Execute") {
-		t.Errorf("script must use -Execute, got:\n%s", capturedScript)
+	// The script must pass the command param directly as the action's
+	// Execute value, whether New-ScheduledTaskAction uses named args or splatting.
+	if !strings.Contains(capturedScript, "Execute = [string]$params.execute") {
+		t.Errorf("script must pass params.execute directly to the action, got:\n%s", capturedScript)
 	}
 }
 
 // TestScheduledTaskModule_CommandMetacharsDoNotInject verifies that a command
 // string containing shell metacharacters does not result in a script that would
-// execute them as operators when passed to New-ScheduledTaskAction -Execute.
+// execute them as operators when passed to New-ScheduledTaskAction.
 func TestScheduledTaskModule_CommandMetacharsDoNotInject(t *testing.T) {
 	var capturedScript string
 	orig := windowsCombinedOutput
@@ -86,7 +87,7 @@ func TestScheduledTaskModule_CommandMetacharsDoNotInject(t *testing.T) {
 
 	// The malicious operator literal must not appear unquoted in the script
 	// in a position where it could be interpreted as a shell operator.
-	// With -Execute ([string]$params.command), the value is dereferenced from
+	// With Execute = [string]$params.execute, the value is dereferenced from
 	// the JSON-encoded $params at runtime, so the script text itself only
 	// contains the JSON-encoded form (which escapes the metacharacters).
 	if strings.Contains(capturedScript, "& net user") {

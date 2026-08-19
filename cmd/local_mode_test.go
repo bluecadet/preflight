@@ -711,6 +711,7 @@ tasks:
 	}
 
 	configPath := filepath.Join(dir, "preflight.yml")
+	sentinelConfigPath := filepath.ToSlash(sentinelPath)
 	if err := os.WriteFile(configPath, []byte(`
 inventory:
   groups:
@@ -721,14 +722,14 @@ inventory:
       groups: [lab]
       vars:
         cmd: echo
-        sentinel: "`+sentinelPath+`"
+        sentinel: "`+sentinelConfigPath+`"
         run_skip: "false"
     - name: kiosk-b
       transport: local
       groups: [lab]
       vars:
         cmd: preflight-test-command-does-not-exist-zzz
-        sentinel: "`+sentinelPath+`-missing"
+        sentinel: "`+sentinelConfigPath+`-missing"
         run_skip: "true"
 `), 0o644); err != nil {
 		t.Fatalf("WriteFile(config): %v", err)

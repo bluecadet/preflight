@@ -45,7 +45,7 @@ func assertSnapshot(t *testing.T, path, got string) {
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", path, err)
 	}
-	if diff := compareSnapshot(string(want), got); diff != "" {
+	if diff := compareSnapshot(normalizeSnapshot(string(want)), got); diff != "" {
 		t.Fatalf("snapshot mismatch for %s:\n%s", path, diff)
 	}
 }

@@ -162,8 +162,9 @@ func assertCommandSnapshot(t *testing.T, path, got string) {
 	if err != nil {
 		t.Fatalf("ReadFile(%q): %v", path, err)
 	}
-	if string(want) != got {
-		t.Fatalf("snapshot mismatch for %s:\nwant:\n%s\n\ngot:\n%s", path, string(want), got)
+	wantNormalized := normalizeCommandSnapshot(string(want))
+	if wantNormalized != got {
+		t.Fatalf("snapshot mismatch for %s:\nwant:\n%s\n\ngot:\n%s", path, wantNormalized, got)
 	}
 }
 
@@ -206,7 +207,8 @@ func normalizePath(s, path string) string {
 		return s
 	}
 	s = strings.ReplaceAll(s, "/private"+path, "<cwd>")
-	return strings.ReplaceAll(s, path, "<cwd>")
+	s = strings.ReplaceAll(s, path, "<cwd>")
+	return strings.ReplaceAll(s, `<cwd>\`, "<cwd>/")
 }
 
 var (

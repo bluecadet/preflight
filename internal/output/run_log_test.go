@@ -66,8 +66,9 @@ func runLogGoldenTest(t *testing.T, name string) {
 		t.Fatalf("ReadFile(%q): %v", goldenPath, err)
 	}
 
-	if got != string(want) {
-		t.Fatalf("golden mismatch for %s:\nwant:\n%s\n\ngot:\n%s", goldenPath, string(want), got)
+	wantNormalized := normalizeRunLogJSONL(string(want))
+	if got != wantNormalized {
+		t.Fatalf("golden mismatch for %s:\nwant:\n%s\n\ngot:\n%s", goldenPath, wantNormalized, got)
 	}
 }
 

@@ -86,7 +86,7 @@ func TestBuildRegistry_DiscoveryIsLazy(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 
-	pluginPath := filepath.Join(binaryDir, "preflight-plugin-custom")
+	pluginPath := filepath.Join(binaryDir, exeName("preflight-plugin-custom"))
 	if err := os.WriteFile(pluginPath, []byte("#!/bin/sh\necho should-not-run\n"), 0o755); err != nil {
 		t.Fatalf("WriteFile(%q): %v", pluginPath, err)
 	}
@@ -115,12 +115,12 @@ func TestBuildRegistry_DetectsDuplicatePlugins(t *testing.T) {
 	workingDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 
-	first := filepath.Join(binaryDir, "preflight-plugin-custom")
+	first := filepath.Join(binaryDir, exeName("preflight-plugin-custom"))
 	secondDir := filepath.Join(workingDir, "plugins")
 	if err := os.MkdirAll(secondDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q): %v", secondDir, err)
 	}
-	second := filepath.Join(secondDir, "preflight-plugin-custom")
+	second := filepath.Join(secondDir, exeName("preflight-plugin-custom"))
 	for _, path := range []string{first, second} {
 		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatalf("WriteFile(%q): %v", path, err)
@@ -139,7 +139,7 @@ func TestBuildRegistry_DetectsBuiltinConflicts(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
 	for name := range base {
-		path := filepath.Join(binaryDir, "preflight-plugin-"+name)
+		path := filepath.Join(binaryDir, exeName("preflight-plugin-"+name))
 		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 			t.Fatalf("WriteFile(%q): %v", path, err)
 		}

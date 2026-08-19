@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -13,7 +15,11 @@ import (
 func buildTestBinary(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	binPath := dir + "/preflight-test"
+	binName := "preflight-test"
+	if runtime.GOOS == "windows" {
+		binName += ".exe"
+	}
+	binPath := filepath.Join(dir, binName)
 	cmd := exec.Command("go", "build", "-o", binPath, ".")
 	cmd.Dir = ".."
 	out, err := cmd.CombinedOutput()
@@ -30,7 +36,11 @@ func runModuleExecRPC(t *testing.T, binPath, moduleName, reqJSON string) []strin
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = os.Stderr
-	_ = cmd.Run()
+	if err := cmd.Run(); err != nil {
+		if _, exited := err.(*exec.ExitError); !exited {
+			t.Fatalf("run module-exec: %v", err)
+		}
+	}
 	out := strings.TrimSpace(stdout.String())
 	if out == "" {
 		return nil
@@ -63,7 +73,7 @@ func TestModuleExec_DirectoryCheck(t *testing.T) {
 		t.Skip("skipping binary round-trip test (set RUN_MODULE_EXEC_TESTS=1 to run)")
 	}
 	binPath := buildTestBinary(t)
-	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`
+	req := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{}}}`
 	lines := runModuleExecRPC(t, binPath, "directory", req)
 	if len(lines) == 0 {
 		t.Fatal("expected at least one output line")
@@ -72,9 +82,16 @@ func TestModuleExec_DirectoryCheck(t *testing.T) {
 		Result *struct {
 			Name string `json:"name"`
 		} `json:"result"`
+		Error *struct {
+			Code    int    `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
 	}
 	if err := json.Unmarshal([]byte(lines[0]), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
+	}
+	if resp.Error != nil {
+		t.Fatalf("initialize: [%d] %s", resp.Error.Code, resp.Error.Message)
 	}
 	if resp.Result == nil || resp.Result.Name != "directory" {
 		t.Errorf("expected name=directory, got: %v", resp.Result)
