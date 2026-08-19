@@ -115,5 +115,5 @@ func runStreamingScenario(_ map[string]any, h sdk.Handle) (sdk.CheckResult, erro
 func main() {
 	// Silence stderr noise in tests.
 	_ = os.Stderr
-	sdk.Serve(handleModule{})
+	sdk.Serve(handleModule{}, sdk.ServeOptions{})
 }

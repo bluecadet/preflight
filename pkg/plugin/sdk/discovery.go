@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -29,11 +30,14 @@ type DiscoveredPlugin struct {
 
 // PluginStatus describes a discovered plugin plus initialization status.
 type PluginStatus struct {
-	Name         string
-	Path         string
-	Source       string
-	Version      string
-	Initialized  bool
+	DiscoveredPlugin
+	// Version is the plugin's self-reported version, populated on successful
+	// initialization.
+	Version string
+	// Initialized reports whether the plugin was successfully spawned and
+	// completed the initialize handshake.
+	Initialized bool
+	// ErrorMessage is the initialization failure, if any.
 	ErrorMessage string
 }
 
@@ -76,8 +80,10 @@ func Scan(opts DiscoveryOptions) ([]DiscoveredPlugin, error) {
 }
 
 // Inspect initializes each discovered plugin and returns its reported version
-// or the initialization failure.
-func Inspect(opts DiscoveryOptions) ([]PluginStatus, error) {
+// or the initialization failure. ctx bounds each plugin's initialize
+// handshake, so an unresponsive plugin can be cancelled rather than hanging
+// the scan.
+func Inspect(ctx context.Context, opts DiscoveryOptions) ([]PluginStatus, error) {
 	plugins, err := Scan(opts)
 	if err != nil {
 		return nil, err
@@ -85,41 +91,22 @@ func Inspect(opts DiscoveryOptions) ([]PluginStatus, error) {
 
 	statuses := make([]PluginStatus, 0, len(plugins))
 	for _, plugin := range plugins {
-		status := PluginStatus{
-			Name:   plugin.Name,
-			Path:   plugin.Path,
-			Source: plugin.Source,
-		}
-
-		client, err := NewClientForInspection(context.Background(), plugin.Path)
-		if err != nil {
-			status.ErrorMessage = err.Error()
-			statuses = append(statuses, status)
-			continue
-		}
-
-		status.Initialized = true
-		status.Version = client.Version()
-		if client.Name() != "" {
-			status.Name = client.Name()
-		}
-		_ = client.Close()
-
-		statuses = append(statuses, status)
+		statuses = append(statuses, InspectPlugin(ctx, plugin.Path, plugin.Source))
 	}
 
 	return statuses, nil
 }
 
-// InspectPlugin initializes a single plugin executable and returns its status.
-func InspectPlugin(path, source string) PluginStatus {
-	status := PluginStatus{Path: path, Source: source}
-	name, ok := pluginName(filepath.Base(path))
-	if ok {
+// InspectPlugin initializes a single plugin executable and returns its
+// status. ctx bounds the initialize handshake, so an unresponsive plugin can
+// be cancelled rather than hanging the caller.
+func InspectPlugin(ctx context.Context, path, source string) PluginStatus {
+	status := PluginStatus{DiscoveredPlugin: DiscoveredPlugin{Path: path, Source: source}}
+	if name, ok := pluginName(filepath.Base(path)); ok {
 		status.Name = name
 	}
 
-	client, err := NewClientForInspection(context.Background(), path)
+	client, err := NewClientFromCmd(ctx, exec.Command(path), ClientOptions{})
 	if err != nil {
 		status.ErrorMessage = err.Error()
 		return status

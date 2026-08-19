@@ -28,6 +28,6 @@ func runModuleExec(_ *cobra.Command, args []string) error {
 		os.Exit(1)
 	}
 	adapter := target.NewSDKModuleAdapter(name, mod)
-	sdk.Serve(adapter)
+	sdk.Serve(adapter, sdk.ServeOptions{})
 	return nil
 }

@@ -75,7 +75,7 @@ func (e *posixSudoElevation) Start(ctx context.Context, binary string, moduleNam
 	if e.password != "" {
 		cmd.Stdin = strings.NewReader(e.password + "\n")
 	}
-	return sdk.NewClientFromCmd(ctx, cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
+	return sdk.NewClientFromCmd(ctx, cmd, sdk.ClientOptions{Ops: sdk.NoopHandleServer()})
 }
 
 // windowsCredentialElevation spawns the binary under a different user account
@@ -103,7 +103,7 @@ func (e *windowsCredentialElevation) Start(ctx context.Context, binary string, m
 		"-ExecutionPolicy", "Bypass",
 		"-Command", script,
 	)
-	return sdk.NewClientFromCmd(ctx, cmd, sdk.TargetInfo{}, sdk.NoopHandleServer())
+	return sdk.NewClientFromCmd(ctx, cmd, sdk.ClientOptions{Ops: sdk.NoopHandleServer()})
 }
 
 func buildWindowsElevatedSubprocessWrapper(binary, moduleName, user, password, loadProfile string) string {

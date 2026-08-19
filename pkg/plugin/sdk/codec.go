@@ -95,7 +95,8 @@ type codec struct {
 	cancel context.CancelFunc
 
 	// cancelGrace is how long abandon waits for the peer to unwind after a
-	// cancel notification. Defaults to CancelGrace; overridden in tests.
+	// cancel notification. Set by newCodec (ClientOptions.CancelGrace or the
+	// CancelGrace default); overridden directly in tests.
 	cancelGrace time.Duration
 
 	closeOnce sync.Once
@@ -107,7 +108,12 @@ type codec struct {
 // newCodec constructs a codec over r/w. reqHandler handles incoming requests;
 // notifHandler handles incoming notifications. Call start to launch the read
 // loop. closeFn (if non-nil) releases the underlying transport on Close.
-func newCodec(r io.Reader, w io.Writer, reqHandler requestHandler, notifHandler notificationHandler, closeFn func() error) *codec {
+// cancelGrace overrides how long abandon waits for a peer to unwind after a
+// cancel notification; zero uses the package default, CancelGrace.
+func newCodec(r io.Reader, w io.Writer, reqHandler requestHandler, notifHandler notificationHandler, closeFn func() error, cancelGrace time.Duration) *codec {
+	if cancelGrace <= 0 {
+		cancelGrace = CancelGrace
+	}
 	dec := json.NewDecoder(r)
 	ctx, cancel := context.WithCancel(context.Background())
 	return &codec{
@@ -121,7 +127,7 @@ func newCodec(r io.Reader, w io.Writer, reqHandler requestHandler, notifHandler 
 		notifHandler: notifHandler,
 		ctx:          ctx,
 		cancel:       cancel,
-		cancelGrace:  CancelGrace,
+		cancelGrace:  cancelGrace,
 		closeFn:      closeFn,
 	}
 }

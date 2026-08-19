@@ -73,7 +73,19 @@ func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Ha
 	if _, err := h.RunCommand(ctx, script); err != nil {
 		return sdk.ApplyResult{}, err
 	}
-	return sdk.ApplyResult{Message: "created " + path}, nil
+
+	msg := "created " + path
+	// NegotiatedFromContext reports what this plugin and the host agreed on
+	// during initialize. Gate optional behavior on a capability instead of a
+	// protocol version, so a host that does not know about "checksum" yet
+	// still works with this plugin unchanged.
+	if neg, ok := sdk.NegotiatedFromContext(ctx); ok && neg.HasCapability("marker_file/checksum") {
+		sum, err := h.RunCommand(ctx, "sha256sum "+shellQuote(path)+" | cut -d ' ' -f1")
+		if err == nil {
+			msg += ", sha256=" + strings.TrimSpace(sum.Stdout)
+		}
+	}
+	return sdk.ApplyResult{Message: msg}, nil
 }
 
 // shellQuote wraps s in POSIX single quotes so it is safe to interpolate.
@@ -82,11 +94,16 @@ func shellQuote(s string) string {
 }
 
 func main() {
-	sdk.Serve(markerFileModule{})
+	// Capabilities is this plugin's half of capability negotiation: it tells
+	// any host that also knows about "marker_file/checksum" that Apply will
+	// report a checksum, without requiring either side to bump a protocol
+	// version for it.
+	sdk.Serve(markerFileModule{}, sdk.ServeOptions{
+		Capabilities: []string{"marker_file/checksum"},
+	})
 }
 ```
 
-Important details:
 Important details:
 
 - `Name()` is the module name users put in `module:`.
@@ -95,6 +112,7 @@ Important details:
 - `Apply()` receives the same `params:` map that was defined in YAML.
 - All target effects go through `h` (the handle). Use `h.RunCommand`, `h.PutFile`, `h.GetFile`, `h.Info`, and `h.Output`.
 - `ctx` is a real cancellation signal. Pass it to every handle op and check it around anything long-running. See [Honouring cancellation](#honouring-cancellation).
+- `ctx` also carries the negotiated handshake result. Call `sdk.NegotiatedFromContext(ctx)` to read the protocol version and capability set this plugin and the host agreed on. See [Capabilities](#capabilities).
 
 ## 3. The Handle API
 
@@ -265,6 +283,37 @@ func (m myModule) Check(ctx context.Context, args map[string]any, h sdk.Handle) 
 ```
 
 v1 plugins are rejected with a clear `plugin_protocol` error. There is no compatibility mode — update and rebuild.
+
+### How Version Compatibility Works Now
+
+As a plugin author you do not set `protocol_version` yourself — the SDK you build against advertises it for you during `initialize`. What matters for forward compatibility is this: `initialize` no longer requires an exact version match. Host and plugin each advertise a `[min_protocol_version, protocol_version]` range, and the handshake succeeds as long as the two ranges overlap, negotiating down to the highest version both sides support. A future SDK release can widen its range to keep talking to plugins built against an older SDK, instead of hard-rejecting them the way the v1→v2 change above did.
+
+Rebuilding against the latest SDK is still the right move whenever you can — it is the only way to pick up new capabilities — but a plugin built against an older SDK release is no longer automatically dead on a version bump the way v1 plugins were.
+
+## Capabilities
+
+Capabilities are a second, independent extension point alongside the version range: a way for either side to advertise an optional feature by name instead of forcing a protocol version bump for every addition. The handshake is symmetric — both the host and the plugin advertise a set, and both sides see the intersection.
+
+Advertise your plugin's capabilities in `ServeOptions`, passed to `Serve`:
+
+```go
+sdk.Serve(markerFileModule{}, sdk.ServeOptions{
+	Capabilities: []string{"marker_file/checksum"},
+})
+```
+
+Read the negotiated outcome — the agreed protocol version and the capability names both sides advertised — from `ctx` in `Check` or `Apply`:
+
+```go
+if neg, ok := sdk.NegotiatedFromContext(ctx); ok && neg.HasCapability("marker_file/checksum") {
+	// Both this plugin and the host know about "marker_file/checksum";
+	// do the optional work.
+}
+```
+
+`ok` is only false if `ctx` did not come from a real `Check`/`Apply` call (for example, one built directly in a unit test). The full reference example above wires this up: it advertises `marker_file/checksum` and reports a checksum in `Apply`'s message when the host also recognizes it.
+
+A capability your plugin advertises but no current host checks for is not wasted — it documents intent, and it means a future host can start using the feature without requiring you to rebuild the plugin or bump anything.
 
 ## Batching Guidance For High-Latency Transports
 

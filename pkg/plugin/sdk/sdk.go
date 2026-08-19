@@ -22,6 +22,11 @@ import (
 //
 // One target op is in flight per session. For high-latency transports, batch
 // work into a single script-shaped RunCommand instead of many round trips.
+//
+// ctx also carries the Negotiated result of the initialize handshake —
+// retrieve it with NegotiatedFromContext to branch on the negotiated
+// protocol version or a capability advertised via ServeOptions, without
+// requiring a new SDK release for every optional feature.
 type Module interface {
 	// Name returns the module's canonical name (e.g. "my-module").
 	Name() string
@@ -37,12 +42,25 @@ type Module interface {
 	Apply(ctx context.Context, args map[string]any, h Handle) (ApplyResult, error)
 }
 
+// ServeOptions configures a plugin server's initialize handshake.
+type ServeOptions struct {
+	// Capabilities are the capability names this plugin advertises during
+	// initialize, alongside whatever the SDK build itself supports. A host
+	// (or another tool speaking the protocol) intersects these with its own
+	// advertised set; a plugin author checks the result via
+	// NegotiatedFromContext to gate optional behavior without requiring a
+	// protocol version bump.
+	Capabilities []string
+}
+
 // Serve runs the JSON-RPC loop for the given module, reading requests from
 // stdin and writing responses to stdout. Call this from your plugin's main().
 //
 // The host delivers TargetInfo at initialize; the Handle given to Check/Apply
 // exposes it (plus RunCommand/PutFile/GetFile/Output) by calling back over the
-// same stdio channel — both sides act as JSON-RPC client and server.
-func Serve(m Module) {
-	serveIO(m, os.Stdin, os.Stdout)
+// same stdio channel — both sides act as JSON-RPC client and server. opts
+// controls what this plugin advertises during that handshake; the zero value
+// advertises no capabilities beyond what the SDK build itself supports.
+func Serve(m Module, opts ServeOptions) {
+	serveIO(m, os.Stdin, os.Stdout, opts)
 }

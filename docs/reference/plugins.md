@@ -75,7 +75,7 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 
 | Method | Direction | Purpose |
 | --- | --- | --- |
-| `initialize` | host → plugin | Carry `protocol_version` and the enriched `TargetInfo`; plugin echoes `protocol_version` back with name/version |
+| `initialize` | host → plugin | Carry the host's protocol version range, capabilities, and the enriched `TargetInfo`; plugin responds with its own range, capabilities, and name/version |
 | `check` | host → plugin | Report whether change is needed; plugin may issue handle ops |
 | `apply` | host → plugin | Perform the change; plugin may issue handle ops |
 | `cancel` | both | Notification carrying the `id` of a request the sender is abandoning; no response |
@@ -84,9 +84,25 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 | `put_file` | plugin → host | Write bytes to a path on the target (host does the chunking) |
 | `get_file` | plugin → host | Read a path's bytes from the target |
 
-### Protocol Version
+### Protocol Version Negotiation
 
-`initialize` carries `protocol_version` (currently `"2"`). The plugin must echo it back in its `initialize` response. A plugin reporting no `protocol_version`, or an older one, is rejected with a `plugin_protocol` error — there is no compatibility mode.
+`initialize` carries `protocol_version` and `min_protocol_version` (both integers), the inclusive range of wire-protocol versions that side speaks, plus an optional `capabilities` array of feature strings. The peer responds with the same three fields for its own side. The handshake succeeds when the two ranges overlap; the negotiated version is the highest value present in both. This SDK build currently advertises `protocol_version: 2, min_protocol_version: 2` — a single-version range — but the mechanism means a future version bump can widen the range instead of hard-rejecting every previously built plugin.
+
+A peer whose range does not overlap (including a plugin that reports no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both sides' supported ranges. Fields neither side recognizes are ignored rather than rejected, so additive wire changes stay backward compatible.
+
+Capabilities are a second, independent extension point: each side advertises the feature names it supports, and the negotiated capability set is whatever both sides listed. Negotiation is symmetric — the host reads it via `Client.HasCapability`/`Client.Capabilities`, and a plugin reads the same negotiated outcome from inside `Check`/`Apply` via `sdk.NegotiatedFromContext(ctx)`. This lets a future optional feature be detected at runtime on either side, without forcing a protocol version bump just to add it.
+
+### Message Ordering: initialize Must Complete First
+
+`initialize` must be the first message on a session, and the host must receive its response before sending `check`, `apply`, or anything else. This is a hard requirement, not just a convention: the plugin server dispatches every decoded request to its own goroutine as soon as it is decoded, so nothing in the wire format itself stops two requests from being in flight at once if a peer sends them without waiting. `initialize` populates state (the negotiated version/capabilities, the delivered `TargetInfo`) that every other method depends on, so a request racing ahead of it would be racing undefined state.
+
+A plugin therefore refuses any method but `initialize` — including a second `initialize` once one has already completed — until `initialize` has finished, with a JSON-RPC error, code `-32011`, naming the method that arrived out of order:
+
+```json
+{"jsonrpc":"2.0","id":2,"error":{"code":-32011,"message":"method \"check\" called before initialize completed"}}
+```
+
+A conforming host — including the bundled Go `Client` — always waits for the `initialize` response before issuing anything else, so it never sees this error in practice. It exists for peers implementing the wire protocol directly rather than through the SDK, and as a defined, specified rejection rather than an unspecified race for anyone who gets the ordering wrong.
 
 ### Cancellation
 
@@ -113,9 +129,9 @@ Plugin authors implement:
 - `Check(ctx context.Context, args map[string]any, h Handle) (CheckResult, error)`
 - `Apply(ctx context.Context, args map[string]any, h Handle) (ApplyResult, error)`
 
-Then call `sdk.Serve(module)` from `main()`. The `Handle` exposes `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`; see [Write a plugin](../how-to/write-a-plugin.md) for the handle API and batching guidance.
+Then call `sdk.Serve(module, sdk.ServeOptions{})` from `main()`. `ServeOptions.Capabilities` is where a plugin advertises its own capability names during `initialize`; the zero value advertises none beyond what the SDK build itself supports. The `Handle` exposes `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`; see [Write a plugin](../how-to/write-a-plugin.md) for the handle API and batching guidance.
 
-Pass `ctx` to every handle op. An op issued with `context.Background()` cannot be interrupted, and the plugin is torn down mid-flight instead of unwinding.
+Pass `ctx` to every handle op. An op issued with `context.Background()` cannot be interrupted, and the plugin is torn down mid-flight instead of unwinding. `ctx` also carries the negotiated handshake result — `sdk.NegotiatedFromContext(ctx)` returns the agreed protocol version and capability set, letting `Check`/`Apply` branch on a capability instead of a version bump. See [Capabilities](../how-to/write-a-plugin.md#capabilities).
 
 ## Execution Model
 
@@ -135,7 +151,8 @@ Protocol v2 carries a few deliberate limits, documented here so plugin authors c
 - **Cancellation is cooperative** — the host delivers `cancel` and waits a two-second grace window, but it cannot force a plugin that ignores its context to stop. Such a plugin is killed when the window closes.
 - **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params and a context; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
 - **One in-flight target op per session** — the protocol allows one `run_command`/`put_file`/`get_file` in flight at a time; do not issue a second before the first returns. Batching guidance in [Write a plugin](../how-to/write-a-plugin.md) shows the script-shaped-exec pattern that keeps this from dominating latency.
-- **Protocol v2 is a clean break** — plugins reporting no `protocol_version`, or an older one, are rejected with a `plugin_protocol` error. There is no compatibility mode; update and rebuild.
+- **Protocol version ranges are negotiated, not pinned** — the host and plugin each advertise a `[min_protocol_version, protocol_version]` range and agree on the highest overlapping version; a plugin whose range does not overlap the host's (including one reporting no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both ranges.
+- **`initialize` must complete before anything else** — a plugin refuses `check`, `apply`, or a second `initialize` arriving before the first `initialize` has finished, with a distinct `-32011` error; see [Message Ordering](#message-ordering-initialize-must-complete-first).
 
 ## Bundle Behavior
 

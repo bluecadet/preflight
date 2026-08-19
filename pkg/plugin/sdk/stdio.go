@@ -4,28 +4,57 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
+	"sync"
 )
+
+// errCodeNotInitialized is returned for any method other than "initialize"
+// received before initialize has completed successfully — including a
+// second "initialize" once one has already succeeded. It is distinct from
+// -32601 (method not found): the method may be perfectly valid, just
+// arriving out of the one order the protocol allows.
+const errCodeNotInitialized = -32011
 
 // serveIO reads newline-delimited JSON-RPC from r and writes responses to w.
 // It is the internal entry point used by Serve and tests. Both sides act as
 // client and server: a plugin's Check/Apply may call back to the host for
 // handle ops (RunCommand/PutFile/GetFile) over the same channel.
-func serveIO(m Module, r io.Reader, w io.Writer) {
-	srv := newServer(m, r, w, nil)
+func serveIO(m Module, r io.Reader, w io.Writer, opts ServeOptions) {
+	srv := newServer(m, r, w, nil, opts)
 	srv.run()
 }
 
 // server is the plugin-side JSON-RPC endpoint.
+//
+// initialize must complete before any other method is dispatched: the codec
+// hands each decoded request to its own goroutine as soon as it is decoded
+// (see codec.readLoop), so nothing but this gate stops a "check" or "apply"
+// from running concurrently with the "initialize" handler that populates
+// info and negotiated. ready is closed exactly once, after initialize has
+// finished writing info and negotiated; every other handler receives from
+// ready before touching them. Per the Go memory model, a channel close
+// happens before a receive that observes it returns, so that receive is the
+// only synchronization info and negotiated need — no mutex required to read
+// them afterward. initMu serializes the initialize handler itself, so a
+// second (or concurrent) "initialize" cannot write those fields a second
+// time or double-close ready.
 type server struct {
-	mod   Module
-	codec *codec
-	info  TargetInfo // set at initialize
+	mod          Module
+	codec        *codec
+	capabilities []string // this plugin's advertised capabilities, from ServeOptions
+
+	initMu      sync.Mutex
+	initialized bool
+	ready       chan struct{} // closed once initialize completes successfully
+
+	info       TargetInfo // set once, by initialize, before ready is closed
+	negotiated Negotiated // set once, by initialize, before ready is closed
 }
 
-func newServer(m Module, r io.Reader, w io.Writer, closeFn func() error) *server {
-	s := &server{mod: m}
-	s.codec = newCodec(r, w, s.handleRequest, nil, closeFn)
+func newServer(m Module, r io.Reader, w io.Writer, closeFn func() error, opts ServeOptions) *server {
+	s := &server{mod: m, capabilities: opts.Capabilities, ready: make(chan struct{})}
+	s.codec = newCodec(r, w, s.handleRequest, nil, closeFn, 0)
 	return s
 }
 
@@ -41,29 +70,32 @@ func (s *server) run() {
 // this request: the codec cancels it when the host sends a cancel
 // notification for it, or when the host goes away. It is handed straight to
 // the module's Check/Apply so plugin authors can honour cancellation.
+//
+// Every method but "initialize" is gated on s.ready: a request arriving
+// before initialize has completed gets a clean errCodeNotInitialized error
+// instead of being dispatched against not-yet-written (or concurrently being
+// written) info/negotiated. This rejection is immediate, not a wait — a
+// well-behaved peer never triggers it, since it always receives the
+// initialize response before issuing anything else.
 func (s *server) handleRequest(ctx context.Context, method string, params json.RawMessage) (any, *rpcError) {
-	switch method {
-	case "initialize":
-		var p InitializeParams
-		if len(params) > 0 {
-			if err := json.Unmarshal(params, &p); err != nil {
-				return nil, &rpcError{Code: -32602, Message: "initialize params: " + err.Error()}
-			}
-		}
-		s.info = p.Target
-		return InitializeResult{
-			Name:            s.mod.Name(),
-			Version:         s.mod.Version(),
-			ProtocolVersion: ProtocolVersion,
-		}, nil
+	if method == "initialize" {
+		return s.handleInitialize(params)
+	}
 
+	select {
+	case <-s.ready:
+	default:
+		return nil, &rpcError{Code: errCodeNotInitialized, Message: fmt.Sprintf("method %q called before initialize completed", method)}
+	}
+
+	switch method {
 	case "check":
 		h := &serverHandle{info: s.info, codec: s.codec}
 		args, perr := argsFromParams(params)
 		if perr != nil {
 			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
 		}
-		res, err := s.mod.Check(ctx, args, h)
+		res, err := s.mod.Check(contextWithNegotiated(ctx, s.negotiated), args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -75,7 +107,7 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 		if perr != nil {
 			return nil, &rpcError{Code: -32602, Message: "invalid params: " + perr.Error()}
 		}
-		res, err := s.mod.Apply(ctx, args, h)
+		res, err := s.mod.Apply(contextWithNegotiated(ctx, s.negotiated), args, h)
 		if err != nil {
 			res.Error = err.Error()
 		}
@@ -84,6 +116,48 @@ func (s *server) handleRequest(ctx context.Context, method string, params json.R
 	default:
 		return nil, &rpcError{Code: -32601, Message: "method not found: " + method}
 	}
+}
+
+// handleInitialize processes the one "initialize" call this session accepts.
+// initMu serializes it end to end, so a duplicate or concurrent second call
+// cannot race the first's writes to info/negotiated or double-close ready;
+// it is simply rejected. On success, info and negotiated are fully written
+// before ready is closed, which is what lets every later handler read them
+// without a mutex.
+func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
+	s.initMu.Lock()
+	defer s.initMu.Unlock()
+
+	if s.initialized {
+		return nil, &rpcError{Code: errCodeNotInitialized, Message: "initialize called more than once"}
+	}
+
+	var p initializeParams
+	if len(params) > 0 {
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, &rpcError{Code: -32602, Message: "initialize params: " + err.Error()}
+		}
+	}
+	local := localProtocolRange(s.capabilities)
+	negotiated, err := negotiateProtocol(local, p.protocolRange)
+	if err != nil {
+		// Symmetric with the host: negotiateProtocol is the same function
+		// over the same two ranges, so this fires exactly when the host's
+		// own negotiation would. Fail loudly here too, rather than silently
+		// answering and relying solely on the host to notice.
+		return nil, &rpcError{Code: -32010, Message: err.Error()}
+	}
+
+	s.info = p.Target
+	s.negotiated = negotiated
+	s.initialized = true
+	close(s.ready)
+
+	return initializeResult{
+		protocolRange: local,
+		Name:          s.mod.Name(),
+		Version:       s.mod.Version(),
+	}, nil
 }
 
 // serverHandle is the Handle given to a plugin's Check/Apply. Info returns the

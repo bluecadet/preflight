@@ -45,7 +45,7 @@ func (r *Runner) stage(ctx context.Context, plan *ExecutionPlan) error {
 		return fmt.Errorf("stage: marshal plan: %w", err)
 	}
 
-	moduleInfos, pluginFiles, err := r.stageModuleFiles(plan, info)
+	moduleInfos, pluginFiles, err := r.stageModuleFiles(ctx, plan, info)
 	if err != nil {
 		return err
 	}
@@ -270,7 +270,7 @@ func sanitizeStageSecretName(name string) string {
 	return sanitizeSlug(name, "secret")
 }
 
-func (r *Runner) stageModuleFiles(plan *ExecutionPlan, info target.TargetInfo) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
+func (r *Runner) stageModuleFiles(ctx context.Context, plan *ExecutionPlan, info target.TargetInfo) ([]bundle.ModuleInfo, []bundle.FileSpec, error) {
 	used := make(map[string]struct{})
 	for _, task := range plan.Tasks {
 		used[task.Module] = struct{}{}
@@ -302,7 +302,7 @@ func (r *Runner) stageModuleFiles(plan *ExecutionPlan, info target.TargetInfo) (
 			if err != nil {
 				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)
 			}
-			status := sdk.InspectPlugin(plugin.Path, plugin.Source)
+			status := sdk.InspectPlugin(ctx, plugin.Path, plugin.Source)
 			if status.ErrorMessage != "" {
 				return nil, nil, fmt.Errorf("stage: inspect plugin %q: %s", plugin.Path, status.ErrorMessage)
 			}

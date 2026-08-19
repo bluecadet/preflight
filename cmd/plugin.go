@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"sort"
 
@@ -36,7 +37,7 @@ func init() {
 }
 
 func runPluginList(cmd *cobra.Command, _ []string) error {
-	plugins, err := sdk.Inspect(sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
+	plugins, err := sdk.Inspect(commandContextOrBackground(cmd), sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin list: %w", err)
 	}
@@ -69,8 +70,8 @@ func runPluginList(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runPluginInfo(_ *cobra.Command, args []string) error {
-	plugins, err := sdk.Inspect(sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
+func runPluginInfo(cmd *cobra.Command, args []string) error {
+	plugins, err := sdk.Inspect(commandContextOrBackground(cmd), sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin info: %w", err)
 	}
@@ -93,4 +94,18 @@ func runPluginInfo(_ *cobra.Command, args []string) error {
 	}
 
 	return fmt.Errorf("plugin info: plugin %q not found", name)
+}
+
+// commandContextOrBackground returns cmd's context, falling back to
+// context.Background() when cmd is nil (as in tests that call a RunE
+// function directly) or cobra has not set one (cmd.Context() is nil unless
+// the command was run through ExecuteContext).
+func commandContextOrBackground(cmd *cobra.Command) context.Context {
+	if cmd == nil {
+		return context.Background()
+	}
+	if ctx := cmd.Context(); ctx != nil {
+		return ctx
+	}
+	return context.Background()
 }

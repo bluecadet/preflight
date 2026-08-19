@@ -3,6 +3,7 @@ package sdk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -108,9 +109,17 @@ func (s *fakeHandleServer) GetFile(_ context.Context, path string) ([]byte, erro
 // sees EOF and exits.
 func pipeTransport(t *testing.T, m Module) (r io.Reader, w io.Writer, closeFn func() error) {
 	t.Helper()
+	return pipeTransportWithOptions(t, m, ServeOptions{})
+}
+
+// pipeTransportWithOptions is pipeTransport with control over the plugin
+// server's advertised ServeOptions (its capabilities), so tests can exercise
+// capability negotiation from both sides.
+func pipeTransportWithOptions(t *testing.T, m Module, opts ServeOptions) (r io.Reader, w io.Writer, closeFn func() error) {
+	t.Helper()
 	srvRead, clientWrite := io.Pipe()
 	clientRead, srvWrite := io.Pipe()
-	go serveIO(m, srvRead, srvWrite)
+	go serveIO(m, srvRead, srvWrite, opts)
 	return clientRead, clientWrite, func() error {
 		_ = clientWrite.Close()
 		_ = clientRead.Close()
@@ -121,9 +130,9 @@ func pipeTransport(t *testing.T, m Module) (r io.Reader, w io.Writer, closeFn fu
 func newClient(t *testing.T, m Module, info TargetInfo, ops HandleServer) *Client {
 	t.Helper()
 	r, w, closeFn := pipeTransport(t, m)
-	c, err := NewClientStream(context.Background(), r, w, closeFn, info, ops)
+	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{Info: info, Ops: ops})
 	if err != nil {
-		t.Fatalf("NewClientStream: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
 	return c
 }
@@ -246,10 +255,12 @@ func rawFrameServer(t *testing.T, initResp string) (r io.Reader, w io.Writer, cl
 }
 
 func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
-	// A pre-v1 initialize response: name/version but no protocol_version.
+	// A pre-v1 initialize response: name/version but no protocol_version or
+	// min_protocol_version at all (both decode to their zero value), so its
+	// range never overlaps this SDK's.
 	preV1 := `{"name":"old","version":"0.1.0"}`
 	r, w, closeFn := rawFrameServer(t, preV1)
-	_, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
 	if err == nil {
 		t.Fatal("expected initialize failure for pre-v1 plugin, got nil")
 	}
@@ -259,22 +270,141 @@ func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
 }
 
 func TestClientStream_RejectsProtocolMismatch(t *testing.T) {
-	mismatch := `{"name":"future","version":"9.0.0","protocol_version":"9"}`
+	// A future plugin whose entire supported range (v9-v9) sits above this
+	// SDK's (v2-v2): the ranges do not overlap.
+	mismatch := `{"name":"future","version":"9.0.0","protocol_version":9,"min_protocol_version":9}`
 	r, w, closeFn := rawFrameServer(t, mismatch)
-	_, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
 	if err == nil {
 		t.Fatal("expected initialize failure for protocol mismatch, got nil")
 	}
 	if !IsProtocolError(err) {
 		t.Fatalf("expected *ProtocolError, got %T: %v", err, err)
 	}
+	var pe *ProtocolError
+	if !errors.As(err, &pe) {
+		t.Fatalf("expected *ProtocolError, got %T", err)
+	}
+	if pe.LocalMin != MinProtocolVersion || pe.LocalMax != ProtocolVersion {
+		t.Errorf("LocalMin/LocalMax = %d/%d, want %d/%d", pe.LocalMin, pe.LocalMax, MinProtocolVersion, ProtocolVersion)
+	}
+	if pe.PeerMin != 9 || pe.PeerMax != 9 {
+		t.Errorf("PeerMin/PeerMax = %d/%d, want 9/9", pe.PeerMin, pe.PeerMax)
+	}
+	if !strings.Contains(err.Error(), "v2-v2") || !strings.Contains(err.Error(), "v9-v9") {
+		t.Errorf("error %q does not name both sides' ranges", err.Error())
+	}
+}
+
+// TestClientStream_NegotiatesOverlappingRange asserts that a peer advertising
+// a wider range than this SDK's still succeeds, negotiating down to the
+// highest version both sides support — the whole point of a range instead of
+// an exact-match version string.
+func TestClientStream_NegotiatesOverlappingRange(t *testing.T) {
+	// Peer supports v1 through v5; this SDK supports v2-v2. Overlap is v2.
+	wide := `{"name":"wide","version":"1.0.0","protocol_version":5,"min_protocol_version":1}`
+	r, w, closeFn := rawFrameServer(t, wide)
+	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	if got := c.ProtocolVersion(); got != ProtocolVersion {
+		t.Errorf("negotiated version = %d, want %d", got, ProtocolVersion)
+	}
+}
+
+// TestClientStream_CapabilityIntersection asserts that Client.Capabilities
+// reflects only the capability names both sides advertised, and that
+// HasCapability answers accordingly — the mechanism that lets a feature be
+// detected at runtime instead of gated on a version bump.
+func TestClientStream_CapabilityIntersection(t *testing.T) {
+	resp := `{"name":"caps","version":"1.0.0","protocol_version":2,"min_protocol_version":2,"capabilities":["foo","bar"]}`
+	r, w, closeFn := rawFrameServer(t, resp)
+	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{Capabilities: []string{"bar", "baz"}})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	if !c.HasCapability("bar") {
+		t.Error("expected HasCapability(bar) = true (advertised by both sides)")
+	}
+	if c.HasCapability("foo") {
+		t.Error("expected HasCapability(foo) = false (peer-only)")
+	}
+	if c.HasCapability("baz") {
+		t.Error("expected HasCapability(baz) = false (local-only)")
+	}
+	caps := c.Capabilities()
+	if len(caps) != 1 || caps[0] != "bar" {
+		t.Errorf("Capabilities() = %v, want [bar]", caps)
+	}
+}
+
+// negotiationCapturingModule records the Negotiated result its Check
+// observed via NegotiatedFromContext, so a test can assert on what the
+// plugin side of the handshake saw.
+type negotiationCapturingModule struct {
+	checkNegotiated Negotiated
+	checkOK         bool
+}
+
+func (negotiationCapturingModule) Name() string    { return "negotiation-mock" }
+func (negotiationCapturingModule) Version() string { return "1.0.0" }
+
+func (m *negotiationCapturingModule) Check(ctx context.Context, _ map[string]any, _ Handle) (CheckResult, error) {
+	m.checkNegotiated, m.checkOK = NegotiatedFromContext(ctx)
+	return CheckResult{}, nil
+}
+
+func (negotiationCapturingModule) Apply(context.Context, map[string]any, Handle) (ApplyResult, error) {
+	return ApplyResult{}, nil
+}
+
+// TestClientStream_PluginSeesNegotiatedCapabilities is the end-to-end proof
+// that capability negotiation is symmetric. The plugin advertises its own
+// capabilities via ServeOptions and computes the same Negotiated result the
+// host does; a module's Check reads it back via NegotiatedFromContext. This
+// is the gap a prior review found: capabilities existed only on the host's
+// Client, so a plugin author had no way to advertise or observe them.
+func TestClientStream_PluginSeesNegotiatedCapabilities(t *testing.T) {
+	mod := &negotiationCapturingModule{}
+	r, w, closeFn := pipeTransportWithOptions(t, mod, ServeOptions{Capabilities: []string{"bar", "baz"}})
+	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{Capabilities: []string{"foo", "bar"}})
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+
+	// Host side sees the intersection: only "bar" was advertised by both.
+	if !c.HasCapability("bar") || c.HasCapability("foo") || c.HasCapability("baz") {
+		t.Fatalf("host Capabilities() = %v, want exactly [bar]", c.Capabilities())
+	}
+
+	if _, err := c.Check(context.Background(), map[string]any{}, nil); err != nil {
+		t.Fatalf("Check: %v", err)
+	}
+
+	if !mod.checkOK {
+		t.Fatal("plugin Check did not observe a Negotiated result via NegotiatedFromContext")
+	}
+	if mod.checkNegotiated.Version != ProtocolVersion {
+		t.Errorf("plugin-observed negotiated version = %d, want %d", mod.checkNegotiated.Version, ProtocolVersion)
+	}
+	if !mod.checkNegotiated.HasCapability("bar") {
+		t.Error("plugin-observed negotiated capabilities missing bar")
+	}
+	if mod.checkNegotiated.HasCapability("foo") || mod.checkNegotiated.HasCapability("baz") {
+		t.Errorf("plugin-observed negotiated capabilities = %v, want exactly [bar]", mod.checkNegotiated.Capabilities())
+	}
 }
 
 func TestClientStream_CloseCallsCloseFn(t *testing.T) {
 	r, w, closeFn := pipeTransport(t, mockModule{})
-	c, err := NewClientStream(context.Background(), r, w, closeFn, TargetInfo{}, NoopHandleServer())
+	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
 	if err != nil {
-		t.Fatalf("NewClientStream: %v", err)
+		t.Fatalf("NewClient: %v", err)
 	}
 	if err := c.Close(); err != nil {
 		t.Errorf("Close: %v", err)
@@ -288,7 +418,7 @@ func TestClientStream_InitFailureCallsCloseFn(t *testing.T) {
 	_ = clientWrite.Close()
 	closeCalls := 0
 	closeFn := func() error { closeCalls++; return nil }
-	_, err := NewClientStream(context.Background(), clientRead, clientWrite, closeFn, TargetInfo{}, NoopHandleServer())
+	_, err := NewClient(context.Background(), clientRead, clientWrite, closeFn, ClientOptions{})
 	if err == nil {
 		t.Fatal("expected initialize failure, got nil error")
 	}

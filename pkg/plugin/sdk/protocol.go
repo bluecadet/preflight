@@ -2,24 +2,36 @@ package sdk
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
 
-// ProtocolVersion is the wire-protocol version this host and SDK speak.
-// Plugins must echo it back in their initialize response; a mismatch or
-// absence is a plugin_protocol error (older plugins are rejected).
+// ProtocolVersion is the highest wire-protocol version this SDK build speaks.
+// MinProtocolVersion is the lowest. Both host and plugin advertise this range
+// (plus a capability set) at initialize; negotiation picks the highest
+// version present in both ranges. A future additive change bumps
+// ProtocolVersion while leaving MinProtocolVersion where it is, so existing
+// binaries keep negotiating successfully instead of being hard-rejected.
 //
-// v2 adds the "cancel" notification, which is what makes the context.Context
-// passed to a plugin's Check/Apply real rather than decorative: without it,
-// cancellation could not cross the process boundary at all.
-const ProtocolVersion = "2"
+// Version history:
+//   - v1 — initial handle-op protocol (run_command/put_file/get_file, output
+//     notifications).
+//   - v2 — adds the "cancel" notification and per-request context.Context
+//     cancellation.
+const (
+	ProtocolVersion    = 2
+	MinProtocolVersion = 2
+)
 
-// CancelGrace is how long a peer waits, after sending a cancel notification
-// for an in-flight request, for that request to unwind and answer before it
-// gives up and returns the context error. It is the window in which a plugin's
-// cancelled Check/Apply can release locks, delete half-written files, and
-// return. A plugin that does not return within the window is torn down with
-// the session (a stated limitation).
+// CancelGrace is the default window a peer waits, after sending a cancel
+// notification for an in-flight request, for that request to unwind and
+// answer before it gives up and returns the context error. It is the window
+// in which a plugin's cancelled Check/Apply can release locks, delete
+// half-written files, and return. A plugin that does not return within the
+// window is torn down with the session (a stated limitation).
+//
+// ClientOptions.CancelGrace overrides this per client; the zero value there
+// falls back to CancelGrace.
 const CancelGrace = 2 * time.Second
 
 // cancelParams is the payload of the bidirectional "cancel" notification:
@@ -27,6 +39,114 @@ const CancelGrace = 2 * time.Second
 // the context.Context it handed that request's handler.
 type cancelParams struct {
 	ID int64 `json:"id"`
+}
+
+// protocolRange is one side's advertised wire-protocol support during the
+// initialize handshake: the inclusive [MinProtocolVersion, ProtocolVersion]
+// range of versions it can speak, plus the capability names it recognizes.
+// Both initializeParams and initializeResult embed it so host and plugin run
+// identical negotiation logic. Unrecognized peer fields are tolerated by
+// ordinary json.Unmarshal semantics.
+type protocolRange struct {
+	ProtocolVersion    int      `json:"protocol_version"`
+	MinProtocolVersion int      `json:"min_protocol_version"`
+	Capabilities       []string `json:"capabilities,omitempty"`
+}
+
+// localProtocolRange returns this SDK build's supported version range,
+// advertised to a peer at initialize. extra is appended to the capability
+// set advertised alongside it.
+func localProtocolRange(extra []string) protocolRange {
+	return protocolRange{
+		ProtocolVersion:    ProtocolVersion,
+		MinProtocolVersion: MinProtocolVersion,
+		Capabilities:       extra,
+	}
+}
+
+// Negotiated is the outcome of the initialize handshake: the wire-protocol
+// version and capability set both sides agreed on. On the host side it is
+// readable from a Client after a successful handshake. On the plugin side it
+// is attached to the context.Context passed to Check/Apply; retrieve it with
+// NegotiatedFromContext. Either way, callers branch on features at runtime
+// instead of gating them on a version bump.
+type Negotiated struct {
+	// Version is the highest protocol version present in both peers' ranges.
+	Version int
+	// capabilities is the set of capability names both sides advertised.
+	capabilities map[string]struct{}
+}
+
+// negotiatedContextKey is the context.Context key Negotiated is stored under
+// for a plugin's Check/Apply. Unexported so only this package can set it;
+// NegotiatedFromContext is the only way to read it back.
+type negotiatedContextKey struct{}
+
+// contextWithNegotiated returns a copy of ctx carrying n, retrievable by a
+// plugin's Check/Apply via NegotiatedFromContext.
+func contextWithNegotiated(ctx context.Context, n Negotiated) context.Context {
+	return context.WithValue(ctx, negotiatedContextKey{}, n)
+}
+
+// NegotiatedFromContext returns the Negotiated handshake result carried by
+// ctx, and whether one was present. Plugin authors call this from Check/Apply
+// to read the protocol version and capability set negotiated with the host,
+// so optional behavior can be gated on a capability rather than a protocol
+// version bump. ok is false for a context that did not come from a Check/Apply
+// call (for example, one built directly in a unit test).
+func NegotiatedFromContext(ctx context.Context) (n Negotiated, ok bool) {
+	n, ok = ctx.Value(negotiatedContextKey{}).(Negotiated)
+	return n, ok
+}
+
+// HasCapability reports whether name was advertised by both peers during the
+// handshake.
+func (n Negotiated) HasCapability(name string) bool {
+	_, ok := n.capabilities[name]
+	return ok
+}
+
+// Capabilities returns the negotiated capability names in no particular
+// order.
+func (n Negotiated) Capabilities() []string {
+	out := make([]string, 0, len(n.capabilities))
+	for c := range n.capabilities {
+		out = append(out, c)
+	}
+	return out
+}
+
+// negotiateProtocol resolves the wire-protocol version and capability set
+// shared between a local and peer protocolRange. It succeeds when the two
+// version ranges overlap, selecting the highest mutually supported version;
+// otherwise it returns a *ProtocolError naming both sides' supported ranges.
+func negotiateProtocol(local, peer protocolRange) (Negotiated, error) {
+	lo := max(local.MinProtocolVersion, peer.MinProtocolVersion)
+	hi := min(local.ProtocolVersion, peer.ProtocolVersion)
+	if lo > hi {
+		return Negotiated{}, &ProtocolError{
+			LocalMin: local.MinProtocolVersion,
+			LocalMax: local.ProtocolVersion,
+			PeerMin:  peer.MinProtocolVersion,
+			PeerMax:  peer.ProtocolVersion,
+		}
+	}
+	return Negotiated{Version: hi, capabilities: intersectCapabilities(local.Capabilities, peer.Capabilities)}, nil
+}
+
+// intersectCapabilities returns the capability names present in both a and b.
+func intersectCapabilities(a, b []string) map[string]struct{} {
+	bSet := make(map[string]struct{}, len(b))
+	for _, c := range b {
+		bSet[c] = struct{}{}
+	}
+	out := make(map[string]struct{})
+	for _, c := range a {
+		if _, ok := bSet[c]; ok {
+			out[c] = struct{}{}
+		}
+	}
+	return out
 }
 
 // TargetInfo is the enriched target context delivered to a plugin at
@@ -59,19 +179,20 @@ type getFileResult struct {
 	Data string `json:"data"`
 }
 
-// InitializeParams is sent by the host in the initialize request.
-type InitializeParams struct {
-	ProtocolVersion string     `json:"protocol_version"`
-	Target          TargetInfo `json:"target"`
+// initializeParams is sent by the host in the initialize request: its
+// supported protocol range and capabilities, plus the target it is running
+// against.
+type initializeParams struct {
+	protocolRange
+	Target TargetInfo `json:"target"`
 }
 
-// InitializeResult is the plugin's initialize response. ProtocolVersion must
-// equal ProtocolVersion or the host rejects the plugin with a
-// plugin_protocol error.
-type InitializeResult struct {
-	Name            string `json:"name"`
-	Version         string `json:"version"`
-	ProtocolVersion string `json:"protocol_version"`
+// initializeResult is the plugin's initialize response: its supported
+// protocol range and capabilities, plus its self-reported name and version.
+type initializeResult struct {
+	protocolRange
+	Name    string `json:"name"`
+	Version string `json:"version"`
 }
 
 // CheckResult is returned by a module's Check method.
@@ -153,3 +274,24 @@ func (noopHandleServer) GetFile(context.Context, string) ([]byte, error) {
 // is bound. It is intended for plugin inspection (plugin list/info/staging)
 // where there is no target to operate against.
 func NoopHandleServer() HandleServer { return noopHandleServer{} }
+
+// ProtocolError reports a peer whose supported wire-protocol version range
+// does not overlap with this side's, so no version could be negotiated.
+// LocalMin/LocalMax and PeerMin/PeerMax are each inclusive version bounds,
+// letting callers report both sides' supported ranges.
+type ProtocolError struct {
+	LocalMin, LocalMax int
+	PeerMin, PeerMax   int
+}
+
+// Error implements error.
+func (e *ProtocolError) Error() string {
+	peer := fmt.Sprintf("v%d-v%d", e.PeerMin, e.PeerMax)
+	if e.PeerMin == 0 && e.PeerMax == 0 {
+		peer = "no protocol_version reported (pre-negotiation plugin)"
+	}
+	return fmt.Sprintf(
+		"plugin protocol: no overlapping version range; this side supports v%d-v%d, peer supports %s",
+		e.LocalMin, e.LocalMax, peer,
+	)
+}

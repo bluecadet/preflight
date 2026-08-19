@@ -3,6 +3,7 @@ package plugins
 import (
 	"context"
 	"fmt"
+	"os/exec"
 	"sync"
 
 	"github.com/bluecadet/preflight/internal/target"
@@ -50,10 +51,11 @@ func NewModule(name, path string) target.Module {
 }
 
 // defaultNewClient is the production client factory: it spawns the plugin and
-// performs the v1 initialize handshake (protocol_version + TargetInfo), binding
-// handle-op requests to hs. *sdk.Client satisfies pluginClient directly.
+// performs the initialize handshake (protocol negotiation + TargetInfo),
+// binding handle-op requests to hs. *sdk.Client satisfies pluginClient
+// directly.
 func defaultNewClient(ctx context.Context, path string, info sdk.TargetInfo, hs sdk.HandleServer) (pluginClient, error) {
-	return sdk.NewClientContext(ctx, path, info, hs)
+	return sdk.NewClientFromCmd(ctx, exec.Command(path), sdk.ClientOptions{Info: info, Ops: hs})
 }
 
 // BindTarget returns a fresh Plugin bound to the given target ops backend. The
