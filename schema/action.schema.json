@@ -164,6 +164,7 @@
       "type": "object",
       "description": "Manage Windows registry keys and values",
       "additionalProperties": false,
+      "required": ["path"],
       "properties": {
         "path": {
           "type": "string",
@@ -189,6 +190,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name"],
+      "if": {
+        "properties": { "ensure": { "const": "absent" } },
+        "required": ["ensure"]
+      },
+      "else": {
+        "anyOf": [
+          { "required": ["data"] },
+          { "required": ["patch"] }
+        ]
+      },
       "properties": {
         "name": {
           "type": "string"
@@ -237,6 +248,7 @@
       "type": "object",
       "description": "Manage services",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
@@ -257,6 +269,7 @@
       "type": "object",
       "description": "Manage files",
       "additionalProperties": false,
+      "required": ["dest"],
       "properties": {
         "src": {
           "type": "string",
@@ -285,6 +298,7 @@
       "type": "object",
       "description": "Manage directories",
       "additionalProperties": false,
+      "required": ["path"],
       "properties": {
         "path": {
           "type": "string",
@@ -301,6 +315,7 @@
       "type": "object",
       "description": "Manage installed packages (MSI/EXE)",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -309,6 +324,11 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["product_id"],
+            "if": {
+              "properties": { "ensure": { "const": "absent" } },
+              "required": ["ensure"]
+            },
+            "else": { "required": ["source"] },
             "properties": {
               "product_id": { "type": "string", "description": "MSI product GUID for idempotency check" },
               "source": { "type": "string", "description": "Path or UNC path to MSI or EXE installer" },
@@ -323,6 +343,7 @@
       "type": "object",
       "description": "Manage Windows shortcuts (.lnk)",
       "additionalProperties": false,
+      "required": ["destination"],
       "properties": {
         "target": {
           "type": "string",
@@ -346,6 +367,26 @@
       "type": "object",
       "description": "Manage Windows scheduled tasks",
       "additionalProperties": false,
+      "required": ["name"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "ensure": { "const": "absent" } },
+            "required": ["ensure"]
+          },
+          "else": { "required": ["execute"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "ensure": { "not": { "const": "absent" } },
+              "trigger": { "const": "once" }
+            },
+            "required": ["trigger"]
+          },
+          "then": { "required": ["start_at"] }
+        }
+      ],
       "properties": {
         "name": {
           "type": "string",
@@ -413,6 +454,7 @@
       "type": "object",
       "description": "Manage local Windows user accounts",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
@@ -438,6 +480,7 @@
       "type": "object",
       "description": "Manage packages through Windows Package Manager",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -474,6 +517,7 @@
       "type": "object",
       "description": "Manage repo packages through apt or dnf (POSIX only)",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -499,6 +543,7 @@
       "type": "object",
       "description": "Remove built-in Windows Store-style apps",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -524,6 +569,7 @@
       "type": "object",
       "description": "Manage named Windows power plans",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string"
@@ -580,6 +626,7 @@
       "type": "object",
       "description": "Manage Windows features/roles",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
@@ -596,6 +643,12 @@
       "type": "object",
       "description": "Manage environment variables",
       "additionalProperties": false,
+      "required": ["name"],
+      "if": {
+        "properties": { "ensure": { "const": "absent" } },
+        "required": ["ensure"]
+      },
+      "else": { "required": ["value"] },
       "properties": {
         "name": {
           "type": "string",
@@ -622,6 +675,7 @@
       "type": "object",
       "description": "Manage Windows Firewall rules",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": {
           "type": "string",
@@ -659,6 +713,10 @@
       "type": "object",
       "description": "Run PowerShell scripts",
       "additionalProperties": false,
+      "anyOf": [
+        { "required": ["script"] },
+        { "required": ["file"] }
+      ],
       "properties": {
         "script": {
           "type": "string",
@@ -696,6 +754,7 @@
       "type": "object",
       "description": "Run shell commands",
       "additionalProperties": false,
+      "required": ["cmd"],
       "properties": {
         "cmd": {
           "type": "string",

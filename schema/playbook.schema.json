@@ -129,6 +129,7 @@
     "moduleRegistry": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["path"],
       "properties": {
         "path": { "type": "string" },
         "user": { "type": "string" },
@@ -143,6 +144,16 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["name"],
+      "if": {
+        "properties": { "ensure": { "const": "absent" } },
+        "required": ["ensure"]
+      },
+      "else": {
+        "anyOf": [
+          { "required": ["data"] },
+          { "required": ["patch"] }
+        ]
+      },
       "properties": {
         "name": { "type": "string" },
         "type": { "type": "string", "enum": ["string", "expand_string", "dword", "qword", "binary", "multi_string"] },
@@ -171,6 +182,7 @@
     "moduleService": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": { "type": "string" },
         "state": { "type": "string", "enum": ["running", "stopped", "disabled"] },
@@ -180,6 +192,7 @@
       "moduleFile": {
         "type": "object",
         "additionalProperties": false,
+        "required": ["dest"],
         "properties": {
           "src": { "type": "string" },
           "dest": { "type": "string" },
@@ -194,6 +207,7 @@
       "moduleDirectory": {
         "type": "object",
         "additionalProperties": false,
+        "required": ["path"],
         "properties": {
           "path": { "type": "string" },
           "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
@@ -202,6 +216,7 @@
     "modulePackage": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -209,6 +224,11 @@
             "type": "object",
             "additionalProperties": false,
             "required": ["product_id"],
+            "if": {
+              "properties": { "ensure": { "const": "absent" } },
+              "required": ["ensure"]
+            },
+            "else": { "required": ["source"] },
             "properties": {
               "product_id": { "type": "string" },
               "source": { "type": "string" },
@@ -222,6 +242,7 @@
     "moduleShortcut": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["destination"],
       "properties": {
         "target": { "type": "string" },
         "destination": { "type": "string" },
@@ -232,6 +253,26 @@
     "moduleScheduledTask": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "ensure": { "const": "absent" } },
+            "required": ["ensure"]
+          },
+          "else": { "required": ["execute"] }
+        },
+        {
+          "if": {
+            "properties": {
+              "ensure": { "not": { "const": "absent" } },
+              "trigger": { "const": "once" }
+            },
+            "required": ["trigger"]
+          },
+          "then": { "required": ["start_at"] }
+        }
+      ],
       "properties": {
         "name": { "type": "string" },
         "path": { "type": "string" },
@@ -273,6 +314,7 @@
     "moduleUser": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": { "type": "string" },
         "password": { "type": "string" },
@@ -283,6 +325,7 @@
     "moduleWingetPackage": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -307,6 +350,7 @@
       "type": "object",
       "description": "Manage repo packages through apt or dnf (POSIX only)",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -327,6 +371,7 @@
     "moduleRemoveAppxPackages": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["packages"],
       "properties": {
         "packages": {
           "type": "array",
@@ -346,6 +391,7 @@
     "modulePowerPlan": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": { "type": "string" },
         "base": { "type": "string" },
@@ -390,6 +436,7 @@
     "moduleWindowsFeature": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": { "type": "string" },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
@@ -398,6 +445,12 @@
     "moduleEnvironment": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
+      "if": {
+        "properties": { "ensure": { "const": "absent" } },
+        "required": ["ensure"]
+      },
+      "else": { "required": ["value"] },
       "properties": {
         "name": { "type": "string" },
         "value": { "type": "string" },
@@ -408,6 +461,7 @@
     "moduleFirewallRule": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["name"],
       "properties": {
         "name": { "type": "string" },
         "direction": { "type": "string", "enum": ["inbound", "outbound"] },
@@ -426,6 +480,10 @@
     "modulePowershell": {
       "type": "object",
       "additionalProperties": false,
+      "anyOf": [
+        { "required": ["script"] },
+        { "required": ["file"] }
+      ],
       "properties": {
         "script": { "type": "string" },
         "file": { "type": "string" },
@@ -439,6 +497,7 @@
     "moduleShell": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["cmd"],
       "properties": {
         "cmd": { "type": "string" },
         "args": { "type": "array", "items": { "type": "string" } },

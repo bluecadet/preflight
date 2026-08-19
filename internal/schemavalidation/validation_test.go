@@ -380,6 +380,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: sideways
 `,
 			wantSub: "value must be one of 'running', 'stopped', 'disabled'",
@@ -393,6 +394,7 @@ tasks:
       path: HKLM:\SOFTWARE\x
       values:
         - name: v1
+          data: value
           type: notarealtype
 `,
 			wantSub: "value must be one of 'string', 'expand_string', 'dword', 'qword', 'binary', 'multi_string'",
@@ -446,6 +448,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: sideways
 `,
 			wantPath: "/tasks/0/service/state",
@@ -492,6 +495,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: bogus
   - name: t2
     reboot:
@@ -554,6 +558,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: sideways
 `,
 		"deeply nested error": `
@@ -604,6 +609,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: sideways
 `
 	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
@@ -629,6 +635,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: sideways
 `
 	err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
@@ -775,6 +782,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: "{{ vars.desired_state }}"
 `,
 		"templated integer (reboot.timeout)": `
@@ -800,6 +808,7 @@ tasks:
       path: HKLM:\SOFTWARE\x
       values:
         - name: v1
+          data: value
           type: "{{ vars.regtype }}"
 `,
 	}
@@ -818,6 +827,7 @@ name: p
 tasks:
   - name: t1
     service:
+      name: test-service
       state: "{{ vars.desired_state"
 `
 		err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)

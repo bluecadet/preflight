@@ -236,6 +236,25 @@ tasks:
 	}
 }
 
+func TestRunValidateRejectsMissingRequiredModuleParam(t *testing.T) {
+	dir := t.TempDir()
+	path := writeValidatePlaybook(t, dir, `
+name: missing-shell-command
+tasks:
+  - name: run shell command
+    shell:
+      args: ["hello"]
+`)
+
+	err := runValidate(nil, []string{path})
+	if err == nil {
+		t.Fatal("expected validation error for missing shell command")
+	}
+	if !strings.Contains(err.Error(), "playbook validation error") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRunValidateRejectsSchemaInvalidPlaybook(t *testing.T) {
 	dir := t.TempDir()
 	path := writeValidatePlaybook(t, dir, `
