@@ -73,6 +73,57 @@ func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
 	}
 }
 
+// TestRunApplyReportsRunJSONWriteFailure forces the final run.json write to
+// fail (by pre-occupying its path with a non-empty directory, which
+// os.Rename refuses to replace on every platform — see
+// internal/output/run_sink_test.go for the same technique at the sink
+// level) and asserts the failure reaches runApply's own return value, not
+// just RunLogSink.Close() in isolation. That return value is what cobra
+// turns into the process's non-zero exit code, so this is the end of the
+// propagation chain the Close() error-return refactor exists to fix: a
+// disk-full or permission failure writing the primary audit artifact must
+// fail the run, not just log a swallowed error.
+func TestRunApplyReportsRunJSONWriteFailure(t *testing.T) {
+	playbookPath, _ := writeTestPlaybookWithInventory(t)
+	projectDir := filepath.Dir(playbookPath)
+
+	const runID = "runjson-write-failure"
+	runDir := filepath.Join(projectDir, ".preflight", "runs", runID)
+	if err := os.MkdirAll(runDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", runDir, err)
+	}
+	blockedPath := filepath.Join(runDir, "run.json")
+	if err := os.Mkdir(blockedPath, 0o755); err != nil {
+		t.Fatalf("Mkdir(%q): %v", blockedPath, err)
+	}
+	if err := os.WriteFile(filepath.Join(blockedPath, "occupied"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile(occupied): %v", err)
+	}
+
+	cmd := newTestCommand()
+	if err := cmd.Flags().Set("target", "lab"); err != nil {
+		t.Fatalf("Set target: %v", err)
+	}
+	if err := cmd.Flags().Set("run-id", runID); err != nil {
+		t.Fatalf("Set run-id: %v", err)
+	}
+
+	_, err := captureStdout(t, func() error {
+		return runApply(cmd, []string{playbookPath})
+	})
+	if err == nil {
+		t.Fatal("expected runApply to report the run.json write failure, not swallow it")
+	}
+	if !strings.Contains(err.Error(), "run.json") {
+		t.Fatalf("expected the run.json failure to be visible in the returned error, got: %v", err)
+	}
+
+	// The JSONL log must still exist — only the run.json summary failed.
+	if _, statErr := os.Stat(filepath.Join(runDir, "run.jsonl")); statErr != nil {
+		t.Fatalf("expected run.jsonl to exist despite the run.json failure: %v", statErr)
+	}
+}
+
 func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
 	playbookPath, _ := writeTestPlaybookWithInventory(t)
 

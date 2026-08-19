@@ -118,7 +118,7 @@ func TestTextRenderer_WideWidth_Snapshot(t *testing.T) {
 	for _, event := range events {
 		r.Emit(event)
 	}
-	r.Close()
+	_ = r.Close()
 
 	assertSnapshot(t, snapshotPath("text", "run-with-one-ok-task-wide"), normalizeSnapshot(buf.String()))
 }

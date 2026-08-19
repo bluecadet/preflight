@@ -24,7 +24,7 @@ func TestBus_ScrubRedactsSecrets(t *testing.T) {
 		FailMessage: "error using sensitive-data",
 		Output:      []string{"login with my-secret-token", "normal line"},
 	})
-	bus.Close()
+	_ = bus.Close()
 
 	out := buf.String()
 	if strings.Contains(out, "my-secret-token") {
@@ -58,7 +58,7 @@ func TestBus_FanOut(t *testing.T) {
 		Target:    "local",
 		Transport: "local",
 	})
-	bus.Close()
+	_ = bus.Close()
 
 	out1 := buf1.String()
 	out2 := buf2.String()
@@ -103,7 +103,7 @@ func TestBus_ConcurrentEmitToStatefulSink(t *testing.T) {
 		}(g)
 	}
 	wg.Wait()
-	bus.Close()
+	_ = bus.Close()
 }
 
 func TestRunLogSink_WritesJSONL(t *testing.T) {
@@ -159,7 +159,7 @@ func TestRunLogSink_WritesJSONL(t *testing.T) {
 		ElapsedMs:     5000,
 		TargetTallies: TargetCounts{OK: 1},
 	})
-	sink.Close()
+	_ = sink.Close()
 
 	raw, err := os.ReadFile(path)
 	if err != nil {

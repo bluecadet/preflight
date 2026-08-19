@@ -47,7 +47,8 @@ func (r *TUIRenderer) Emit(event Event) {
 }
 
 // Close shuts down the Bubble Tea program and waits for it to exit.
-func (r *TUIRenderer) Close() {
+func (r *TUIRenderer) Close() error {
 	close(r.events)
 	<-r.done
+	return nil
 }

@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,7 +50,7 @@ type playbookRunOptions struct {
 }
 
 // runPlaybook is the shared implementation for apply, check, and stage.
-func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) error {
+func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (err error) {
 	bundlePath, _ := cmd.Flags().GetString("bundle")
 	secretIdentity, _ := cmd.Flags().GetString("secret-identity")
 	allowPlaintextSecrets, _ := cmd.Flags().GetBool("allow-plaintext-secrets-in-bundle")
@@ -125,11 +126,16 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) err
 	// already gets — Bus.Emit dispatches to sinks without holding its own
 	// lock.
 	bus := output.NewBus(termRenderer, output.Synchronized(runLogSink), output.Synchronized(output.NewProjectionSink(tally)))
-	defer bus.Close()
+	// bus.Close's error (which folds in RunLogSink's) must reach the command's
+	// exit code: a disk-full or permission failure writing run.json is a real
+	// run failure, not something to swallow after the fact.
+	defer func() {
+		err = errors.Join(err, bus.Close())
+	}()
 
 	// Emit the version event.
 	bus.Emit(output.VersionEvent{
-		SchemaVersion:    "1.0",
+		SchemaVersion:    "1.1",
 		PreflightVersion: buildVersion,
 		PlaybookName:     session.Playbook.Name,
 	})
@@ -247,7 +253,7 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	defer cancel()
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	extracted, err := bundle.Extract(bundlePath)
 	if err != nil {

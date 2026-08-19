@@ -2,6 +2,7 @@ package output
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -103,28 +104,37 @@ func (s *RunLogSink) Emit(event Event) {
 	}
 }
 
-// Close flushes and closes the log file, writing the final run.json summary.
-func (s *RunLogSink) Close() {
+// Close flushes and closes the JSONL log file, then writes the final
+// run.json summary. Both steps' errors are joined and returned rather than
+// swallowed: run.json is the primary audit artifact, so a disk-full or
+// permission failure here must surface as a command failure, not silently
+// produce a run directory with no summary.
+func (s *RunLogSink) Close() error {
+	var err error
 	if s.f != nil {
-		_ = s.f.Close()
+		err = s.f.Close()
 	}
 	if s.summary != nil && s.dir != "" {
-		_ = s.writeRunJSON()
+		err = errors.Join(err, s.writeRunJSON())
 	}
+	return err
 }
 
 // writeRunJSON atomically writes the final run summary to run.json.
 func (s *RunLogSink) writeRunJSON() error {
 	data, err := json.MarshalIndent(s.buildRunJSON(s.summary), "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal run.json: %w", err)
 	}
 	path := filepath.Join(s.dir, "run.json")
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return err
+		return fmt.Errorf("write run.json: %w", err)
 	}
-	return os.Rename(tmpPath, path)
+	if err := os.Rename(tmpPath, path); err != nil {
+		return fmt.Errorf("write run.json: %w", err)
+	}
+	return nil
 }
 
 // buildJSON merges the envelope with type-specific fields into a flat map. map.
@@ -198,6 +208,11 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 	case TaskChangedEvent:
 		m["elapsed_ms"] = e.ElapsedMs
 	case TaskSkippedEvent:
+		m["reason"] = e.Reason
+		if e.Detail != "" {
+			m["detail"] = e.Detail
+		}
+	case TargetUnreachableEvent:
 		m["reason"] = e.Reason
 	case TaskFailedEvent:
 		m["elapsed_ms"] = e.ElapsedMs

@@ -123,7 +123,7 @@ type recordingRenderer struct {
 }
 
 func (r *recordingRenderer) Emit(e output.Event) { r.events = append(r.events, e) }
-func (r *recordingRenderer) Close()              {}
+func (r *recordingRenderer) Close() error        { return nil }
 
 type emptyChain struct{}
 

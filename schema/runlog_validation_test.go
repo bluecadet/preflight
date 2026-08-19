@@ -122,23 +122,19 @@ func runLogFixtureCases() []struct {
 		},
 		{
 			name:  "activity-start",
-			jsonl: `{"seq":12,"ts":"2026-06-24T14:12:35.000Z","type":"activity_start","level":"info","run_id":"r01","target":"kiosk-01","task_id":null,"msg":"gathering facts","phase":"facts","activity_id":"act-01"}`,
+			jsonl: `{"seq":12,"ts":"2026-06-24T14:12:35.000Z","type":"activity_start","level":"info","run_id":"r01","target":"kiosk-01","task_id":null,"msg":"gathering facts"}`,
 		},
 		{
 			name:  "activity-end",
-			jsonl: `{"seq":13,"ts":"2026-06-24T14:12:38.000Z","type":"activity_end","level":"info","run_id":"r01","target":"kiosk-01","task_id":null,"msg":"facts done","activity_id":"act-01","elapsed_ms":3000}`,
+			jsonl: `{"seq":13,"ts":"2026-06-24T14:12:38.000Z","type":"activity_end","level":"info","run_id":"r01","target":"kiosk-01","task_id":null,"msg":"facts done","status":"ok"}`,
 		},
 		{
 			name:  "task-started",
 			jsonl: `{"seq":20,"ts":"2026-06-24T14:12:40.000Z","type":"task_started","level":"info","run_id":"r01","target":"kiosk-01","task_id":"drivers","msg":"install display drivers","name":"install display drivers","module":"command","action_ref":"preflight/windows-machine"}`,
 		},
 		{
-			name:  "task-output-stdout",
-			jsonl: `{"seq":21,"ts":"2026-06-24T14:12:41.000Z","type":"task_output","level":"info","run_id":"r01","target":"kiosk-01","task_id":"drivers","msg":"output","stream":"stdout","lines":["Downloading driver package...","Extracting..."]}`,
-		},
-		{
-			name:  "task-output-stderr",
-			jsonl: `{"seq":22,"ts":"2026-06-24T14:12:42.000Z","type":"task_output","level":"info","run_id":"r01","target":"kiosk-01","task_id":"drivers","msg":"stderr","stream":"stderr","lines":["warning: signature not verified"]}`,
+			name:  "task-output",
+			jsonl: `{"seq":21,"ts":"2026-06-24T14:12:41.000Z","type":"task_output","level":"info","run_id":"r01","target":"kiosk-01","task_id":"drivers","msg":"output","lines":["Downloading driver package...","Extracting..."]}`,
 		},
 		{
 			name:  "task-ok",

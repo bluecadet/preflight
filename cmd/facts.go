@@ -49,7 +49,7 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	statePath, err := stateFilePath(cmd)

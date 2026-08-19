@@ -478,7 +478,7 @@ func TestProjectionSink_FoldsEventsIntoWrappedProjection(t *testing.T) {
 	sink.Emit(TaskOKEvent{Target: "host-a", TaskID: "t1", TaskName: "ok-task"})
 	sink.Emit(TaskChangedEvent{Target: "host-a", TaskID: "t2", TaskName: "changed-task"})
 	sink.Emit(TargetCompleteEvent{Target: "host-a", Outcome: "ok"})
-	sink.Close() // no-op; must not panic
+	_ = sink.Close() // no-op; must not panic
 
 	if p.OkCount != 1 || p.ChangedCount != 1 {
 		t.Errorf("expected sink Emit to fold into wrapped projection, got ok=%d changed=%d", p.OkCount, p.ChangedCount)

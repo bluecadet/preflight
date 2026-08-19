@@ -27,7 +27,7 @@ func TestNewTUIRenderer_NoPanel(t *testing.T) {
 	// Close cleanly without sending any events.
 	done := make(chan struct{})
 	go func() {
-		r.Close()
+		_ = r.Close()
 		close(done)
 	}()
 	select {
@@ -213,7 +213,7 @@ func TestTUIModel_RunStartThenTaskEndsCleanly(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		r.Close()
+		_ = r.Close()
 		close(done)
 	}()
 	select {
@@ -397,7 +397,7 @@ func TestTUIModel_MultipleTaskStatuses(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		r.Close()
+		_ = r.Close()
 		close(done)
 	}()
 	select {

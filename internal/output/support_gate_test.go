@@ -24,7 +24,7 @@ func TestRunLogSink_SupportGateEvent(t *testing.T) {
 			{TaskName: "manage service", Module: "service", Reason: "unsupported_on_runtime", Message: "module \"service\" is not supported on posix-shell (supported: windows-powershell)"},
 		},
 	})
-	sink.Close()
+	_ = sink.Close()
 
 	raw, _ := os.ReadFile(path)
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")

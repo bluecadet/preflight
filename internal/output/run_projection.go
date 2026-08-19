@@ -180,7 +180,7 @@ func (s *ProjectionSink) Emit(event Event) {
 }
 
 // Close is a no-op; ProjectionSink holds no external resources.
-func (s *ProjectionSink) Close() {}
+func (s *ProjectionSink) Close() error { return nil }
 
 // Apply folds an event into the projection and returns structured commit
 // descriptors for the scroll region. It never returns rendered strings
@@ -227,9 +227,15 @@ func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 	case TaskChangedEvent:
 		return []CommitDescriptor{p.applyTaskFinished(e.Target, e.TaskID, e.TaskName, "", "changed", "", nil, e.ElapsedMs)}
 	case TaskSkippedEvent:
-		return []CommitDescriptor{p.applyTaskFinished(e.Target, e.TaskID, e.TaskName, "", "skipped", e.Reason, nil, 0)}
+		message := e.Reason
+		if e.Detail != "" {
+			message = e.Detail
+		}
+		return []CommitDescriptor{p.applyTaskFinished(e.Target, e.TaskID, e.TaskName, "", "skipped", message, nil, 0)}
 	case TaskFailedEvent:
 		return p.applyTaskFailed(e)
+	case TargetUnreachableEvent:
+		return []CommitDescriptor{WarningDescriptor{Message: e.LogMessage()}}
 	case SupportGateEvent:
 		return []CommitDescriptor{WarningDescriptor{Message: e.LogMessage()}}
 	case WarningEvent:

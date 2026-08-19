@@ -275,11 +275,20 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			Source:  pt.Module,
 		})
 	case target.StatusSkipped:
+		// A module/target reported StatusSkipped itself (as opposed to the
+		// runner skipping the task before execution for tag/when/dependency
+		// reasons above) — the only real case today is idempotency: the
+		// module considers the target already in the desired state without
+		// going through the normal Check-returns-no-change-needed path that
+		// maps to StatusOK. "already-satisfied" keeps Reason a closed,
+		// machine-readable code; the module's own free-text explanation
+		// goes in Detail, never folded into Reason.
 		r.emit(output.TaskSkippedEvent{
 			Target:   r.targetName(),
 			TaskID:   pt.ID,
 			TaskName: pt.Name,
-			Reason:   result.Message,
+			Reason:   "already-satisfied",
+			Detail:   result.Message,
 		})
 	}
 
@@ -356,6 +365,23 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeCo
 	info, err := r.target.Info(ctx)
 	if err != nil {
 		r.emitActivityResult("connecting", "failed")
+		// Info() is the first real call to the target, so a connection-
+		// establishment failure here (as opposed to some other apply-start
+		// error) means the target could never be reached at all — surface
+		// that distinctly, with the diagnostic detail the schema expects to
+		// follow it, before the generic target_complete(failed) further
+		// up the call stack.
+		if target.IsUnreachable(err) {
+			r.emit(output.TargetUnreachableEvent{
+				Target: r.targetName(),
+				Reason: err.Error(),
+			})
+			r.emit(output.DiagnosticEvent{
+				Target:  r.targetName(),
+				Summary: err.Error(),
+				Source:  "target",
+			})
+		}
 		return nil, target.TargetInfo{}, fmt.Errorf("apply: target info: %w", err)
 	}
 

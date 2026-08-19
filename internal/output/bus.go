@@ -1,6 +1,7 @@
 package output
 
 import (
+	"errors"
 	"strings"
 	"sync"
 )
@@ -117,12 +118,16 @@ func deepScrubSlice(s []any, secrets []string) []any {
 	return result
 }
 
-// Close closes all sinks.
-func (b *Bus) Close() {
+// Close closes all sinks, joining any errors they return. A sink's Close
+// error (e.g. RunLogSink failing to flush run.json) must not be silently
+// dropped just because it is one of several fanned-out sinks.
+func (b *Bus) Close() error {
 	b.mu.Lock()
 	sinks := append([]Renderer(nil), b.sinks...)
 	b.mu.Unlock()
+	var err error
 	for _, sink := range sinks {
-		sink.Close()
+		err = errors.Join(err, sink.Close())
 	}
+	return err
 }

@@ -6,32 +6,36 @@ import "fmt"
 type EventType string
 
 const (
-	EventVersion        EventType = "version"
-	EventRunStart       EventType = "run_start"
-	EventTaskOutput     EventType = "task_output"
-	EventWarning        EventType = "warning"
-	EventFacts          EventType = "facts"
-	EventPlan           EventType = "plan"
-	EventState          EventType = "state"
-	EventValidate       EventType = "validate"
-	EventActionList     EventType = "action_list"
-	EventActionInfo     EventType = "action_info"
-	EventActionFetch    EventType = "action_fetch"
-	EventPluginList     EventType = "plugin_list"
-	EventInventoryList  EventType = "inventory_list"
-	EventSecretList     EventType = "secret_list"
-	EventActivityStart  EventType = "activity_start"
-	EventActivityResult EventType = "activity_result"
-	EventTargetStart    EventType = "target_start"
-	EventTargetComplete EventType = "target_complete"
-	EventTaskStarted    EventType = "task_started"
-	EventTaskOK         EventType = "task_ok"
-	EventTaskChanged    EventType = "task_changed"
-	EventTaskSkipped    EventType = "task_skipped"
-	EventTaskFailed     EventType = "task_failed"
-	EventSupportGate    EventType = "support_gate"
-	EventDiagnostic     EventType = "diagnostic"
-	EventRunSummary     EventType = "run_summary"
+	EventVersion       EventType = "version"
+	EventRunStart      EventType = "run_start"
+	EventTaskOutput    EventType = "task_output"
+	EventWarning       EventType = "warning"
+	EventFacts         EventType = "facts"
+	EventPlan          EventType = "plan"
+	EventState         EventType = "state"
+	EventValidate      EventType = "validate"
+	EventActionList    EventType = "action_list"
+	EventActionInfo    EventType = "action_info"
+	EventActionFetch   EventType = "action_fetch"
+	EventPluginList    EventType = "plugin_list"
+	EventInventoryList EventType = "inventory_list"
+	EventSecretList    EventType = "secret_list"
+	EventActivityStart EventType = "activity_start"
+	// EventActivityResult serializes as "activity_end" (not
+	// "activity_result") to match runlog.schema.json's activityEndEvent,
+	// which pairs with activity_start by design.
+	EventActivityResult    EventType = "activity_end"
+	EventTargetStart       EventType = "target_start"
+	EventTargetComplete    EventType = "target_complete"
+	EventTaskStarted       EventType = "task_started"
+	EventTaskOK            EventType = "task_ok"
+	EventTaskChanged       EventType = "task_changed"
+	EventTaskSkipped       EventType = "task_skipped"
+	EventTaskFailed        EventType = "task_failed"
+	EventSupportGate       EventType = "support_gate"
+	EventDiagnostic        EventType = "diagnostic"
+	EventTargetUnreachable EventType = "target_unreachable"
+	EventRunSummary        EventType = "run_summary"
 )
 
 // Correlatable is an optional capability interface for events that carry
@@ -223,57 +227,60 @@ type SecretListEvent struct {
 
 // Type returns the EventType for each event.
 
-func (VersionEvent) Type() EventType        { return EventVersion }
-func (RunStartEvent) Type() EventType       { return EventRunStart }
-func (TaskOutputEvent) Type() EventType     { return EventTaskOutput }
-func (WarningEvent) Type() EventType        { return EventWarning }
-func (ActivityStartEvent) Type() EventType  { return EventActivityStart }
-func (ActivityResultEvent) Type() EventType { return EventActivityResult }
-func (FactsEvent) Type() EventType          { return EventFacts }
-func (PlanEvent) Type() EventType           { return EventPlan }
-func (StateEvent) Type() EventType          { return EventState }
-func (ValidationEvent) Type() EventType     { return EventValidate }
-func (ActionCatalogEvent) Type() EventType  { return EventActionList }
-func (ActionInfoEvent) Type() EventType     { return EventActionInfo }
-func (ActionFetchEvent) Type() EventType    { return EventActionFetch }
-func (PluginListEvent) Type() EventType     { return EventPluginList }
-func (InventoryListEvent) Type() EventType  { return EventInventoryList }
-func (SecretListEvent) Type() EventType     { return EventSecretList }
-func (TargetStartEvent) Type() EventType    { return EventTargetStart }
-func (TargetCompleteEvent) Type() EventType { return EventTargetComplete }
-func (TaskStartedEvent) Type() EventType    { return EventTaskStarted }
-func (TaskOKEvent) Type() EventType         { return EventTaskOK }
-func (TaskChangedEvent) Type() EventType    { return EventTaskChanged }
-func (TaskSkippedEvent) Type() EventType    { return EventTaskSkipped }
-func (TaskFailedEvent) Type() EventType     { return EventTaskFailed }
-func (SupportGateEvent) Type() EventType    { return EventSupportGate }
-func (DiagnosticEvent) Type() EventType     { return EventDiagnostic }
-func (RunSummaryEvent) Type() EventType     { return EventRunSummary }
+func (VersionEvent) Type() EventType           { return EventVersion }
+func (RunStartEvent) Type() EventType          { return EventRunStart }
+func (TaskOutputEvent) Type() EventType        { return EventTaskOutput }
+func (WarningEvent) Type() EventType           { return EventWarning }
+func (ActivityStartEvent) Type() EventType     { return EventActivityStart }
+func (ActivityResultEvent) Type() EventType    { return EventActivityResult }
+func (FactsEvent) Type() EventType             { return EventFacts }
+func (PlanEvent) Type() EventType              { return EventPlan }
+func (StateEvent) Type() EventType             { return EventState }
+func (ValidationEvent) Type() EventType        { return EventValidate }
+func (ActionCatalogEvent) Type() EventType     { return EventActionList }
+func (ActionInfoEvent) Type() EventType        { return EventActionInfo }
+func (ActionFetchEvent) Type() EventType       { return EventActionFetch }
+func (PluginListEvent) Type() EventType        { return EventPluginList }
+func (InventoryListEvent) Type() EventType     { return EventInventoryList }
+func (SecretListEvent) Type() EventType        { return EventSecretList }
+func (TargetStartEvent) Type() EventType       { return EventTargetStart }
+func (TargetCompleteEvent) Type() EventType    { return EventTargetComplete }
+func (TaskStartedEvent) Type() EventType       { return EventTaskStarted }
+func (TaskOKEvent) Type() EventType            { return EventTaskOK }
+func (TaskChangedEvent) Type() EventType       { return EventTaskChanged }
+func (TaskSkippedEvent) Type() EventType       { return EventTaskSkipped }
+func (TaskFailedEvent) Type() EventType        { return EventTaskFailed }
+func (SupportGateEvent) Type() EventType       { return EventSupportGate }
+func (DiagnosticEvent) Type() EventType        { return EventDiagnostic }
+func (TargetUnreachableEvent) Type() EventType { return EventTargetUnreachable }
+func (RunSummaryEvent) Type() EventType        { return EventRunSummary }
 
 // Correlatable implementations.
 
-func (e TargetStartEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
-func (e TargetCompleteEvent) CorrelationIDs() (string, string) { return e.Target, "" }
-func (e TaskStartedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
-func (e TaskOKEvent) CorrelationIDs() (string, string)         { return e.Target, e.TaskID }
-func (e TaskChangedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
-func (e TaskSkippedEvent) CorrelationIDs() (string, string)    { return e.Target, e.TaskID }
-func (e TaskFailedEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
-func (e SupportGateEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
-func (e DiagnosticEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
-func (e TaskOutputEvent) CorrelationIDs() (string, string)     { return e.Target, e.TaskID }
-func (e ActivityStartEvent) CorrelationIDs() (string, string)  { return e.Target, "" }
-func (e ActivityResultEvent) CorrelationIDs() (string, string) { return e.Target, "" }
-func (e FactsEvent) CorrelationIDs() (string, string)          { return e.Target, "" }
-func (e PlanEvent) CorrelationIDs() (string, string)           { return e.Target, "" }
-func (e StateEvent) CorrelationIDs() (string, string)          { return e.Target, "" }
+func (e TargetStartEvent) CorrelationIDs() (string, string)       { return e.Target, "" }
+func (e TargetCompleteEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
+func (e TaskStartedEvent) CorrelationIDs() (string, string)       { return e.Target, e.TaskID }
+func (e TaskOKEvent) CorrelationIDs() (string, string)            { return e.Target, e.TaskID }
+func (e TaskChangedEvent) CorrelationIDs() (string, string)       { return e.Target, e.TaskID }
+func (e TaskSkippedEvent) CorrelationIDs() (string, string)       { return e.Target, e.TaskID }
+func (e TaskFailedEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
+func (e SupportGateEvent) CorrelationIDs() (string, string)       { return e.Target, "" }
+func (e DiagnosticEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
+func (e TargetUnreachableEvent) CorrelationIDs() (string, string) { return e.Target, "" }
+func (e TaskOutputEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
+func (e ActivityStartEvent) CorrelationIDs() (string, string)     { return e.Target, "" }
+func (e ActivityResultEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
+func (e FactsEvent) CorrelationIDs() (string, string)             { return e.Target, "" }
+func (e PlanEvent) CorrelationIDs() (string, string)              { return e.Target, "" }
+func (e StateEvent) CorrelationIDs() (string, string)             { return e.Target, "" }
 
 // Leveled implementations.
 
-func (TaskFailedEvent) Level() string  { return "error" }
-func (SupportGateEvent) Level() string { return "error" }
-func (DiagnosticEvent) Level() string  { return "error" }
-func (WarningEvent) Level() string     { return "warn" }
+func (TaskFailedEvent) Level() string        { return "error" }
+func (SupportGateEvent) Level() string       { return "error" }
+func (DiagnosticEvent) Level() string        { return "error" }
+func (TargetUnreachableEvent) Level() string { return "error" }
+func (WarningEvent) Level() string           { return "warn" }
 
 // Summarizable implementations.
 
@@ -318,9 +325,10 @@ func (e SupportGateEvent) LogMessage() string {
 	return fmt.Sprintf("gate: %d task(s) cannot run on this target (%s)", len(e.Violations), e.Runtime)
 }
 
-func (e DiagnosticEvent) LogMessage() string { return e.Summary }
-func (e RunSummaryEvent) LogMessage() string { return e.Status }
-func (e WarningEvent) LogMessage() string    { return e.Message }
+func (e DiagnosticEvent) LogMessage() string        { return e.Summary }
+func (e TargetUnreachableEvent) LogMessage() string { return "unreachable: " + e.Reason }
+func (e RunSummaryEvent) LogMessage() string        { return e.Status }
+func (e WarningEvent) LogMessage() string           { return e.Message }
 
 func (e ActivityStartEvent) LogMessage() string  { return e.Message }
 func (e ActivityResultEvent) LogMessage() string { return e.Message }
@@ -494,6 +502,7 @@ func (e TaskSkippedEvent) Redact(secrets []string) Event {
 	e.TaskID = scrubString(e.TaskID, secrets)
 	e.TaskName = scrubString(e.TaskName, secrets)
 	e.Reason = scrubString(e.Reason, secrets)
+	e.Detail = scrubString(e.Detail, secrets)
 	return e
 }
 
@@ -526,6 +535,12 @@ func (e DiagnosticEvent) Redact(secrets []string) Event {
 	e.TaskID = scrubString(e.TaskID, secrets)
 	e.Summary = scrubString(e.Summary, secrets)
 	e.Source = scrubString(e.Source, secrets)
+	return e
+}
+
+func (e TargetUnreachableEvent) Redact(secrets []string) Event {
+	e.Target = scrubString(e.Target, secrets)
+	e.Reason = scrubString(e.Reason, secrets)
 	return e
 }
 
@@ -578,12 +593,17 @@ type TaskChangedEvent struct {
 	ElapsedMs int64
 }
 
-// TaskSkippedEvent signals a task was skipped.
+// TaskSkippedEvent signals a task was skipped. Reason is a closed,
+// machine-readable classifier (see the taskSkippedEvent.reason enum in
+// runlog.schema.json) so consumers can switch on it; Detail is an optional
+// free-text human message (e.g. a module's own "already applied" wording)
+// that must never be folded into Reason.
 type TaskSkippedEvent struct {
 	Target   string
 	TaskID   string
 	TaskName string
 	Reason   string
+	Detail   string
 }
 
 // TaskFailedEvent signals a task failed.
@@ -630,14 +650,27 @@ type DiagnosticEvent struct {
 	Source  string
 }
 
+// TargetUnreachableEvent signals that a target could not be reached — the
+// apply-start connection attempt (target.Target.Info) failed with an error
+// that target.IsUnreachable classifies as a connection-establishment
+// failure, as opposed to a failure of some operation over an already
+// working connection. Always followed by a DiagnosticEvent carrying the
+// full error text, and by the normal TargetCompleteEvent with outcome
+// "failed" further down the stream.
+type TargetUnreachableEvent struct {
+	Target string
+	Reason string
+}
+
 // TargetCounts holds per-target outcome counts for RunSummaryEvent.
 //
-// There is deliberately no Unreachable count: internal/target does not
-// currently surface connection/dial failures as a distinct, structured
-// classification (TargetError.Op is a freeform per-call-site string, not an
-// enum), so there is no non-string-matching way to populate one. Add it back
-// only once a transport can report "couldn't reach the box" as something
-// other than a message string.
+// There is deliberately no Unreachable count: an unreachable target still
+// gets a target_unreachable event (see TargetUnreachableEvent and
+// target.IsUnreachable) followed by the normal target_complete with
+// outcome "failed", so it is already counted once, correctly, as a
+// failure here. Splitting it into its own tally would double up on
+// information the target_unreachable event already carries and isn't
+// needed by anything today.
 type TargetCounts struct {
 	OK     int `json:"ok"`
 	Failed int `json:"failed"`
@@ -654,29 +687,30 @@ type RunSummaryEvent struct {
 	ElapsedMs     int64
 }
 
-func (VersionEvent) isEvent()        {}
-func (RunStartEvent) isEvent()       {}
-func (TargetStartEvent) isEvent()    {}
-func (TargetCompleteEvent) isEvent() {}
-func (TaskStartedEvent) isEvent()    {}
-func (TaskOKEvent) isEvent()         {}
-func (TaskChangedEvent) isEvent()    {}
-func (TaskSkippedEvent) isEvent()    {}
-func (TaskFailedEvent) isEvent()     {}
-func (SupportGateEvent) isEvent()    {}
-func (DiagnosticEvent) isEvent()     {}
-func (RunSummaryEvent) isEvent()     {}
-func (TaskOutputEvent) isEvent()     {}
-func (WarningEvent) isEvent()        {}
-func (ActivityStartEvent) isEvent()  {}
-func (ActivityResultEvent) isEvent() {}
-func (FactsEvent) isEvent()          {}
-func (PlanEvent) isEvent()           {}
-func (StateEvent) isEvent()          {}
-func (ValidationEvent) isEvent()     {}
-func (ActionCatalogEvent) isEvent()  {}
-func (ActionInfoEvent) isEvent()     {}
-func (ActionFetchEvent) isEvent()    {}
-func (PluginListEvent) isEvent()     {}
-func (InventoryListEvent) isEvent()  {}
-func (SecretListEvent) isEvent()     {}
+func (VersionEvent) isEvent()           {}
+func (RunStartEvent) isEvent()          {}
+func (TargetStartEvent) isEvent()       {}
+func (TargetCompleteEvent) isEvent()    {}
+func (TaskStartedEvent) isEvent()       {}
+func (TaskOKEvent) isEvent()            {}
+func (TaskChangedEvent) isEvent()       {}
+func (TaskSkippedEvent) isEvent()       {}
+func (TaskFailedEvent) isEvent()        {}
+func (SupportGateEvent) isEvent()       {}
+func (DiagnosticEvent) isEvent()        {}
+func (TargetUnreachableEvent) isEvent() {}
+func (RunSummaryEvent) isEvent()        {}
+func (TaskOutputEvent) isEvent()        {}
+func (WarningEvent) isEvent()           {}
+func (ActivityStartEvent) isEvent()     {}
+func (ActivityResultEvent) isEvent()    {}
+func (FactsEvent) isEvent()             {}
+func (PlanEvent) isEvent()              {}
+func (StateEvent) isEvent()             {}
+func (ValidationEvent) isEvent()        {}
+func (ActionCatalogEvent) isEvent()     {}
+func (ActionInfoEvent) isEvent()        {}
+func (ActionFetchEvent) isEvent()       {}
+func (PluginListEvent) isEvent()        {}
+func (InventoryListEvent) isEvent()     {}
+func (SecretListEvent) isEvent()        {}

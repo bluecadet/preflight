@@ -44,7 +44,7 @@ func runPlan(cmd *cobra.Command, args []string) error {
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	session, err := newPlaybookSession(ctx, playbookPath, false)
 	if err != nil {

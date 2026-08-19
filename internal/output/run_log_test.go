@@ -40,7 +40,9 @@ func runLogGoldenTest(t *testing.T, name string) {
 	for _, event := range events {
 		sink.Emit(event)
 	}
-	sink.Close()
+	if err := sink.Close(); err != nil {
+		t.Fatalf("RunLogSink.Close: %v", err)
+	}
 
 	raw, err := os.ReadFile(path)
 	if err != nil {

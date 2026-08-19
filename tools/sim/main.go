@@ -127,7 +127,7 @@ func main() {
 			fmt.Printf("\n--- scenario: %s ---\n\n", s.name)
 			r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 			s.run(r, *delayFlag)
-			r.Close()
+			_ = r.Close()
 		}
 		return
 	}
@@ -136,7 +136,7 @@ func main() {
 		if s.name == scenarioName {
 			r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 			s.run(r, *delayFlag)
-			r.Close()
+			_ = r.Close()
 			return
 		}
 	}
@@ -151,7 +151,7 @@ func main() {
 	if len(matches) == 1 {
 		r := output.NewWithOptions(format, os.Stdout, output.Options{Verbose: *verboseFlag})
 		matches[0].run(r, *delayFlag)
-		r.Close()
+		_ = r.Close()
 		return
 	}
 

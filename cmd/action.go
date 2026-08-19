@@ -72,7 +72,7 @@ func runActionList(cmd *cobra.Command, _ []string) error {
 	sort.Strings(localRefs)
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	renderer.Emit(output.ActionCatalogEvent{
 		EmbeddedNamespace: "preflight/",
@@ -159,7 +159,7 @@ func runActionInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	renderer.Emit(output.ActionInfoEvent{
 		Ref:         ref,
@@ -202,7 +202,7 @@ func runActionFetch(cmd *cobra.Command, args []string) error {
 	}
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	renderer.Emit(output.ActionFetchEvent{Entries: fetchedEntries})
 	return nil

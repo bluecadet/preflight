@@ -104,6 +104,14 @@ func (r *JSONRenderer) Emit(event Event) {
 	case TaskSkippedEvent:
 		je.Type = EventTaskSkipped
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
+		je.Reason = e.Reason
+		if e.Detail != "" {
+			je.Message = e.Detail
+		}
+	case TargetUnreachableEvent:
+		je.Type = EventTargetUnreachable
+		je.Target = e.Target
+		je.Reason = e.Reason
 	case TaskFailedEvent:
 		je.Type = EventTaskFailed
 		je.TaskID, je.Task, je.Target = e.TaskID, e.TaskName, e.Target
@@ -176,4 +184,4 @@ func (r *JSONRenderer) Emit(event Event) {
 }
 
 // Close is a no-op for JSONRenderer.
-func (r *JSONRenderer) Close() {}
+func (r *JSONRenderer) Close() error { return nil }

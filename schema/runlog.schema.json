@@ -160,23 +160,14 @@
     },
 
     "activityStartEvent": {
-      "description": "Signals the start of a setup activity (connect, facts, fetch) on a target.",
+      "description": "Signals the start of a setup activity (e.g. connecting) on a target.",
       "allOf": [
         { "$ref": "#/$defs/envelope" },
         {
           "properties": {
-            "type": { "const": "activity_start" },
-            "phase": {
-              "type": "string",
-              "enum": ["connect", "facts", "fetch"],
-              "description": "Activity phase."
-            },
-            "activity_id": {
-              "type": "string",
-              "description": "Stable identifier for this activity instance."
-            }
+            "type": { "const": "activity_start" }
           },
-          "required": ["type", "phase", "activity_id"]
+          "required": ["type"]
         }
       ]
     },
@@ -188,16 +179,12 @@
         {
           "properties": {
             "type": { "const": "activity_end" },
-            "activity_id": {
+            "status": {
               "type": "string",
-              "description": "Stable identifier matching the corresponding activity_start."
-            },
-            "elapsed_ms": {
-              "type": "integer",
-              "description": "Elapsed time in milliseconds."
+              "description": "Outcome of the activity (e.g. \"ok\", \"failed\")."
             }
           },
-          "required": ["type", "activity_id", "elapsed_ms"]
+          "required": ["type"]
         }
       ]
     },
@@ -234,18 +221,13 @@
         {
           "properties": {
             "type": { "const": "task_output" },
-            "stream": {
-              "type": "string",
-              "enum": ["stdout", "stderr"],
-              "description": "The stream the output originated from."
-            },
             "lines": {
               "type": "array",
               "items": { "type": "string" },
               "description": "Output lines, redacted of known secrets."
             }
           },
-          "required": ["type", "stream", "lines"]
+          "required": ["type", "lines"]
         }
       ]
     },
@@ -293,8 +275,12 @@
             "type": { "const": "task_skipped" },
             "reason": {
               "type": "string",
-              "enum": ["tag-filtered", "when-condition-false", "dependency-failed"],
-              "description": "Reason the task was skipped."
+              "enum": ["tag-filtered", "when-condition-false", "dependency-failed", "already-satisfied"],
+              "description": "Closed, machine-readable reason the task was skipped. 'already-satisfied' covers a module/target reporting the task already in the desired state via a skip outcome, distinct from the normal ok/no-change-needed path."
+            },
+            "detail": {
+              "type": "string",
+              "description": "Optional free-text human message elaborating on reason (e.g. a module's own explanation). Never a substitute for reason."
             }
           },
           "required": ["type", "reason"]

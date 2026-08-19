@@ -20,7 +20,7 @@ func (r *recordingRenderer) Emit(event output.Event) {
 	r.events = append(r.events, event)
 }
 
-func (r *recordingRenderer) Close() {}
+func (r *recordingRenderer) Close() error { return nil }
 
 func (r *recordingRenderer) snapshot() []output.Event {
 	r.mu.Lock()

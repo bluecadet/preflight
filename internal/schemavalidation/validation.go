@@ -49,7 +49,17 @@ var (
 		{URL: "https://preflight.dev/schema/playbook.schema.json", Path: "playbook.schema.json"},
 		{URL: "https://preflight.dev/schema/inventory.schema.json", Path: "inventory.schema.json"},
 		{URL: "https://preflight.dev/schema/config.schema.json", Path: "config.schema.json"},
+		{URL: "https://preflight.dev/schema/runlog.schema.json", Path: "runlog.schema.json"},
 	}
+
+	// RunLogSchemaURL is the canonical schema URL for the run-log/run.json
+	// contract, for callers that want to validate real emitted output (see
+	// ValidateDocument) against the same compiled schema every other
+	// document type in this package uses. Exported because, unlike the
+	// other schemas here, runlog documents are never user-authored YAML —
+	// callers validating them come from internal/output and internal/runner
+	// tests, not from a YAML-loading command.
+	RunLogSchemaURL = "https://preflight.dev/schema/runlog.schema.json"
 )
 
 func ValidateYAML(data []byte, schemaURL string) error {

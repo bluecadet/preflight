@@ -18,7 +18,7 @@ func TestTextRendererNewEventTypes_Snapshots(t *testing.T) {
 			for _, event := range tc.events {
 				r.Emit(event)
 			}
-			r.Close()
+			_ = r.Close()
 
 			assertSnapshot(t, snapshotPath("text", tc.name), normalizeSnapshot(buf.String()))
 		})

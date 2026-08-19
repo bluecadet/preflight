@@ -29,7 +29,7 @@ func TestRunLogSink_TaskFailedReasonField(t *testing.T) {
 		TaskName:    "do other",
 		FailMessage: "plain failure",
 	})
-	sink.Close()
+	_ = sink.Close()
 
 	raw, _ := os.ReadFile(path)
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")

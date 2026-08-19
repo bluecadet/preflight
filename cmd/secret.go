@@ -120,7 +120,7 @@ func runSecretList(cmd *cobra.Command, _ []string) error {
 		entries = append(entries, output.SecretListEntry{Name: name, File: entry.File})
 	}
 	renderer := newTextJSONRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 	renderer.Emit(output.SecretListEvent{Entries: entries})
 	return nil
 }

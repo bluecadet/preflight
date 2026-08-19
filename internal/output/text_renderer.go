@@ -114,7 +114,10 @@ func (r *TextRenderer) Emit(event Event) {
 	case TaskFailedEvent:
 		r.emitNewTaskFailed(e)
 	case DiagnosticEvent:
-		// Diagnostic detail is already carried in TaskFailedEvent; no render-time output.
+		// Diagnostic detail is already carried in TaskFailedEvent/
+		// TargetUnreachableEvent's own render-time output; no separate line.
+	case TargetUnreachableEvent:
+		r.emitTargetUnreachable(e)
 	case SupportGateEvent:
 		r.emitSupportGate(e)
 	case RunSummaryEvent:
@@ -206,6 +209,11 @@ func (r *TextRenderer) emitNewTaskSkipped(e TaskSkippedEvent) {
 	r.writeLine(left)
 	if e.Reason != "" {
 		for _, line := range indentWrapped(2, "reason: "+e.Reason) {
+			r.writeLine(line)
+		}
+	}
+	if e.Detail != "" {
+		for _, line := range indentWrapped(2, e.Detail) {
 			r.writeLine(line)
 		}
 	}
@@ -340,6 +348,17 @@ func (r *TextRenderer) emitTargetComplete(e TargetCompleteEvent) {
 	}
 	if r.verbose && e.WinRMRoundTrips > 0 {
 		r.writeLine(fmt.Sprintf("  %s", formatActivityLine(r.displayTarget(e.Target), fmt.Sprintf("winrm: %d round trips", e.WinRMRoundTrips))))
+	}
+}
+
+func (r *TextRenderer) emitTargetUnreachable(e TargetUnreachableEvent) {
+	target := e.Target
+	if target == "" {
+		target = "local"
+	}
+	r.writeLine(r.colorize(ansiRed, "x "+target+" — unreachable"))
+	for _, line := range indentWrapped(2, e.Reason) {
+		r.writeLine(line)
 	}
 }
 
@@ -510,6 +529,7 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 }
 
 // Close is a no-op for TextRenderer; run summary is rendered on RunSummaryEvent.
-func (r *TextRenderer) Close() {
+func (r *TextRenderer) Close() error {
 	r.closed = true
+	return nil
 }

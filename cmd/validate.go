@@ -26,7 +26,7 @@ func init() {
 func runValidate(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	pb, err := action.LoadPlaybookFile(playbookPath)
 	if err != nil {

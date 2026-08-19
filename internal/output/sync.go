@@ -22,8 +22,8 @@ func (r *synchronizedRenderer) Emit(event Event) {
 	r.r.Emit(event)
 }
 
-func (r *synchronizedRenderer) Close() {
+func (r *synchronizedRenderer) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.r.Close()
+	return r.r.Close()
 }

@@ -47,6 +47,34 @@ cannot complete:
 | `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
 | `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
+## Task Skip Reasons
+
+A skipped task carries its own closed `reason` field, separate from the
+failure reason codes above:
+
+| Reason code | Meaning |
+| --- | --- |
+| `tag-filtered` | `--tags`/`--skip-tags` excluded the task |
+| `when-condition-false` | the task's `when` expression evaluated false |
+| `dependency-failed` | a task this one depends on failed and was not `ignore_errors` |
+| `already-satisfied` | the module itself reported the task already in the desired state |
+
+`reason` is always one of the codes above — never free text — so a
+consumer can switch on it. A skip event may also carry an optional
+`detail` field with the module's own human-readable explanation; `detail`
+is never a substitute for `reason` and must not be pattern-matched on.
+
+## Unreachable Targets
+
+A `target_unreachable` event is emitted when a target cannot be reached at
+all during apply start — an SSH dial/handshake or reconnect failure, or a
+WinRM client/session creation failure or transport-level RPC failure — as
+opposed to a failure of some command or script that ran successfully over
+a connection that was already working. It carries a free-text `reason`
+(the underlying connection error) and is always followed by a
+`diagnostic` event with the same detail, then the normal `target_complete`
+event with `outcome: "failed"`.
+
 ## Message Shapes
 
 Wording is complete facts, not a suggestion engine: every message names the

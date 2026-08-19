@@ -68,7 +68,7 @@ func runStateShow(cmd *cobra.Command, _ []string) error {
 	}
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	renderer.Emit(output.StateEvent{
 		StatePath:   path,
@@ -117,7 +117,7 @@ func runStateComparison(label string, cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	renderer := newRenderer(cmd)
-	defer renderer.Close()
+	defer func() { _ = renderer.Close() }()
 
 	session, err := newPlaybookSession(ctx, playbookPath, true)
 	if err != nil {
