@@ -242,27 +242,27 @@ func (m tuiModel) renderCard(d CardDescriptor) tea.Cmd {
 		}
 	case "plan":
 		if e, ok := d.Event.(PlanEvent); ok {
-			block = renderPlanCard(e, m.width)
+			block = renderPlanCard(e)
 		}
 	case "state":
 		if e, ok := d.Event.(StateEvent); ok {
-			block = renderStateCard(e, m.width)
+			block = renderStateCard(e)
 		}
 	case "validate":
 		if e, ok := d.Event.(ValidationEvent); ok {
-			block = renderValidationCard(e, m.width)
+			block = renderValidationCard(e)
 		}
 	case "action_catalog":
 		if e, ok := d.Event.(ActionCatalogEvent); ok {
-			block = renderActionCatalogCard(e, m.width)
+			block = renderActionCatalogCard(e)
 		}
 	case "action_info":
 		if e, ok := d.Event.(ActionInfoEvent); ok {
-			block = renderActionInfoCard(e, m.width)
+			block = renderActionInfoCard(e)
 		}
 	case "action_fetch":
 		if e, ok := d.Event.(ActionFetchEvent); ok {
-			block = renderActionFetchCard(e, m.width)
+			block = renderActionFetchCard(e)
 		}
 	}
 	if block == "" {

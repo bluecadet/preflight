@@ -9,7 +9,7 @@ import (
 )
 
 func renderFactsCard(e FactsEvent, width int) string {
-	card := newTUICard("◌ Facts").withWidth(width)
+	card := newTUICard("◌ Facts")
 	cw := factsContentWidth(width)
 	ff := &factFormat{
 		label: func(s string, topLevel bool) string {
@@ -45,8 +45,8 @@ func renderFactsCard(e FactsEvent, width int) string {
 	return card.render()
 }
 
-func renderPlanCard(e PlanEvent, width int) string {
-	card := newTUICard("☰ Execution Plan").withWidth(width)
+func renderPlanCard(e PlanEvent) string {
+	card := newTUICard("☰ Execution Plan")
 
 	rows := [][2]string{{"Target", fallbackTarget(e.Target)}}
 	if e.PlaybookName != "" {
@@ -79,13 +79,13 @@ func renderPlanCard(e PlanEvent, width int) string {
 	return card.render()
 }
 
-func renderStateCard(e StateEvent, width int) string {
+func renderStateCard(e StateEvent) string {
 	title := "◫ State Snapshot"
 	if e.PlaybookName != "" {
 		title = "◫ State Diff"
 	}
 
-	card := newTUICard(title).withWidth(width)
+	card := newTUICard(title)
 	rows := [][2]string{
 		{"State file", e.StatePath},
 		{"Last applied", e.LastApplied},
@@ -114,8 +114,8 @@ func renderStateCard(e StateEvent, width int) string {
 	return card.render()
 }
 
-func renderValidationCard(e ValidationEvent, width int) string {
-	card := newTUICard("◇ Validate").withWidth(width)
+func renderValidationCard(e ValidationEvent) string {
+	card := newTUICard("◇ Validate")
 	name := e.PlaybookName
 	if name == "" {
 		name = e.PlaybookPath
@@ -141,8 +141,8 @@ func renderValidationCard(e ValidationEvent, width int) string {
 	return card.render()
 }
 
-func renderActionCatalogCard(e ActionCatalogEvent, width int) string {
-	card := newTUICard("▣ Action Catalog").withWidth(width)
+func renderActionCatalogCard(e ActionCatalogEvent) string {
+	card := newTUICard("▣ Action Catalog")
 	namespace := e.EmbeddedNamespace
 	if namespace == "" {
 		namespace = "preflight/"
@@ -159,8 +159,8 @@ func renderActionCatalogCard(e ActionCatalogEvent, width int) string {
 	return card.render()
 }
 
-func renderActionInfoCard(e ActionInfoEvent, width int) string {
-	card := newTUICard("◫ Action Info").withWidth(width)
+func renderActionInfoCard(e ActionInfoEvent) string {
+	card := newTUICard("◫ Action Info")
 
 	rows := [][2]string{
 		{"Ref", e.Ref},
@@ -204,8 +204,8 @@ func renderActionInfoCard(e ActionInfoEvent, width int) string {
 	return card.render()
 }
 
-func renderActionFetchCard(e ActionFetchEvent, width int) string {
-	card := newTUICard("↳ Fetched Actions").withWidth(width)
+func renderActionFetchCard(e ActionFetchEvent) string {
+	card := newTUICard("↳ Fetched Actions")
 	rows := make([][]string, 0, len(e.Entries))
 	for _, entry := range e.Entries {
 		rows = append(rows, []string{entry.Ref, entry.SHA})

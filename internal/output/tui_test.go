@@ -139,6 +139,26 @@ func TestTUIModel_WrapsLongCommittedFailureOutput(t *testing.T) {
 	}
 }
 
+func TestTUISectionUsesContentWidthWithoutBorder(t *testing.T) {
+	savedS := S
+	defer func() { S = savedS }()
+	S = NewTUIStyles(DefaultPalette(), false)
+
+	got := tsRenderSection("Title", "short\nlongest content")
+	if strings.ContainsAny(got, "╭╮╰╯│") {
+		t.Fatalf("expected borderless section, got:\n%s", got)
+	}
+
+	lines := strings.Split(got, "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected title, rule, and two body lines; got %d lines:\n%s", len(lines), got)
+	}
+	wantRule := strings.Repeat("─", lipgloss.Width("  longest content"))
+	if lines[1] != wantRule {
+		t.Fatalf("expected content-width rule %q, got %q", wantRule, lines[1])
+	}
+}
+
 func TestTUIModel_FactsPrintsImmediatelyForLocalTarget(t *testing.T) {
 	events := make(chan Event, 1)
 	m := newTUIModel(events)

@@ -174,12 +174,7 @@ func normalizeCommandSnapshot(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, line := range lines {
 		line = strings.TrimRight(line, " \t")
-		line = cmdTopBorderRE.ReplaceAllString(line, "${1}────────────────────────${2}")
-		line = cmdInnerRuleRE.ReplaceAllString(line, "│ ──────────────────────── │")
-		if strings.HasPrefix(line, "│") && strings.HasSuffix(line, "│") {
-			line = strings.TrimRight(strings.TrimSuffix(line, "│"), " ") + " │"
-		}
-		lines[i] = line
+		lines[i] = cmdSectionRuleRE.ReplaceAllString(line, "────────────────────────")
 	}
 
 	// Bubble Tea's frame-rate renderer (60fps by default) can flush an
@@ -215,9 +210,8 @@ func normalizePath(s, path string) string {
 }
 
 var (
-	cmdDurationRE  = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ms|s|m|h)\b`)
-	cmdTopBorderRE = regexp.MustCompile(`^([╭╰])─+([╮╯])$`)
-	cmdInnerRuleRE = regexp.MustCompile(`^│\s*─{10,}\s*│$`)
+	cmdDurationRE    = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ms|s|m|h)\b`)
+	cmdSectionRuleRE = regexp.MustCompile(`^─{10,}$`)
 )
 
 func writeCommandStateFile(t *testing.T, path string) {

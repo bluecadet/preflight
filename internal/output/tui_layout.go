@@ -10,16 +10,10 @@ import (
 type tuiCardBuilder struct {
 	title    string
 	sections []string
-	width    int
 }
 
 func newTUICard(title string) *tuiCardBuilder {
-	return &tuiCardBuilder{title: title, width: 80}
-}
-
-func (b *tuiCardBuilder) withWidth(w int) *tuiCardBuilder {
-	b.width = w
-	return b
+	return &tuiCardBuilder{title: title}
 }
 
 func (b *tuiCardBuilder) add(section string) {
@@ -37,7 +31,7 @@ func (b *tuiCardBuilder) addLabeled(title, body string) {
 }
 
 func (b *tuiCardBuilder) render() string {
-	return tsRenderSection(b.title, strings.Join(b.sections, "\n\n"), b.width)
+	return tsRenderSection(b.title, strings.Join(b.sections, "\n\n"))
 }
 
 func tsTruncate(s string, n int) string {
@@ -104,45 +98,23 @@ func tsRenderNotice(glyph string, style lipgloss.Style, message string, width in
 	return strings.Join(lines, "\n")
 }
 
-func tsRenderSection(title, body string, width int) string {
-	cardWidth := max(width, 20)
-
+func tsRenderSection(title, body string) string {
 	var parts []string
-	// Top border.
-	parts = append(parts, "╭"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╮")
+	titleLine := S.CardTitleInset.Render(S.CardTitle.Render(title))
+	bodyBlock := S.CardBodyInset.Render(body)
 
 	if title != "" {
-		parts = append(parts, cardLine("  "+S.CardTitle.Render(title), cardWidth))
+		parts = append(parts, titleLine)
 	}
-
 	if strings.TrimSpace(body) == "" {
-		parts = append(parts, "╰"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╯")
 		return strings.Join(parts, "\n")
 	}
-
 	if title != "" {
-		// Internal rule sized to the card width, not the terminal width.
-		ruleWidth := max(cardWidth-8, 10)
-		parts = append(parts, cardLine("  "+S.Divider.Render(strings.Repeat("─", ruleWidth))+"  ", cardWidth))
+		ruleWidth := max(lipgloss.Width(titleLine), lipgloss.Width(bodyBlock))
+		parts = append(parts, S.Divider.Render(strings.Repeat("─", ruleWidth)))
 	}
-
-	for line := range strings.SplitSeq(body, "\n") {
-		parts = append(parts, cardLine("  "+line, cardWidth))
-	}
-
-	// Bottom border.
-	parts = append(parts, "╰"+S.Divider.Render(strings.Repeat("─", cardWidth-2))+"╯")
-
+	parts = append(parts, bodyBlock)
 	return strings.Join(parts, "\n")
-}
-
-// cardLine wraps a single line of content with side borders, right-padding
-// to fill the full card width.
-func cardLine(content string, width int) string {
-	innerWidth := width - 4 // "│ " prefix + " │" suffix
-	contentWidth := lipgloss.Width(content)
-	padding := max(innerWidth-contentWidth, 0)
-	return "│ " + content + strings.Repeat(" ", padding) + " │"
 }
 
 func tsRenderPairs(rows [][2]string) string {

@@ -1,14 +1,12 @@
 [?25l[?<elapsed>
-╭────────────────────────╮
-│   ☰ Execution Plan │
-│ ──────────────────────── │
-│   Target    localhost │
-│   Playbook  test │
-│ │
-│   #  MODULE  TASK  DETAILS │
-│   ─  ──────  ────  ─────── │
-│   1  shell   echo │
-╰────────────────────────╯
+  ☰ Execution Plan
+────────────────────────
+  Target    localhost
+  Playbook  test
+
+  #  MODULE  TASK  DETAILS
+  ─  ──────  ────  ───────
+  1  shell   echo
 
 
 [2K
