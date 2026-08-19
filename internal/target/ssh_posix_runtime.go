@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"unicode/utf16"
@@ -60,6 +61,12 @@ func (r *sshPOSIXShellRuntime) CopyFile(ctx context.Context, src, dst string) er
 		return wrapSSHTargetError(fmt.Sprintf("copy %q -> %q", src, dst), fmt.Errorf("exited with code %d: stdout=%q stderr=%q", code, strings.TrimSpace(stdout), strings.TrimSpace(stderr)))
 	}
 	fileMode := info.Mode().Perm()
+	if runtime.GOOS == "windows" {
+		// Windows does not expose POSIX permissions; Go reports regular files
+		// as 0666. Use a safe default instead of making remote files writable
+		// by every user.
+		fileMode = 0o644
+	}
 	if info.Mode()&os.ModeSetuid != 0 {
 		fileMode |= 0o4000
 	}
