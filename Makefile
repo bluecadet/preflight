@@ -22,7 +22,7 @@ test:
 # additionally skip at runtime when PREFLIGHT_TEST_WINRM_* is unset. Requires a
 # sacrificial VM (see CONTRIBUTING.md) and a .env.test with connection details.
 test-integration:
-	go test -tags integration -count=1 ./internal/target/
+	go test -tags integration -v -count=1 -timeout 8m ./internal/target/
 
 # POSIX/SSH integration suite against disposable Docker containers (Ubuntu
 # 24.04 + Rocky Linux 9). Brings up both containers, waits for sshd, runs the
