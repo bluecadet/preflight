@@ -99,7 +99,8 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Test
-        run: go test ./...
+        # -race needs cgo and a C toolchain; windows-latest ships mingw.
+        run: go test -race ./...
 
   test-posix-integration:
     name: POSIX Integration (${{ matrix.container }})
