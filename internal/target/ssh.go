@@ -294,7 +294,7 @@ func (t *SSHTarget) clientRunner() (sshRunner, error) {
 	}
 	runner, err := t.runnerFactory(t.config)
 	if err != nil {
-		return nil, wrapSSHTargetError("connect", err)
+		return nil, wrapUnreachableSSHError("connect", err)
 	}
 	t.runner = runner
 	return runner, nil
@@ -341,7 +341,7 @@ func (t *SSHTarget) run(ctx context.Context, command string, stdin []byte) (stri
 
 	newRunner, reconnectErr := t.reconnect(runner)
 	if reconnectErr != nil {
-		return stdout, stderr, code, wrapSSHTargetError("reconnect", reconnectErr)
+		return stdout, stderr, code, wrapUnreachableSSHError("reconnect", reconnectErr)
 	}
 	return newRunner.Run(ctx, command, stdin)
 }

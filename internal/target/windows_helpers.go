@@ -78,6 +78,18 @@ if (-not (Test-Path -LiteralPath $path)) {
 	return decoded, nil
 }
 
+// remoteWindowsTargetInfo wraps a connection failure from run() with Op
+// "info" via the plain wrapTargetError — not wrapUnreachable. That is
+// deliberate, not an oversight: by the time a connection failure reaches
+// here, the leaf call site that actually observed it (winrm.go's
+// clientForUse/getOrCreatePSSession/runPSPerInvocation, or ssh.go's
+// clientRunner/reconnect) has already wrapped it with wrapUnreachable,
+// tagging it with preflighterr.ErrUnreachable. wrapTargetError's own
+// "don't rewrap an existing *TargetError" rule means this call returns
+// that inner error untouched — Op stays whatever the leaf chose ("create
+// client", "connect", ...), and the sentinel survives. IsUnreachable
+// classifies via errors.Is (full-chain walk), so it does not matter that
+// this "info" Op is never actually the one that ends up on the error.
 func remoteWindowsTargetInfo(ctx context.Context, transport Transport, run windowsPowerShellRunner) (TargetInfo, error) {
 	stdout, err := run(ctx, windowsTargetInfoScript)
 	if err != nil {

@@ -361,7 +361,7 @@ func (t *WinRMTarget) clientForUse() (winRMClient, error) {
 	}
 	client, err := t.clientFactory(t.config)
 	if err != nil {
-		return nil, wrapWinRMTargetError("create client", err)
+		return nil, wrapUnreachableWinRMError("create client", err)
 	}
 	t.client = client
 	return client, nil
@@ -390,14 +390,14 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 	t.roundTrips.Add(1)
 	shell, err := creator.CreateShell()
 	if err != nil {
-		return nil, wrapWinRMTargetError("create persistent shell", err)
+		return nil, wrapUnreachableWinRMError("create persistent shell", err)
 	}
 
 	t.roundTrips.Add(1)
 	cmd, err := shell.ExecuteWithContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "-")
 	if err != nil {
 		_ = shell.Close()
-		return nil, wrapWinRMTargetError("start persistent powershell", err)
+		return nil, wrapUnreachableWinRMError("start persistent powershell", err)
 	}
 
 	// Continuously drain stderr. The winrm library's single fetchOutput loop
@@ -543,7 +543,7 @@ func (t *WinRMTarget) runPSPerInvocation(ctx context.Context, script string, out
 		code, err := streamer.RunWithContextWithInput(ctx, encoded, sw, &errBuf, nil)
 		sw.flush()
 		if err != nil {
-			return "", wrapWinRMTargetError("powershell failed", err)
+			return "", wrapUnreachableWinRMError("powershell failed", err)
 		}
 		stderr := errBuf.String()
 		if code != 0 {
@@ -563,7 +563,7 @@ func (t *WinRMTarget) runPSPerInvocation(ctx context.Context, script string, out
 	t.roundTrips.Add(1)
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
-		return "", wrapWinRMTargetError("powershell failed", err)
+		return "", wrapUnreachableWinRMError("powershell failed", err)
 	}
 	if code != 0 {
 		if isWinRMCommandLineTooLong(stderr) {
@@ -648,7 +648,7 @@ func (t *WinRMTarget) runPSDirect(ctx context.Context, script string) (string, e
 	t.roundTrips.Add(1)
 	stdout, stderr, code, err := client.RunPSWithContext(ctx, script)
 	if err != nil {
-		return "", wrapWinRMTargetError("powershell failed", err)
+		return "", wrapUnreachableWinRMError("powershell failed", err)
 	}
 	if code != 0 {
 		return "", wrapWinRMTargetError("powershell failed", fmt.Errorf("exited with code %d: %s", code, strings.TrimSpace(stderr)))

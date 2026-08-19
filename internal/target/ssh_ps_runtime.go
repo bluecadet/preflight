@@ -84,20 +84,20 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 
 	session, err := creator.NewSession()
 	if err != nil {
-		return nil, wrapSSHTargetError("create persistent powershell session", err)
+		return nil, wrapUnreachableSSHError("create persistent powershell session", err)
 	}
 
 	stdin, err := session.StdinPipe()
 	if err != nil {
 		_ = session.Close()
-		return nil, wrapSSHTargetError("persistent powershell stdin pipe", err)
+		return nil, wrapUnreachableSSHError("persistent powershell stdin pipe", err)
 	}
 
 	stdoutPipe, err := session.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = session.Close()
-		return nil, wrapSSHTargetError("persistent powershell stdout pipe", err)
+		return nil, wrapUnreachableSSHError("persistent powershell stdout pipe", err)
 	}
 
 	// Start PowerShell in stdin-reading mode. -Command - causes PS to read
@@ -106,7 +106,7 @@ func (r *sshWindowsPowerShellRuntime) getOrCreatePSSession(ctx context.Context) 
 	if err := session.Start(cmd); err != nil {
 		_ = stdin.Close()
 		_ = session.Close()
-		return nil, wrapSSHTargetError("start persistent powershell", err)
+		return nil, wrapUnreachableSSHError("start persistent powershell", err)
 	}
 
 	r.psSession = &sshPersistentPS{session: session, stdin: stdin, reader: bufio.NewReader(stdoutPipe)}

@@ -1,6 +1,9 @@
 package preflighterr
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 // ModuleError wraps an error from a specific module.
 type ModuleError struct {
@@ -17,6 +20,18 @@ func (e *ModuleError) Error() string {
 }
 
 func (e *ModuleError) Unwrap() error { return e.Err }
+
+// ErrUnreachable is a sentinel wrapped into a TargetError's Err chain by
+// internal/target's transport code whenever a failure represents an
+// inability to establish (or re-establish) a connection to the target at
+// all, as opposed to a failure of some operation over a connection that
+// was already working. Callers classify with errors.Is(err, ErrUnreachable)
+// rather than inspecting TargetError.Op: errors.Is walks the full error
+// chain, so the classification survives no matter how many further layers
+// wrap the error afterward, or which TargetError happens to end up
+// outermost (see wrapTargetError's "don't rewrap an existing TargetError"
+// short-circuit in internal/target).
+var ErrUnreachable = errors.New("target unreachable")
 
 // TargetError wraps an error from a specific target transport.
 type TargetError struct {
