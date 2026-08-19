@@ -3,6 +3,7 @@ package target
 import (
 	"fmt"
 	"net"
+	"runtime/debug"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -118,6 +119,17 @@ func dialSSHViaBastionBounded(bastionClient *ssh.Client, targetCfg SSHConfig, ba
 	done := make(chan dialResult, 1)
 
 	go func() {
+		// Dial and handshake parse attacker-reachable data from the jump
+		// host and the target (a malformed or adversarial response could
+		// panic deep inside x/crypto/ssh). done is buffered, so recovering
+		// here and reporting it as a dial error can never block, even after
+		// the timeout branch below has already returned and stopped
+		// listening.
+		defer func() {
+			if rec := recover(); rec != nil {
+				done <- dialResult{err: fmt.Errorf("ssh: dial target %s via jump host %s: panic: %v\n%s", targetAddr, bastionAddr, rec, debug.Stack())}
+			}
+		}()
 		conn, err := bastionClient.Dial("tcp", targetAddr)
 		if err != nil {
 			done <- dialResult{err: fmt.Errorf("ssh: dial target %s via jump host %s: %w", targetAddr, bastionAddr, err)}

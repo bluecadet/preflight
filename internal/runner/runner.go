@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -144,7 +145,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	var hasFailure bool
 
 	slog.Debug("starting phase", "phase", "apply")
-	applyErr := r.apply(ctx, plan)
+	applyErr := r.applyRecovered(ctx, plan)
 	if applyErr != nil {
 		hasFailure = true
 	}
@@ -161,6 +162,22 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	}
 
 	return nil
+}
+
+// applyRecovered runs the apply phase and converts a panic into an error, so
+// a single misbehaving module, plugin, or transport cannot crash the whole
+// process. The recovered failure flows through the exact same path as any
+// other apply error below: hasFailure is set, emitTargetComplete records the
+// target as "failed" (preserving the TargetStartEvent/TargetCompleteEvent
+// pairing the rest of Run depends on), and the error is returned to the
+// caller for the run summary and exit status.
+func (r *Runner) applyRecovered(ctx context.Context, plan *ExecutionPlan) (err error) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			err = fmt.Errorf("apply: panic: %v\n%s", rec, debug.Stack())
+		}
+	}()
+	return r.apply(ctx, plan)
 }
 
 func isApplyTaskFailureSummary(err error) bool {

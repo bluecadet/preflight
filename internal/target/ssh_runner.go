@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -142,6 +144,17 @@ func (r *sshClientRunner) Run(ctx context.Context, command string, stdin []byte)
 
 	errCh := make(chan error, 1)
 	go func() {
+		// session.Run blocks on the remote command's exit status coming
+		// back over the SSH connection; a malformed frame could panic
+		// inside x/crypto/ssh's session/channel handling. errCh is
+		// buffered, so recovering and reporting it as a run error can
+		// never block, even if the ctx.Done() branch below has already
+		// returned and abandoned this channel.
+		defer func() {
+			if rec := recover(); rec != nil {
+				errCh <- fmt.Errorf("ssh: run %q: panic: %v\n%s", command, rec, debug.Stack())
+			}
+		}()
 		errCh <- session.Run(command)
 	}()
 

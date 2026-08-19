@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"sync"
 
 	"github.com/spf13/cobra"
@@ -109,8 +110,30 @@ hostLoop:
 
 		wg.Add(1)
 		go func(host targeting.ResolvedHost) {
-			defer wg.Done()
 			defer func() { <-sem }()
+			defer wg.Done()
+			// Recover here so a panic anywhere in fn (module, plugin, or
+			// transport code) fails only this host instead of taking down
+			// the process mid-run for every other in-flight host. The
+			// recovered panic is reported through the same joined-error
+			// path a normal host failure uses, so it still lands in the
+			// run summary, exit status, and run log.
+			//
+			// This defer is registered last, so it runs first (LIFO),
+			// before the wg.Done above. That ordering is required, not
+			// cosmetic: the unguarded `return joined` below relies on
+			// every write to joined happening-before its goroutine's
+			// wg.Done call, which happens-before wg.Wait returns. Running
+			// recover after wg.Done would let the caller observe Wait()
+			// return and read joined while this goroutine was still
+			// writing to it.
+			defer func() {
+				if r := recover(); r != nil {
+					mu.Lock()
+					joined = errors.Join(joined, fmt.Errorf("host %s panicked: %v\n%s", host.Name, r, debug.Stack()))
+					mu.Unlock()
+				}
+			}()
 			if err := fn(ctx, host); err != nil {
 				mu.Lock()
 				joined = errors.Join(joined, err)

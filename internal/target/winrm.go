@@ -12,6 +12,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -111,6 +112,14 @@ func (p *winRMPersistentPS) run(ctx context.Context, script string, out OutputFu
 	}
 	resultCh := make(chan readResult, 1)
 	go func() {
+		// readPSOutput parses output streamed off a live WinRM endpoint; a
+		// malformed or adversarial response must not crash the process, so
+		// recover and report it as a read failure like any other.
+		defer func() {
+			if rec := recover(); rec != nil {
+				resultCh <- readResult{err: &psSessionError{fmt.Errorf("read stdout: panic: %v\n%s", rec, debug.Stack())}}
+			}
+		}()
 		result, err := readPSOutput(p.reader, id, out)
 		resultCh <- readResult{out: result, err: err}
 	}()
@@ -399,6 +408,17 @@ func (t *WinRMTarget) getOrCreatePSSession(ctx context.Context) (*winRMPersisten
 	// wedging the *next* run() for winRMPersistentPSReadTimeout. Draining stderr
 	// keeps the loop moving. The copy unblocks when close() shuts the command.
 	go func() {
+		// Best-effort drain with nothing waiting on its result; a panic
+		// here (e.g. a broken Read on the underlying WinRM pipe) must not
+		// take the whole process down, so recover and drop it. Losing this
+		// drain just re-exposes the stderr-blocks-stdout stall described
+		// above, which the read-side timeout in run() already guards
+		// against.
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Debug("winrm persistent ps: stderr drain panicked", "panic", rec, "stack", string(debug.Stack()))
+			}
+		}()
 		_, _ = io.Copy(io.Discard, cmd.Stderr)
 	}()
 

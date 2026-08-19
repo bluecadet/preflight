@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime/debug"
 	"strings"
 
 	"github.com/bluecadet/preflight/internal/target"
@@ -55,6 +56,16 @@ func runWindowsPowerShellWithOutput(ctx context.Context, script string, onOutput
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		// onOutput is caller-supplied and runs once per scanned line; a
+		// panic in it (or in the scanner itself) must surface as a scan
+		// error, not crash the process. Registered after defer close(done)
+		// so it runs first (LIFO), setting scanErr before <-done below
+		// unblocks.
+		defer func() {
+			if rec := recover(); rec != nil {
+				scanErr = fmt.Errorf("scan output: panic: %v\n%s", rec, debug.Stack())
+			}
+		}()
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
 			line := normalizeWindowsOutputLine(scanner.Text())
@@ -143,6 +154,15 @@ func runWindowsPowerShellBoolWithOutput(ctx context.Context, params map[string]a
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		// See runWindowsPowerShellWithOutput above: recover so a panic in
+		// onOutput or the scanner surfaces as scanErr instead of crashing
+		// the process. Registered after defer close(done) so it runs
+		// first (LIFO), setting scanErr before <-done below unblocks.
+		defer func() {
+			if rec := recover(); rec != nil {
+				scanErr = fmt.Errorf("scan output: panic: %v\n%s", rec, debug.Stack())
+			}
+		}()
 		scanner := bufio.NewScanner(pr)
 		for scanner.Scan() {
 			line := normalizeWindowsOutputLine(scanner.Text())

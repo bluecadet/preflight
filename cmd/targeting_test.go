@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -70,6 +71,39 @@ func TestRunHostsContinuesAfterHostError(t *testing.T) {
 	for _, host := range hosts {
 		if !visited[host.Name] {
 			t.Fatalf("expected host %q to run after peer failure", host.Name)
+		}
+	}
+}
+
+func TestRunHostsRecoversPanicAndReportsOtherHostsComplete(t *testing.T) {
+	hosts := []targeting.ResolvedHost{
+		{Name: "a"},
+		{Name: "b"},
+		{Name: "c"},
+	}
+
+	var mu sync.Mutex
+	visited := make(map[string]bool)
+
+	err := runHosts(context.Background(), hosts, len(hosts), func(_ context.Context, host targeting.ResolvedHost) error {
+		mu.Lock()
+		visited[host.Name] = true
+		mu.Unlock()
+		if host.Name == "b" {
+			panic("boom: simulated per-host panic")
+		}
+		return nil
+	})
+
+	if err == nil {
+		t.Fatal("runHosts() error = nil, want the panicking host reported as a failure")
+	}
+	if !strings.Contains(err.Error(), "host b panicked") || !strings.Contains(err.Error(), "boom: simulated per-host panic") {
+		t.Fatalf("runHosts() error = %q, want it to name host %q and the recovered panic", err.Error(), "b")
+	}
+	for _, host := range hosts {
+		if !visited[host.Name] {
+			t.Fatalf("expected host %q to run despite peer %q panicking", host.Name, "b")
 		}
 	}
 }

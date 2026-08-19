@@ -38,6 +38,17 @@ type closableMockTarget struct {
 	closeCalls int
 }
 
+// panicTarget panics from Execute to simulate a misbehaving module, plugin,
+// or transport during apply, so tests can verify applyRecovered's panic
+// handling without needing a real module that can panic.
+type panicTarget struct {
+	mockTarget
+}
+
+func (p *panicTarget) Execute(_ context.Context, taskID, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
+	panic("boom: simulated module panic")
+}
+
 type mockCall struct {
 	TaskID string
 	Module string
@@ -184,6 +195,37 @@ func TestRunClosesTarget(t *testing.T) {
 	}
 	if mt.closeCalls != 1 {
 		t.Fatalf("Close called %d times, want 1", mt.closeCalls)
+	}
+}
+
+func TestRunRecoversApplyPanicAndReportsTargetFailed(t *testing.T) {
+	renderer := &recordingRenderer{}
+	r := New(&panicTarget{}, emptyResolver(), Config{Renderer: renderer})
+
+	err := r.Run(context.Background(), newShellPlaybook("panicking host"))
+	if err == nil {
+		t.Fatal("Run() error = nil, want panic converted to an error")
+	}
+	if !strings.Contains(err.Error(), "panic") || !strings.Contains(err.Error(), "boom: simulated module panic") {
+		t.Fatalf("Run() error = %q, want it to describe the recovered panic", err.Error())
+	}
+
+	var start, complete int
+	var outcome string
+	for _, e := range renderer.events {
+		switch ev := e.(type) {
+		case output.TargetStartEvent:
+			start++
+		case output.TargetCompleteEvent:
+			complete++
+			outcome = ev.Outcome
+		}
+	}
+	if start != 1 || complete != 1 {
+		t.Fatalf("got %d TargetStartEvent(s) and %d TargetCompleteEvent(s), want exactly 1 of each", start, complete)
+	}
+	if outcome != "failed" {
+		t.Fatalf("TargetCompleteEvent.Outcome = %q, want %q", outcome, "failed")
 	}
 }
 
