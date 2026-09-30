@@ -582,3 +582,58 @@ func TestRenderMap_WholeValuePreserveUnknown(t *testing.T) {
 		t.Errorf("hostname = %v, want {{ target.hostname }}", got["hostname"])
 	}
 }
+
+func TestRender_PreserveUnknownComparison(t *testing.T) {
+	e := New(map[string]any{"min_build": 22000}).WithPreserveUnknown()
+
+	for _, expr := range []string{
+		"{{ facts.os.family == 'windows' }}",
+		"{{ target.name != 'kiosk-a' }}",
+		"{{ facts.os.build >= vars.min_build }}",
+		"{{ facts.os.build >= vars.min_build ? 'win11' : 'win10' }}",
+		"{{ env.SITE == 'lobby' && vars.min_build > 0 }}",
+	} {
+		got, err := e.Render(expr)
+		if err != nil {
+			t.Fatalf("Render(%q) unexpected error: %v", expr, err)
+		}
+		if got != expr {
+			t.Errorf("Render(%q) = %q, want expression preserved", expr, got)
+		}
+	}
+}
+
+func TestRenderMap_WholeValuePreserveUnknownComparison(t *testing.T) {
+	e := New(nil).WithPreserveUnknown()
+
+	got, err := e.RenderMap(map[string]any{
+		"is_windows": "{{ facts.os.family == 'windows' }}",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got["is_windows"] != "{{ facts.os.family == 'windows' }}" {
+		t.Errorf("is_windows = %v, want comparison preserved", got["is_windows"])
+	}
+}
+
+func TestRender_PreserveUnknownEvaluatesKnownComparison(t *testing.T) {
+	e := New(map[string]any{"mode": "light"}).
+		WithFacts(map[string]any{"os": map[string]any{"family": "windows"}}).
+		WithPreserveUnknown()
+
+	cases := map[string]string{
+		"{{ facts.os.family == 'windows' }}":           "true",
+		"{{ vars.mode == 'dark' }}":                    "false",
+		"{{ vars.mode == 'light' ? 'ok' : env.SITE }}": "ok",
+	}
+	for expr, want := range cases {
+		got, err := e.Render(expr)
+		if err != nil {
+			t.Fatalf("Render(%q) unexpected error: %v", expr, err)
+		}
+		if got != want {
+			t.Errorf("Render(%q) = %q, want %q", expr, got, want)
+		}
+	}
+}
