@@ -270,7 +270,8 @@ func (e *Engine) evalExprValue(expression string) (any, bool, error) {
 		return value, true, nil
 	}
 
-	program, err := expr.Compile(expression, e.compileOptions()...)
+	sawUnresolved := false
+	program, err := expr.Compile(expression, e.compileOptions(&sawUnresolved)...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -280,6 +281,13 @@ func (e *Engine) evalExprValue(expression string) (any, bool, error) {
 		return nil, false, err
 	}
 	if isUnresolved(value) {
+		return nil, false, nil
+	}
+	// A comparison or ternary that read an unknown env/target/facts reference
+	// produced its result from a placeholder, not from real data. When unknown
+	// references are being preserved, keep the whole expression so it is
+	// evaluated once the runtime values exist instead of freezing that result.
+	if e.preserveUnknown && sawUnresolved {
 		return nil, false, nil
 	}
 	return value, true, nil
@@ -323,14 +331,23 @@ func parseSecretExpression(expression string) (string, bool) {
 	return "", false
 }
 
-func (e *Engine) compileOptions() []expr.Option {
+// compileOptions returns the expr options for one evaluation. sawUnresolved is
+// set when any lookup during that evaluation hits an unknown reference.
+func (e *Engine) compileOptions(sawUnresolved *bool) []expr.Option {
+	lookup := func(args ...any) (any, error) {
+		value, err := e.lookupExprFunc(args...)
+		if err == nil && isUnresolved(value) {
+			*sawUnresolved = true
+		}
+		return value, err
+	}
 	return []expr.Option{
 		expr.Env(map[string]any{}),
 		expr.AsAny(),
 		expr.AllowUndefinedVariables(),
 		expr.Patch(&exprCompatPatcher{}),
 		expr.Patch(&namespaceIdentifierPatcher{}),
-		expr.Function(lookupFuncName, e.lookupExprFunc, new(func(string) any)),
+		expr.Function(lookupFuncName, lookup, new(func(string) any)),
 		expr.Function(truthyFuncName, truthyExprFunc, new(func(any) bool)),
 		expr.Function(eqFuncName, eqExprFunc, new(func(any, any) bool)),
 		expr.Function(neqFuncName, neqExprFunc, new(func(any, any) bool)),

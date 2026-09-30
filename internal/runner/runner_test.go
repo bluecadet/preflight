@@ -292,6 +292,57 @@ func TestPlanMergesProjectVarsAndActionInputs(t *testing.T) {
 	}
 }
 
+func TestApplyEvaluatesTargetComparisonPassedAsActionInput(t *testing.T) {
+	resolver := action.Chain{&staticResolver{
+		action: &action.Action{
+			Name: "demo/gated",
+			Inputs: map[string]action.Input{
+				"enabled": {Default: "false"},
+			},
+			Tasks: []action.Task{
+				{
+					Name:          "gated task",
+					When:          "{{ vars.enabled }}",
+					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo"}},
+				},
+			},
+		},
+	}}
+
+	for _, tc := range []struct {
+		name      string
+		with      string
+		wantCalls int
+	}{
+		{name: "matching target runs", with: "{{ target.name == 'kiosk-a' }}", wantCalls: 1},
+		{name: "other target skips", with: "{{ target.name == 'kiosk-b' }}", wantCalls: 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mt := &mockTarget{}
+			r := New(mt, resolver, Config{TargetVars: map[string]any{"name": "kiosk-a"}})
+			pb := &action.Playbook{
+				Name: "gated",
+				Tasks: []action.Task{{
+					Name: "gated",
+					Uses: "demo/gated",
+					With: map[string]any{"enabled": tc.with},
+				}},
+			}
+
+			plan, err := r.Plan(context.Background(), pb)
+			if err != nil {
+				t.Fatalf("Plan returned error: %v", err)
+			}
+			if err := r.Apply(context.Background(), plan); err != nil {
+				t.Fatalf("Apply returned error: %v", err)
+			}
+			if len(mt.calls) != tc.wantCalls {
+				t.Fatalf("expected %d executed task(s), got %d", tc.wantCalls, len(mt.calls))
+			}
+		})
+	}
+}
+
 func writeFile(t *testing.T, path, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
