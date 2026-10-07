@@ -67,26 +67,41 @@ sidebar:
   - label: Tutorials
     items:
       - tutorials/quickstart
-  - label: How-to
+      - tutorials/first-windows-target
+  - label: How-To Guides
     items:
-      - how-to/install-preflight
-      - how-to/run-a-playbook
-      - how-to/remote-execution
-      - how-to/troubleshoot-remote-connections
-      - how-to/enable-remote-access
-      - how-to/onboard-a-target-through-a-bastion
-      - how-to/set-up-a-tunnel-bastion
-      - how-to/manage-secrets
-      - how-to/run-tasks-as-another-user
-      - how-to/sync-a-git-repo
-      - how-to/configure-git-credentials
-      - how-to/schedule-a-windows-reboot
-      - how-to/inspect-state-and-diff
-      - how-to/update-and-pin-actions
-      - how-to/air-gapped-deployment
-      - how-to/use-plugin-modules
-      - how-to/write-an-action
-      - how-to/write-a-plugin
+      - label: Essentials
+        items:
+          - how-to/install-preflight
+          - how-to/run-a-playbook
+      - label: Remote Hosts
+        items:
+          - how-to/remote-execution
+          - how-to/enable-remote-access
+          - how-to/troubleshoot-remote-connections
+      - label: Credentials And Identity
+        items:
+          - how-to/manage-secrets
+          - how-to/run-tasks-as-another-user
+      - label: Source And State
+        items:
+          - how-to/sync-a-git-repo
+          - how-to/configure-git-credentials
+          - how-to/inspect-state-and-diff
+          - how-to/update-and-pin-actions
+      - label: Restricted Networks
+        items:
+          - how-to/air-gapped-deployment
+          - how-to/set-up-a-tunnel-bastion
+          - how-to/onboard-a-target-through-a-bastion
+      - label: Windows Recipes
+        items:
+          - how-to/schedule-a-windows-reboot
+      - label: Extending Preflight
+        items:
+          - how-to/write-an-action
+          - how-to/use-plugin-modules
+          - how-to/write-a-plugin
   - label: Reference
     items:
       - reference/cli
