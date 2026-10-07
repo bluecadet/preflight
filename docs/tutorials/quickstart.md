@@ -145,4 +145,7 @@ You now have a working mental model for the normal flow:
 
 ## Next Step
 
-Move on to [Run a playbook](../how-to/run-a-playbook.md) for everyday execution patterns, or jump to [Playbook and action YAML reference](../reference/playbooks.md) when you need exact field names and task shapes.
+Continue with [Manage your first Windows target](./first-windows-target.md) to
+add inventory, encrypt a credential, and apply a playbook over SSH. For
+everyday execution options, see
+[Run a playbook](../how-to/run-a-playbook.md).

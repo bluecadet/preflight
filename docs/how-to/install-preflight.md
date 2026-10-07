@@ -222,4 +222,6 @@ Use the direct download flow, verify the checksum, verify the `cosign` bundle fo
 
 ## Related Docs
 
+- [Quickstart](../tutorials/quickstart.md)
+- [Manage your first Windows target](../tutorials/first-windows-target.md)
 - [Enable remote access on a Windows target](./enable-remote-access.md)

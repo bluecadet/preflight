@@ -129,6 +129,7 @@ For connection and authentication problems once a transport is enabled, see
 
 ## Related Docs
 
+- [Manage your first Windows target](../tutorials/first-windows-target.md)
 - [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
 - [Install Preflight](./install-preflight.md)
 - [Run a playbook against remote hosts](./remote-execution.md)
