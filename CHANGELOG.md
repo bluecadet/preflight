@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/bluecadet/preflight/compare/v1.0.0...v1.0.1) (2026-10-21)
+
+
+### Bug Fixes
+
+* **template:** preserve expressions that read unknown references ([cda6f25](https://github.com/bluecadet/preflight/commit/cda6f2583cf2b9e861584e8f5e7b572276b9708f))
+
 ## [1.0.0](https://github.com/bluecadet/preflight/compare/v1.0.0-beta.8...v1.0.0) (2026-08-19)
 
 
