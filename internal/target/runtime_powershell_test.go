@@ -151,6 +151,7 @@ func TestApplyWindowsShellWrapsWorkingDir(t *testing.T) {
 	for _, want := range []string{
 		"Push-Location -LiteralPath $__pf_working_dir",
 		"& $cmd @args",
+		"exited with code $LASTEXITCODE",
 		"Pop-Location",
 	} {
 		if !strings.Contains(script, want) {

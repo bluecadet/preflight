@@ -433,13 +433,17 @@ func applyWindowsShell(ctx context.Context, backend windowsPowerShellBackend, pa
 if ($workingDir) {
   Set-Location -LiteralPath $workingDir
 }
+$global:LASTEXITCODE = 0
 & $cmd @args
+if ($LASTEXITCODE) { throw "$cmd exited with code $LASTEXITCODE" }
 `, nil)
 		return applyStreamed(output, out), err
 	}
 	taskScript := script + `
 ` + psArgs + `
+$global:LASTEXITCODE = 0
 & $cmd @args
+if ($LASTEXITCODE) { throw "$cmd exited with code $LASTEXITCODE" }
 `
 	taskScript, err = wrapPowerShellWorkingDir(map[string]any{"working_dir": workingDir}, taskScript)
 	if err != nil {
