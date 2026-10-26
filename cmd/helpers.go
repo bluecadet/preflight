@@ -15,7 +15,6 @@ import (
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
-	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 )
@@ -195,7 +194,8 @@ func fetchPlaybookActionRefs(ctx context.Context, pb *action.Playbook, chain act
 	if pb == nil {
 		return nil
 	}
-	return runner.New(nil, chain, runner.Config{}).Fetch(ctx, pb)
+	_, err := action.FetchRefs(ctx, chain, action.PlaybookUses(pb))
+	return err
 }
 
 func currentBinaryDir() string {

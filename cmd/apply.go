@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/runner"
@@ -152,7 +153,7 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 		Tags:         tags,
 		SkipTags:     skipTags,
 	})
-	if err := runner.New(nil, session.Chain, runner.Config{}).Fetch(ctx, session.Playbook); err != nil {
+	if err := fetchPlaybookActionRefs(ctx, session.Playbook, session.Chain); err != nil {
 		bus.Emit(output.WarningEvent{Message: fmt.Sprintf("fetch phase failed: %v", err)})
 		return err
 	}
@@ -166,7 +167,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 			DryRun:                        opts.dryRun,
 			Tags:                          tags,
 			SkipTags:                      skipTags,
-			Concurrency:                   concurrency,
 			ProjectDir:                    session.ProjectDir,
 			ProjectName:                   session.ProjectCfg.Project,
 			ProjectEnv:                    session.ProjectCfg.Environment,
@@ -176,7 +176,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 			TargetVars:                    host.TargetVars,
 			TargetName:                    host.Name,
 			Renderer:                      bus,
-			SkipFetch:                     true,
 			Secrets:                       session.Secrets,
 			SecretsConfig:                 session.ProjectCfg.Secrets,
 			ModuleRegistry:                session.Registry,
@@ -189,12 +188,11 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 			BuildDate:                     buildDate,
 		}
 		if opts.stageOnly {
-			cfg.Phase = "stage"
 			cfg.StagePlatform = host.InventoryRef.Platform
 		}
 
 		r := runner.New(host.Target, session.Chain, cfg)
-		if err := r.Run(runCtx, session.Playbook); err != nil {
+		if err := runHostPipeline(runCtx, r, session.Playbook, opts.stageOnly); err != nil {
 			if failFast {
 				cancel()
 			}
@@ -230,6 +228,18 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 	}
 
 	return hostErrors
+}
+
+// runHostPipeline stages a bundle for one host, or plans and applies it.
+func runHostPipeline(ctx context.Context, r *runner.Runner, pb *action.Playbook, stageOnly bool) error {
+	if !stageOnly {
+		return r.Run(ctx, pb)
+	}
+	plan, err := r.Plan(ctx, pb)
+	if err != nil {
+		return err
+	}
+	return r.Stage(ctx, plan)
 }
 
 func runStatus(err error) string {

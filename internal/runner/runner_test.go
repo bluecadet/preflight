@@ -1207,20 +1207,24 @@ func (r *staticResolver) Resolve(_ context.Context, _ string) (*action.Action, e
 }
 func (r *staticResolver) Name() string { return "static" }
 
-func TestRunFetchAndStagePhases(t *testing.T) {
-	playbook := newShellPlaybook("phase-test")
-	if err := New(&mockTarget{}, emptyResolver(), Config{Phase: "fetch"}).Run(context.Background(), playbook); err != nil {
-		t.Fatalf("fetch phase: expected nil, got %v", err)
+func planAndStage(r *Runner, pb *action.Playbook) error {
+	plan, err := r.Plan(context.Background(), pb)
+	if err != nil {
+		return err
 	}
+	return r.Stage(context.Background(), plan)
+}
+
+func TestStageWritesBundle(t *testing.T) {
+	playbook := newShellPlaybook("phase-test")
 
 	dir := t.TempDir()
-	err := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
+	err := planAndStage(New(&mockTarget{}, emptyResolver(), Config{
 		BundleOutputDir: dir,
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
-	}).Run(context.Background(), playbook)
+	}), playbook)
 	if err != nil {
-		t.Fatalf("stage phase: expected nil, got %v", err)
+		t.Fatalf("stage: expected nil, got %v", err)
 	}
 	matches, err := filepath.Glob(filepath.Join(dir, "*.zip"))
 	if err != nil {
@@ -1238,7 +1242,6 @@ func TestRunStageUsesDeclaredPlatformWithoutTargetInfo(t *testing.T) {
 		InfoErr:   errors.New("target is offline"),
 	}
 	r := New(tgt, emptyResolver(), Config{
-		Phase:           "stage",
 		StagePlatform:   &target.Platform{OS: target.OSFamilyWindows, Arch: "amd64"},
 		TargetName:      "TS1",
 		BundleOutputDir: dir,
@@ -1246,7 +1249,7 @@ func TestRunStageUsesDeclaredPlatformWithoutTargetInfo(t *testing.T) {
 	})
 	playbook := singleTaskPlaybook("registry")
 
-	if err := r.Run(context.Background(), playbook); err != nil {
+	if err := planAndStage(r, playbook); err != nil {
 		t.Fatalf("stage with declared platform: %v", err)
 	}
 
@@ -1267,12 +1270,11 @@ func TestRunStageProbesTargetWithoutDeclaredPlatform(t *testing.T) {
 	dir := t.TempDir()
 	tgt := &targettest.Fake{InfoErr: errors.New("target is offline")}
 	r := New(tgt, emptyResolver(), Config{
-		Phase:           "stage",
 		BundleOutputDir: dir,
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 	})
 
-	err := r.Run(context.Background(), newShellPlaybook("probe-target"))
+	err := planAndStage(r, newShellPlaybook("probe-target"))
 	if err == nil || !strings.Contains(err.Error(), "stage: target info: target is offline") {
 		t.Fatalf("stage error = %v, want target info failure", err)
 	}
@@ -1349,7 +1351,6 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 	}
 
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
 		BundleOutputDir: dir,
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 		ProjectDir:      dir,
@@ -1436,7 +1437,6 @@ func TestStageBundlesSecretsReferencedByFileContentTemplate(t *testing.T) {
 	}
 
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
 		BundleOutputDir: dir,
 		ModuleRegistry:  map[string]target.Module{"file": noopModule{}},
 		ProjectDir:      dir,
@@ -1506,7 +1506,6 @@ func TestStageStdlibGitSyncBundlesCredentialSecrets(t *testing.T) {
 	}
 
 	r := New(&mockTarget{}, action.Chain{action.NewEmbeddedResolver(stdlib.FS)}, Config{
-		Phase:           "stage",
 		BundleOutputDir: dir,
 		ModuleRegistry:  map[string]target.Module{"powershell": noopModule{}},
 		ProjectDir:      dir,
@@ -1567,7 +1566,6 @@ func TestStageStdlibGitSyncBundlesCredentialSecrets(t *testing.T) {
 
 func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
 		BundleOutputDir: t.TempDir(),
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 	})
@@ -1595,7 +1593,6 @@ func TestStageRejectsLiteralSecretWithoutPlaintextFlag(t *testing.T) {
 
 func TestStageAllowsEmptySecretishValues(t *testing.T) {
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:           "stage",
 		BundleOutputDir: t.TempDir(),
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 	})
@@ -1640,7 +1637,6 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 	}
 
 	r := New(&mockTarget{}, emptyResolver(), Config{
-		Phase:                         "stage",
 		BundleOutputDir:               dir,
 		ModuleRegistry:                map[string]target.Module{"shell": noopModule{}},
 		ProjectDir:                    dir,
@@ -1724,242 +1720,6 @@ func (noopModule) Check(_ context.Context, _ map[string]any, _ target.OutputFunc
 }
 func (noopModule) Apply(_ context.Context, _ map[string]any, _ target.OutputFunc) (target.ApplyResult, error) {
 	return target.ApplyResult{}, nil
-}
-
-type fetchableResolver struct {
-	actions map[string]*action.Action
-	fetched map[string]bool
-	calls   []string
-}
-
-func (r *fetchableResolver) Name() string { return "fetchable" }
-
-func (r *fetchableResolver) Resolve(_ context.Context, ref string) (*action.Action, error) {
-	a, ok := r.actions[ref]
-	if !ok {
-		return nil, nil
-	}
-	if !r.fetched[ref] {
-		return nil, &action.RemoteCacheMissError{Ref: ref}
-	}
-	return a, nil
-}
-
-func (r *fetchableResolver) Fetch(_ context.Context, ref string) (*action.FetchResult, error) {
-	r.calls = append(r.calls, ref)
-	a, ok := r.actions[ref]
-	if !ok {
-		return nil, nil
-	}
-	if r.fetched == nil {
-		r.fetched = make(map[string]bool)
-	}
-	r.fetched[ref] = true
-	return &action.FetchResult{
-		Entry:  action.LockEntry{Ref: ref, SHA: "sha-" + ref, Pinned: ref},
-		Action: a,
-	}, nil
-}
-
-func TestRunFetchesRemoteDependenciesBeforePlanningAndApply(t *testing.T) {
-	rootRef := "github.com/acme/actions/root@v1"
-	childRef := "github.com/acme/actions/child@v1"
-	resolver := &fetchableResolver{
-		actions: map[string]*action.Action{
-			rootRef: {
-				Name: "root",
-				Tasks: []action.Task{{
-					Name: "child",
-					Uses: childRef,
-				}},
-			},
-			childRef: {
-				Name: "child",
-				Tasks: []action.Task{{
-					Name:          "echo",
-					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
-				}},
-			},
-		},
-		fetched: make(map[string]bool),
-	}
-
-	playbook := &action.Playbook{
-		Name: "remote",
-		Tasks: []action.Task{{
-			Name: "root",
-			Uses: rootRef,
-		}},
-	}
-
-	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
-	r := New(mt, action.Chain{resolver}, Config{})
-	if err := r.Run(context.Background(), playbook); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(resolver.calls) != 2 {
-		t.Fatalf("expected 2 fetch calls, got %d", len(resolver.calls))
-	}
-	if resolver.calls[0] != rootRef || resolver.calls[1] != childRef {
-		t.Fatalf("unexpected fetch order: %#v", resolver.calls)
-	}
-	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
-		t.Fatalf("expected one shell execution, got %#v", mt.calls)
-	}
-}
-
-func TestRunFetchPhaseStopsBeforeApply(t *testing.T) {
-	rootRef := "github.com/acme/actions/root@v1"
-	resolver := &fetchableResolver{
-		actions: map[string]*action.Action{
-			rootRef: {
-				Name: "root",
-				Tasks: []action.Task{{
-					Name:          "echo",
-					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
-				}},
-			},
-		},
-		fetched: make(map[string]bool),
-	}
-
-	playbook := &action.Playbook{
-		Name:  "remote",
-		Tasks: []action.Task{{Name: "root", Uses: rootRef}},
-	}
-	mt := &mockTarget{}
-	r := New(mt, action.Chain{resolver}, Config{Phase: "fetch"})
-	if err := r.Run(context.Background(), playbook); err != nil {
-		t.Fatalf("Run(fetch): %v", err)
-	}
-	if len(resolver.calls) != 1 {
-		t.Fatalf("expected 1 fetch call, got %d", len(resolver.calls))
-	}
-	if len(mt.calls) != 0 {
-		t.Fatalf("expected no target execution during fetch phase, got %#v", mt.calls)
-	}
-}
-
-// localActionResolver handles a fixed set of non-remote refs without any fetch step,
-// simulating a local or embedded action resolver.
-type localActionResolver struct {
-	actions map[string]*action.Action
-}
-
-func (r *localActionResolver) Name() string { return "local" }
-func (r *localActionResolver) Resolve(_ context.Context, ref string) (*action.Action, error) {
-	a, ok := r.actions[ref]
-	if !ok {
-		return nil, nil
-	}
-	return a, nil
-}
-
-func TestRunFetchesRemoteDepsNestedUnderLocalAction(t *testing.T) {
-	localRef := "local/wrapper"
-	remoteRef := "github.com/acme/actions/child@v1"
-
-	localAction := &action.Action{
-		Name:  "wrapper",
-		Tasks: []action.Task{{Name: "child", Uses: remoteRef}},
-	}
-	remoteAction := &action.Action{
-		Name: "child",
-		Tasks: []action.Task{{
-			Name:          "echo",
-			InlineModules: map[string]map[string]any{"shell": {"cmd": "echo hello"}},
-		}},
-	}
-
-	fr := &fetchableResolver{
-		actions: map[string]*action.Action{remoteRef: remoteAction},
-		fetched: make(map[string]bool),
-	}
-	chain := action.Chain{
-		&localActionResolver{actions: map[string]*action.Action{localRef: localAction}},
-		fr,
-	}
-
-	playbook := &action.Playbook{
-		Name: "local-to-remote",
-		Tasks: []action.Task{{
-			Name: "wrapper",
-			Uses: localRef,
-		}},
-	}
-
-	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
-	r := New(mt, chain, Config{})
-	if err := r.Run(context.Background(), playbook); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(fr.calls) != 1 || fr.calls[0] != remoteRef {
-		t.Errorf("expected fetch of %q, got %v", remoteRef, fr.calls)
-	}
-	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
-		t.Errorf("expected one shell execution, got %#v", mt.calls)
-	}
-}
-
-func TestRunFetchesRemoteDepsNestedUnderStdlibAction(t *testing.T) {
-	stdlibRef := "preflight/baseline"
-	remoteRef := "github.com/acme/actions/plugin@v3"
-
-	stdlibAction := &action.Action{
-		Name:  "baseline",
-		Tasks: []action.Task{{Name: "plugin", Uses: remoteRef}},
-	}
-	remoteAction := &action.Action{
-		Name: "plugin",
-		Tasks: []action.Task{{
-			Name:          "run",
-			InlineModules: map[string]map[string]any{"shell": {"cmd": "plugin.exe"}},
-		}},
-	}
-
-	fr := &fetchableResolver{
-		actions: map[string]*action.Action{remoteRef: remoteAction},
-		fetched: make(map[string]bool),
-	}
-	chain := action.Chain{
-		&localActionResolver{actions: map[string]*action.Action{stdlibRef: stdlibAction}},
-		fr,
-	}
-
-	playbook := &action.Playbook{
-		Name: "stdlib-to-remote",
-		Tasks: []action.Task{{
-			Name: "baseline",
-			Uses: stdlibRef,
-		}},
-	}
-
-	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
-	r := New(mt, chain, Config{})
-	if err := r.Run(context.Background(), playbook); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if len(fr.calls) != 1 || fr.calls[0] != remoteRef {
-		t.Errorf("expected fetch of %q, got %v", remoteRef, fr.calls)
-	}
-	if len(mt.calls) != 1 || mt.calls[0].Module != "shell" {
-		t.Errorf("expected one shell execution, got %#v", mt.calls)
-	}
-}
-
-func TestRunPlanPhaseStopsBeforeApply(t *testing.T) {
-	mt := &mockTarget{}
-
-	r := New(mt, emptyResolver(), Config{
-		Phase: "plan",
-	})
-	pb := newShellPlaybook("plan-only")
-	if err := r.Run(context.Background(), pb); err != nil {
-		t.Fatalf("Run(plan): %v", err)
-	}
-	if len(mt.calls) != 0 {
-		t.Fatalf("expected no target execution during plan phase, got %#v", mt.calls)
-	}
 }
 
 func TestTargetNameNeverReturnsLocalhost(t *testing.T) {
