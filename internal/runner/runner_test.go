@@ -845,9 +845,7 @@ func TestApplyStdlibGitSyncResolvesCredentialEnvSecrets(t *testing.T) {
 	r := New(mt, action.Chain{action.NewEmbeddedResolver(stdlib.FS)}, Config{
 		ProjectDir:    dir,
 		SecretsConfig: cfg,
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets:       secrets.NewResolver(provider),
 	})
 	pb := &action.Playbook{
 		Name: "git-sync-apply",
@@ -1159,9 +1157,7 @@ func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
 
 	mt := &mockTarget{results: []target.Result{{Status: target.StatusOK}}}
 	r := New(mt, emptyResolver(), Config{
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets: secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "secret-test",
@@ -1355,9 +1351,7 @@ func TestStageBundlesReferencedEncryptedSecrets(t *testing.T) {
 		ModuleRegistry:  map[string]target.Module{"shell": noopModule{}},
 		ProjectDir:      dir,
 		SecretsConfig:   cfg,
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets:         secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "bundle-secret",
@@ -1441,9 +1435,7 @@ func TestStageBundlesSecretsReferencedByFileContentTemplate(t *testing.T) {
 		ModuleRegistry:  map[string]target.Module{"file": noopModule{}},
 		ProjectDir:      dir,
 		SecretsConfig:   cfg,
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets:         secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "bundle-file-template-secret",
@@ -1510,9 +1502,7 @@ func TestStageStdlibGitSyncBundlesCredentialSecrets(t *testing.T) {
 		ModuleRegistry:  map[string]target.Module{"powershell": noopModule{}},
 		ProjectDir:      dir,
 		SecretsConfig:   cfg,
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets:         secrets.NewResolver(provider),
 	})
 	pb := &action.Playbook{
 		Name: "git-sync-secret",
@@ -1642,9 +1632,7 @@ func TestStageAllowsPlaintextSecretsWhenFlagEnabled(t *testing.T) {
 		ProjectDir:                    dir,
 		SecretsConfig:                 cfg,
 		AllowPlaintextSecretsInBundle: true,
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets:                       secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "plaintext-secret",

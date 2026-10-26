@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 )
@@ -27,21 +26,19 @@ type Ref struct {
 	Name     string
 }
 
-// Resolver resolves secret references through named providers.
+// Resolver resolves "secret:<name>" references through a single provider.
 type Resolver struct {
-	providers map[string]Provider
+	provider Provider
 
 	mu        sync.Mutex
 	resolved  []string
 	observers []func(value string)
 }
 
-// NewResolver builds a Resolver from the given providers map.
-func NewResolver(providers map[string]Provider) *Resolver {
-	if providers == nil {
-		providers = make(map[string]Provider)
-	}
-	return &Resolver{providers: providers}
+// NewResolver builds a Resolver backed by provider. A nil provider yields a
+// resolver with nothing configured.
+func NewResolver(provider Provider) *Resolver {
+	return &Resolver{provider: provider}
 }
 
 // ParseRef parses ref strings in the form "provider:name".
@@ -70,11 +67,10 @@ func (r *Resolver) ResolveRef(ctx context.Context, ref string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	provider, ok := r.providers[parsed.Provider]
-	if !ok {
+	if parsed.Provider != DefaultProviderName || r.provider == nil {
 		return "", fmt.Errorf("secret provider %q is not configured", parsed.Provider)
 	}
-	data, err := provider.Resolve(ctx, parsed.Name)
+	data, err := r.provider.Resolve(ctx, parsed.Name)
 	if err != nil {
 		return "", RedactError(fmt.Errorf("resolve %q: %w", ref, err))
 	}
@@ -147,22 +143,9 @@ func (r *Resolver) ResolveMap(ctx context.Context, params map[string]any) (map[s
 	return resolved, nil
 }
 
-// HasProviders reports whether any providers are configured.
+// HasProviders reports whether a provider is configured.
 func (r *Resolver) HasProviders() bool {
-	return r != nil && len(r.providers) > 0
-}
-
-// ProviderNames returns configured provider names in deterministic order.
-func (r *Resolver) ProviderNames() []string {
-	if r == nil {
-		return nil
-	}
-	names := make([]string, 0, len(r.providers))
-	for name := range r.providers {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return r != nil && r.provider != nil
 }
 
 // RedactString returns a fixed marker for secret-bearing values.

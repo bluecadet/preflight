@@ -377,7 +377,5 @@ func buildBundleSecretsResolver(extracted *bundle.ExtractedBundle, identityPath 
 		identityPath,
 		entries,
 	)
-	return secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	}), nil
+	return secrets.NewResolver(provider), nil
 }
