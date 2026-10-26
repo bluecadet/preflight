@@ -2,24 +2,32 @@ package winutil
 
 import (
 	"fmt"
+	"strings"
 )
 
 // NormalizeManagerPackages validates the "packages" list shared by
 // package-manager modules (winget_package, ...) and returns a params map with
-// a clean "packages" key.
+// a clean "packages" key. Package IDs are case-insensitive and may appear once.
 func NormalizeManagerPackages(module string, params map[string]any) (map[string]any, error) {
 	list, ok := params["packages"].([]any)
 	if !ok {
 		return nil, fmt.Errorf("%s: 'packages' is required and must be a list", module)
 	}
+	seen := make(map[string]int, len(list))
 	for i, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("%s: packages[%d] must be an object", module, i)
 		}
-		if id, _ := m["id"].(string); id == "" {
+		id, _ := m["id"].(string)
+		if id == "" {
 			return nil, fmt.Errorf("%s: packages[%d].id is required", module, i)
 		}
+		key := strings.ToLower(id)
+		if first, dup := seen[key]; dup {
+			return nil, fmt.Errorf("%s: packages[%d].id %q duplicates packages[%d]", module, i, id, first)
+		}
+		seen[key] = i
 	}
 	return map[string]any{"packages": list}, nil
 }

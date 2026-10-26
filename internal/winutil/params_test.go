@@ -107,6 +107,20 @@ func TestNormalizeManagerPackages_Args(t *testing.T) {
 	}
 }
 
+func TestNormalizeManagerPackages_RejectsDuplicateIDs(t *testing.T) {
+	_, err := NormalizeManagerPackages("winget_package", map[string]any{
+		"packages": []any{
+			map[string]any{"id": "7zip.7zip"},
+			map[string]any{"id": "Git.Git"},
+			map[string]any{"id": "7Zip.7Zip", "version": "24.08"},
+		},
+	})
+	want := `winget_package: packages[2].id "7Zip.7Zip" duplicates packages[0]`
+	if err == nil || err.Error() != want {
+		t.Fatalf("got %v, want %q", err, want)
+	}
+}
+
 func TestNormalizeRegistryParams_TypedSpecList(t *testing.T) {
 	typed, err := NormalizeRegistryParams(map[string]any{
 		"values": []any{
