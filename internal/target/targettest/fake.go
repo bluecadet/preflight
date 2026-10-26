@@ -37,7 +37,7 @@ func (f *Fake) Execute(_ context.Context, taskID, module string, params map[stri
 	f.Calls = append(f.Calls, Call{
 		TaskID: taskID,
 		Module: module,
-		Params: cloneMap(params),
+		Params: maps.Clone(params),
 		DryRun: dryRun,
 	})
 	if onOutput != nil {
@@ -81,13 +81,4 @@ func (f *Fake) RunPowerShell(_ context.Context, _ string) (string, error) {
 func (f *Fake) Close() error {
 	f.CloseCalls++
 	return nil
-}
-
-func cloneMap(src map[string]any) map[string]any {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string]any, len(src))
-	maps.Copy(dst, src)
-	return dst
 }

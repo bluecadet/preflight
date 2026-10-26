@@ -322,7 +322,7 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 // (whose RuntimeKind the apply-start gate validates against). This is the only
 // apply step that requires a real target connection.
 func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeContext, target.TargetInfo, error) {
-	targetVars := cloneMap(r.config.TargetVars)
+	targetVars := maps.Clone(r.config.TargetVars)
 	r.emitActivityStart("connecting")
 	info, err := r.target.Info(ctx)
 	if err != nil {
@@ -377,7 +377,7 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeCo
 // staged-bundle analysis.
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
-	preview.Params = cloneMap(task.Params)
+	preview.Params = maps.Clone(task.Params)
 	rt := &template.RuntimeContext{Target: targetVars}
 	bound, err := bindTask(&preview, rt, template.BindPartial)
 	if err != nil {
@@ -387,15 +387,6 @@ func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview.When = bound.When
 	preview.Params = bound.Params
 	return &preview, nil
-}
-
-func cloneMap(src map[string]any) map[string]any {
-	if src == nil {
-		return nil
-	}
-	dst := make(map[string]any, len(src))
-	maps.Copy(dst, src)
-	return dst
 }
 
 // validatePlanTasks runs the plan-time module support check against every
