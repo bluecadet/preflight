@@ -29,6 +29,7 @@ func TestAllStdlibActions(t *testing.T) {
 		"windows-quiet-mode",
 		"windows-shell",
 		"windows-update-lockdown",
+		"winget",
 	} {
 		path := "actions/preflight/" + name + "/action.yml"
 		data, err := stdlib.FS.ReadFile(path)

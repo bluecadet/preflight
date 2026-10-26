@@ -3,7 +3,7 @@
 ────────────────────────
   Namespace  preflight/
   Local dir  <cwd>/actions
-  Embedded   9
+  Embedded   10
   Local      0
 
   Embedded actions
@@ -16,6 +16,7 @@
   • preflight/windows-quiet-mode
   • preflight/windows-shell
   • preflight/windows-update-lockdown
+  • preflight/winget
 
   Local actions
   (none)
