@@ -123,13 +123,13 @@ In `json` output, each target produces one `facts` event.
 
 ## `action`
 
-These commands read `actions/` and `preflight.lock` in the working directory.
+`action list` and `action info` read `actions/` and `preflight.lock` in the working directory. `action fetch` writes `preflight.lock` in the project root.
 
 | Command | Description |
 | --- | --- |
 | `preflight action list` | List stdlib actions and project actions under `./actions` |
 | `preflight action info <ref>` | Print an action's name, version, description, author, inputs, and task names; remote refs must be cached |
-| `preflight action fetch <ref>` | Fetch a remote ref and the remote refs it uses into `~/.preflight/actions`, and record each commit SHA in `preflight.lock` |
+| `preflight action fetch <ref>` | Fetch a remote ref and the remote refs it uses into `~/.preflight/actions`, and record each commit SHA in the project root's `preflight.lock` (the nearest parent directory with `preflight.yml`, `preflight.lock`, `actions/`, or `.git`; the working directory if none) |
 
 Flags: output.
 

@@ -184,8 +184,12 @@ func runActionFetch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("action fetch: get working directory: %w", err)
 	}
+	projectDir, err := discoverProjectDir(cwd)
+	if err != nil {
+		return fmt.Errorf("action fetch: %w", err)
+	}
 
-	entries, err := action.FetchRefs(context.Background(), newActionChain(cwd), []string{ref})
+	entries, err := action.FetchRefs(context.Background(), newActionChain(projectDir), []string{ref})
 	if err != nil {
 		return fmt.Errorf("action fetch: %w", err)
 	}

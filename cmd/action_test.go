@@ -95,3 +95,48 @@ func TestPlaybookDirFindsProjectRootAbovePlaybooksDirectory(t *testing.T) {
 		t.Fatalf("project dir: got %q want %q", got, projectDir)
 	}
 }
+
+func TestRunActionFetchUsesProjectRoot(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "preflight.yml"), []byte("project: test\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(preflight.yml): %v", err)
+	}
+	subDir := filepath.Join(projectDir, "playbooks")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Chdir(%q): %v", subDir, err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("Chdir(%q): %v", cwd, err)
+		}
+	})
+
+	oldChain := newActionChain
+	defer func() { newActionChain = oldChain }()
+
+	ref := "github.com/acme/actions/root@v1"
+	resolver := &commandFetchResolver{results: map[string]*action.FetchResult{
+		ref: {Entry: action.LockEntry{Ref: ref, SHA: "a"}, Action: &action.Action{}},
+	}}
+	var gotDir string
+	newActionChain = func(dir string) action.Chain {
+		gotDir = dir
+		return action.Chain{resolver}
+	}
+
+	if err := runActionFetch(nil, []string{ref}); err != nil {
+		t.Fatalf("runActionFetch: %v", err)
+	}
+	want, _ := filepath.EvalSymlinks(projectDir)
+	got, _ := filepath.EvalSymlinks(gotDir)
+	if got != want {
+		t.Fatalf("chain project dir = %q, want %q", gotDir, projectDir)
+	}
+}
