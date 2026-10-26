@@ -221,7 +221,6 @@ func splitOutputLines(output string) []string {
 // controllerReg overlaid. Plugins bypass the runtime support matrix —
 // controller-side execution makes them supported on every runtime — so they
 // override any unsupported stub the runtime registry placed in their slot.
-// Called only on the non-become path: plugin+become is refused in v1.
 func mergePlugins(runtimeReg, controllerReg ModuleRegistry) ModuleRegistry {
 	reg := make(ModuleRegistry, len(runtimeReg))
 	maps.Copy(reg, runtimeReg)
@@ -231,22 +230,6 @@ func mergePlugins(runtimeReg, controllerReg ModuleRegistry) ModuleRegistry {
 		}
 	}
 	return reg
-}
-
-// refusePluginBecome returns the typed plugin_become error when module is a
-// pluggable plugin in the controller registry, a plain become-unsupported
-// error for a non-plugin known module, or an unknown-module error otherwise.
-// Plugin+become is refused uniformly across transports in v1.
-func refusePluginBecome(registry ModuleRegistry, module, transport string) error {
-	if registry != nil {
-		if mod, ok := registry[module]; ok {
-			if _, isPlugin := mod.(PluggableModule); isPlugin {
-				return NewPluginBecomeError(module)
-			}
-			return fmt.Errorf("%s: module %q does not support become", transport, module)
-		}
-	}
-	return NewUnknownModuleError(module)
 }
 
 // drainRegistry closes every module in reg that implements io.Closer, joining

@@ -64,7 +64,7 @@ func TestIntegration_Shortcut(t *testing.T) {
 		// ================================================================
 		// Branch: present — initial apply creates the shortcut
 		// ================================================================
-		mustExecute(t, tgt, "shortcut-present", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "shortcut-present", "shortcut", desiredParams, false, StatusChanged)
 
 		// Verify via independent oracle
 		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
@@ -76,8 +76,8 @@ func TestIntegration_Shortcut(t *testing.T) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "shortcut-idemp-check", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "shortcut-idemp-apply", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "shortcut-idemp-check", "shortcut", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "shortcut-idemp-apply", "shortcut", desiredParams, false, StatusOK)
 		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
 			Present:    true,
 			TargetPath: targetExe,
@@ -96,7 +96,7 @@ func TestIntegration_Shortcut(t *testing.T) {
 			"args":        dryRunArgs,
 			"ensure":      "present",
 		}
-		mustExecute(t, tgt, "shortcut-dryrun", "shortcut", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "shortcut-dryrun", "shortcut", dryRunParams, true, StatusChanged)
 		// Oracle confirms the shortcut was NOT changed by the dry run
 		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
 			Present:    true,
@@ -129,10 +129,10 @@ $shortcut.Save()
 		})
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "shortcut-drift-check", "shortcut", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "shortcut-drift-check", "shortcut", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		mustExecute(t, tgt, "shortcut-drift-apply", "shortcut", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "shortcut-drift-apply", "shortcut", desiredParams, false, StatusChanged)
 		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
 			Present:    true,
 			TargetPath: targetExe,
@@ -140,7 +140,7 @@ $shortcut.Save()
 		})
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "shortcut-drift-idemp", "shortcut", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "shortcut-drift-idemp", "shortcut", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — remove the shortcut, verify via oracle,
@@ -150,7 +150,7 @@ $shortcut.Save()
 			"destination": lnkPath,
 			"ensure":      "absent",
 		}
-		mustExecute(t, tgt, "shortcut-absent", "shortcut", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "shortcut-absent", "shortcut", absentParams, false, StatusChanged)
 
 		// Verify via oracle that shortcut is gone
 		mustMatchShortcutOracle(t, runner, lnkPath, shortcutOracleResult{
@@ -158,7 +158,7 @@ $shortcut.Save()
 		})
 
 		// Idempotent absent — re-check returns OK (already absent)
-		mustExecute(t, tgt, "shortcut-absent-idemp", "shortcut", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "shortcut-absent-idemp", "shortcut", absentParams, false, StatusOK)
 	})
 }
 

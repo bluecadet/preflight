@@ -45,7 +45,7 @@ type panicTarget struct {
 	mockTarget
 }
 
-func (p *panicTarget) Execute(_ context.Context, taskID, _ string, _ map[string]any, _ target.ExecutionOptions, _ bool, _ target.OutputFunc) (target.Result, error) {
+func (p *panicTarget) Execute(_ context.Context, taskID, _ string, _ map[string]any, _ bool, _ target.OutputFunc) (target.Result, error) {
 	panic("boom: simulated module panic")
 }
 
@@ -68,7 +68,7 @@ func assertContainsInOrder(t *testing.T, text string, fragments ...string) {
 	}
 }
 
-func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, _ target.ExecutionOptions, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
+func (m *mockTarget) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
 	var copied map[string]any
 	if params != nil {
 		copied = make(map[string]any, len(params))
@@ -340,204 +340,6 @@ func TestApplyEvaluatesTargetComparisonPassedAsActionInput(t *testing.T) {
 				t.Fatalf("expected %d executed task(s), got %d", tc.wantCalls, len(mt.calls))
 			}
 		})
-	}
-}
-
-func writeFile(t *testing.T, path, contents string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("MkdirAll(%q): %v", path, err)
-	}
-	if err := os.WriteFile(path, []byte(strings.TrimSpace(contents)+"\n"), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", path, err)
-	}
-}
-
-// TestPlanAppliesLoadedPlaybookDefaultsBecome is a regression test for a bug
-// where LoadPlaybookFile silently dropped Playbook.Defaults during merge, so
-// a playbook declaring defaults.become had privilege escalation discarded
-// with no error. It loads a real playbook.yml file through the same code
-// path the CLI uses, then plans it, and asserts become actually took effect
-// on the resulting task -- not just that Defaults is non-nil after load.
-func TestPlanAppliesLoadedPlaybookDefaultsBecome(t *testing.T) {
-	dir := t.TempDir()
-	basePath := filepath.Join(dir, "base.yml")
-	rootPath := filepath.Join(dir, "root.yml")
-
-	writeFile(t, basePath, `
-name: base
-defaults:
-  become:
-    method: sudo
-tasks:
-  - name: base task
-    shell:
-      cmd: echo
-`)
-	writeFile(t, rootPath, `
-name: root
-import:
-  - base.yml
-defaults:
-  become:
-    user: root-user
-tasks:
-  - name: root task
-    shell:
-      cmd: echo
-`)
-
-	pb, err := action.LoadPlaybookFile(rootPath)
-	if err != nil {
-		t.Fatalf("LoadPlaybookFile returned error: %v", err)
-	}
-
-	r := New(&mockTarget{}, emptyResolver(), Config{})
-	plan, err := r.Plan(context.Background(), pb)
-	if err != nil {
-		t.Fatalf("Plan returned error: %v", err)
-	}
-	if len(plan.Tasks) != 2 {
-		t.Fatalf("expected 2 tasks, got %d", len(plan.Tasks))
-	}
-
-	for _, pt := range plan.Tasks {
-		if got := pt.Become["enabled"]; got != true {
-			t.Fatalf("task %q: expected become enabled from loaded playbook defaults, got %#v", pt.Name, pt.Become)
-		}
-		if got := pt.Become["method"]; got != "sudo" {
-			t.Fatalf("task %q: expected imported become.method to survive load and apply, got %#v", pt.Name, pt.Become)
-		}
-		if got := pt.Become["user"]; got != "root-user" {
-			t.Fatalf("task %q: expected root become.user to survive load and apply, got %#v", pt.Name, pt.Become)
-		}
-	}
-}
-
-func TestPlanMergesBecomeDefaultsAcrossActionExpansion(t *testing.T) {
-	resolver := action.Chain{&staticResolver{
-		action: &action.Action{
-			Name: "acme/demo",
-			Defaults: action.TaskDefaults{
-				Become: map[string]any{"method": "sudo"},
-			},
-			Tasks: []action.Task{
-				{
-					Name:          "echo",
-					InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
-				},
-			},
-		},
-	}}
-	r := New(&mockTarget{}, resolver, Config{})
-	pb := &action.Playbook{
-		Name: "test",
-		Defaults: action.TaskDefaults{
-			Become: map[string]any{"user": "playbook-user"},
-		},
-		Tasks: []action.Task{
-			{
-				Name:   "call action",
-				Uses:   "acme/demo",
-				Become: map[string]any{"user": "task-user"},
-			},
-		},
-	}
-
-	plan, err := r.Plan(context.Background(), pb)
-	if err != nil {
-		t.Fatalf("Plan returned error: %v", err)
-	}
-	if len(plan.Tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
-	}
-	if got := plan.Tasks[0].Become["user"]; got != "task-user" {
-		t.Fatalf("expected task become user override, got %#v", got)
-	}
-	if got := plan.Tasks[0].Become["method"]; got != "sudo" {
-		t.Fatalf("expected action default method, got %#v", got)
-	}
-	if got := plan.Tasks[0].Become["enabled"]; got != true {
-		t.Fatalf("expected become enabled by default, got %#v", got)
-	}
-}
-
-func TestPlanTaskBecomeCanDisableInheritedDefaults(t *testing.T) {
-	r := New(&mockTarget{}, emptyResolver(), Config{})
-	pb := &action.Playbook{
-		Name: "test",
-		Defaults: action.TaskDefaults{
-			Become: map[string]any{"user": "playbook-user"},
-		},
-		Tasks: []action.Task{
-			{
-				Name:          "echo",
-				Become:        map[string]any{"enabled": false},
-				InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
-			},
-		},
-	}
-
-	plan, err := r.Plan(context.Background(), pb)
-	if err != nil {
-		t.Fatalf("Plan returned error: %v", err)
-	}
-	if len(plan.Tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
-	}
-	if got := plan.Tasks[0].Become["enabled"]; got != false {
-		t.Fatalf("expected become disabled override, got %#v", got)
-	}
-	if _, ok := plan.Tasks[0].Become["user"]; ok {
-		t.Fatalf("expected disabled override to clear inherited become fields, got %#v", plan.Tasks[0].Become)
-	}
-	if len(plan.Tasks[0].Become) != 1 {
-		t.Fatalf("expected disabled override to keep only enabled=false, got %#v", plan.Tasks[0].Become)
-	}
-}
-
-func TestApplyPassesRenderedExecutionOptionsToTarget(t *testing.T) {
-	tgt := &targettest.Fake{
-		InfoValue: target.TargetInfo{
-			Hostname:  "remote-linux",
-			OSFamily:  target.OSFamilyWindows,
-			Transport: target.TransportSSH,
-		},
-		Results: []target.Result{{Status: target.StatusChanged}},
-	}
-	r := New(tgt, emptyResolver(), Config{
-		TargetVars: map[string]any{"run_as": "appuser"},
-	})
-	plan := &ExecutionPlan{
-		PlaybookName: "become",
-		Tasks: []*PlanTask{
-			{
-				ID:     "task-0",
-				Name:   "echo",
-				Ref:    "echo",
-				Module: "shell",
-				Scope:  template.NewScope(),
-				Params: map[string]any{"cmd": "echo"},
-				Become: map[string]any{
-					"user":   "{{ target.run_as }}",
-					"method": "sudo",
-				},
-			},
-		},
-	}
-
-	if err := r.Apply(context.Background(), plan); err != nil {
-		t.Fatalf("Apply returned error: %v", err)
-	}
-	if len(tgt.Calls) != 1 {
-		t.Fatalf("expected one target call, got %d", len(tgt.Calls))
-	}
-	got := tgt.Calls[0].Options.Become
-	if got == nil {
-		t.Fatal("expected become options to be passed to target")
-	}
-	if !got.Enabled || got.User != "appuser" || got.Method != "sudo" {
-		t.Fatalf("unexpected become options: %#v", got)
 	}
 }
 
@@ -2471,7 +2273,7 @@ func TestNewTaskSnapshotNilDAGProducesEmptyDependsOn(t *testing.T) {
 		Params:    map[string]any{"cmd": "echo"},
 	}
 
-	snap := newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, nil, nil, target.StatusSkipped, "dependency-failed", nil)
+	snap := newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", nil)
 	if len(snap.DependsOn) != 0 {
 		t.Fatalf("expected empty DependsOn when dag=nil, got %v", snap.DependsOn)
 	}
@@ -2498,7 +2300,7 @@ func TestNewTaskSnapshotWithDAGResolvesDependencyIDs(t *testing.T) {
 		t.Fatalf("BuildDAG error: %v", err)
 	}
 
-	snap := newTaskSnapshot(taskB, taskB.Name, taskB.Params, taskB.Params, nil, nil, target.StatusOK, "", dag)
+	snap := newTaskSnapshot(taskB, taskB.Name, taskB.Params, taskB.Params, target.StatusOK, "", dag)
 	if len(snap.DependsOn) != 1 || snap.DependsOn[0] != "task-0" {
 		t.Fatalf("expected DependsOn=[task-0], got %v", snap.DependsOn)
 	}

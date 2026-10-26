@@ -76,7 +76,7 @@ try {
 		// Branch: dry-run — check-only predicts Changed, oracle confirms
 		// no mutation (task does not exist yet)
 		// ================================================================
-		mustExecute(t, tgt, "scheduled-task-dryrun", "scheduled_task", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-dryrun", "scheduled_task", desiredParams, true, StatusChanged)
 		got := readScheduledTaskOracle(t, runner, taskPath, taskName)
 		if got != "absent" {
 			t.Fatalf("dry-run: oracle expected task to be absent, got %q", got)
@@ -86,7 +86,7 @@ try {
 		// ================================================================
 		// Branch: present — initial apply creates the scheduled task
 		// ================================================================
-		mustExecute(t, tgt, "scheduled-task-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-apply", "scheduled_task", desiredParams, false, StatusChanged)
 
 		// Verify via independent oracle
 		expected := fmt.Sprintf("exists|%s|%s|%s|%s", taskName, taskPath, execute, arguments)
@@ -98,8 +98,8 @@ try {
 		// ================================================================
 		// Branch: idempotent — re-check and re-apply both return StatusOK
 		// ================================================================
-		mustExecute(t, tgt, "scheduled-task-idemp-check", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "scheduled-task-idemp-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "scheduled-task-idemp-check", "scheduled_task", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "scheduled-task-idemp-apply", "scheduled_task", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: drift — modify execute/arguments behind the module's
@@ -129,10 +129,10 @@ $task | Set-ScheduledTask -ErrorAction Stop | Out-Null
 		}
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "scheduled-task-drift-check", "scheduled_task", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-drift-check", "scheduled_task", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		mustExecute(t, tgt, "scheduled-task-drift-apply", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-drift-apply", "scheduled_task", desiredParams, false, StatusChanged)
 
 		// Oracle confirms convergence
 		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
@@ -141,7 +141,7 @@ $task | Set-ScheduledTask -ErrorAction Stop | Out-Null
 		}
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "scheduled-task-drift-idemp", "scheduled_task", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "scheduled-task-drift-idemp", "scheduled_task", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — remove the scheduled task entirely
@@ -152,7 +152,7 @@ $task | Set-ScheduledTask -ErrorAction Stop | Out-Null
 			"ensure": "absent",
 		}
 
-		mustExecute(t, tgt, "scheduled-task-absent", "scheduled_task", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "scheduled-task-absent", "scheduled_task", absentParams, false, StatusChanged)
 
 		// Verify via oracle that task is gone
 		got = readScheduledTaskOracle(t, runner, taskPath, taskName)
@@ -161,7 +161,7 @@ $task | Set-ScheduledTask -ErrorAction Stop | Out-Null
 		}
 
 		// Idempotent absent — re-check returns OK (already absent)
-		mustExecute(t, tgt, "scheduled-task-absent-idemp", "scheduled_task", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "scheduled-task-absent-idemp", "scheduled_task", absentParams, false, StatusOK)
 	})
 }
 

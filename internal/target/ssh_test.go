@@ -3,7 +3,6 @@ package target
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -78,7 +77,7 @@ func TestSSHTarget_DetectsWindowsPowerShellRuntimeAndExecutesShell(t *testing.T)
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -179,7 +178,7 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'applied'",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -219,7 +218,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 	envResult, err := tgt.Execute(context.Background(), "task-env", "environment", map[string]any{
 		"name":  "PREFLIGHT_MODE",
 		"value": "kiosk",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("environment Execute returned error: %v", err)
 	}
@@ -230,7 +229,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 	waitResult, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
 		"condition": "file_exists",
 		"target":    `C:\Temp\flag.txt`,
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("wait Execute returned error: %v", err)
 	}
@@ -240,7 +239,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 
 	registryResult, err := tgt.Execute(context.Background(), "task-reg", "registry", map[string]any{
 		"path": `HKLM:\Software\Preflight`,
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("registry Execute returned error: %v", err)
 	}
@@ -250,7 +249,7 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 
 	rebootResult, err := tgt.Execute(context.Background(), "task-reboot", "reboot", map[string]any{
 		"timeout": 45,
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("reboot Execute returned error: %v", err)
 	}
@@ -278,7 +277,7 @@ func TestSSHTarget_PluginModulesRunOverSSH(t *testing.T) {
 		},
 	}
 
-	res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
+	res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, false, nil)
 	if err != nil {
 		t.Fatalf("plugin should run over SSH, got error: %v", err)
 	}
@@ -291,42 +290,6 @@ func TestSSHTarget_PluginModulesRunOverSSH(t *testing.T) {
 	// The fake plugin reports no needed change, so the task is ok.
 	if res.Status != StatusOK {
 		t.Errorf("status = %q, want %q", res.Status, StatusOK)
-	}
-}
-
-func TestSSHTarget_PluginBecomeRefused(t *testing.T) {
-	// Plugin+become is refused in v1 with a uniform plugin_become error across
-	// transports. Over SSH the plugin is deliberately not merged into the
-	// become registry, so the unsupported callback fires and classifies it.
-	plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, ModuleRegistry{
-		"custom": plugin,
-	})
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			if isEncodedPowerShellCommand(command) && strings.Contains(decodeEncodedPowerShellCommand(t, command), "preflight-windows") {
-				return "preflight-windows", "", 0, nil
-			}
-			t.Fatalf("unexpected command %q", command)
-			return "", "", 0, nil
-		},
-	}
-
-	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{
-		Become: &BecomeOptions{Enabled: true, User: "root"},
-	}, false, nil)
-	if err == nil {
-		t.Fatal("expected plugin+become to be refused, got nil")
-	}
-	var mse *ModuleSupportError
-	if !errors.As(err, &mse) {
-		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
-	}
-	if mse.Class != ClassPluginBecome {
-		t.Errorf("class = %q, want %q", mse.Class, ClassPluginBecome)
-	}
-	if mse.ReasonCode() != "plugin_become" {
-		t.Errorf("reason = %q, want plugin_become", mse.ReasonCode())
 	}
 }
 
@@ -358,7 +321,7 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 			_, err := tgt.Execute(context.Background(), taskID, "shell", map[string]any{
 				"cmd":  "echo",
 				"args": []any{"hello"},
-			}, ExecutionOptions{}, false, nil)
+			}, false, nil)
 			if err != nil {
 				t.Errorf("goroutine %d: Execute returned error: %v", n, err)
 			}

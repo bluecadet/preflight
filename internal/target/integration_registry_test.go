@@ -55,14 +55,14 @@ func TestIntegration_Registry(t *testing.T) {
 		// ================================================================
 		// Branch: present — initial apply creates the key and value
 		// ================================================================
-		mustExecute(t, tgt, "registry-present", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "registry-present", "registry", desiredParams, false, StatusChanged)
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
 
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "registry-idemp-check", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "registry-idemp-apply", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "registry-idemp-check", "registry", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "registry-idemp-apply", "registry", desiredParams, false, StatusOK)
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
 
 		// ================================================================
@@ -79,7 +79,7 @@ func TestIntegration_Registry(t *testing.T) {
 				},
 			},
 		}
-		mustExecute(t, tgt, "registry-dryrun", "registry", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "registry-dryrun", "registry", dryRunParams, true, StatusChanged)
 		// Oracle confirms value is still 42 — the dry run must not mutate.
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
 
@@ -97,14 +97,14 @@ func TestIntegration_Registry(t *testing.T) {
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "99")
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "registry-drift-check", "registry", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "registry-drift-check", "registry", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		mustExecute(t, tgt, "registry-drift-apply", "registry", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "registry-drift-apply", "registry", desiredParams, false, StatusChanged)
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "42")
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "registry-drift-idemp", "registry", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "registry-drift-idemp", "registry", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — remove a value, then remove the entire key
@@ -118,18 +118,18 @@ func TestIntegration_Registry(t *testing.T) {
 				},
 			},
 		}
-		mustExecute(t, tgt, "registry-absent-value", "registry", absentValueParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "registry-absent-value", "registry", absentValueParams, false, StatusChanged)
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "")
 
 		absentKeyParams := map[string]any{
 			"path":   ns,
 			"ensure": "absent",
 		}
-		mustExecute(t, tgt, "registry-absent-key", "registry", absentKeyParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "registry-absent-key", "registry", absentKeyParams, false, StatusChanged)
 		mustMatchOracle(t, runner, nsProvider, "TestDword", "missing")
 
 		// Idempotent absent — re-check returns OK (already absent)
-		mustExecute(t, tgt, "registry-absent-idemp", "registry", absentKeyParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "registry-absent-idemp", "registry", absentKeyParams, false, StatusOK)
 	})
 }
 

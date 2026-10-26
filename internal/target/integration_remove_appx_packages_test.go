@@ -72,7 +72,7 @@ try {
 		// Branch: dry-run — check-only predicts Changed, oracle confirms
 		// no mutation occurred (package is still present)
 		// ================================================================
-		mustExecute(t, tgt, "appx-dryrun", "remove_appx_packages", params, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "appx-dryrun", "remove_appx_packages", params, true, StatusChanged)
 		status = appxPackageOracle(t, runner, fixtureName)
 		if status != "present" {
 			t.Fatalf("dry-run: oracle reports %q after dry-run (expected present — dry-run must not mutate)", status)
@@ -82,7 +82,7 @@ try {
 		// ================================================================
 		// Branch: absent — apply removes the package
 		// ================================================================
-		mustExecute(t, tgt, "appx-remove", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "appx-remove", "remove_appx_packages", params, false, StatusChanged)
 
 		status = appxPackageOracle(t, runner, fixtureName)
 		if status == "present" {
@@ -97,8 +97,8 @@ try {
 		// ================================================================
 		// Branch: idempotent — re-check returns StatusOK, re-apply is no-op
 		// ================================================================
-		mustExecute(t, tgt, "appx-recheck", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "appx-reapply", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "appx-recheck", "remove_appx_packages", params, false, StatusOK)
+		mustExecute(t, tgt, "appx-reapply", "remove_appx_packages", params, false, StatusOK)
 
 		// ================================================================
 		// Branch: drift — re-register the package behind the module's
@@ -120,10 +120,10 @@ try {
 				status := appxPackageOracle(t, runner, fixtureName)
 				if status == "present" {
 					// Check detects the drift
-					mustExecute(t, tgt, "appx-drift-check", "remove_appx_packages", params, ExecutionOptions{}, true, StatusChanged)
+					mustExecute(t, tgt, "appx-drift-check", "remove_appx_packages", params, true, StatusChanged)
 
 					// Apply converges back
-					mustExecute(t, tgt, "appx-drift-apply", "remove_appx_packages", params, ExecutionOptions{}, false, StatusChanged)
+					mustExecute(t, tgt, "appx-drift-apply", "remove_appx_packages", params, false, StatusChanged)
 
 					status = appxPackageOracle(t, runner, fixtureName)
 					if status == "present" {
@@ -136,7 +136,7 @@ try {
 					t.Log("drift: oracle confirms package re-removed after convergence")
 
 					// Idempotent after convergence
-					mustExecute(t, tgt, "appx-drift-idemp", "remove_appx_packages", params, ExecutionOptions{}, false, StatusOK)
+					mustExecute(t, tgt, "appx-drift-idemp", "remove_appx_packages", params, false, StatusOK)
 				} else {
 					t.Logf("drift: oracle reports package %q after RegisterByFamilyName (expected present), skipping drift branch", status)
 				}

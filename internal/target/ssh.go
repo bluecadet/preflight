@@ -125,38 +125,15 @@ func (t *SSHTarget) Transport() Transport {
 	return TransportSSH
 }
 
-func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	runtime, err := t.runtimeForUse(ctx)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
-	become, err := effectiveBecome(runtime.Kind(), opts)
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-	}
 
-	registry := runtime.Registry()
-	if become != nil {
-		if rt, ok := runtime.(*sshWindowsPowerShellRuntime); ok {
-			backend := &windowsTaskBackend{
-				run:       rt.RunPowerShellScript,
-				copyPlain: rt.CopyFile,
-				tempDir:   rt.RemoteTempDir(),
-				become:    become,
-			}
-			registry = newWindowsPowerShellRegistry(backend)
-		}
-		// Plugins are deliberately NOT merged into the become registry:
-		// plugin+become is refused in v1, surfaced via the refusePluginBecome
-		// callback below. (ExecOpts-through-backend is the intended v2.)
-	} else {
-		registry = mergePlugins(registry, t.registry)
-	}
+	registry := mergePlugins(runtime.Registry(), t.registry)
 
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, registry, func(module string) error {
-		if become != nil {
-			return refusePluginBecome(t.registry, module, "ssh")
-		}
 		return t.unsupportedModuleError(module, runtime.Kind())
 	})
 }

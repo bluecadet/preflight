@@ -1,11 +1,7 @@
 package runner
 
 import (
-	"context"
 	"testing"
-
-	"github.com/bluecadet/preflight/internal/action"
-	"github.com/bluecadet/preflight/internal/template"
 )
 
 func TestSummarizeParamsDoesNotRedactOrdinaryPathValues(t *testing.T) {
@@ -34,9 +30,9 @@ func TestStateParamSummaryRedactsSecretRefUnderNeutralKey(t *testing.T) {
 		"cmd": "hunter2",
 	}
 
-	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
+	summary, ok := StateParamSummary(source, resolved).(map[string]any)
 	if !ok {
-		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
 	}
 	if summary["cmd"] != "[redacted]" {
 		t.Fatalf("expected secret-derived neutral key to be redacted, got %#v", summary["cmd"])
@@ -53,9 +49,9 @@ func TestStateParamSummaryRedactsSecretContentTemplate(t *testing.T) {
 		"content": "password=hunter2",
 	}
 
-	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
+	summary, ok := StateParamSummary(source, resolved).(map[string]any)
 	if !ok {
-		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
 	}
 	if summary["content"] != "[redacted]" {
 		t.Fatalf("expected rendered content template to be redacted, got %#v", summary["content"])
@@ -76,7 +72,7 @@ func TestStateParamHashIgnoresSecretContentChanges(t *testing.T) {
 		"cmd": "correct horse battery staple",
 	}
 
-	if got, want := StateParamHash(source, first, nil, nil), StateParamHash(source, second, nil, nil); got != want {
+	if got, want := StateParamHash(source, first), StateParamHash(source, second); got != want {
 		t.Fatalf("expected secret-derived hashes to match, got %q != %q", got, want)
 	}
 }
@@ -89,69 +85,11 @@ func TestStateParamSummaryRedactsPasswordSecretRef(t *testing.T) {
 		"password": "hunter2",
 	}
 
-	summary, ok := StateParamSummary(source, resolved, nil, nil).(map[string]any)
+	summary, ok := StateParamSummary(source, resolved).(map[string]any)
 	if !ok {
-		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved, nil, nil))
+		t.Fatalf("expected map summary, got %T", StateParamSummary(source, resolved))
 	}
 	if summary["password"] != "[redacted]" {
 		t.Fatalf("expected password to be redacted, got %#v", summary["password"])
-	}
-}
-
-func TestStateParamSummaryRedactsBecomePassword(t *testing.T) {
-	source := map[string]any{
-		"user":     "kiosk",
-		"password": "secret:become-password",
-	}
-	resolved := map[string]any{
-		"user":     "kiosk",
-		"password": "hunter2",
-	}
-
-	summary := NormalizeParamsForState(nil, nil, source, resolved)
-	become := summary["become"].(map[string]any)
-	if become["password"] != "[redacted]" {
-		t.Fatalf("expected become password to be redacted, got %#v", become["password"])
-	}
-}
-
-func TestBuildPlannedTaskStateKeepsBecomeSummaryUnwrapped(t *testing.T) {
-	r := New(&mockTarget{}, emptyResolver(), Config{})
-	pb := &action.Playbook{
-		Name: "test",
-		Tasks: []action.Task{
-			{
-				Name:          "echo",
-				Become:        map[string]any{"user": "kiosk"},
-				InlineModules: map[string]map[string]any{"shell": {"cmd": "echo", "args": []any{"hello"}}},
-			},
-		},
-	}
-
-	plan, err := r.Plan(context.Background(), pb)
-	if err != nil {
-		t.Fatalf("Plan returned error: %v", err)
-	}
-	states, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{}, nil)
-	if err != nil {
-		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
-	}
-	if len(states) != 1 {
-		t.Fatalf("expected 1 planned state, got %d", len(states))
-	}
-
-	summary, ok := states[0].ParamSummary.(map[string]any)
-	if !ok {
-		t.Fatalf("expected map summary, got %T", states[0].ParamSummary)
-	}
-	become, ok := summary["become"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected become map summary, got %#v", summary["become"])
-	}
-	if _, ok := become["become"]; ok {
-		t.Fatalf("expected become summary to remain unwrapped, got %#v", become)
-	}
-	if become["user"] != "kiosk" {
-		t.Fatalf("expected become user to be preserved, got %#v", become["user"])
 	}
 }

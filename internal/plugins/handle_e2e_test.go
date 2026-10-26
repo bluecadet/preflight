@@ -60,7 +60,7 @@ func TestPluginHandle_AllOpsAgainstLocalTarget(t *testing.T) {
 	// the ops-ok marker without applying.
 	res, err := tgt.Execute(context.Background(), "task-1", "testhandle",
 		map[string]any{"scenario": "ops", "put_path": putPath},
-		target.ExecutionOptions{}, true, nil)
+		true, nil)
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestPluginHandle_StreamingAgainstLocalTarget(t *testing.T) {
 
 	var lines []string
 	_, err := tgt.Execute(context.Background(), "task-2", "testhandle",
-		map[string]any{"scenario": "streaming"}, target.ExecutionOptions{}, true,
+		map[string]any{"scenario": "streaming"}, true,
 		func(line string) { lines = append(lines, line) })
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -102,29 +102,6 @@ func TestPluginHandle_StreamingAgainstLocalTarget(t *testing.T) {
 	}
 }
 
-func TestPluginHandle_BecomeRefused(t *testing.T) {
-	tgt, _ := localTargetWithPlugin(t)
-	defer func() { _ = tgt.Close() }()
-
-	_, err := tgt.Execute(context.Background(), "task-3", "testhandle",
-		map[string]any{"scenario": "ops"}, target.ExecutionOptions{
-			Become: &target.BecomeOptions{Enabled: true, User: "root"},
-		}, false, nil)
-	if err == nil {
-		t.Fatal("expected plugin+become to be refused, got nil")
-	}
-	var mse *target.ModuleSupportError
-	if !errors.As(err, &mse) {
-		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
-	}
-	if mse.Class != target.ClassPluginBecome {
-		t.Errorf("expected plugin_become class, got %q", mse.Class)
-	}
-	if mse.ReasonCode() != "plugin_become" {
-		t.Errorf("expected reason plugin_become, got %q", mse.ReasonCode())
-	}
-}
-
 func TestPluginHandle_ProtocolVersionRejection(t *testing.T) {
 	// A pre-v1 plugin responds to initialize with name/version only (no
 	// protocol_version). The v1 host must reject it with the plugin_protocol
@@ -137,7 +114,7 @@ func TestPluginHandle_ProtocolVersionRejection(t *testing.T) {
 	defer func() { _ = tgt.Close() }()
 
 	_, err := tgt.Execute(context.Background(), "task-4", "prev1",
-		map[string]any{}, target.ExecutionOptions{}, false, nil)
+		map[string]any{}, false, nil)
 	if err == nil {
 		t.Fatal("expected protocol error for pre-v1 plugin, got nil")
 	}
@@ -174,7 +151,7 @@ func TestPluginHandle_CancelCrossesProcessBoundary(t *testing.T) {
 				"scenario":    "cancel",
 				"start_path":  startPath,
 				"marker_path": markerPath,
-			}, target.ExecutionOptions{}, true, nil)
+			}, true, nil)
 		errCh <- err
 	}()
 

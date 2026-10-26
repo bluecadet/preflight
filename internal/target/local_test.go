@@ -30,7 +30,7 @@ func (m *mockModule) Apply(_ context.Context, _ map[string]any, _ target.OutputF
 
 func TestLocalTarget_UnknownModule(t *testing.T) {
 	tgt := target.NewLocalTarget(nil)
-	_, err := tgt.Execute(context.Background(), "task-1", "nonexistent", nil, target.ExecutionOptions{}, false, nil)
+	_, err := tgt.Execute(context.Background(), "task-1", "nonexistent", nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown module, got nil")
 	}
@@ -41,7 +41,7 @@ func TestLocalTarget_AlreadyInDesiredState(t *testing.T) {
 	registry := target.ModuleRegistry{"noop": mod}
 	tgt := target.NewLocalTarget(registry)
 
-	result, err := tgt.Execute(context.Background(), "task-2", "noop", nil, target.ExecutionOptions{}, false, nil)
+	result, err := tgt.Execute(context.Background(), "task-2", "noop", nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestLocalTarget_DryRunWithPendingChange(t *testing.T) {
 	registry := target.ModuleRegistry{"pending": mod}
 	tgt := target.NewLocalTarget(registry)
 
-	result, err := tgt.Execute(context.Background(), "task-3", "pending", nil, target.ExecutionOptions{}, true, nil)
+	result, err := tgt.Execute(context.Background(), "task-3", "pending", nil, true, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestLocalTarget_ApplyCalledWhenChangeNeeded(t *testing.T) {
 	registry := target.ModuleRegistry{"changer": mod}
 	tgt := target.NewLocalTarget(registry)
 
-	result, err := tgt.Execute(context.Background(), "task-4", "changer", nil, target.ExecutionOptions{}, false, nil)
+	result, err := tgt.Execute(context.Background(), "task-4", "changer", nil, false, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestLocalTarget_CheckError(t *testing.T) {
 	registry := target.ModuleRegistry{"errmod": mod}
 	tgt := target.NewLocalTarget(registry)
 
-	result, err := tgt.Execute(context.Background(), "task-5", "errmod", nil, target.ExecutionOptions{}, false, nil)
+	result, err := tgt.Execute(context.Background(), "task-5", "errmod", nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error from Check, got nil")
 	}
@@ -150,7 +150,7 @@ func TestLocalTarget_Execute_StreamingOutput(t *testing.T) {
 	tgt := target.NewLocalTarget(registry)
 
 	var received []string
-	result, err := tgt.Execute(context.Background(), "task-stream", "streamer", nil, target.ExecutionOptions{}, false, func(line string) {
+	result, err := tgt.Execute(context.Background(), "task-stream", "streamer", nil, false, func(line string) {
 		received = append(received, line)
 	})
 	if err != nil {
@@ -184,7 +184,7 @@ func TestLocalTarget_Execute_CheckStreamingOutputDuringDryRun(t *testing.T) {
 	tgt := target.NewLocalTarget(registry)
 
 	var received []string
-	result, err := tgt.Execute(context.Background(), "task-stream", "streamer", nil, target.ExecutionOptions{}, true, func(line string) {
+	result, err := tgt.Execute(context.Background(), "task-stream", "streamer", nil, true, func(line string) {
 		received = append(received, line)
 	})
 	if err != nil {

@@ -275,10 +275,10 @@ func forEachTransport(t *testing.T, fn func(t *testing.T, runner PowerShellRunne
 // single call. It fails the test if Execute returns an error or the result
 // status does not match expectedStatus. Explicitly NOT a declarative
 // lifecycle driver — it is a simple step helper for integration tests.
-func mustExecute(t *testing.T, tgt Target, taskID, module string, params map[string]any, opts ExecutionOptions, dryRun bool, expectedStatus Status) Result {
+func mustExecute(t *testing.T, tgt Target, taskID, module string, params map[string]any, dryRun bool, expectedStatus Status) Result {
 	t.Helper()
 	ctx := context.Background()
-	result, err := tgt.Execute(ctx, taskID, module, params, opts, dryRun, nil)
+	result, err := tgt.Execute(ctx, taskID, module, params, dryRun, nil)
 	if err != nil {
 		t.Fatalf("%s: Execute failed: %v", taskID, err)
 	}

@@ -6,7 +6,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/secrets"
-	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
 )
 
@@ -15,18 +14,15 @@ type BoundTask struct {
 	Name   string
 	When   string
 	Params map[string]any
-	Become map[string]any
 }
 
 // BoundTaskResult is the output of the consolidated bind pipeline: a fully
-// resolved task ready to execute, plus pre-resolution copies for state hashing.
+// resolved task ready to execute, plus a pre-resolution copy of its params for
+// state hashing.
 type BoundTaskResult struct {
 	Name         string
 	Params       map[string]any
-	Become       map[string]any
 	SourceParams map[string]any // pre-secret-resolution copy for state
-	SourceBecome map[string]any // pre-secret-resolution copy for state
-	ExecOpts     target.ExecutionOptions
 }
 
 // evaluateTaskWhen renders the task's when condition against the RuntimeContext.
@@ -49,13 +45,6 @@ func bindTask(task *PlanTask, rt *template.RuntimeContext, bindMode template.Bin
 	if err != nil {
 		return nil, err
 	}
-	var become map[string]any
-	if len(task.Become) > 0 {
-		become, err = eng.RenderMap(task.Become)
-		if err != nil {
-			return nil, err
-		}
-	}
 	name := task.Name
 	if task.Name != "" {
 		name, err = eng.Render(task.Name)
@@ -70,12 +59,11 @@ func bindTask(task *PlanTask, rt *template.RuntimeContext, bindMode template.Bin
 			return nil, err
 		}
 	}
-	return &BoundTask{Name: name, When: when, Params: params, Become: become}, nil
+	return &BoundTask{Name: name, When: when, Params: params}, nil
 }
 
 // bindAndResolveTask consolidates the bind-time pipeline: template rendering,
-// secret resolution, file-content_template rendering, and execution-option
-// normalization — all in one call.
+// secret resolution, and file-content_template rendering in one call.
 func bindAndResolveTask(ctx context.Context, task *PlanTask, rt *template.RuntimeContext, resolver *secrets.Resolver) (*BoundTaskResult, error) {
 	bound, err := bindTask(task, rt, template.Bind)
 	if err != nil {
@@ -83,24 +71,15 @@ func bindAndResolveTask(ctx context.Context, task *PlanTask, rt *template.Runtim
 	}
 
 	sourceParams := cloneMap(bound.Params)
-	sourceBecome := cloneMap(bound.Become)
 
 	if err := bound.resolveSecrets(ctx, resolver); err != nil {
-		return nil, err
-	}
-	resolvedBecome := cloneMap(bound.Become)
-	_, execOpts, err := bound.executionOptions()
-	if err != nil {
 		return nil, err
 	}
 
 	return &BoundTaskResult{
 		Name:         bound.Name,
 		Params:       bound.Params,
-		Become:       resolvedBecome,
 		SourceParams: sourceParams,
-		SourceBecome: sourceBecome,
-		ExecOpts:     execOpts,
 	}, nil
 }
 
@@ -110,10 +89,6 @@ func (b *BoundTask) resolveSecrets(ctx context.Context, resolver *secrets.Resolv
 		b.Params, err = resolver.ResolveMap(ctx, b.Params)
 		if err != nil {
 			return fmt.Errorf("resolve params: %w", err)
-		}
-		b.Become, _, err = resolveExecutionOptions(ctx, resolver, b.Become)
-		if err != nil {
-			return fmt.Errorf("resolve become: %w", err)
 		}
 	}
 	// content_template is a late-bind param rendered after main param resolution.
@@ -152,15 +127,4 @@ func (b *BoundTask) renderFileContentTemplate(ctx context.Context, resolver *sec
 	delete(b.Params, "content_template")
 	b.Params["content"] = rendered
 	return nil
-}
-
-func (b *BoundTask) executionOptions() (map[string]any, target.ExecutionOptions, error) {
-	if len(b.Become) == 0 {
-		return nil, target.ExecutionOptions{}, nil
-	}
-	opts, err := target.NormalizeExecutionOptions(map[string]any{"become": b.Become})
-	if err != nil {
-		return nil, target.ExecutionOptions{}, err
-	}
-	return b.Become, opts, nil
 }

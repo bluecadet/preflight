@@ -49,7 +49,7 @@ func TestIntegration_User(t *testing.T) {
 		// Branch: dry-run — check-only predicts Changed, oracle confirms
 		// no mutation occurred
 		// ================================================================
-		mustExecute(t, tgt, "user-dryrun", "user", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "user-dryrun", "user", desiredParams, true, StatusChanged)
 		// Oracle confirms user was NOT created — the dry run must not mutate.
 		if got := readUserOracle(t, runner, testName); got != "absent" {
 			t.Fatalf("dry-run: independent oracle: expected 'absent', got %q", got)
@@ -59,7 +59,7 @@ func TestIntegration_User(t *testing.T) {
 		// Branch: present — initial apply creates the user with password
 		// and group membership
 		// ================================================================
-		mustExecute(t, tgt, "user-present", "user", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "user-present", "user", desiredParams, false, StatusChanged)
 
 		if got := readUserOracle(t, runner, testName); got != "present" {
 			t.Fatalf("independent oracle: expected 'present', got %q", got)
@@ -71,8 +71,8 @@ func TestIntegration_User(t *testing.T) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "user-idemp-check", "user", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "user-idemp-apply", "user", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "user-idemp-check", "user", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "user-idemp-apply", "user", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: drift — remove user from group behind the module's back,
@@ -90,10 +90,10 @@ func TestIntegration_User(t *testing.T) {
 		}
 
 		// Check detects the drift (NeedsChange = true -> StatusChanged)
-		mustExecute(t, tgt, "user-drift-check", "user", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "user-drift-check", "user", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		mustExecute(t, tgt, "user-drift-apply", "user", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "user-drift-apply", "user", desiredParams, false, StatusChanged)
 
 		// Oracle confirms group membership is restored
 		if !readUserGroupOracle(t, runner, testName, "Users") {
@@ -101,7 +101,7 @@ func TestIntegration_User(t *testing.T) {
 		}
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "user-drift-idemp", "user", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "user-drift-idemp", "user", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — ensure absent removes the user
@@ -111,7 +111,7 @@ func TestIntegration_User(t *testing.T) {
 			"ensure": "absent",
 		}
 
-		mustExecute(t, tgt, "user-absent", "user", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "user-absent", "user", absentParams, false, StatusChanged)
 
 		// Verify via oracle that user is gone.
 		if got := readUserOracle(t, runner, testName); got != "absent" {
@@ -119,7 +119,7 @@ func TestIntegration_User(t *testing.T) {
 		}
 
 		// Idempotent absent — re-check returns OK (already absent).
-		mustExecute(t, tgt, "user-absent-idemp", "user", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "user-absent-idemp", "user", absentParams, false, StatusOK)
 	})
 }
 

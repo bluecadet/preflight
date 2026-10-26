@@ -27,7 +27,6 @@ type PlanTask struct {
 	ActionPath   string // human-readable parent path, e.g. "Apply machine baseline/Configure computer name"
 	Module       string
 	Params       map[string]any
-	Become       map[string]any
 	Scope        *template.Scope
 	DependsOn    []string
 	When         string
@@ -62,7 +61,7 @@ func (r *Runner) plan(ctx context.Context, playbook *action.Playbook) (*Executio
 			return nil, err
 		}
 		task := &playbook.Tasks[i]
-		if err := r.expandTask(ctx, task, rootScope, &planTasks, counter, canonicalizeBecome(playbook.Defaults.Become), nil, nil, fmt.Sprintf("task %d", i)); err != nil {
+		if err := r.expandTask(ctx, task, rootScope, &planTasks, counter, nil, nil, fmt.Sprintf("task %d", i)); err != nil {
 			return nil, fmt.Errorf("plan: %w", err)
 		}
 	}
@@ -102,7 +101,7 @@ func (s *lineageCounter) next(base string) string {
 	return base + "-" + strconv.Itoa(count)
 }
 
-func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *template.Scope, planTasks *[]*PlanTask, counter *lineageCounter, inheritedBecome map[string]any, lineage []string, displayLineage []string, label string) error {
+func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *template.Scope, planTasks *[]*PlanTask, counter *lineageCounter, lineage []string, displayLineage []string, label string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -118,10 +117,9 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *t
 	currentLineage := append(append([]string{}, lineage...), segment)
 	displaySegment := taskDisplaySegment(task, module)
 	currentDisplayLineage := append(append([]string{}, displayLineage...), displaySegment)
-	taskBecome := mergeBecome(inheritedBecome, task.Become)
 
 	if task.Uses == "" {
-		pt, err := buildPlanTask(task, module, params, currentLineage, currentDisplayLineage, taskBecome, taskScope)
+		pt, err := buildPlanTask(task, module, params, currentLineage, currentDisplayLineage, taskScope)
 		if err != nil {
 			return err
 		}
@@ -139,13 +137,11 @@ func (r *Runner) expandTask(ctx context.Context, task *action.Task, taskScope *t
 		return fmt.Errorf("prepare action %q inputs: %w", task.Uses, err)
 	}
 
-	childBecome := mergeBecome(inheritedBecome, resolved.Defaults.Become)
-	childBecome = mergeBecome(childBecome, task.Become)
 	childCounter := newLineageCounter()
 	for j := range resolved.Tasks {
 		at := &resolved.Tasks[j]
 		childLabel := fmt.Sprintf("action %q task %d", task.Uses, j)
-		if err := r.expandTask(ctx, at, childScope, planTasks, childCounter, childBecome, currentLineage, currentDisplayLineage, childLabel); err != nil {
+		if err := r.expandTask(ctx, at, childScope, planTasks, childCounter, currentLineage, currentDisplayLineage, childLabel); err != nil {
 			return err
 		}
 	}
@@ -184,7 +180,7 @@ func deriveActionScope(task *action.Task, resolved *action.Action, parent *templ
 
 // buildPlanTask converts an action.Task to a PlanTask while preserving raw
 // templates for later per-target rendering.
-func buildPlanTask(t *action.Task, module string, params map[string]any, lineage []string, displayLineage []string, become map[string]any, taskScope *template.Scope) (*PlanTask, error) {
+func buildPlanTask(t *action.Task, module string, params map[string]any, lineage []string, displayLineage []string, taskScope *template.Scope) (*PlanTask, error) {
 	id := strings.Join(lineage, "/")
 	ancestorLineage := lineage[:max(len(lineage)-1, 0)]
 	// ActionPath is the display lineage minus the leaf (the task's own name).
@@ -205,7 +201,6 @@ func buildPlanTask(t *action.Task, module string, params map[string]any, lineage
 		ActionPath:   actionPath,
 		Module:       module,
 		Params:       rawParams,
-		Become:       cloneMap(become),
 		Scope:        taskScope,
 		DependsOn:    dependsOn,
 		When:         t.When,

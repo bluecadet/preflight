@@ -17,7 +17,7 @@ type planValidationTarget struct {
 	transport target.Transport
 }
 
-func (t *planValidationTarget) Execute(context.Context, string, string, map[string]any, target.ExecutionOptions, bool, target.OutputFunc) (target.Result, error) {
+func (t *planValidationTarget) Execute(context.Context, string, string, map[string]any, bool, target.OutputFunc) (target.Result, error) {
 	return target.Result{}, nil
 }
 func (t *planValidationTarget) Info(context.Context) (target.TargetInfo, error) {

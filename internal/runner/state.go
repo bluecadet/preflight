@@ -165,18 +165,12 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, rt *templat
 		rendered := renderedTasks[idx]
 		params := rendered.Params
 		stateSource := cloneMap(rendered.Params)
-		become := rendered.Become
-		becomeSource := cloneMap(rendered.Become)
 		if resolver != nil && resolver.HasProviders() {
 			resolved, err := resolver.ResolveMap(ctx, params)
 			if err != nil {
 				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
 			}
 			params = resolved
-			become, _, err = resolveExecutionOptions(ctx, resolver, become)
-			if err != nil {
-				return nil, fmt.Errorf("state: task %q: %w", rendered.Name, err)
-			}
 		}
 		if task.Module == "file" {
 			bound := &BoundTask{Params: params}
@@ -191,14 +185,14 @@ func BuildPlannedTaskState(ctx context.Context, plan *ExecutionPlan, rt *templat
 			return nil, fmt.Errorf("state: %w", err)
 		}
 
-		paramHash := StateParamHash(stateSource, params, becomeSource, become)
+		paramHash := StateParamHash(stateSource, params)
 		tasks = append(tasks, PlannedTaskState{
 			TaskKey:      task.ID,
 			TaskName:     rendered.Name,
 			Module:       task.Module,
 			DependsOn:    dependsOn,
 			ParamHash:    paramHash,
-			ParamSummary: StateParamSummary(stateSource, params, becomeSource, become),
+			ParamSummary: StateParamSummary(stateSource, params),
 			TaskHash: hashValue(map[string]any{
 				"task_key":   task.ID,
 				"task_name":  rendered.Name,
@@ -281,7 +275,7 @@ func ComparePlannedTasks(planned []PlannedTaskState, state *State) []TaskCompari
 // SummarizeParams produces a redacted, JSON-friendly summary of parameters for
 // state diff output.
 func SummarizeParams(params map[string]any) any {
-	return NormalizeParamsForState(params, params, nil, nil)
+	return NormalizeParamsForState(params, params)
 }
 
 func hashValue(v any) string {
