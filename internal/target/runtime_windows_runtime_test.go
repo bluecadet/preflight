@@ -6,6 +6,28 @@ import (
 	"testing"
 )
 
+func TestApplyWindowsShellWrapsEnv(t *testing.T) {
+	for name, workingDir := range map[string]string{"no working dir": "", "working dir": `C:\Exhibits`} {
+		t.Run(name, func(t *testing.T) {
+			backend := &recordingPowerShellBackend{output: "done"}
+			_, err := applyWindowsShell(context.Background(), backend, map[string]any{
+				"cmd":         "app.exe",
+				"working_dir": workingDir,
+				"env":         map[string]any{"MODE": "kiosk"},
+			}, nil)
+			if err != nil {
+				t.Fatalf("applyWindowsShell returned error: %v", err)
+			}
+			script := backend.scripts[0]
+			for _, want := range []string{"$__pf_env_name", "eyJNT0RFIjoia2lvc2sifQ==", "& $cmd @args"} {
+				if !strings.Contains(script, want) {
+					t.Fatalf("expected script to contain %q, got:\n%s", want, script)
+				}
+			}
+		})
+	}
+}
+
 func TestWindowsWaitPortOpenDoesNotAssignHostVariable(t *testing.T) {
 	backend := &recordingPowerShellBackend{output: "true"}
 	met, err := windowsWaitCondition(context.Background(), backend, "port_open", "localhost:80")

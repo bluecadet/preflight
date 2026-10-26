@@ -481,7 +481,7 @@ Runs a command with the PowerShell call operator: `& <cmd> <args>`.
 | `args` | string[] | no | Arguments |
 | `creates` | string | no | Path that, when it exists, means no change is needed |
 | `working_dir` | string | no | Working directory; relative `creates` paths resolve from it |
-| `env` | object | no | Accepted but not applied |
+| `env` | object | no | Environment variables set for the command; restored afterward |
 
 - Without `creates`, the command runs every time.
 - A non-zero exit code fails the task with `<cmd> exited with code <code>`.
