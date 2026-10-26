@@ -1,76 +1,39 @@
-# Set Up A Reverse-Tunnel Bastion
+# Set up a reverse-tunnel bastion
 
-Use this guide when a fleet of Windows machines — museum kiosks, exhibit PCs,
-signage — live on a private network with no inbound access, and you've
-decided (per
-[Deploy across restricted networks](../explanation/restricted-network-deployment.md#use-reverse-ssh-tunnels-when-targets-can-dial-out))
-that a reverse SSH tunnel through a bastion is the right pattern. It walks
-through provisioning and hardening the **shared bastion VM**, once, for the
-whole fleet.
+Provision and harden a Linux VM that Windows targets on a private network can dial out to with a reverse SSH tunnel. You set up the bastion once for the whole fleet, then add each target with [Onboard a target through a reverse-tunnel bastion](./onboard-a-target-through-a-bastion.md).
 
-This guide does not cover individual targets. Once the bastion is hardened,
-add each machine with
-[Onboard a target through a reverse-tunnel bastion](./onboard-a-target-through-a-bastion.md).
-
-> [!NOTE]
-> Preflight does not create, maintain, or know about this tunnel — it is
-> pure operator tooling around *reaching* a target, not a Preflight feature.
-> See [Targets, transports, and plugins](../explanation/targets-and-transports.md#bastion--jump-hosts)
-> for how Preflight itself dials through a bastion once the tunnel exists.
+Preflight does not create or manage the tunnel. It only connects through the bastion as an SSH jump host. To decide whether this pattern fits your network, see [Deploy across restricted networks](../explanation/restricted-network-deployment.md#use-reverse-ssh-tunnels-when-targets-can-dial-out).
 
 ## Prerequisites
 
-- A small always-on Linux VM with a public IP. Oracle Cloud's "Always Free"
-  tier (permanently free, not a trial) or a cheap Hetzner Cloud instance
-  (~€3.79/mo) both work well — any Debian/Ubuntu VM you control is fine.
-- Root or `sudo` access on that VM to complete initial hardening.
-- No software gets installed on the museum PCs themselves beyond what
-  Windows already ships (the OpenSSH client). All of the hardening in this
-  guide happens on the bastion, not the targets.
+- An always-on Debian or Ubuntu VM with a public IP. The commands below use `apt` and `ufw`; adjust them for other distributions.
+- `sudo` access on the VM, through an account that logs in with an SSH key
 
-The commands below assume a Debian/Ubuntu VM (`apt`, `ufw`). Adjust package
-names and the firewall tool for other distributions.
+Each target needs the OpenSSH client to open the tunnel and OpenSSH Server so Preflight can log in through it. Both ship with Windows.
 
-## 1. Provision The VM
+## 1. Create the admin and tunnel users
 
-Spin up the VM from your chosen provider and confirm you can SSH in as the
-default user. Nothing else on the VM matters yet — the next steps replace
-the default access model with the two-user setup this pattern depends on.
-
-## 2. Create Two Separate SSH Users
-
-Split the bastion into an operator identity and a tunnel-only identity, so
-one compromised museum PC key can never touch the account you use to
-administer the box:
+Create one account for operators and one for tunnels, so a stolen target key cannot reach the operator account:
 
 ```bash
-# admin: the operator, normal interactive login
 sudo adduser admin
 sudo usermod -aG sudo admin
-
-# tunnel: used only by museum PCs' reverse-tunnel keys, no shell login
-sudo adduser --disabled-password tunnel
+sudo adduser --disabled-password --shell /usr/sbin/nologin tunnel
+sudo install -d -m 700 -o tunnel -g tunnel /home/tunnel/.ssh
 ```
 
-Copy your own public key into `admin`'s `authorized_keys` before you lock
-down password auth in the next step, or you will lock yourself out:
+Copy your current key to `admin` before you disable password logins, or you will lock yourself out:
 
 ```bash
-sudo mkdir -p /home/admin/.ssh
-sudo tee -a /home/admin/.ssh/authorized_keys < ~/.ssh/id_ed25519.pub
-sudo chown -R admin:admin /home/admin/.ssh
-sudo chmod 700 /home/admin/.ssh
-sudo chmod 600 /home/admin/.ssh/authorized_keys
+sudo install -d -m 700 -o admin -g admin /home/admin/.ssh
+sudo install -m 600 -o admin -g admin ~/.ssh/authorized_keys /home/admin/.ssh/authorized_keys
 ```
 
-The `tunnel` user gets no keys yet — those are added one at a time, one per
-museum PC, with per-key restrictions. See
-[Onboard a target through a reverse-tunnel bastion](./onboard-a-target-through-a-bastion.md).
+The `tunnel` user gets keys later, one per target, during onboarding.
 
-## 3. Lock Down `sshd_config`
+## 2. Lock down sshd
 
-Edit `/etc/ssh/sshd_config` (or drop a file in `/etc/ssh/sshd_config.d/`)
-and set:
+Add these settings to `/etc/ssh/sshd_config`, or to a file in `/etc/ssh/sshd_config.d/`:
 
 ```text
 PermitRootLogin no
@@ -78,27 +41,20 @@ PasswordAuthentication no
 GatewayPorts no
 ```
 
-`GatewayPorts no` is the load-bearing setting here: it forces every reverse
-port forward to bind to `127.0.0.1` on the bastion rather than its public
-interface. A forwarded port is never reachable from the internet — only a
-process already running *on* the bastion (or someone who has already
-authenticated as `admin` and can proxy through it) can reach it. See
-[step 6](#6-understand-what-not-internet-exposed-actually-means) for why
-that property is the whole point of this design.
+`GatewayPorts no` binds every reverse-forwarded port to `127.0.0.1` on the bastion, so no forwarded port is reachable from the internet. Only a session already on the bastion can connect to it.
 
-Restart `sshd` to apply:
+Check the config and restart sshd:
 
 ```bash
-sudo systemctl restart sshd
+sudo sshd -t
+sudo systemctl restart ssh
 ```
 
-Before closing your current session, open a **second** terminal and confirm
-you can still `ssh admin@<bastion>` — if `sshd_config` has a typo, you want
-to find out while your first session is still open.
+Keep your current session open. In a second terminal, confirm `ssh admin@<bastion>` still works.
 
-## 4. Restrict The Firewall
+## 3. Restrict the firewall
 
-Deny everything inbound except SSH:
+Allow inbound SSH and nothing else:
 
 ```bash
 sudo ufw default deny incoming
@@ -107,7 +63,7 @@ sudo ufw allow 22/tcp
 sudo ufw enable
 ```
 
-## 5. Add Baseline Hardening
+## 4. Install baseline hardening
 
 ```bash
 sudo apt update
@@ -115,65 +71,26 @@ sudo apt install -y fail2ban unattended-upgrades
 sudo dpkg-reconfigure -plow unattended-upgrades
 ```
 
-`fail2ban` bans IPs that repeatedly fail SSH auth; `unattended-upgrades`
-keeps the bastion patched without a standing maintenance task. Neither is
-specific to this pattern — they are what you'd want on any internet-facing
-SSH box.
+`fail2ban` bans IPs that repeatedly fail SSH authentication. `unattended-upgrades` installs security patches automatically.
 
-## 6. Understand What "Not Internet-Exposed" Actually Means
+## 5. Verify
 
-The priority for this design is that no one outside your organization can
-reach a museum PC, even though each PC dials out to a public VM. That
-property comes entirely from the combination of `GatewayPorts no` and
-per-key `authorized_keys` restrictions (covered in the onboarding guide) —
-not from the tunnel itself, which is just a normal reverse SSH forward.
-
-```mermaid
-flowchart LR
-    subgraph Private["Private museum network (no inbound)"]
-        PC["Museum PC<br/>(Windows, OpenSSH client)"]
-    end
-
-    subgraph Bastion["Bastion VM (public IP)"]
-        direction TB
-        SSHD["sshd"]
-        FWD["127.0.0.1:2201<br/>(loopback-only, GatewayPorts no)"]
-        SSHD -.->|binds| FWD
-    end
-
-    Op["Operator"]
-
-    PC -->|"outbound ssh -R 2201:localhost:22<br/>tunnel user, restricted key<br/>manually triggered"| SSHD
-    Op -->|"ssh admin@bastion<br/>key auth only"| SSHD
-    Op -.->|"ssh -J admin@bastion museum-pc-01<br/>reaches 127.0.0.1:2201"| FWD
-```
-
-Nothing on the public internet can connect to port 2201 directly — it
-doesn't exist outside the bastion's loopback interface. The only path in is
-through an already-authenticated `admin` session on the bastion itself.
-Each museum PC's key is further restricted (next guide) so it can open
-*only* its own assigned loopback port, never anyone else's.
-
-## Hardening Checklist
-
-- [ ] `admin` logs in with a key; `PasswordAuthentication no` is set
-- [ ] `tunnel` has no password and no valid shell
-- [ ] `PermitRootLogin no`
-- [ ] `GatewayPorts no`
-- [ ] `ufw` denies all inbound except 22
-- [ ] `fail2ban` and `unattended-upgrades` are installed and running
+- [ ] `admin` logs in with a key
+- [ ] `sudo sshd -T | grep -E 'permitrootlogin|passwordauthentication|gatewayports'` prints `no` for all three
+- [ ] `tunnel` has no password and `/usr/sbin/nologin` as its shell
+- [ ] `sudo ufw status` allows only `22/tcp` inbound
+- [ ] `systemctl is-active fail2ban unattended-upgrades` prints `active` twice
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---------|--------------|
-| Locked out after restarting `sshd` | `admin`'s `authorized_keys` wasn't in place before `PasswordAuthentication no` took effect — use your cloud provider's console/recovery access to fix `sshd_config` |
-| `ssh: connect to host bastion port 22: Connection refused` | `ufw` is enabled but the `allow 22/tcp` rule wasn't added, or was added after `ufw enable` reset state — check `sudo ufw status` |
-| A museum PC's forwarded port is reachable from outside the bastion | `GatewayPorts no` isn't actually set, or `sshd` wasn't restarted after editing `sshd_config` — check `sudo sshd -T \| grep gatewayports` |
+| Symptom | Cause |
+|---------|-------|
+| Locked out after restarting sshd | `admin` had no `authorized_keys` when password logins were disabled. Fix `sshd_config` through your provider's recovery console. |
+| `Connection refused` on port 22 | `ufw` is enabled without the `22/tcp` rule. Check `sudo ufw status` from the provider console. |
+| A forwarded port is reachable from outside the bastion | `GatewayPorts` is not `no`, or sshd was not restarted. Check `sudo sshd -T \| grep gatewayports`. |
 
-## Related Docs
+## Related docs
 
 - [Onboard a target through a reverse-tunnel bastion](./onboard-a-target-through-a-bastion.md)
-- [Deploy across restricted networks](../explanation/restricted-network-deployment.md)
-- [Targets, transports, and plugins](../explanation/targets-and-transports.md#bastion--jump-hosts)
-- [Inventory reference](../reference/inventory.md)
+- [Bastion and jump hosts](../explanation/targets-and-transports.md#bastion--jump-hosts)
+- [Inventory reference](../reference/inventory.md#jump-host-fields)

@@ -1,20 +1,13 @@
-# Schedule A Windows Reboot
+# Schedule a Windows reboot
 
-Use this guide when a managed Windows target should reboot on a regular
-schedule — a common baseline for kiosks and exhibit PCs that run
-continuously. Scheduled reboots are regular Windows scheduled tasks, so
-define them with the `scheduled_task` module.
+Reboot a Windows target on a daily schedule with a `scheduled_task` that runs `shutdown.exe`.
 
 ## Prerequisites
 
-- A working playbook and target connection (see
-  [Run a playbook](./run-a-playbook.md))
-- A transport account allowed to create scheduled tasks that run as
-  `SYSTEM`
+- A playbook and a working target connection ([Run a playbook](./run-a-playbook.md))
+- A transport account that can create scheduled tasks running as `SYSTEM`, such as a local administrator
 
-## 1. Add A Daily Reboot Task
-
-Create a playbook task that runs `shutdown.exe` from `C:\Windows\System32`:
+## 1. Add the reboot task
 
 ```yaml
 name: schedule-reboot
@@ -31,29 +24,23 @@ tasks:
       start_at: "03:00"
       run_as: SYSTEM
       run_level: highest
-      enabled: true
-      ensure: present
 ```
 
-`/r` reboots, `/f` closes running applications, and `/t 30` gives Windows
-a 30-second delay before restarting.
+`/r` restarts, `/f` closes running applications, and `/t 30` waits 30 seconds first. `start_at` is the target's local time.
 
-## 2. Set The Reboot Time
+## 2. Apply and verify
 
-Set `start_at` to the local target time when the reboot should run:
-
-```yaml
-      trigger: daily
-      start_at: "04:30"
+```bash
+preflight apply playbooks/schedule-reboot.yml
 ```
 
-## 3. Combine With Power Settings (Optional)
+On the target, Task Scheduler shows `Daily Reboot` in the `Preflight` folder.
 
-Reboot scheduling usually travels with a power baseline. Keep power
-management and reboot scheduling as separate tasks:
+## Pair with a power baseline (optional)
+
+Add a separate task for power settings so the machine stays awake between reboots:
 
 ```yaml
-tasks:
   - name: Configure power baseline
     uses: preflight/windows-power
     with:
@@ -61,25 +48,11 @@ tasks:
       display_timeout_ac: 0
       sleep_timeout_ac: 0
       disable_screensaver: true
-
-  - name: Schedule daily reboot
-    scheduled_task:
-      path: Preflight
-      name: Daily Reboot
-      execute: C:\Windows\System32\shutdown.exe
-      arguments: /r /f /t 30
-      working_dir: C:\Windows\System32
-      trigger: daily
-      start_at: "03:00"
-      run_as: SYSTEM
-      run_level: highest
-      enabled: true
-      ensure: present
 ```
 
-## Remove The Reboot Task
+## Remove the reboot task
 
-Use the same task identity (`path` and `name`) with `ensure: absent`:
+Keep `path` and `name` and set `ensure: absent`:
 
 ```yaml
 tasks:
@@ -92,15 +65,12 @@ tasks:
 
 ## Troubleshooting
 
-| Symptom | Likely cause |
-|---------|--------------|
-| The task exists but the machine never reboots | The task is disabled, or `start_at` is a time when the machine is powered off — check Task Scheduler under the `Preflight` folder on the target |
-| Re-applying creates a second task instead of updating the first | The task identity changed — `path` and `name` together identify the task, so keep both stable across runs |
+| Symptom | Cause |
+|---------|-------|
+| The task exists but the machine never reboots | The task is disabled, or the machine is off at `start_at`. Check the task's history in Task Scheduler. |
+| A second task appears instead of an update | `path` or `name` changed. Together they identify the task. |
 
-## Related Docs
+## Related docs
 
-- [Built-in module reference](../reference/modules.md) — `scheduled_task`
-  fields
-- [Embedded stdlib action reference](../reference/stdlib-actions.md) —
-  `preflight/windows-power`
-- [Run a playbook](./run-a-playbook.md)
+- [Built-in module reference](../reference/modules.md)
+- [Stdlib actions reference](../reference/stdlib-actions.md)
