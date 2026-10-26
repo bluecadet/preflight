@@ -1,79 +1,50 @@
-# Error Reference
+# Error reference
 
-This page lists the typed reason codes Preflight attaches to task failures
-and run refusals. Every transport surfaces the same typed error classes, so
-wording and reason codes stay uniform across local, SSH, and WinRM. The
-JSON run-log carries a `reason` field on task-failed events; the same codes appear in text output.
+## Plan-time checks
 
-## Where Errors Surface
+Before any task runs, Preflight checks every task in the plan. A failure stops the run and exits non-zero.
 
-A module that is not supported on a target's runtime is never silently
-skipped. Gaps surface at plan time, and nothing executes if the plan
-cannot complete:
-
-1. **Plan-time (offline).** Unknown module names — whether a catalog
-   built-in or a discovered plugin — fail for all targets.
-   Runtime-support violations also fail where the transport implies a
-   runtime offline: WinRM is always `windows-powershell`, the local target
-   is Windows-only, and staging uses an inventory host's
-   declared platform when present. SSH's runtime is only known after probing
-   the remote host, so plan-time can only name-check SSH tasks when no staging
-   platform is declared. Plan violations exit non-zero like any plan error.
-## Reason Codes
-
-| Reason code | Meaning |
+| Check | Message |
 | --- | --- |
-| `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
-| `unsupported_on_runtime` | a discovered plugin that cannot run on the target's runtime |
-| `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
+| Module name is a built-in or a discovered plugin | `task "<name>": module "<module>" is not a known module` |
+| A local target runs on a Windows controller | `local target is only supported on Windows (controller OS is <os>); use an ssh or winrm target` |
 
-## Task Skip Reasons
+## Failure reason codes
 
-A skipped task carries its own closed `reason` field, separate from the
-failure reason codes above:
+A failed task caused by a module lookup or plugin handshake carries a `reason` code in the `task_failed` event. Other failures carry no `reason`; the message is in `error`.
 
-| Reason code | Meaning |
+| Code | Cause | Message |
+| --- | --- | --- |
+| `unknown_module` | The name is neither a built-in nor a discovered plugin | `module "<module>" is not a known module` |
+| `unsupported_on_runtime` | A discovered plugin is not registered on the target's runtime | `module "<module>" is not supported on windows-powershell` |
+| `plugin_protocol` | The plugin reported a different or missing protocol version | `plugin module "<module>": <detail>` |
+
+Messages state the failure only; they carry no suggestions.
+
+## Skip reason codes
+
+A `task_skipped` event carries one of these `reason` codes. The value is never free text.
+
+| Code | Cause |
 | --- | --- |
-| `tag-filtered` | `--tags`/`--skip-tags` excluded the task |
-| `when-condition-false` | the task's `when` expression evaluated false |
-| `dependency-failed` | a task this one depends on failed and was not `ignore_errors` |
-| `already-satisfied` | the module itself reported the task already in the desired state |
+| `tag-filtered` | `--tags` or `--skip-tags` excluded the task |
+| `when-condition-false` | The `when` condition rendered false |
+| `dependency-failed` | A task in `depends_on` failed without `ignore_errors` |
+| `already-satisfied` | The module returned a skipped status |
 
-`reason` is always one of the codes above — never free text — so a
-consumer can switch on it. A skip event may also carry an optional
-`detail` field with the module's own human-readable explanation; `detail`
-is never a substitute for `reason` and must not be pattern-matched on.
+A task whose `Check()` finds no change needed reports `task_ok`, not a skip.
 
-## Unreachable Targets
+A skip event may also carry the module's explanation, as `message` in `--output json` and as `detail` in the run log. Match on `reason`, not on this text.
 
-A `target_unreachable` event is emitted when a target cannot be reached at
-all during apply start — an SSH dial/handshake or reconnect failure, or a
-WinRM client/session creation failure or transport-level RPC failure — as
-opposed to a failure of some command or script that ran successfully over
-a connection that was already working. It carries a free-text `reason`
-(the underlying connection error) and is always followed by a
-`diagnostic` event with the same detail, then the normal `target_complete`
-event with `outcome: "failed"`.
+## Unreachable targets
 
-## Message Shapes
+`target_unreachable` is emitted when the first connection to a target fails: an SSH dial or handshake failure, or a WinRM client or session failure. A command that fails over a working connection is a task failure instead.
 
-Wording is complete facts, not a suggestion engine: every message names the
-module and, for `unsupported_on_runtime`, the target's runtime. There is no
-did-you-mean and no remediation prose.
-Example shapes:
+The event's `reason` is the connection error text. It is followed by a `diagnostic` event with the same text and a `target_complete` event. In the run log, that `target_complete` event has `outcome: "failed"`.
 
-```text
-task "install tools": module "my_module" is not supported on windows-powershell
-```
+## Schema validation errors
 
-## Schema Validation Errors
-
-Playbooks, actions, inventory files, and `preflight.yml` are validated
-against embedded JSON Schemas before anything runs. A violation names the
-JSON Pointer path to the offending field and the concrete reason — never
-the raw schema-compiler tree used to find it. When a document has more than
-one simultaneous violation, all of them are reported, not just the first.
-Example shapes:
+Playbooks, actions, inventory, and `preflight.yml` are validated against embedded JSON Schemas before anything runs. Each violation names the JSON Pointer path and the reason. All violations in a document are reported.
 
 ```text
 schema validation failed: at '/tasks/0/service/state': value must be one of 'running', 'stopped', 'disabled' (got 'sideways')
@@ -82,23 +53,12 @@ schema validation failed: 2 schema violations:
   at '/tasks/1/reboot/timeout': got string, want integer
 ```
 
-Every field typed as a string, number, boolean, enum, or object also accepts
-a bare `"{{ ... }}"` template expression, so it can be filled in at run
-time — this is a blanket contract of every schema in this package, not a
-per-field detail, and it is not restated in each error message. A value that
-is neither the expected type nor a template expression is reported against
-the expected type; the fact that a template would also have been accepted is
-not repeated as a phantom alternative.
+Malformed YAML fails with the prefix `schema validation parse error`; a well-formed document that breaks the schema fails with `schema validation failed`.
 
-Malformed YAML (a syntax error, or a non-string mapping key) is a distinct
-failure from a well-formed document that violates the schema — the message
-prefix (`schema validation parse error` vs. `schema validation failed`) is
-part of the contract callers rely on to tell the two apart.
+Any field typed as a number, boolean, enum, array, or object also accepts a string that is one whole `{{ ... }}` placeholder. Errors report only the expected type.
 
-## Related Docs
+## Related docs
 
-- [Built-in module reference](./modules.md) — per-module supported
-  runtimes
-- [Configure another user's settings](../how-to/configure-another-users-settings.md)
-- [Targets, transports, and plugins](../explanation/targets-and-transports.md)
+- [Built-in module reference](./modules.md)
 - [Plugin reference](./plugins.md)
+- [Targets, transports, and plugins](../explanation/targets-and-transports.md)

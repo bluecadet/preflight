@@ -1,33 +1,16 @@
-# Playbook And Action YAML Reference
+# Playbook and action YAML reference
 
-This page describes the YAML shapes used for playbooks, actions, and tasks. The schemas live in [`schema/`](https://github.com/bluecadet/preflight/tree/main/schema), and the runtime loaders live in [`internal/action/`](https://github.com/bluecadet/preflight/tree/main/internal/action).
+Playbooks and actions are validated against the schemas in [`schema/`](https://github.com/bluecadet/preflight/tree/main/schema). Unknown fields are errors.
 
-## `playbook.yml`
+## Playbook
 
-Playbooks are the top-level execution documents.
-
-### Fields
-
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
-| `name` | string | Human-readable playbook name |
-| `description` | string | Optional description |
-| `defaults` | object | Task execution defaults inherited by playbook tasks |
-| `vars` | object | Playbook-level variable overrides |
-| `import` | string[] | Other playbook files to merge before local tasks |
-| `tasks` | task[] | Ordered task list |
-
-### Import Behavior
-
-Imports are loaded depth-first.
-
-- Imported vars are merged first.
-- The importing playbook’s vars override imported vars.
-- Imported tasks are prepended in listed order.
-- Import cycles are rejected.
-- Relative import paths are resolved from the playbook that declares them.
-
-### Example
+| `name` | string | Playbook name, shown in output and used in bundle file names |
+| `description` | string | Description |
+| `vars` | object | Playbook variables |
+| `import` | string[] | Playbook files to merge before this playbook |
+| `tasks` | task[] | Tasks |
 
 ```yaml
 name: lobby-baseline
@@ -42,35 +25,40 @@ tasks:
   - name: Prepare content directory
     directory:
       path: "{{ vars.content_root }}"
-      ensure: present
 ```
 
-## `action.yml`
+### Imports
 
-Actions package reusable tasks behind a typed input surface.
+- Relative paths resolve from the importing file.
+- Imports load depth-first, in listed order.
+- Imported tasks run before the importing playbook's tasks.
+- Variables merge by top-level key: later imports override earlier ones, and the importing playbook overrides all imports. Nested maps are replaced, not merged.
+- The importing playbook's `name` and `description` are kept.
+- An import cycle fails with `playbook: import cycle detected: <a> -> <b> -> <a>`.
 
-### Fields
+## Action
 
-| Field | Type | Meaning |
+An action is an `action.yml` file that packages tasks behind named inputs.
+
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | string | yes | Action name, optionally namespaced, such as `myorg/display-config`; letters, digits, `.`, `_`, `-`, and `/` |
+| `tasks` | task[] | yes | Tasks |
+| `version` | string | no | Semantic version, such as `1.2.0` |
+| `description` | string | no | Description |
+| `author` | string | no | Author |
+| `inputs` | object | no | Input names mapped to input definitions |
+
+### Input definition
+
+| Field | Type | Description |
 | --- | --- | --- |
-| `name` | string | Required namespaced action name such as `myorg/display-config` |
-| `version` | string | Semantic version string |
-| `description` | string | Optional description |
-| `author` | string | Optional author |
-| `defaults` | object | Task execution defaults inherited by action tasks |
-| `inputs` | object | Named input definitions |
-| `tasks` | task[] | Ordered task list |
+| `type` | enum | `string`, `bool`, `int`, or `path`; documentation only, values are not checked |
+| `required` | bool | Fail planning with `required input "<name>" is missing` when the value is absent or empty |
+| `default` | any | Value used when the task's `with` omits the input |
+| `description` | string | Description |
 
-### Input Definition Fields
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `type` | enum | `string`, `bool`, `int`, or `path` |
-| `required` | bool | Whether the caller must supply the input |
-| `default` | any | Default value injected before caller-provided values |
-| `description` | string | Human-readable explanation |
-
-### Example
+Inside the action, inputs are read as `vars.<input>`. See [Variables](./templating.md#variables) for scoping.
 
 ```yaml
 name: preflight/autologin
@@ -83,46 +71,48 @@ inputs:
     required: true
   password:
     type: string
-    required: false
+  domain:
+    type: string
+    default: "."
 
 tasks:
   - name: Enable auto-login
     registry:
       path: 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
       values:
-        AutoAdminLogon: "1"
-        DefaultUserName: "{{ vars.username }}"
-        DefaultPassword: "{{ vars.password }}"
+        - name: AutoAdminLogon
+          data: "1"
+        - name: DefaultUserName
+          data: "{{ vars.username }}"
+        - name: DefaultPassword
+          data: "{{ vars.password }}"
+        - name: DefaultDomainName
+          data: "{{ vars.domain }}"
 ```
 
-## Task Shape
+## Task
 
-Every task requires `name`. A task may use exactly one execution form:
+Each task uses exactly one form:
 
-- `uses` plus `with`
-- `module` plus `params`
-- one inline module block such as `directory`, `service`, or `powershell`
+- `uses` with optional `with`: run an action
+- `module` with optional `params`: run a module by name, including plugin modules
+- one inline module key, such as `directory` or `service`: run a built-in module
 
-Mixing these forms in the same task is an error.
-
-### Shared Task Fields
-
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
-| `name` | string | Task label used in output and as a fallback dependency reference |
-| `id` | string | Optional stable task reference for `depends_on` |
-| `uses` | string | Action reference |
-| `with` | object | Inputs passed to the referenced action |
-| `module` | string | Explicit module name, including plugin-backed modules |
-| `params` | object | Parameters for `module` |
-| `when` | string | Template condition expression |
-| `depends_on` | string[] | Task dependencies; Preflight resolves `id` first, then falls back to `name` when no explicit ref is set |
-| `ignore_errors` | bool | Continue after a task failure |
-| `tags` | string[] | Tags used by `--tags` and `--skip-tags` |
+| `name` | string | Required. Task label in output; the dependency key when `id` is unset |
+| `id` | string | Dependency key |
+| `uses` | string | Action ref; see [Action refs](#action-refs) |
+| `with` | object | Action inputs |
+| `module` | string | Module name |
+| `params` | object | Module parameters; requires `module` |
+| `when` | string | Condition; see [`when` conditions](./templating.md#when-conditions) |
+| `depends_on` | string[] | Keys of tasks that must run first |
+| `ignore_errors` | bool | Continue the run when this task fails |
+| `tags` | string[] | Tags matched by `--tags` and `--skip-tags` |
+| `<module>` | object | Inline built-in module parameters; see [Built-in module reference](./modules.md) |
 
-Use `id` when tasks need a stable dependency key that should not change with display-name edits.
-
-Example:
+Setting more than one form fails, for example `task "<name>": cannot set both 'uses' and 'module'`.
 
 ```yaml
 tasks:
@@ -130,95 +120,72 @@ tasks:
     id: prepare-volume
     directory:
       path: "C:\\Content"
-      ensure: present
 
   - name: Sync content
     module: signage_sync
-    depends_on: ["prepare-volume"]
+    depends_on: [prepare-volume]
     params:
       source: "\\\\nas01\\content"
       destination: "C:\\Content"
 ```
 
-### Explicit Module Tasks
+### Ordering and dependencies
 
-Use `module` and `params` for plugin-backed modules or when you want an explicit module name:
+Tasks run one at a time on each target. Tasks without `depends_on` run in file order. A task with `depends_on` runs after the tasks it names, which can place it later than its position in the file. A dependency key is the task's `id`, or its `name` when `id` is unset, and resolves only among tasks in the same playbook or action.
 
-```yaml
-tasks:
-  - name: Sync signage
-    module: signage_sync
-    params:
-      source: "\\\\nas01\\signage"
-      destination: "C:\\Signage"
-```
+Planning fails when two tasks share a key, a key is unknown, or dependencies form a cycle.
 
-### Inline Module Tasks
+When a dependency fails without `ignore_errors`, the dependent task is skipped with reason `dependency-failed`.
 
-Use one inline module key when you want a built-in task form:
+## Action refs
 
-```yaml
-tasks:
-  - name: Ensure content directory exists
-    directory:
-      path: "C:\\Exhibits\\Content"
-      ensure: present
-```
+`uses` resolves through these sources, in order:
 
-For the exact built-in module fields, see [Built-in module reference](./modules.md).
+| Source | Ref form | Location |
+| --- | --- | --- |
+| Stdlib | `preflight/<name>` | Embedded in the binary; see [Stdlib action reference](./stdlib-actions.md) |
+| Project | `<name>` or `<org>/<name>`, with no `.` in the first segment and no `@` | `<project>/actions/<ref>/action.yml` |
+| Cache | Remote ref | `~/.preflight/actions` |
+| Git | Remote ref | Fetched over HTTPS |
 
-## Template Context
+A ref that no source resolves fails with `action "<ref>" not found (tried: <sources>)`.
 
-Task names, `when:` expressions, and string parameter values may read from:
-
-| Namespace | Meaning |
-| --- | --- |
-| `vars.*` | Merged variables |
-| `facts.*` | Gathered host facts |
-| `target.*` | Safe target metadata |
-| `env.*` | Gathered target environment variables |
-
-The template engine supports simple dot-path lookups such as `{{ vars.content_root }}`. It renders string values recursively through nested maps and lists, which lets actions template shapes such as registry value lists and power-plan setting arrays. It does not implement the full Jinja filter and expression language.
-
-## Action Resolution Order
-
-When Preflight resolves a `uses:` reference, it checks these sources in order:
-
-1. Embedded stdlib
-2. Local project actions under `actions/`
-3. User cache under `~/.preflight/actions`
-4. Git-backed remote refs
-
-## Remote Action Refs
-
-Supported remote refs use this shape:
+### Remote action refs
 
 ```text
-host/org/repo[/path/to/action]@revision
+<host>/<org>/<repo>[/<path>]@<revision>
 ```
-
-Examples:
 
 ```text
 github.com/acme/actions/signage@v1.2.3
 github.com/acme/actions/collections/autologin@0123456789abcdef
 ```
 
-Remote refs are pinned to exact commit SHAs in `preflight.lock` for reproducible resolution.
+- `<revision>` is a branch, tag, or commit SHA. `<path>` is the directory in the repository that holds `action.yml`.
+- Preflight clones `https://<host>/<org>/<repo>.git`, then `https://<host>/<org>/<repo>`.
+- `apply`, `check`, and `stage` fetch uncached refs, including refs used by fetched actions, and record each resolved commit SHA in `preflight.lock` in the project directory. `preflight action fetch` does the same without running.
+- A ref already pinned in `preflight.lock` resolves to the pinned SHA.
+- `plan` does not fetch. An uncached ref fails with `remote action "<ref>" is not cached`.
 
-## Editor Schema Wiring
+See [Update and pin actions](../how-to/update-and-pin-actions.md).
 
-The JSON schemas in `schema/` enable live validation and autocompletion in editors that support the YAML Language Server protocol (e.g. VS Code with the [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)).
+## Editor schemas
 
-**Inline file comment** (works in any editor with yaml-language-server support):
+Editors that use the YAML Language Server validate files against these schema IDs:
+
+| File | Schema ID |
+| --- | --- |
+| Playbook | `https://preflight.dev/schema/playbook.schema.json` |
+| `action.yml` | `https://preflight.dev/schema/action.schema.json` |
+| `preflight.yml` | `https://preflight.dev/schema/config.schema.json` |
+
+Per file:
 
 ```yaml
 # yaml-language-server: $schema=https://preflight.dev/schema/action.schema.json
-name: myorg/my-action
-...
 ```
 
-**VS Code `settings.json`** (applies to all matching files in the workspace):
+VS Code `settings.json`:
 
 ```json
 {
@@ -230,9 +197,8 @@ name: myorg/my-action
 }
 ```
 
-## Related Docs
+## Related docs
 
+- [Templating and facts reference](./templating.md)
 - [Project config reference](./config.md)
-- [Inventory reference](./inventory.md)
-- [Execution model](../explanation/execution-model.md) — action resolution
-  order and lockfile behavior
+- [Execution model](../explanation/execution-model.md)

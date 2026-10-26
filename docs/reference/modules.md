@@ -1,139 +1,109 @@
-# Built-In Module Reference
+# Built-in module reference
 
-This page is the authoritative reference for the built-in modules: what
-each one does, its fields, and its known limitations. Every built-in runs
-on Windows PowerShell targets.
+Modules:
+[`registry`](#registry),
+[`service`](#service),
+[`file`](#file),
+[`directory`](#directory),
+[`package`](#package),
+[`winget_package`](#winget_package),
+[`remove_appx_packages`](#remove_appx_packages),
+[`shortcut`](#shortcut),
+[`scheduled_task`](#scheduled_task),
+[`user`](#user),
+[`power_plan`](#power_plan),
+[`windows_feature`](#windows_feature),
+[`environment`](#environment),
+[`firewall_rule`](#firewall_rule),
+[`powershell`](#powershell),
+[`shell`](#shell),
+[`reboot`](#reboot),
+[`wait`](#wait).
 
-Modules on this page:
-[`registry`](#registry) ·
-[`service`](#service) ·
-[`file`](#file) ·
-[`directory`](#directory) ·
-[`package`](#package) ·
-[`winget_package`](#winget_package) ·
-[`remove_appx_packages`](#remove_appx_packages) ·
-[`shortcut`](#shortcut) ·
-[`scheduled_task`](#scheduled_task) ·
-[`user`](#user) ·
-[`power_plan`](#power_plan) ·
-[`windows_feature`](#windows_feature) ·
-[`environment`](#environment) ·
-[`firewall_rule`](#firewall_rule) ·
-[`powershell`](#powershell) ·
-[`shell`](#shell) ·
-[`reboot`](#reboot) ·
-[`wait`](#wait)
+## Execution contract
 
-## Execution Contract
+Each module implements `Check()` and `Apply()`. Preflight calls `Check()` first:
 
-The built-in modules exposed through the local registry implement the same two-method contract:
+- No change needed: the task reports `ok` and `Apply()` does not run.
+- Change needed: `Apply()` runs and the task reports `changed`. Under `preflight check`, `Apply()` does not run and the task reports `changed` with the message `would apply change (dry-run)`.
 
-- `Check(ctx, params) -> (needsChange, error)`
-- `Apply(ctx, params) -> error`
+## Task forms
 
-The runner always calls `Check()` first. If it returns `false`, the task is reported as already in the desired state. If it returns `true`, `Apply()` runs unless the command is in dry-run mode.
-
-Remote transports adapt that contract into the shared runtime dispatcher:
-
-- `Check(ctx, params) -> (needsChange, message, error)`
-- `Apply(ctx, params) -> (output, error)`
-
-That allows remote runtimes to return a no-op message from `Check()` and captured command output from `Apply()` while preserving the same dry-run and idempotency flow.
-
-## Task Forms
-
-Built-ins can be used either as inline modules:
+Inline:
 
 ```yaml
-- name: Ensure a directory exists
+- name: Create content directory
   directory:
     path: "C:\\Exhibits\\Content"
 ```
 
-or as explicit modules:
+Explicit:
 
 ```yaml
-- name: Ensure a directory exists
+- name: Create content directory
   module: directory
   params:
     path: "C:\\Exhibits\\Content"
 ```
 
-## Platform And Transport Support
+Inline parameters are validated against the module schema before the run, and unknown parameters are errors. `params` in the explicit form is not schema-validated.
 
-Every built-in runs on the local, WinRM, and SSH targets. All targets must be Windows.
+## Platform and transport support
 
-Notes:
+Every built-in module runs on `local`, `ssh`, and `winrm` targets. Every target must be Windows with Windows PowerShell. The `local` target requires a Windows controller.
 
-- \*`windows_feature` and `remove_appx_packages` are registered over WinRM but cannot complete their changes over a basic WinRM session. See [WinRM session limitations](#winrm-session-limitations).
-- The local target is only supported when the controller itself runs Windows. SSH targets must provide Windows PowerShell; connection fails otherwise.
-- Plugin modules run over every transport (local, SSH, and WinRM) — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See the [plugin reference](./plugins.md#execution-model).
+Some operations cannot complete over WinRM; see [WinRM session limitations](#winrm-session-limitations).
 
-Unsupported module usage is caught before the task runs and returns a
-clear, typed error; there is no silent fallback. See the
-[error reference](./errors.md) for when each layer catches a violation and
-the reason codes involved.
+Plugin modules run on every transport; see [Execution model](./plugins.md#execution-model).
 
-## WinRM Session Limitations
+An unknown module name fails at plan time; see [Plan-time checks](./errors.md#plan-time-checks).
 
-The WinRM transport authenticates with NTLM/Negotiate and runs each
-operation under a non-interactive network logon. Some Windows operations
-require privileges or a user profile that this kind of session does not
-provide, so they cannot be performed over WinRM regardless of the module
-used:
+## WinRM session limitations
 
-- **`windows_feature` (DISM online servicing)** — enabling or disabling an
-  optional feature fails with *"The symbolic link cannot be followed
-  because its type is disabled."* DISM follows symlinks in the component
-  store (WinSxS), and a network-logon token is not permitted to follow
-  them. Reading feature state works; changing it does not.
-- **`remove_appx_packages` with all-users scope** —
-  `Remove-AppxPackage -AllUsers` fails with HRESULT `0x80073D19` (*"An
-  error occurred because a user was logged off."*). All-users AppX removal
-  needs an interactive session context.
-- **Incremental output streaming** — over WinRM, the WS-Man channel
-  buffers a command's stdout and delivers it in a single batch when the
-  command completes. Output from the `powershell` module is still
-  delivered correctly and in order; it just does not arrive line-by-line
-  as it is produced.
+WinRM authenticates with Basic auth, so only local accounts work, and each operation runs under a non-interactive network logon. These operations fail in that session:
 
-These are properties of the WinRM session, not defects in the modules, so
-Preflight cannot work around them in PowerShell. There is no CredSSP
-option in the WinRM transport (see
-[why CredSSP would not lift most of these](../explanation/targets-and-transports.md#would-credssp-help)).
-When you need these operations:
+| Operation | Failure |
+| --- | --- |
+| `windows_feature` enable or disable | `The symbolic link cannot be followed because its type is disabled.` DISM cannot follow component store links under a network logon. Reading feature state works. |
+| `remove_appx_packages` with `all_users` or `both` scope | `Remove-AppxPackage -AllUsers` fails with HRESULT `0x80073D19`, `An error occurred because a user was logged off.` |
+| Output streaming | Output arrives in one batch when the command ends, not line by line. |
 
-- run them with the **local target** or a **staged bundle** executed on
-  the box, or
-- use an **interactive/elevated context** (for example a scheduled task),
-  or
-- for live streaming specifically, use **Windows-over-SSH**, where output
-  is delivered incrementally.
+WinRM has no CredSSP option; see [Would CredSSP help?](../explanation/targets-and-transports.md#would-credssp-help). Workarounds:
 
-## Module Fields
+- Run on the machine with the `local` target or a staged bundle.
+- Run from an interactive or elevated context, such as a scheduled task.
+- For streaming output, use SSH.
+
+## Modules
 
 ### `registry`
 
-Manage Windows registry keys and values.
+Manages a registry key and its values.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | string | Registry key path |
-| `user` | string | Windows user whose `HKCU`/`HKEY_CURRENT_USER` hive to edit; the profile is loaded on demand |
-| `values` | list | Typed value spec list |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | string | yes | | Key path. Accepts `HKLM`, `HKCU`, `HKCR`, `HKU`, and `HKCC` prefixes, with or without `:`, and the `HKEY_*` names |
+| `values` | list | no | | [Value specs](#registry-value-spec) |
+| `ensure` | `present`, `absent` | no | `present` | `absent` deletes the key and its subkeys |
+| `user` | string | no | | Local user whose `HKCU` hive to edit; requires an `HKCU` path |
 
-Typed value specs inside `values` support these fields:
+#### Registry value spec
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Registry value name |
-| `type` | `string`, `expand_string`, `dword`, `qword`, `binary`, or `multi_string` | Registry value type |
-| `data` | any | Registry value data |
-| `patch` | list | Byte patches for an existing `binary` value |
-| `ensure` | `present` or `absent` | Desired value state |
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Value name |
+| `type` | `string`, `expand_string`, `dword`, `qword`, `binary`, `multi_string` | no | inferred from `data` | Value type |
+| `data` | any | with `ensure: present` and no `patch` | | Value data |
+| `patch` | list | no | | Byte patches for an existing `binary` value; each entry has `offset` (integer) and `data` (byte, 0-255). Cannot be combined with `data` |
+| `ensure` | `present`, `absent` | no | `present` | Desired value state |
 
-Use `patch` when a Windows setting is stored inside an existing binary registry value and the rest of the value should be preserved:
+Without `type`, a string is `string`, an integer or boolean is `dword`, a list of strings is `multi_string`, and a list of numbers is `binary`.
+
+With `user`, the user's profile hive is loaded for the task and unloaded after it. Errors:
+
+- `user <name> was not found on this machine`
+- `user <name> has no profile on this machine; sign in once to create it`
+- `registry: user can only be used with HKCU/HKEY_CURRENT_USER paths`
 
 ```yaml
 - name: Enable taskbar auto-hide
@@ -149,37 +119,41 @@ Use `patch` when a Windows setting is stored inside an existing binary registry 
 
 ### `service`
 
-Manage Windows services.
+Manages an existing Windows service.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Service name |
-| `state` | `running`, `stopped`, or `disabled` | Desired service state |
-| `startup_type` | `automatic`, `manual`, or `disabled` | Startup behavior |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Service name |
+| `state` | `running`, `stopped`, `disabled` | no | | `disabled` stops the service and sets startup to disabled, and ignores `startup_type` |
+| `startup_type` | `automatic`, `manual`, `disabled` | no | | Startup type |
+
+Fails with `service not found: <name>` when the service does not exist.
+
+```yaml
+- name: Start Windows Time
+  service:
+    name: W32Time
+    state: running
+    startup_type: automatic
+```
 
 ### `file`
 
-Manage files.
+Manages a file on the target.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `src` | string | Local source path to copy from |
-| `content` | string | Inline file content to write; may be a `secret:<name>` reference |
-| `content_template` | string | Inline file content template to render before writing; supports `secret("name")` placeholders |
-| `dest` | string | Destination path |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `dest` | string | yes | | Path on the target |
+| `src` | string | no | | Path on the controller to copy |
+| `content` | string | no | | File content; accepts `secret:<name>` |
+| `content_template` | string | no | | File content rendered as a template; accepts `secret("name")` |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
 
-Use `src`, `content`, or `content_template`; do not combine them. `content` is useful for writing
-secret-backed files without creating a temporary plaintext source file:
-
-```yaml
-- name: Write license file
-  file:
-    dest: "C:\\Exhibits\\license.txt"
-    content: secret:license-file
-```
-
-Use `content_template` when only part of the file is secret:
+- Set at most one of `src`, `content`, and `content_template`.
+- `Check()` compares SHA-256 hashes of the source and the target file.
+- `content` and `content_template` are written as UTF-8 without a byte order mark. Parent directories are created.
+- With none of the three set, a missing file is created empty and an existing file is left unchanged.
+- `content_template` renders after all other parameters; see [Secrets in templates](./templating.md#secrets-in-templates).
 
 ```yaml
 - name: Write app config
@@ -190,22 +164,41 @@ Use `content_template` when only part of the file is secret:
       password={{ secret("app-password") }}
 ```
 
-`secret:<name>` is still the syntax for whole-field secret references. Inside
-`content_template`, use `secret("name")` so the secret can be interpolated into
-the rendered file body.
-
 ### `directory`
 
-Manage directories.
+Manages a directory.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | string | Directory path |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `path` | string | yes | | Directory path |
+| `ensure` | `present`, `absent` | no | `present` | `present` creates parent directories; `absent` deletes the directory and its contents |
+
+```yaml
+- name: Create content directory
+  directory:
+    path: "C:\\Exhibits\\Content"
+```
 
 ### `package`
 
-Manage local MSI or EXE installations on Windows.
+Installs or removes MSI and EXE packages.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `packages` | list | yes | Package entries |
+
+Each entry:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `product_id` | string | yes | | Product code, matched against the uninstall registry keys |
+| `source` | string | with `ensure: present` | | Installer path on the controller; copied to a temporary directory on the target before install |
+| `args` | string[] | no | | Extra installer arguments |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+- An `.msi` source runs `msiexec /i <source> /qn /norestart <args>`. Any other source runs directly with `args`.
+- `absent` runs `msiexec /x <product_id> /qn /norestart`.
+- A non-zero exit code fails the task.
 
 ```yaml
 - name: Install packages
@@ -213,247 +206,339 @@ Manage local MSI or EXE installations on Windows.
     packages:
       - product_id: "{D5E71B88-9A6C-4B6B-89C0-123456789ABC}"
         source: "C:\\Installers\\app.msi"
-      - product_id: "{AAAA-...}"
-        source: "C:\\Installers\\tool.exe"
-        args: ["/silent", "/norestart"]
-      - product_id: "{OLD-GUID}"
+      - product_id: "{0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0}"
         ensure: absent
 ```
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `product_id` | string (required) | MSI product GUID used for idempotency |
-| `source` | string | MSI or EXE installer path (required when `ensure=present`) |
-| `args` | string[] | Extra installer arguments |
-| `ensure` | `present` or `absent` | Desired state (default: `present`) |
-
-Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
-
 ### `winget_package`
 
-Manage packages through `winget`.
+Installs or removes packages with `winget`.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `packages` | list | yes | Package entries |
+
+Each entry:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | yes | | `winget` package ID, matched exactly |
+| `version` | string | no | | Exact version to install |
+| `source` | string | no | | `winget` source name |
+| `args` | string[] | no | | Extra `winget` arguments for this package |
+| `scope` | `machine`, `user` | no | `machine` | Install scope |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+- Without `version`, an installed package satisfies `present`. With `version`, the installed version must match.
+- Installs run `winget install --id <id> --exact --silent --scope <scope>` with agreements accepted. Removals run `winget uninstall --id <id> --exact`.
 
 ```yaml
-- name: Install packages
+- name: Install tools
   winget_package:
     packages:
       - id: Microsoft.VisualStudioCode
         version: "1.85.0"
-      - id: Git.Git
-        scope: machine
       - id: Microsoft.VisualStudio.2022.Community
-        args:
-          - --override
-          - "--quiet --wait --norestart"
+        args: ["--override", "--quiet --wait --norestart"]
       - id: OldApp
         ensure: absent
 ```
 
-The `packages` list is the primary interface. Each entry supports:
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `id` | string (required) | `winget` package identifier |
-| `version` | string | Pin to an exact version |
-| `source` | string | `winget` source name |
-| `args` | string[] | Extra `winget` command arguments |
-| `scope` | `machine` or `user` | Install scope (default: `machine`) |
-| `ensure` | `present` or `absent` | Desired state (default: `present`) |
-
-Put package-specific `winget` flags under `args` on that package entry. Do not add flags as additional `packages` list items.
-
 ### `remove_appx_packages`
 
-Remove built-in Windows Store-style packages.
+Removes AppX packages.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `packages` | list | yes | Package entries |
+
+Each entry:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Package name; accepts `*` wildcards |
+| `scope` | `current_user`, `all_users`, `provisioned`, `both` | no | `both` | `both` covers all users and provisioned packages |
+| `ensure` | `absent` | no | | Desired state |
+
+- Packages that Windows marks `NonRemovable` are ignored.
+- A failed provisioned-package removal prints a warning and does not fail the task.
 
 ```yaml
-- name: Remove bloatware
+- name: Remove preinstalled apps
   remove_appx_packages:
     packages:
       - name: Microsoft.Xbox*
-        scope: both
       - name: Microsoft.BingNews
-      - name: Microsoft.549981C3F5F10
         scope: provisioned
 ```
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string (required) | Package name or wildcard pattern |
-| `scope` | `current_user`, `all_users`, `provisioned`, or `both` | Removal scope (default: `both`) |
-| `ensure` | `absent` | Desired state |
-
-Installed Appx packages that Windows marks `NonRemovable` are ignored so checks do not report changes that Windows will not allow Preflight to apply.
-
 ### `shortcut`
 
-Manage Windows `.lnk` shortcuts.
+Creates or updates a `.lnk` shortcut.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `target` | string | Shortcut target path |
-| `destination` | string | `.lnk` path to manage |
-| `args` | string | Optional arguments |
-| `icon` | string | Optional icon path |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `destination` | string | yes | `.lnk` path |
+| `target` | string | no | Target path |
+| `args` | string | no | Arguments |
+| `icon` | string | no | Icon location |
+
+Environment variables in `destination`, `target`, and `icon` are expanded on the target. Parent directories are created.
+
+```yaml
+- name: Add kiosk shortcut
+  shortcut:
+    destination: "%PUBLIC%\\Desktop\\Kiosk.lnk"
+    target: "C:\\Exhibits\\kiosk.exe"
+    args: "--fullscreen"
+```
 
 ### `scheduled_task`
 
-Manage Windows scheduled tasks.
+Manages a scheduled task.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `path` | string | Scheduled task folder path, such as `\Preflight\` |
-| `name` | string | Scheduled task name |
-| `execute` | string | Executable path |
-| `arguments` | string | Optional command arguments |
-| `working_dir` | string | Optional working directory |
-| `trigger` | `startup`, `onlogon`, `daily`, or `once` | Trigger type |
-| `start_at` | string | Start time for `daily` and `once` triggers |
-| `delay` | string | Delay for `startup` and `onlogon` triggers |
-| `run_as` | string | Run-as user |
-| `run_level` | `least` or `highest` | Privilege level |
-| `enabled` | bool | Enabled state |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Task name |
+| `execute` | string | unless `ensure: absent` | | Executable |
+| `path` | string | no | `\` | Task folder, such as `\Preflight\`; created when missing |
+| `arguments` | string | no | | Arguments |
+| `working_dir` | string | no | | Working directory |
+| `trigger` | `startup`, `onlogon`, `daily`, `once` | no | `startup` | Trigger |
+| `start_at` | string | with `trigger: once` | `03:00` for `daily` | Start time |
+| `delay` | string | no | | Trigger delay for `startup` and `onlogon`: an ISO 8601 duration (`PT30S`) or a Go duration (`30s`) |
+| `run_as` | string | no | | Run-as user. `SYSTEM`, `LOCALSERVICE`, and `NETWORKSERVICE` run as service accounts; other users use an interactive logon |
+| `run_level` | `least`, `highest` | no | `least` | Privilege level |
+| `enabled` | bool | no | `true` | Enabled state |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
 
-`delay` accepts ISO-8601 duration strings such as `PT30S`.
+`Apply()` unregisters and re-registers the task.
+
+```yaml
+- name: Launch kiosk at logon
+  scheduled_task:
+    path: \Preflight\
+    name: Kiosk
+    execute: "C:\\Exhibits\\kiosk.exe"
+    trigger: onlogon
+    delay: 30s
+    run_level: highest
+```
 
 ### `user`
 
-Manage local users.
+Manages a local user.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | User name |
-| `password` | string | Plaintext password or a secret reference |
-| `groups` | string[] | Group memberships |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | User name |
+| `password` | string | no | | Password; accepts `secret:<name>` |
+| `groups` | string[] | no | | Local groups to add the user to |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
 
-**Windows.** When `ensure: present` is used without a `password`, Preflight creates the
-user without a password if the account does not already exist. If the user
-already exists, omitting `password` leaves the current password unchanged.
-Requested `groups` are additive and ensure membership in those groups without
-removing other existing memberships.
+- A new user without `password` is created with no password. For an existing user, omitting `password` leaves it unchanged.
+- `groups` adds memberships and removes none.
+
+```yaml
+- name: Create exhibit user
+  user:
+    name: exhibit
+    password: secret:exhibit-password
+    groups: [Users]
+```
 
 ### `power_plan`
 
-Manage named Windows power plans.
+Manages a named power scheme.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Friendly scheme name |
-| `base` | string | Base alias or GUID to clone when creating the scheme |
-| `activate` | bool | Whether to activate the scheme after applying it |
-| `settings` | list | AC and DC setting overrides |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Scheme name |
+| `base` | string | no | `balanced` | Scheme to copy when creating: `balanced`, `high_performance`, `power_saver`, or a GUID |
+| `activate` | bool | no | `true` | Activate the scheme |
+| `settings` | list | no | | Setting overrides |
+| `ensure` | `present`, `absent` | no | `present` | `absent` deletes the scheme, activating Balanced first if the scheme is active |
 
-Each entry in `settings` supports:
+Each `settings` entry:
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `subgroup` | string | Power setting subgroup alias or GUID |
-| `setting` | string | Power setting alias or GUID |
-| `ac_value` | integer | AC value override |
-| `dc_value` | integer | DC value override |
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `subgroup` | string | yes | Subgroup alias or GUID |
+| `setting` | string | yes | Setting alias or GUID |
+| `ac_value` | integer | no | Value on AC power |
+| `dc_value` | integer | no | Value on battery |
+
+```yaml
+- name: Never sleep
+  power_plan:
+    name: Exhibit
+    base: high_performance
+    settings:
+      - subgroup: SUB_SLEEP
+        setting: STANDBYIDLE
+        ac_value: 0
+        dc_value: 0
+```
 
 ### `windows_feature`
 
-Manage Windows optional features.
+Enables or disables a Windows optional feature.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Feature name |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Feature name |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+- Changes do not restart Windows. Enabling uses `-LimitAccess`, so Windows Update is not contacted.
+- Fails with `windows_feature not found: <name>` when the feature does not exist.
+- Changes fail over WinRM; see [WinRM session limitations](#winrm-session-limitations).
+
+```yaml
+- name: Enable Telnet client
+  windows_feature:
+    name: TelnetClient
+```
 
 ### `environment`
 
-Manage environment variables.
+Manages an environment variable.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Variable name |
-| `value` | string | Variable value |
-| `scope` | `machine` or `user` | Target scope |
-| `user` | string | Windows user whose environment to edit; requires `scope: user`, and the profile is loaded on demand |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Variable name |
+| `value` | string | no | | Value |
+| `scope` | `machine`, `user` | no | `machine` | `user` without `user` targets the connecting account |
+| `user` | string | no | | Local user whose environment to edit; requires `scope: user`. The profile hive is loaded for the task |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+`user` without `scope: user` fails with `environment: user requires scope: user`.
+
+```yaml
+- name: Set content root
+  environment:
+    name: EXHIBIT_CONTENT
+    value: "C:\\Exhibits\\Content"
+```
 
 ### `firewall_rule`
 
-Manage Windows firewall rules.
+Manages a Windows Firewall rule, matched by display name.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string | Rule name |
-| `direction` | `inbound` or `outbound` | Traffic direction |
-| `action` | `allow` or `block` | Rule behavior |
-| `protocol` | `tcp`, `udp`, or `any` | Protocol |
-| `ports` | int, string, or array | Port or port list |
-| `ensure` | `present` or `absent` | Desired state |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `name` | string | yes | | Rule display name |
+| `direction` | `inbound`, `outbound` | no | | Direction |
+| `action` | `allow`, `block` | no | | Action |
+| `protocol` | `tcp`, `udp`, `any` | no | | Protocol |
+| `ports` | integer, string, or list | no | | Local ports; a list is joined with commas |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+```yaml
+- name: Allow kiosk control port
+  firewall_rule:
+    name: Kiosk control
+    direction: inbound
+    action: allow
+    protocol: tcp
+    ports: 8080
+```
+
+When `direction` or `action` is unset, `Check()` reports a change on every run.
 
 ### `powershell`
 
-Run PowerShell.
+Runs a PowerShell script in a new session.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `script` | string | Inline PowerShell script |
-| `file` | string | Path to a PowerShell script file |
-| `args` | string[] | Arguments passed to the script file path |
-| `check_script` | string | Inline non-mutating PowerShell check script |
-| `creates` | string | Skip when this path already exists |
-| `working_dir` | string | Working directory |
-| `env` | object | Environment variables visible to the PowerShell process |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `script` | string | one of `script` or `file` | Inline script |
+| `file` | string | one of `script` or `file` | Script path on the controller; its contents run on the target |
+| `args` | string[] | no | Arguments for `file` |
+| `check_script` | string | no | Script that decides whether a change is needed |
+| `creates` | string | no | Path that, when it exists, means no change is needed |
+| `working_dir` | string | no | Working directory; relative `creates` paths resolve from it |
+| `env` | object | no | Process environment variables for the script, `check_script`, and `creates` |
 
-Exactly one of `script` or `file` should be provided for meaningful behavior.
+- Without `check_script` or `creates`, the script runs every time.
+- `check_script` takes precedence over `creates`. It must output a boolean, where `true` means a change is needed, or an object with `needs_change` and an optional `message`.
 
-When `working_dir` is set, relative `creates` paths are checked from that directory.
-
-`check_script` takes precedence over `creates`. It must return either:
-
-- a boolean, where `true` means change is needed
-- an object with `needs_change` and optional `message`
+```yaml
+- name: Register kiosk app
+  powershell:
+    check_script: |
+      -not (Test-Path 'HKLM:\SOFTWARE\Kiosk')
+    script: |
+      New-Item -Path 'HKLM:\SOFTWARE\Kiosk' -Force | Out-Null
+```
 
 ### `shell`
 
-Run a shell command.
+Runs a command with the PowerShell call operator: `& <cmd> <args>`.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `cmd` | string | Command to execute |
-| `args` | string[] | Command arguments |
-| `creates` | string | Skip when this path already exists |
-| `working_dir` | string | Working directory |
-| `env` | object | Environment variables visible to the command process |
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `cmd` | string | yes | Command or executable path |
+| `args` | string[] | no | Arguments |
+| `creates` | string | no | Path that, when it exists, means no change is needed |
+| `working_dir` | string | no | Working directory; relative `creates` paths resolve from it |
+| `env` | object | no | Accepted but not applied |
 
-When `working_dir` is set, relative `creates` paths are checked from that directory.
+- Without `creates`, the command runs every time.
+- A non-zero exit code fails the task with `<cmd> exited with code <code>`.
+
+```yaml
+- name: Register license
+  shell:
+    cmd: "C:\\Exhibits\\license.exe"
+    args: ["--register"]
+    creates: "C:\\Exhibits\\license.dat"
+```
 
 ### `reboot`
 
-Request a reboot.
+Schedules a restart with `shutdown /r /t <timeout>`.
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `condition` | `always` or `if_needed` | Reboot policy (default: `if_needed`) |
-| `timeout` | integer | Reconnect-wait timeout in seconds (default: `300`) |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `timeout` | integer | no | `300` | Seconds before the restart |
+| `condition` | `always`, `if_needed` | no | | Accepted but not applied |
+
+- The task always reports a change.
+- Preflight does not wait for the target to restart or reconnect. Tasks after `reboot` run while the restart is pending.
+
+```yaml
+- name: Restart in one minute
+  reboot:
+    timeout: 60
+```
 
 ### `wait`
 
-Wait for a condition to be met before continuing.
+Waits until a condition is true.
 
-| Field | Type | Meaning |
+| Parameter | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `condition` | `port_open`, `file_exists`, `service_running` | yes | | Condition |
+| `target` | string | yes | | Condition target; see below |
+| `timeout` | string | no | `5m` | Go duration, such as `30s` or `1h` |
+
+| `condition` | `target` | True when |
 | --- | --- | --- |
-| `condition` | `port_open`, `file_exists`, or `service_running` | Wait condition |
-| `target` | string | What to wait on — interpretation depends on `condition` (see below) |
-| `timeout` | duration string | Maximum time to wait, e.g. `"5m"`, `"30s"` (default: `"5m"`) |
+| `port_open` | `host:port` | A TCP connection succeeds within 2 seconds |
+| `file_exists` | Path | The path exists |
+| `service_running` | Service name | The service status is `Running` |
 
-The `target` field is required and interpreted per condition:
+The condition is checked every 5 seconds, and the task fails with `wait: timeout after <timeout> waiting for condition "<condition>" on "<target>"` when the timeout passes. A condition that is already true reports no change.
 
-| `condition` | `target` format | Example |
-| --- | --- | --- |
-| `port_open` | `address:port` TCP endpoint | `"localhost:8080"` |
-| `file_exists` | File system path | `"C:\\Exhibits\\ready.txt"` |
-| `service_running` | Windows service name | `"W32Time"` |
+```yaml
+- name: Wait for the content server
+  wait:
+    condition: port_open
+    target: "localhost:8080"
+    timeout: 2m
+```
 
-## Related Docs
+## Related docs
 
 - [Playbook and action YAML reference](./playbooks.md)
 - [Error reference](./errors.md)

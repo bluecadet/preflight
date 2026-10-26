@@ -1,136 +1,127 @@
-# Templating And Facts Reference
+# Templating and facts reference
 
-This page describes the template engine in [`internal/template/`](https://github.com/bluecadet/preflight/tree/main/internal/template) and the facts model in [`internal/facts/`](https://github.com/bluecadet/preflight/tree/main/internal/facts).
+## Placeholders
 
-## Template Syntax
-
-Preflight uses a lightweight Jinja-like placeholder form:
+A `{{ expression }}` placeholder renders inside task names, `when` conditions, and parameter values at any depth of nested maps and lists.
 
 ```text
 {{ vars.content_root }}
 {{ facts.os.arch }}
 {{ target.name }}
-{{ env.PATH }}
+{{ env.COMPUTERNAME }}
 ```
 
-Supported behavior:
+Expressions use [expr](https://expr-lang.org) syntax with these Preflight rules:
 
-- dot-path lookups only
-- string substitution inside task names and parameter values
-- recursive rendering through nested maps and lists
-- boolean rendering for `when:`
+| Syntax | Behavior |
+| --- | --- |
+| `a.b.c` | Dot-path lookup in a namespace |
+| `==`, `!=` | Compare the string forms of both operands |
+| `>`, `>=`, `<`, `<=` | Compare numerically; a non-numeric operand is an error |
+| `cond ? a : b` | Ternary; `cond` uses the truthy rules in [`when` conditions](#when-conditions) |
+| `&&`, `\|\|`, `!` | Boolean logic |
+| `'text'` | String literal |
+| `secret("name")` | Secret contents; valid only in `file` `content_template` |
 
-Important limit:
+```yaml
+when: "{{ vars.theme_mode != 'unchanged' }}"
+data: "{{ vars.theme_mode == 'light' }}"
+```
 
-- The engine is intentionally small. It does not implement the full Jinja expression or filter language.
+A rendered value that contains another placeholder is rendered again, up to 16 passes.
+
+When a parameter value is exactly one placeholder and the result is a map or list, the value keeps that type. Other results render as strings.
 
 ## Namespaces
 
-| Namespace | Meaning |
+| Namespace | Contents | Unknown key |
+| --- | --- | --- |
+| `vars` | Merged variables | Error: `undefined variable "vars.<path>"` |
+| `facts` | Gathered target facts | Empty string |
+| `target` | Target connection metadata | Empty string |
+| `env` | Target environment variables | Empty string |
+
+Any other first segment renders as an empty string.
+
+During `plan`, placeholders that reference unknown `facts`, `target`, or `env` keys stay unrendered, including comparisons and ternaries that read them. `check` and `apply` render them against the live target. Staged bundles keep them for apply time.
+
+## Variables
+
+`vars` holds the merged project, inventory, group, host, playbook, and `--var` layers. See [variable merge order](./inventory.md#variable-merge-order).
+
+Inside an action, `vars` also holds the action's inputs: input defaults overlaid by the task's `with` values. The overlay is shallow; a `with` map replaces a variable of the same name.
+
+### Built-in `preflight` variables
+
+| Variable | Value |
 | --- | --- |
-| `vars.*` | Merged variables |
-| `facts.*` | Gathered host facts |
-| `target.*` | Safe target metadata |
-| `env.*` | Gathered target environment variables |
-| `vars.preflight.*` | Built-in project metadata (see below) |
+| `vars.preflight.project` | `project` from `preflight.yml` |
+| `vars.preflight.environment` | `environment` from `preflight.yml` |
 
-## Variable Precedence
+Playbook vars and `--var` can override these; inventory, group, and host vars cannot.
 
-`vars.*` exposes the merged result of the project, inventory, group, host,
-playbook, and CLI variable layers. The authoritative merge order lives in
-the [inventory reference](./inventory.md#variable-merge-order).
+## `when` conditions
 
-Undefined `vars.*` references are treated as errors so missing inventory,
-playbook, project, or CLI-provided values fail early instead of rendering as
-empty strings.
+`when` renders its template, trims the result, and lowercases it. These results are false and skip the task:
 
-## Built-In `preflight` Variables
+- empty string
+- `false`
+- `0`
+- `no`
 
-The runner injects a `preflight` map into the project variable layer so playbooks can reference project metadata without repeating it in `vars`:
-
-| Variable | Meaning |
-| --- | --- |
-| `vars.preflight.project` | `project` field from `preflight.yml` |
-| `vars.preflight.environment` | `environment` field from `preflight.yml` |
-
-These are injected above host vars in the [merge order](./inventory.md#variable-merge-order), so playbook vars and CLI `--var` flags can override them, but inventory, group, and host vars cannot.
-
-## Planning Versus Execution
-
-The runner renders templates in two different contexts:
-
-- During `plan`, unknown `facts.*` and `target.*` expressions are preserved so planning stays pure.
-- During `check` and `apply`, the runner gathers facts and target metadata, then renders task names, `when:` conditions, and parameters for real execution.
-- Missing `vars.*` references fail in every phase because they indicate incomplete configuration, not unavailable runtime metadata.
-
-That is why `plan` may still show `{{ facts... }}` placeholders while `check` and `apply` do not.
-
-## `when:` Conditions
-
-`when:` uses the same template engine, then interprets the rendered result with truthy semantics:
-
-- **False** (task skipped): empty string, `false`, `0`, `no`
-- **True** (task runs): anything else
-
-This means `when:` works naturally for both boolean inputs and optional string inputs:
+Any other result is true.
 
 ```yaml
-# gate on a boolean input
-when: "{{ vars.winget_enabled }}"
-
-# gate on an optional string — skips if computer_name was not provided
 when: "{{ vars.computer_name }}"
+when: "{{ facts.os.build >= 22000 }}"
 ```
 
-Preflight does not currently support comparison or arithmetic expressions such as `{{ vars.count > 1 }}` in `when:`. Action authors should pass a boolean input or compute the decision inside a module-specific script.
+## Secrets in templates
 
-## Facts Shape
+A string that is exactly `secret:<name>` resolves in any parameter; see [Secret references](./config.md#secret-references).
 
-The facts command and execution-time fact gathering expose this structure:
+`secret("name")` works only in the `content_template` parameter of the `file` module, which renders after all other parameters. Anywhere else it fails with `secret lookup is not configured`.
 
-| Field | Meaning |
+## Facts
+
+`preflight facts` prints these values, and `check` and `apply` gather them for templates. Gathering is best-effort: a failed probe logs a warning and leaves its fields empty.
+
+| Field | Description |
 | --- | --- |
 | `facts.os.family` | `windows` or `unknown` |
-| `facts.os.name` | Friendly OS name |
-| `facts.os.version` | Raw version string |
-| `facts.os.build` | Numeric build number |
+| `facts.os.name` | OS product name |
+| `facts.os.version` | OS version string |
+| `facts.os.build` | Build number |
 | `facts.os.arch` | Architecture |
-| `facts.os.hostname` | Hostname from OS facts |
-| `facts.hostname` | Top-level hostname |
-| `facts.disks` | List of disk objects |
-| `facts.env` | Environment-variable map |
+| `facts.os.hostname` | Host name reported by the OS |
+| `facts.hostname` | Host name |
+| `facts.disks` | List of disks |
+| `facts.env` | Environment variables |
 
-Each disk entry includes:
+Each `facts.disks` entry:
 
-| Field | Meaning |
+| Field | Description |
 | --- | --- |
-| `path` | Drive or filesystem path |
-| `total_gb` | Total capacity in gigabytes |
-| `free_gb` | Free space in gigabytes |
-| `used_gb` | Used space in gigabytes |
+| `path` | Drive path |
+| `total_gb` | Capacity in GB |
+| `free_gb` | Free space in GB |
+| `used_gb` | Used space in GB |
 
-## Fact Gathering Behavior
+## Target metadata
 
-Fact gathering is best-effort:
+`target` holds connection metadata and no credentials.
 
-- Windows disk and environment facts are collected through PowerShell.
-- Partial fact collection still returns a usable result set; individual failures are logged as warnings.
-
-## Safe Target Metadata
-
-`target.*` intentionally exposes only non-secret transport metadata:
-
-| Field | Meaning |
+| Field | Description |
 | --- | --- |
 | `target.name` | Inventory host name |
-| `target.hostname` | Hostname used for safe template metadata |
-| `target.address` | Address or fallback host name |
-| `target.transport` | `local`, `winrm`, or `ssh` |
-| `target.port` | Port, when defined |
+| `target.hostname` | Inventory host name |
+| `target.address` | `address`, or the host name when `address` is unset |
+| `target.transport` | `local`, `ssh`, or `winrm` |
+| `target.port` | Connection port |
 
-Authentication fields such as passwords and private keys are not exposed through `target.*`.
+For the local machine, `name`, `hostname`, and `address` are `localhost`, `transport` is `local`, and `port` is unset.
 
-## Related Docs
+## Related docs
 
 - [Project config reference](./config.md)
 - [Inventory reference](./inventory.md)

@@ -1,256 +1,247 @@
-# CLI Reference
+# CLI reference
 
-This page describes the command surface implemented under [`cmd/`](https://github.com/bluecadet/preflight/tree/main/cmd).
+Every command exits `0` on success and `1` on any error, including a failed task. The error is printed to standard error.
 
-## Common Flags
+`preflight --version` prints the version, commit, and build date.
 
-These flags are defined on the individual commands that use them.
+## Shared flags
 
-| Flag | Short | Meaning |
+Each command lists the flag groups it accepts.
+
+### Targeting
+
+| Flag | Short | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--target` | `-t` | string list | all inventory hosts, or the local machine without an inventory | Host names, group names, `all`, `local`, or `localhost`; repeat or comma-separate. See [Selector resolution](./inventory.md#selector-resolution) |
+
+### Variables
+
+| Flag | Short | Type | Description |
+| --- | --- | --- | --- |
+| `--var` | `-e` | `key=value`, repeatable | Set a variable. A value without `=` sets the key to an empty string. Later flags win. See [Variable merge order](./inventory.md#variable-merge-order) |
+
+### Tags
+
+| Flag | Type | Description |
 | --- | --- | --- |
-| `--target` | `-t` | Host or group selector from the `preflight.yml` inventory. Repeat to build a union. When inventory is available and this flag is omitted, commands target all inventory hosts. |
-| `--var key=value` | `-e` | Set a variable override. Later values win. |
-| `--tags` |  | Run only tasks that have any of the listed tags. |
-| `--skip-tags` |  | Skip tasks that have any of the listed tags. |
-| `--verbose` | `-v` | Include successful task output blocks in human-readable renderers. |
-| `--output` |  | Output format: `text`, `tui`, or `json`. |
-| `--concurrency` |  | Maximum number of hosts to operate on in parallel. `0` means unlimited. |
-| `--timeout` |  | Overall run timeout such as `30m` or `1h`. |
-| `--fail-fast` |  | Stop all targets on the first failure. |
-| `--run-id` |  | Override the auto-generated run identifier. |
-| `--keep-runs` |  | Number of recent successful run directories to keep (default 20). |
-| `--max-fail-lines` |  | Max lines of output to show for a failed task (default 80). |
-| `--color` |  | Color output: `auto`, `always`, or `never`. |
-| `--no-color` |  | Disable color output (overrides `--color`). |
+| `--tags` | string list | Run only tasks with at least one listed tag |
+| `--skip-tags` | string list | Skip tasks with any listed tag |
 
-## Target Selection Rules
+### Output
 
-When a command supports inventory-backed execution:
+| Flag | Short | Type | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--output` | | `text`, `tui`, `json` | `tui` when stdout is a terminal, else `text` | Output format; any other value selects `text` |
+| `--verbose` | `-v` | bool | `false` | Show output of successful tasks and debug logging |
+| `--max-fail-lines` | | int | `80` | Lines of output shown for a failed task; `0` is unlimited |
+| `--color` | | `auto`, `always`, `never` | `auto` | Color output |
+| `--no-color` | | bool | `false` | Disable color; overrides `--color` |
 
-- A selector may be a host name, a group name, or `all`.
-- Repeating `--target` builds a union of matches.
-- Hosts are deduplicated by name.
-- Omitting `--target` resolves all hosts when `preflight.yml` contains an `inventory:` block.
-- Without embedded inventory, omitting `--target` resolves a local target.
-- Using only `local` or `localhost` forces a local target even when inventory is available.
+### Run
 
-## Top-Level Commands
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--fail-fast` | bool | `false` | Stop all targets on the first failure |
+| `--run-id` | string | generated | Run identifier and run directory name |
+| `--keep-runs` | int | `20` | Number of run directories with a `run.json` to keep under `.preflight/runs/`; `0` disables pruning |
+
+### Concurrency and timeout
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--concurrency` | int | `0` | Maximum targets in parallel; `0` is unlimited; negative values fail |
+| `--timeout` | Go duration | none | Overall timeout, such as `30m` or `1h` |
+
+## Run commands
 
 ### `preflight apply <playbook>`
 
-Apply a playbook to one local or inventory-backed target set.
+Plans and applies a playbook on each selected target. Fetches uncached remote action refs first.
 
-Examples:
+Flags: targeting, variables, tags, output, run, concurrency and timeout, plus:
+
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--bundle` | path | Apply a staged bundle instead of a playbook; see [Bundle apply](./bundles.md#bundle-apply) |
+| `--secret-identity` | path | `age` identity file for encrypted bundle secrets; requires `--bundle` |
 
 ```bash
-preflight apply playbooks/lobby.yml
 preflight apply playbooks/lobby.yml --target lobby
+preflight apply --bundle dist/bundles/<bundle>.zip
 ```
 
-Apply a staged bundle instead of resolving a playbook:
+Errors:
 
-```bash
-preflight apply --bundle dist/bundles/lobby-localhost-windows-amd64.zip
-```
-
-Command-specific flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--bundle` | Apply a staged bundle zip instead of a playbook |
-| `--secret-identity` | Path to an age identity file for decrypting bundle secrets (requires `--bundle`) |
+- `apply: playbook path and --bundle cannot be used together`
+- `apply: --secret-identity requires --bundle`
+- `apply: expected exactly one playbook path`
 
 ### `preflight check <playbook>`
 
-Run the same execution pipeline as `apply`, but stop after `Check()` paths and report what would change. Use it to detect drift on a target.
+Runs the `apply` pipeline as a dry run: each module runs `Check()` only and reports the changes it would make.
 
-```bash
-preflight check playbooks/lobby.yml
-preflight check playbooks/lobby.yml --target lobby
-```
+Flags: targeting, variables, tags, output, run, concurrency and timeout.
+
+### `preflight stage <playbook>`
+
+Writes one bundle zip per selected target. See [Bundle reference](./bundles.md).
+
+Flags: targeting, variables, tags, output, run, concurrency and timeout, plus:
+
+| Flag | Type | Default | Description |
+| --- | --- | --- | --- |
+| `--bundle-output-dir` | path | `<project>/dist/bundles` | Directory for bundle zips |
+| `--allow-plaintext-secrets-in-bundle` | bool | `false` | Write resolved secrets into the bundle in plaintext |
+
+A host with [`platform`](./inventory.md#platform-fields) is staged without a connection.
 
 ### `preflight plan <playbook>`
 
-Resolve and print the target-specific execution plan without running tasks.
+Prints the execution plan for each selected target without connecting to it. Unknown `facts`, `target`, and `env` placeholders stay unrendered. Does not fetch remote action refs; an uncached ref fails.
 
-```bash
-preflight plan playbooks/lobby.yml
-preflight plan playbooks/lobby.yml --target lobby
-```
-
-Behavior notes:
-
-- `plan` does not contact targets.
-- Action expansion and playbook imports are reflected in the printed output.
-- `facts.*` expressions may remain unresolved in preview output.
-- Remote Git-backed actions must already exist in the local cache and lockfile. Use `preflight action fetch`, `check`, or `apply` to populate uncached refs.
+Flags: targeting, variables, tags, output, timeout.
 
 ### `preflight validate <playbook>`
 
-Parse a playbook and resolve direct and nested `uses:` references without executing anything. In interactive terminals, `--output tui` renders a validation summary with resolved refs and status cards.
+Parses the playbook and resolves every `uses` ref, including refs inside actions. Does not connect to targets or fetch remote refs.
 
-```bash
-preflight validate playbooks/lobby.yml
-```
+Flags: output.
 
-### `preflight facts [target]`
+### `preflight facts [target...]`
 
-Gather facts for one or more targets through the selected output renderer.
+Gathers [facts](./templating.md#facts) from each selected target. Positional targets and `--target` values are combined. Reads `preflight.yml` and discovers plugins from the working directory.
+
+Flags: targeting, output, concurrency and timeout. `--tags` and `--skip-tags` fail.
 
 ```bash
 preflight facts
 preflight facts local
-preflight facts --target lobby
-preflight facts lobby-pc-01
+preflight facts lobby lobby-pc-01
 ```
 
-Behavior:
+In `json` output, each target produces one `facts` event.
 
-- Use either a positional target or `--target`, not both.
-- One resolved host prints one facts object.
-- Multiple hosts print an object keyed by host name.
+## `action`
 
-### `preflight stage <playbook>`
+These commands read `actions/` and `preflight.lock` in the working directory.
 
-Assemble one staged bundle zip per resolved target.
-
-```bash
-preflight stage playbooks/lobby.yml
-```
-
-When an inventory host declares `platform`, staging uses that OS and
-architecture without connecting to the host. Without a declaration, staging
-probes the selected host. See the
-[inventory platform fields](./inventory.md#platform-fields).
-
-Command-specific flags:
-
-| Flag | Meaning |
+| Command | Description |
 | --- | --- |
-| `--bundle-output-dir` | Directory for generated bundle zips |
-| `--allow-plaintext-secrets-in-bundle` | Allow staging secrets into the bundle in plaintext |
+| `preflight action list` | List stdlib actions and project actions under `./actions` |
+| `preflight action info <ref>` | Print an action's name, version, description, author, inputs, and task names; remote refs must be cached |
+| `preflight action fetch <ref>` | Fetch a remote ref and the remote refs it uses into `~/.preflight/actions`, and record each commit SHA in `preflight.lock` |
 
-## `action` Commands
+Flags: output.
 
-### `preflight action list`
+## `inventory`
 
-List available embedded and project-local actions. In interactive terminals, `--output tui` renders grouped action catalog cards.
+| Command | Description |
+| --- | --- |
+| `preflight inventory list` | List each host's name, address, transport, port, and groups from `preflight.yml` in the working directory |
 
-### `preflight action info <ref>`
+Flags: output. `tui` renders as `text`.
 
-Show action metadata, inputs, and task count.
+Fails with `inventory list: no inventory configured in preflight.yml` when the file has no `inventory`.
 
-```bash
-preflight action info preflight/autologin
-preflight action info preflight/windows-machine
-preflight action info myorg/display-config
-```
+## `plugin`
 
-### `preflight action fetch <ref>`
+| Command | Description |
+| --- | --- |
+| `preflight plugin list` | List each discovered plugin's name, version, status (`ready` or `error`), and path |
+| `preflight plugin info <name>` | Print one plugin's name, version, path, source directory, and initialization result |
 
-Fetch a remote action ref into the user cache, recursively fetch nested remote `uses:` dependencies, and create or update `preflight.lock` in the current project.
+`plugin list` accepts the output flags; `tui` renders as `text`. `plugin info` prints text only. Both discover `./plugins` from the working directory. See [Discovery](./plugins.md#discovery).
 
-```bash
-preflight action fetch github.com/myorg/actions/signage@v2.1
-```
+## `secret`
 
-## `inventory` Commands
-
-### `preflight inventory list`
-
-List all hosts from the `preflight.yml` inventory.
-
-```bash
-preflight inventory list
-```
-
-## `plugin` Commands
-
-### `preflight plugin list`
-
-List discovered plugins and their initialization status.
-
-### `preflight plugin info <name>`
-
-Show one plugin’s path, source directory, version, and initialization result.
-
-## `secret` Commands
+These commands read and write `preflight.yml` in the working directory. See [Manage secrets](../how-to/manage-secrets.md).
 
 ### `preflight secret list`
 
-List configured repo-backed secrets from `preflight.yml`.
+Lists the secrets in `secrets.entries`. Flags: output; `tui` renders as `text`.
 
 ### `preflight secret encrypt <name>`
 
-Encrypt a plaintext value into the repo-backed secret store. The plaintext can
-come from a file, from standard input, or from an interactive no-echo prompt
-(confirmed twice). If no source flag is set and stdin is not a terminal, the
-command exits with an error rather than consuming piped input.
+Encrypts a value to `secrets.recipients` and writes it to the entry's `file`. A new entry is added to `preflight.yml` with `file: secrets/<name>.age`; characters other than letters, digits, `.`, `_`, and `-` in the file name become `-`.
 
-Command-specific flags:
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--from-file` | path | Read the value from a file |
+| `--from-stdin` | bool | Read the value from standard input; one trailing newline is trimmed |
+| `--recipient` | string list | Recipients to use instead of `secrets.recipients`; saved to `preflight.yml` |
+| `--identity` | path | Identity path saved to `secrets.identity` |
 
-| Flag | Meaning |
-| --- | --- |
-| `--from-file` | Read plaintext from a file |
-| `--from-stdin` | Read plaintext from standard input (single trailing newline trimmed) |
-| `--recipient` | Override configured recipients |
-| `--identity` | Override the identity path stored for decrypt/edit flows |
+With neither source flag, the command prompts twice without echo. When standard input is not a terminal, it fails with `no plaintext source: pass --from-file, --from-stdin, or run from a terminal`. `--from-file` and `--from-stdin` are mutually exclusive.
 
-`--from-file` and `--from-stdin` are mutually exclusive.
+Fails with `secret encrypt: no recipients configured (set secrets.recipients or pass --recipient)` when no recipients are set.
 
 ### `preflight secret edit <name>`
 
-Decrypt a configured secret to a temporary file, open it in `$EDITOR`, and re-encrypt it.
+Decrypts the secret to a temporary file, opens it in `$EDITOR`, and re-encrypts the result.
 
-Command-specific flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--recipient` | Override recipients for re-encryption |
-| `--identity` | Override the identity used for decryption |
-
-### `preflight secret identity generate --out <path>`
-
-Generate an age X25519 identity file. The command creates parent directories, refuses to overwrite an existing file, writes the identity with restrictive file permissions, and prints the identity path plus public recipient.
-
-Command-specific flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--out` | Path to write the generated identity file |
-
-### `preflight secret identity recipient <path>`
-
-Read an existing age identity file and print its public recipient strings. Identity files with multiple identities produce one recipient per line in file order.
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--recipient` | string list | Recipients to use instead of `secrets.recipients`; saved to `preflight.yml` |
+| `--identity` | path | Identity path saved to `secrets.identity` |
 
 ### `preflight secret rekey [names...]`
 
-Decrypt configured secrets and re-encrypt them to the current configured recipients. When names are provided, only those secrets are rekeyed.
+Decrypts the named secrets, or every secret when no names are given, and re-encrypts them to the current recipients.
 
-Command-specific flags:
+| Flag | Type | Description |
+| --- | --- | --- |
+| `--recipient` | string list | Recipients to use; saved to `preflight.yml` |
+| `--identity` | path | Identity to use; saved to `preflight.yml` |
 
-| Flag | Meaning |
+With names, `--recipient` and `--identity` fail with `secret rekey: --identity and --recipient overrides require rekeying all configured secrets`.
+
+### `preflight secret identity generate --out <path>`
+
+Writes a new `age` X25519 identity file and prints its path and public recipient. Creates parent directories. Fails when the file exists.
+
+### `preflight secret identity recipient <path>`
+
+Prints the public recipient of each identity in the file, one per line.
+
+## Output formats
+
+| Format | Description |
 | --- | --- |
-| `--recipient` | Override recipients for a full rekey and save them to `preflight.yml` |
-| `--identity` | Override the identity for a full rekey and save it to `preflight.yml` |
+| `text` | Plain text |
+| `tui` | Terminal UI with a live preview of the last 3 output lines of each running task |
+| `json` | One JSON event per line |
 
-Overrides are rejected when specific secret names are supplied, because `secrets.recipients` and `secrets.identity` are project-wide defaults.
+`text` and `tui` print a failed task's output by default, and successful tasks' output with `--verbose`.
 
-## Output Formats
+### JSON events
 
-| Value | Behavior |
+Every event has `type` and `ts`. Run events:
+
+| Type | Fields |
 | --- | --- |
-| `text` | Plain human-readable renderer |
-| `tui` | Interactive terminal UI renderer with richer layouts for run, plan, facts, validate, and action inspection commands |
-| `json` | Newline-delimited JSON events |
+| `task_started`, `task_ok`, `task_changed` | `task_id`, `task`, `target` |
+| `task_skipped` | as above, plus `reason` and optional `message`; see [Skip reason codes](./errors.md#skip-reason-codes) |
+| `task_failed` | as above, plus `error` and optional `reason`; see [Failure reason codes](./errors.md#failure-reason-codes) |
+| `task_output` | `task_id`, `target`, `lines` |
+| `target_unreachable` | `target`, `reason`; see [Unreachable targets](./errors.md#unreachable-targets) |
+| `target_complete` | `target`, `ok_count`, `changed_count`, `failed_count`, `skipped_count` |
 
-When a task streams output during `apply`, the `json` renderer emits `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.
+Other event types: `version`, `run_start`, `target_start`, `run_summary`, `activity_start`, `activity_end`, `warning`, `diagnostic`, `facts`, `plan`, `validate`, `action_list`, `action_info`, `action_fetch`, `plugin_list`, `inventory_list`, `secret_list`.
 
-For human-readable output, the `text` renderer shows failure logs by default and prints logs below every completed task when `--verbose` is enabled. The `tui` renderer always shows a rolling preview of the last three streamed lines for each active task, prints captured failure logs by default, includes successful-task logs after completion when `--verbose` is enabled, and uses Lip Gloss cards, tables, and progress bars for plan and inspection commands.
+### Run directory
 
-## Related Docs
+`apply`, `check`, and `stage` write `.preflight/runs/<run-id>/` in the project directory:
 
-- [Run a playbook](../how-to/run-a-playbook.md) — when to use each run verb
+| File | Contents |
+| --- | --- |
+| `run.jsonl` | Event log |
+| `run.json` | Run summary |
+| `status` | `success` or `failed` |
+| `rc` | Exit code |
+
+## Related docs
+
+- [Run a playbook](../how-to/run-a-playbook.md)
 - [Run a playbook against remote hosts](../how-to/remote-execution.md)
-- [Inventory reference](./inventory.md) — selector resolution rules
+- [Inventory reference](./inventory.md)
 - [Error reference](./errors.md)
