@@ -24,7 +24,7 @@ cannot complete:
 | Reason code | Meaning |
 | --- | --- |
 | `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
-| `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
+| `unsupported_on_runtime` | a discovered plugin that cannot run on the target's runtime |
 | `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
 ## Task Skip Reasons
@@ -58,18 +58,13 @@ event with `outcome: "failed"`.
 ## Message Shapes
 
 Wording is complete facts, not a suggestion engine: every message names the
-module, the target's runtime, and (for `unsupported_on_runtime`) the
-supporting runtimes. There is no did-you-mean and no remediation prose.
+module and, for `unsupported_on_runtime`, the target's runtime. There is no
+did-you-mean and no remediation prose.
 Example shapes:
 
 ```text
-task "install tools": module "my_module" is not supported on windows-powershell (supported: <runtimes>)
+task "install tools": module "my_module" is not supported on windows-powershell
 ```
-
-The support matrix source of truth is `internal/target/catalog.go`'s
-capability flags, and a drift test asserts the
-[built-in module reference](./modules.md) matches the catalog — so the
-docs cannot silently drift from the code.
 
 ## Schema Validation Errors
 

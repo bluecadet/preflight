@@ -21,13 +21,10 @@ func TestModuleSupportError_EachClassMessageShape(t *testing.T) {
 			class:       ClassUnknownModule,
 		},
 		{
-			name: "unsupported_on_runtime",
-			err:  NewUnsupportedOnRuntimeError("registry", RuntimeKind("other-shell")),
-			mustContain: []string{
-				`module "registry" is not supported on other-shell`,
-				"supported: windows-powershell",
-			},
-			class: ClassUnsupportedOnRuntime,
+			name:        "unsupported_on_runtime",
+			err:         NewUnsupportedOnRuntimeError("registry", RuntimeKind("other-shell")),
+			mustContain: []string{`module "registry" is not supported on other-shell`},
+			class:       ClassUnsupportedOnRuntime,
 		},
 		{
 			name:        "plugin_protocol",

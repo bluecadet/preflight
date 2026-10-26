@@ -7,49 +7,6 @@ import (
 	"testing"
 )
 
-func TestBuildRemoteModuleRegistryFillsUnsupportedModules(t *testing.T) {
-	registry := buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, ModuleRegistry{
-		"shell": moduleFuncs{
-			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
-				return CheckResult{}, nil
-			},
-			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
-				return ApplyResult{}, nil
-			},
-		},
-	}, func(module string) error {
-		return errors.New("unsupported: " + module)
-	})
-
-	if _, ok := registry["shell"]; !ok {
-		t.Fatal("expected supported module to remain in registry")
-	}
-
-	result, err := executeModule(context.Background(), "task-1", "service", nil, false, nil, registry, errors.New)
-	if err == nil || err.Error() != "unsupported: service" {
-		t.Fatalf("expected unsupported service error, got result=%+v err=%v", result, err)
-	}
-}
-
-func TestBuildRemoteModuleRegistryPanicsOnUnknownModule(t *testing.T) {
-	defer func() {
-		if recover() == nil {
-			t.Fatal("expected panic for unknown module registration")
-		}
-	}()
-
-	buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, ModuleRegistry{
-		"not-a-real-module": moduleFuncs{
-			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
-				return CheckResult{}, nil
-			},
-			apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
-				return ApplyResult{}, nil
-			},
-		},
-	}, errors.New)
-}
-
 func TestExecuteModuleKeepsDefaultMessageForMultilineOutput(t *testing.T) {
 	registry := ModuleRegistry{
 		"demo": moduleFuncs{
@@ -224,5 +181,19 @@ func TestExecuteModuleOutputForwardedBeforeApplyFailure(t *testing.T) {
 	}
 	if !reflect.DeepEqual(result.Output, want) {
 		t.Fatalf("result.Output = %v, want %v", result.Output, want)
+	}
+}
+
+// TestWindowsPowerShellRegistryMatchesCatalog is the guard that the catalog
+// and the module registry stay in sync.
+func TestWindowsPowerShellRegistryMatchesCatalog(t *testing.T) {
+	reg := newWindowsPowerShellRegistry(nil)
+	if len(reg) != len(CatalogNames()) {
+		t.Errorf("registry has %d modules, catalog has %d", len(reg), len(CatalogNames()))
+	}
+	for _, name := range CatalogNames() {
+		if _, ok := reg[name]; !ok {
+			t.Errorf("registry missing catalog module %q", name)
+		}
 	}
 }

@@ -68,28 +68,16 @@ func TestPlan_BuiltinsPlanOnLocalAndWinRM(t *testing.T) {
 	cases := []struct {
 		transport target.Transport
 		module    string
-		wantFail  bool
 	}{
-		// On WinRM (windows-powershell) every catalog module is supported.
-		{target.TransportWinRM, "registry", false},
-		{target.TransportLocal, "file", false},
+		{target.TransportWinRM, "registry"},
+		{target.TransportLocal, "file"},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.transport)+"_"+tc.module, func(t *testing.T) {
 			skipLocalOffWindows(t, tc.transport)
 			r := New(&planValidationTarget{transport: tc.transport}, action.Chain{}, Config{})
-			_, err := r.Plan(context.Background(), singleTaskPlaybook(tc.module))
-			if tc.wantFail && err == nil {
-				t.Fatalf("expected plan error for %q on %s, got nil", tc.module, tc.transport)
-			}
-			if !tc.wantFail && err != nil {
+			if _, err := r.Plan(context.Background(), singleTaskPlaybook(tc.module)); err != nil {
 				t.Fatalf("expected plan success for %q on %s, got %v", tc.module, tc.transport, err)
-			}
-			if tc.wantFail {
-				var mse *target.ModuleSupportError
-				if !errors.As(err, &mse) || mse.Class != target.ClassUnsupportedOnRuntime {
-					t.Fatalf("expected unsupported_on_runtime, got %v", err)
-				}
 			}
 		})
 	}

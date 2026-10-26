@@ -3,7 +3,6 @@ package target
 import (
 	"errors"
 	"fmt"
-	"strings"
 )
 
 // ModuleSupportClass enumerates the reasons a module cannot run on a target.
@@ -15,8 +14,8 @@ const (
 	// ClassUnknownModule: the module name is neither a catalog built-in nor a
 	// discovered plugin.
 	ClassUnknownModule ModuleSupportClass = "unknown_module"
-	// ClassUnsupportedOnRuntime: a catalog built-in that is not supported on
-	// the target's runtime. SupportedRuntimes lists where it does run.
+	// ClassUnsupportedOnRuntime: a discovered plugin that is recognized but
+	// cannot run on the target's runtime.
 	ClassUnsupportedOnRuntime ModuleSupportClass = "unsupported_on_runtime"
 	// ClassPluginProtocol: a plugin failed the protocol handshake (version
 	// mismatch / pre-v1 plugin rejected).
@@ -24,15 +23,13 @@ const (
 )
 
 // ModuleSupportError is the single typed error for module-by-runtime gaps.
-// It carries the module name, the target's runtime kind (when known), and the
-// runtimes that do support the module (for the unsupported class). Every
+// It carries the module name and the target's runtime kind (when known). Every
 // transport constructs and renders it the same way.
 type ModuleSupportError struct {
-	Class             ModuleSupportClass
-	Module            string
-	RuntimeKind       RuntimeKind
-	SupportedRuntimes []RuntimeKind
-	Detail            string
+	Class       ModuleSupportClass
+	Module      string
+	RuntimeKind RuntimeKind
+	Detail      string
 }
 
 // NewUnknownModuleError constructs an unknown_module error. RuntimeKind is
@@ -42,13 +39,12 @@ func NewUnknownModuleError(module string) *ModuleSupportError {
 }
 
 // NewUnsupportedOnRuntimeError constructs an unsupported_on_runtime error for
-// a catalog built-in, deriving the supporting runtimes from the catalog.
+// a module that is recognized but cannot run on the target's runtime.
 func NewUnsupportedOnRuntimeError(module string, kind RuntimeKind) *ModuleSupportError {
 	return &ModuleSupportError{
-		Class:             ClassUnsupportedOnRuntime,
-		Module:            module,
-		RuntimeKind:       kind,
-		SupportedRuntimes: CatalogSupportedRuntimes(module),
+		Class:       ClassUnsupportedOnRuntime,
+		Module:      module,
+		RuntimeKind: kind,
 	}
 }
 
@@ -61,32 +57,18 @@ func NewPluginProtocolError(module string, detail string) *ModuleSupportError {
 func (e *ModuleSupportError) ReasonCode() string { return string(e.Class) }
 
 // Error renders a uniform, prose-free message. Every class names the module;
-// unsupported_on_runtime also names the target runtime and the supporting
-// runtimes. No did-you-mean, no remediation.
+// unsupported_on_runtime also names the target runtime. No did-you-mean, no remediation.
 func (e *ModuleSupportError) Error() string {
 	switch e.Class {
 	case ClassUnknownModule:
 		return fmt.Sprintf("module %q is not a known module", e.Module)
 	case ClassUnsupportedOnRuntime:
-		if len(e.SupportedRuntimes) > 0 {
-			return fmt.Sprintf("module %q is not supported on %s (supported: %s)",
-				e.Module, e.RuntimeKind, joinRuntimeKinds(e.SupportedRuntimes))
-		}
 		return fmt.Sprintf("module %q is not supported on %s", e.Module, e.RuntimeKind)
 	case ClassPluginProtocol:
 		return fmt.Sprintf("plugin module %q: %s", e.Module, e.Detail)
 	default:
 		return fmt.Sprintf("module %q: %s", e.Module, e.Class)
 	}
-}
-
-// joinRuntimeKinds renders a comma-separated list of runtime kinds.
-func joinRuntimeKinds(kinds []RuntimeKind) string {
-	parts := make([]string, len(kinds))
-	for i, k := range kinds {
-		parts[i] = string(k)
-	}
-	return strings.Join(parts, ", ")
 }
 
 // classifyMissingModule classifies a module that a remote runtime registry

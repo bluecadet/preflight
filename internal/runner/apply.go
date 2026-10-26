@@ -382,33 +382,24 @@ func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	return &preview, nil
 }
 
-// validatePlanTasks runs the plan-time module support check against every
-// planned task. Unknown module names fail for every transport; runtime-support
-// violations fail for transports whose runtime is knowable offline (WinRM,
-// local). SSH only name-checks because its runtime requires a remote probe.
-// Plugins (present in the controller registry) bypass the runtime matrix.
+// validatePlanTasks fails planning when a task names a module that is neither
+// a catalog built-in nor a discovered plugin, or when the target's runtime
+// cannot be planned offline (e.g. local off Windows).
 func (r *Runner) validatePlanTasks(tasks []*PlanTask) error {
-	var kind target.RuntimeKind
-	var kindKnown bool
 	if r.config.StagePlatform != nil {
-		var err error
-		kind, err = runtimeForStagePlatform(r.config.StagePlatform)
-		if err != nil {
+		if _, err := runtimeForStagePlatform(r.config.StagePlatform); err != nil {
 			return err
 		}
-		kindKnown = true
 	} else {
 		if r.target == nil {
 			return nil
 		}
-		var err error
-		kind, kindKnown, err = target.PlanRuntimeForTransport(r.target.Transport())
-		if err != nil {
+		if _, _, err := target.PlanRuntimeForTransport(r.target.Transport()); err != nil {
 			return err
 		}
 	}
 	for _, pt := range tasks {
-		if err := target.ValidateModuleForPlan(pt.Module, kind, kindKnown, r.config.ModuleRegistry); err != nil {
+		if err := target.ValidateModuleForPlan(pt.Module, r.config.ModuleRegistry); err != nil {
 			return fmt.Errorf("task %q: %w", pt.Name, err)
 		}
 	}

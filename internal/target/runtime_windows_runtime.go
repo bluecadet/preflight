@@ -40,10 +40,10 @@ var windowsPowerShellModuleCatalog = map[string]struct {
 	"powershell": {freshSession: true},
 }
 
-// newWindowsPowerShellRegistry builds a ModuleRegistry for remote Windows targets
-// (WinRM, SSH-Windows-PS). LocalTarget does not call this function.
+// newWindowsPowerShellRegistry builds the ModuleRegistry shared by the local,
+// WinRM and SSH Windows PowerShell targets. It must cover every catalog module.
 func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegistry {
-	supported := ModuleRegistry{
+	return ModuleRegistry{
 		"directory": moduleFuncs{
 			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
 				return checkWindowsDirectory(ctx, backend, params)
@@ -199,9 +199,6 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			},
 		},
 	}
-	return buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, supported, func(module string) error {
-		return NewUnsupportedOnRuntimeError(module, RuntimeKindWindowsPowerShell)
-	})
 }
 
 func windowsRunScript(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, body string) (string, error) {
