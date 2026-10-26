@@ -21,6 +21,7 @@ func TestEmbeddedActions(t *testing.T) {
 func TestAllStdlibActions(t *testing.T) {
 	for _, name := range []string{
 		"autologin",
+		"chocolatey",
 		"debloat",
 		"git-sync",
 		"windows-input",

@@ -3,11 +3,12 @@
 ────────────────────────
   Namespace  preflight/
   Local dir  <cwd>/actions
-  Embedded   10
+  Embedded   11
   Local      0
 
   Embedded actions
   • preflight/autologin
+  • preflight/chocolatey
   • preflight/debloat
   • preflight/git-sync
   • preflight/windows-input

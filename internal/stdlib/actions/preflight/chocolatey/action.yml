@@ -1,0 +1,101 @@
+name: preflight/chocolatey
+version: "1.0.0"
+description: Install Chocolatey and configure its package sources
+author: preflight
+
+inputs:
+  version:
+    type: string
+    default: ""
+    description: Chocolatey version to install, such as 2.4.3 (2.0 or later, which choco_package requires); empty installs the latest. An existing install is left as is
+  sources:
+    type: list
+    default: []
+    description: Package sources to add or update, each with name and url
+  remove_default_source:
+    type: bool
+    default: false
+    description: Remove the community source named chocolatey
+
+tasks:
+  - name: Install Chocolatey
+    powershell:
+      check_script: |
+        $root = [Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+        if (-not $root) { $root = Join-Path $env:ProgramData 'chocolatey' }
+        return (-not (Test-Path -LiteralPath (Join-Path $root 'bin\choco.exe')))
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $version = @'
+        {{ vars.version }}
+        '@
+        $version = $version.Trim()
+        $installer = Join-Path $env:TEMP ('preflight-chocolatey-' + [guid]::NewGuid().ToString('N') + '.ps1')
+        try {
+          Invoke-WebRequest 'https://community.chocolatey.org/install.ps1' -OutFile $installer -UseBasicParsing
+          if ($version) { $env:chocolateyVersion = $version }
+          # A child process, because the execution policy may block running the file here.
+          $output = & powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $installer 2>&1
+          if ($LASTEXITCODE -ne 0) { throw ("Chocolatey install failed with exit code $LASTEXITCODE" + [Environment]::NewLine + ($output | Out-String)) }
+        } finally {
+          Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+        }
+        $root = [Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+        if (-not $root -or -not (Test-Path -LiteralPath (Join-Path $root 'bin\choco.exe'))) {
+          throw ("Chocolatey install finished, but choco.exe was not found" + [Environment]::NewLine + ($output | Out-String))
+        }
+        Write-Output "installed Chocolatey $(& (Join-Path $root 'bin\choco.exe') --version)"
+
+  - name: Configure Chocolatey sources
+    powershell:
+      check_script: |
+        $sources = @'
+        {{ toJSON(vars.sources) }}
+        '@ | ConvertFrom-Json
+        $sources = @($sources | Where-Object { $null -ne $_ })
+        $removeDefault = [System.Convert]::ToBoolean('{{ vars.remove_default_source }}')
+        if ($sources.Count -eq 0 -and -not $removeDefault) { return $false }
+        $root = [Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+        if (-not $root) { $root = Join-Path $env:ProgramData 'chocolatey' }
+        $choco = Join-Path $root 'bin\choco.exe'
+        if (-not (Test-Path -LiteralPath $choco)) { return $true }
+        $current = @{}
+        foreach ($line in @(& $choco source list --limit-output)) {
+          $fields = $line.Split('|')
+          if ($fields.Count -ge 3) { $current[$fields[0]] = $fields }
+        }
+        if ($removeDefault -and $current.ContainsKey('chocolatey')) { return $true }
+        foreach ($source in $sources) {
+          $have = $current[[string]$source.name]
+          if ($null -eq $have -or $have[1] -ne [string]$source.url -or $have[2] -eq 'True') { return $true }
+        }
+        return $false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $sources = @'
+        {{ toJSON(vars.sources) }}
+        '@ | ConvertFrom-Json
+        $sources = @($sources | Where-Object { $null -ne $_ })
+        $removeDefault = [System.Convert]::ToBoolean('{{ vars.remove_default_source }}')
+        $root = [Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+        if (-not $root) { $root = Join-Path $env:ProgramData 'chocolatey' }
+        $choco = Join-Path $root 'bin\choco.exe'
+        function Invoke-ChocoSource {
+          param([string[]]$Arguments)
+          $output = & $choco source @Arguments -y 2>&1
+          if ($LASTEXITCODE -ne 0) { throw ("choco source $($Arguments[0]) failed with exit code $LASTEXITCODE" + [Environment]::NewLine + ($output | Out-String)) }
+        }
+        foreach ($source in $sources) {
+          if (-not $source.name -or -not $source.url) { throw 'each entry in sources needs name and url' }
+          # add replaces a source with the same name; enable clears a disabled flag.
+          Invoke-ChocoSource -Arguments @('add', "--name=$($source.name)", "--source=$($source.url)")
+          Invoke-ChocoSource -Arguments @('enable', "--name=$($source.name)")
+          Write-Output "configured source $($source.name)"
+        }
+        $names = @(& $choco source list --limit-output | ForEach-Object { $_.Split('|')[0] })
+        if ($removeDefault -and $names -contains 'chocolatey') {
+          Invoke-ChocoSource -Arguments @('remove', '--name=chocolatey')
+          Write-Output 'removed source chocolatey'
+        }
