@@ -62,5 +62,4 @@ func initLogger(verbose bool) {
 }
 
 func init() {
-	rootCmd.AddCommand(moduleExecCmd)
 }

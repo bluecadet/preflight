@@ -76,7 +76,7 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 		// ================================================================
 		// The initial apply must handle the WinRM DISM servicing limitation
 		// (symlink restriction under a network logon token).
-		result, err := tgt.Execute(ctx, "windows-feature-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, nil)
+		result, err := tgt.Execute(ctx, "windows-feature-apply", "windows_feature", desiredParams, false, nil)
 		if err != nil {
 			if tgt.Transport() == TransportWinRM && isWinRMServicingUnsupported(err.Error()) {
 				t.Skipf("DISM online servicing is unsupported over this WinRM session "+
@@ -101,8 +101,8 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 		// ================================================================
 		// Branch: idempotent — re-check and re-apply both return StatusOK
 		// ================================================================
-		mustExecute(t, tgt, "windows-feature-idemp-check", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "windows-feature-idemp-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-idemp-check", "windows_feature", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-idemp-apply", "windows_feature", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: dry-run — check-only predicts Changed, oracle confirms
@@ -120,7 +120,7 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 			"name":   featureName,
 			"ensure": restoreEnsure,
 		}
-		mustExecute(t, tgt, "windows-feature-dryrun", "windows_feature", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "windows-feature-dryrun", "windows_feature", dryRunParams, true, StatusChanged)
 		// Oracle confirms the feature is still in the desired toggled state.
 		gotState = readWindowsFeatureOracle(t, runner, featureName)
 		if targetEnsure == "present" && gotState != "Enabled" {
@@ -166,10 +166,10 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 		}
 
 		// Check detects the drift (NeedsChange = true → StatusChanged)
-		mustExecute(t, tgt, "windows-feature-drift-check", "windows_feature", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "windows-feature-drift-check", "windows_feature", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		result, err = tgt.Execute(ctx, "windows-feature-drift-apply", "windows_feature", desiredParams, ExecutionOptions{}, false, nil)
+		result, err = tgt.Execute(ctx, "windows-feature-drift-apply", "windows_feature", desiredParams, false, nil)
 		if err != nil {
 			if tgt.Transport() == TransportWinRM && isWinRMServicingUnsupported(err.Error()) {
 				t.Skipf("DISM drift apply unsupported over this WinRM session: %v", err)
@@ -191,7 +191,7 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 		}
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "windows-feature-drift-idemp", "windows_feature", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-drift-idemp", "windows_feature", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: restore — toggle the feature back to its original state
@@ -200,7 +200,7 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 			"name":   featureName,
 			"ensure": restoreEnsure,
 		}
-		result, err = tgt.Execute(ctx, "windows-feature-restore", "windows_feature", restoreParams, ExecutionOptions{}, false, nil)
+		result, err = tgt.Execute(ctx, "windows-feature-restore", "windows_feature", restoreParams, false, nil)
 		if err != nil {
 			t.Fatalf("windows_feature restore: %v", err)
 		}
@@ -219,9 +219,9 @@ func TestIntegration_WindowsFeature(t *testing.T) {
 		}
 
 		// Idempotent re-check after restore
-		mustExecute(t, tgt, "windows-feature-restore-idemp-check", "windows_feature", restoreParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-restore-idemp-check", "windows_feature", restoreParams, false, StatusOK)
 		// Idempotent re-apply after restore
-		mustExecute(t, tgt, "windows-feature-restore-idemp-apply", "windows_feature", restoreParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "windows-feature-restore-idemp-apply", "windows_feature", restoreParams, false, StatusOK)
 	})
 }
 

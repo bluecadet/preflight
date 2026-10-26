@@ -90,8 +90,8 @@ func newApplyAccumulator() *applyAccumulator {
 	}
 }
 
-func (acc *applyAccumulator) recordTask(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) {
-	acc.state.RecordTask(newTaskSnapshot(pt, taskName, sourceParams, params, sourceBecome, become, status, message, dag))
+func (acc *applyAccumulator) recordTask(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) {
+	acc.state.RecordTask(newTaskSnapshot(pt, taskName, sourceParams, params, status, message, dag))
 	switch status {
 	case target.StatusOK:
 		acc.okCount++
@@ -140,7 +140,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "tag-filtered",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "tag-filtered", nil)
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil)
 		return nil
 	}
 
@@ -163,11 +163,11 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "dependency-failed",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "dependency-failed", nil)
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", nil)
 		return nil
 	}
 
-	// Evaluate when before rendering params/become so skipped tasks do not fail
+	// Evaluate when before rendering params so skipped tasks do not fail
 	// on unrelated template expansion errors.
 	whenOK, err := evaluateTaskWhen(pt, rt)
 	if err != nil {
@@ -180,7 +180,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "when-condition-false",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, pt.Become, pt.Become, target.StatusSkipped, "when-condition-false", nil)
+		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", nil)
 		return nil
 	}
 
@@ -211,7 +211,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			})
 		}
 	}
-	result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, bound.ExecOpts, r.config.DryRun, onOutput)
+	result, execErr := r.target.Execute(ctx, pt.ID, pt.Module, bound.Params, r.config.DryRun, onOutput)
 	elapsedMs := time.Since(taskStartTime).Milliseconds()
 	if execErr != nil {
 		if !pt.IgnoreErrors {
@@ -232,14 +232,14 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 				Summary: execErr.Error(),
 				Source:  pt.Module,
 			})
-			acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, bound.SourceBecome, bound.Become, target.StatusFailed, execErr.Error(), dag)
+			acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, target.StatusFailed, execErr.Error(), dag)
 			acc.failed[pt.ID] = true
 			return errHalt
 		}
 		result = target.Result{Status: target.StatusOK, Message: execErr.Error(), Output: result.Output}
 	}
 
-	acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, bound.SourceBecome, bound.Become, result.Status, result.Message, dag)
+	acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, result.Status, result.Message, dag)
 
 	switch result.Status {
 	case target.StatusOK:
@@ -326,14 +326,14 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	return true
 }
 
-func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, sourceBecome, become map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
+func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
 	dependsOn := []string(nil)
 	if dag != nil {
 		dependsOn, _ = dag.DependencyIDs(pt)
 	}
 
-	paramHash := StateParamHash(sourceParams, params, sourceBecome, become)
-	summary := StateParamSummary(sourceParams, params, sourceBecome, become)
+	paramHash := StateParamHash(sourceParams, params)
+	summary := StateParamSummary(sourceParams, params)
 
 	return TaskSnapshot{
 		TaskKey:      pt.ID,
@@ -416,7 +416,6 @@ func (r *Runner) buildExecutionContext(ctx context.Context) (*template.RuntimeCo
 func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview := *task
 	preview.Params = cloneMap(task.Params)
-	preview.Become = cloneMap(task.Become)
 	rt := &template.RuntimeContext{Target: targetVars}
 	bound, err := bindTask(&preview, rt, template.BindPartial)
 	if err != nil {
@@ -425,7 +424,6 @@ func PreviewTask(task *PlanTask, targetVars map[string]any) (*PlanTask, error) {
 	preview.Name = bound.Name
 	preview.When = bound.When
 	preview.Params = bound.Params
-	preview.Become = bound.Become
 	return &preview, nil
 }
 

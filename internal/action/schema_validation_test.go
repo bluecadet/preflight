@@ -38,6 +38,39 @@ func TestValidateSchemas_ConditionalRequiredModuleParams(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "environment user with user scope",
+			task: "environment:\n      name: PREFLIGHT_TEST\n      value: x\n      scope: user\n      user: kiosk",
+		},
+		{
+			name:    "environment user requires user scope",
+			task:    "environment:\n      name: PREFLIGHT_TEST\n      value: x\n      user: kiosk",
+			wantErr: true,
+		},
+		{
+			name:    "environment user rejects machine scope",
+			task:    "environment:\n      name: PREFLIGHT_TEST\n      value: x\n      scope: machine\n      user: kiosk",
+			wantErr: true,
+		},
+		{
+			name:    "environment user rejects blank",
+			task:    "environment:\n      name: PREFLIGHT_TEST\n      value: x\n      scope: user\n      user: \" \"",
+			wantErr: true,
+		},
+		{
+			name:    "registry user rejects blank",
+			task:    "registry:\n      path: 'HKCU:\\Software\\X'\n      user: \"\"",
+			wantErr: true,
+		},
+		{
+			name: "registry user",
+			task: "registry:\n      path: 'HKCU:\\Software\\X'\n      user: kiosk",
+		},
+		{
+			name:    "become is no longer supported",
+			task:    "shell:\n      cmd: echo\n    become:\n      user: kiosk",
+			wantErr: true,
+		},
+		{
 			name: "absent environment omits value",
 			task: "environment:\n      name: PREFLIGHT_TEST\n      ensure: absent",
 		},

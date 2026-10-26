@@ -14,8 +14,7 @@ import (
 )
 
 // The plugin reads its actions from params so a single binary can drive
-// multiple scenarios (ops round-trip, streaming, become-refusal is exercised
-// host-side).
+// multiple scenarios (ops round-trip, streaming).
 type handleModule struct{}
 
 func (handleModule) Name() string    { return "testhandle" }

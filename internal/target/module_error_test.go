@@ -39,12 +39,6 @@ func TestModuleSupportError_EachClassMessageShape(t *testing.T) {
 			class: ClassMissingPrerequisite,
 		},
 		{
-			name:        "plugin_become",
-			err:         NewPluginBecomeError("custom"),
-			mustContain: []string{`plugin module "custom" does not support become`},
-			class:       ClassPluginBecome,
-		},
-		{
 			name:        "plugin_protocol",
 			err:         NewPluginProtocolError("custom", "protocol version 0 not supported"),
 			mustContain: []string{`plugin module "custom"`, "protocol version 0 not supported"},

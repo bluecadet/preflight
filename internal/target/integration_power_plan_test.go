@@ -70,7 +70,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		// Branch: dry-run — check-only predicts Changed, oracle confirms
 		// no mutation occurred
 		// ================================================================
-		mustExecute(t, tgt, "powerplan-dryrun", "power_plan", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "powerplan-dryrun", "power_plan", desiredParams, true, StatusChanged)
 		// Oracle confirms scheme was NOT created — the dry run must not mutate.
 		if guid := getNamedSchemeGUIDOracle(t, runner, testName); guid != "" {
 			t.Fatal("dry-run: independent oracle: test scheme should not exist before present branch")
@@ -79,7 +79,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		// ================================================================
 		// Branch: present — initial apply creates and activates the scheme
 		// ================================================================
-		mustExecute(t, tgt, "powerplan-present", "power_plan", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "powerplan-present", "power_plan", desiredParams, false, StatusChanged)
 
 		testGUID := getNamedSchemeGUIDOracle(t, runner, testName)
 		if testGUID == "" {
@@ -93,8 +93,8 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "powerplan-idemp-check", "power_plan", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "powerplan-idemp-apply", "power_plan", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "powerplan-idemp-check", "power_plan", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "powerplan-idemp-apply", "power_plan", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: drift — change active scheme behind the module's back,
@@ -114,7 +114,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		}
 
 		// Check detects the drift and applies convergence.
-		mustExecute(t, tgt, "powerplan-drift", "power_plan", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "powerplan-drift", "power_plan", desiredParams, false, StatusChanged)
 
 		// Oracle confirms test scheme is active again.
 		testGUID = getNamedSchemeGUIDOracle(t, runner, testName)
@@ -124,7 +124,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		}
 
 		// Confirm idempotence after convergence.
-		mustExecute(t, tgt, "powerplan-drift-idemp", "power_plan", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "powerplan-drift-idemp", "power_plan", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — remove the scheme entirely
@@ -134,7 +134,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 			"ensure": "absent",
 		}
 
-		mustExecute(t, tgt, "powerplan-absent", "power_plan", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "powerplan-absent", "power_plan", absentParams, false, StatusChanged)
 
 		// Verify via oracle that the scheme no longer exists.
 		if guid := getNamedSchemeGUIDOracle(t, runner, testName); guid != "" {
@@ -142,7 +142,7 @@ foreach ($line in (& powercfg.exe /list 2>&1)) {
 		}
 
 		// Idempotent absent — re-check returns OK (already absent).
-		mustExecute(t, tgt, "powerplan-absent-idemp", "power_plan", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "powerplan-absent-idemp", "power_plan", absentParams, false, StatusOK)
 	})
 }
 

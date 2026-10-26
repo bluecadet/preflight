@@ -16,11 +16,6 @@ type Input struct {
 	Description string `yaml:"description"`
 }
 
-// TaskDefaults describes execution defaults inherited by tasks.
-type TaskDefaults struct {
-	Become map[string]any `yaml:"become" json:"become,omitempty"`
-}
-
 var knownInlineModules = target.CatalogNames(target.CapabilityInline)
 
 var knownInlineModuleSet = target.CatalogSet(target.CapabilityInline)
@@ -37,7 +32,6 @@ type Task struct {
 	ID           string         `yaml:"id"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
-	Become       map[string]any `yaml:"become" json:"become,omitempty"`
 	ModuleName   string         `yaml:"module"`
 	ModuleParams map[string]any `yaml:"params"`
 	When         string         `yaml:"when"`
@@ -54,7 +48,6 @@ type taskKnownFields struct {
 	ID           string         `yaml:"id"`
 	Uses         string         `yaml:"uses"`
 	With         map[string]any `yaml:"with"`
-	Become       map[string]any `yaml:"become" json:"become,omitempty"`
 	ModuleName   string         `yaml:"module"`
 	ModuleParams map[string]any `yaml:"params"`
 	When         string         `yaml:"when"`
@@ -74,7 +67,6 @@ func (t *Task) UnmarshalYAML(value *yaml.Node) error {
 		ID:           decoded.ID,
 		Uses:         decoded.Uses,
 		With:         decoded.With,
-		Become:       decoded.Become,
 		ModuleName:   decoded.ModuleName,
 		ModuleParams: decoded.ModuleParams,
 		When:         decoded.When,
@@ -140,7 +132,6 @@ type Action struct {
 	Version     string           `yaml:"version"`
 	Description string           `yaml:"description"`
 	Author      string           `yaml:"author"`
-	Defaults    TaskDefaults     `yaml:"defaults" json:"defaults"`
 	Inputs      map[string]Input `yaml:"inputs"`
 	Tasks       []Task           `yaml:"tasks"`
 }
@@ -177,7 +168,7 @@ func ParseAction(data []byte) (*Action, error) {
 // Playbook is the parsed representation of a playbook.yml file.
 //
 // loadPlaybookFile (playbook_loader.go) copies a Playbook by value with
-// `merged := *current` and then resets only Vars, Tasks, Defaults, and
+// `merged := *current` and then resets only Vars, Tasks, and
 // Import to apply merge semantics — every other field rides along via the
 // shallow copy on the assumption that it is a plain scalar, safe to alias or
 // duplicate. Adding a new map/slice/pointer field here without also handling
@@ -186,7 +177,6 @@ func ParseAction(data []byte) (*Action, error) {
 type Playbook struct {
 	Name        string         `yaml:"name"`
 	Description string         `yaml:"description"`
-	Defaults    TaskDefaults   `yaml:"defaults" json:"defaults"`
 	Vars        map[string]any `yaml:"vars"`
 	Import      []string       `yaml:"import"`
 	Tasks       []Task         `yaml:"tasks"`

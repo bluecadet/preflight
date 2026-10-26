@@ -63,7 +63,7 @@ func TestIntegration_FirewallRule(t *testing.T) {
 			"ports":     "443",
 		}
 
-		mustExecute(t, tgt, "fwrule-present", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "fwrule-present", "firewall_rule", desiredParams, false, StatusChanged)
 
 		// ---- Verify via independent oracle ----
 		r := readFirewallRuleOracle(t, runner, ruleName)
@@ -83,8 +83,8 @@ func TestIntegration_FirewallRule(t *testing.T) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "fwrule-idemp-check", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "fwrule-idemp-apply", "firewall_rule", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "fwrule-idemp-check", "firewall_rule", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "fwrule-idemp-apply", "firewall_rule", desiredParams, false, StatusOK)
 
 		r = readFirewallRuleOracle(t, runner, ruleName)
 		if r.LocalPort != "443" {
@@ -102,7 +102,7 @@ func TestIntegration_FirewallRule(t *testing.T) {
 			"protocol":  "tcp",
 			"ports":     "8443", // different from current 443
 		}
-		mustExecute(t, tgt, "fwrule-dryrun", "firewall_rule", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "fwrule-dryrun", "firewall_rule", dryRunParams, true, StatusChanged)
 		// Oracle confirms the port is still 443 — the dry run must not mutate
 		r = readFirewallRuleOracle(t, runner, ruleName)
 		if r.LocalPort != "443" {
@@ -119,7 +119,7 @@ func TestIntegration_FirewallRule(t *testing.T) {
 			"protocol":  "tcp",
 			"ports":     "8443",
 		}
-		mustExecute(t, tgt, "fwrule-update", "firewall_rule", updateParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "fwrule-update", "firewall_rule", updateParams, false, StatusChanged)
 
 		r = readFirewallRuleOracle(t, runner, ruleName)
 		if r.LocalPort != "8443" {
@@ -133,7 +133,7 @@ func TestIntegration_FirewallRule(t *testing.T) {
 			"name":   ruleName,
 			"ensure": "absent",
 		}
-		mustExecute(t, tgt, "fwrule-absent", "firewall_rule", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "fwrule-absent", "firewall_rule", absentParams, false, StatusChanged)
 
 		// ---- Verify oracle confirms absence ----
 		r = readFirewallRuleOracle(t, runner, ruleName)
@@ -144,7 +144,7 @@ func TestIntegration_FirewallRule(t *testing.T) {
 		// ================================================================
 		// Branch: absent idempotent — re-check returns OK
 		// ================================================================
-		mustExecute(t, tgt, "fwrule-absent-idemp", "firewall_rule", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "fwrule-absent-idemp", "firewall_rule", absentParams, false, StatusOK)
 	})
 }
 

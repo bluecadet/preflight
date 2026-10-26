@@ -182,12 +182,7 @@ func (t *WinRMTarget) Transport() Transport {
 	return TransportWinRM
 }
 
-func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
-	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-	}
-
+func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	// Modules tagged freshSession (e.g. powershell) run unbounded user-authored
 	// scripts that can leave a long-lived powershell.exe wedged. Route them
 	// through the per-invocation path and recycle the persistent
@@ -199,23 +194,15 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		defer t.resetPSSession()
 	}
 
-	backend := &windowsTaskBackend{
-		run:       runPS,
-		copyPlain: t.CopyFile,
-		tempDir:   t.RemoteTempDir(),
-		become:    become,
+	backend := &winrmBackend{
+		run:      runPS,
+		copyFile: t.CopyFile,
+		tempDir:  t.RemoteTempDir(),
 	}
-	registry := newWindowsPowerShellRegistry(backend)
-	if become == nil {
-		// Plugins bypass the runtime matrix (controller-side execution) and are
-		// bound into the registry so they dispatch through executeModule like
-		// any built-in. Plugin+become is refused in v1 (handled below).
-		registry = mergePlugins(registry, t.registry)
-	}
-	unsupported := t.unsupportedModuleError
-	if become != nil {
-		unsupported = func(module string) error { return refusePluginBecome(t.registry, module, "winrm") }
-	}
+	// Plugins bypass the runtime matrix (controller-side execution) and are
+	// bound into the registry so they dispatch through executeModule like
+	// any built-in.
+	registry := mergePlugins(newWindowsPowerShellRegistry(backend), t.registry)
 	return executeModule(
 		ctx,
 		taskID,
@@ -224,9 +211,27 @@ func (t *WinRMTarget) Execute(ctx context.Context, taskID string, module string,
 		dryRun,
 		onOutput,
 		registry,
-		unsupported,
+		t.unsupportedModuleError,
 	)
 }
+
+// winrmBackend adapts the per-module script runner chosen in Execute to the
+// windowsPowerShellBackend the shared module registry expects.
+type winrmBackend struct {
+	run      func(context.Context, string, OutputFunc) (string, error)
+	copyFile func(context.Context, string, string) error
+	tempDir  string
+}
+
+func (b *winrmBackend) RunPowerShellScript(ctx context.Context, script string, out OutputFunc) (string, error) {
+	return b.run(ctx, script, out)
+}
+
+func (b *winrmBackend) CopyFile(ctx context.Context, src, dst string) error {
+	return b.copyFile(ctx, src, dst)
+}
+
+func (b *winrmBackend) RemoteTempDir() string { return b.tempDir }
 
 // unsupportedModuleError distinguishes a genuinely unknown module from a
 // discovered plugin that is not bound on this transport. With plugins bound
@@ -631,7 +636,6 @@ func (t *WinRMTarget) runPSViaTempFile(ctx context.Context, script string) (stri
 
 	// Execute via cmd.exe with -ExecutionPolicy Bypass so that unsigned staged
 	// PS1 files run correctly regardless of the machine's execution policy.
-	// This also preserves the become execution path which relies on runCmd.
 	command := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%s"`, remotePath)
 	out, err := t.runCmd(ctx, command)
 	if err != nil {

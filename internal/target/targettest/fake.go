@@ -10,11 +10,10 @@ import (
 // Call records one Target.Execute invocation. Tests use it to verify the
 // runner-to-target contract without coupling to a concrete transport.
 type Call struct {
-	TaskID  string
-	Module  string
-	Params  map[string]any
-	Options target.ExecutionOptions
-	DryRun  bool
+	TaskID string
+	Module string
+	Params map[string]any
+	DryRun bool
 }
 
 // Fake is a scriptable target.Target for package tests that need to exercise
@@ -34,13 +33,12 @@ type Fake struct {
 	CloseCalls int
 }
 
-func (f *Fake) Execute(_ context.Context, taskID, module string, params map[string]any, opts target.ExecutionOptions, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
+func (f *Fake) Execute(_ context.Context, taskID, module string, params map[string]any, dryRun bool, onOutput target.OutputFunc) (target.Result, error) {
 	f.Calls = append(f.Calls, Call{
-		TaskID:  taskID,
-		Module:  module,
-		Params:  cloneMap(params),
-		Options: cloneExecutionOptions(opts),
-		DryRun:  dryRun,
+		TaskID: taskID,
+		Module: module,
+		Params: cloneMap(params),
+		DryRun: dryRun,
 	})
 	if onOutput != nil {
 		for _, line := range f.Output {
@@ -92,16 +90,4 @@ func cloneMap(src map[string]any) map[string]any {
 	dst := make(map[string]any, len(src))
 	maps.Copy(dst, src)
 	return dst
-}
-
-func cloneExecutionOptions(src target.ExecutionOptions) target.ExecutionOptions {
-	if src.Become == nil {
-		return target.ExecutionOptions{}
-	}
-	become := *src.Become
-	if src.Become.LoadProfile != nil {
-		loadProfile := *src.Become.LoadProfile
-		become.LoadProfile = &loadProfile
-	}
-	return target.ExecutionOptions{Become: &become}
 }

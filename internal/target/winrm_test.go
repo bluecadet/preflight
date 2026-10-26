@@ -59,7 +59,7 @@ func TestWinRMTarget_ExecuteShell(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestWinRMTarget_ExecuteFileContent(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
 		"dest":    `C:\Temp\secret.txt`,
 		"content": "secret\ncontent\n",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -122,132 +122,12 @@ func TestWinRMTarget_ExecuteFileContentHashNoop(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
 		"dest":    `C:\Temp\secret.txt`,
 		"content": "secret\ncontent\n",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if result.Status != StatusOK {
 		t.Fatalf("expected no-op status, got %q", result.Status)
-	}
-}
-
-func TestWinRMTarget_ExecuteShellWithBecomeUser(t *testing.T) {
-	var sawCredentialRunner bool
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
-	tgt.client = &fakeWinRMClient{
-		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			switch {
-			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
-			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
-			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
-			case strings.Contains(command, "Register-ScheduledTask"):
-				// credential runner executed inline (script small enough)
-				sawCredentialRunner = true
-			default:
-				t.Fatalf("unexpected powershell command %q", command)
-			}
-			return "applied", "", 0, nil
-		},
-		runCmd: func(_ context.Context, command string) (string, string, int, error) {
-			// credential runner staged via temp file (script large enough)
-			sawCredentialRunner = true
-			if !strings.Contains(command, `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Windows\Temp\preflight\run-`) {
-				t.Fatalf("unexpected runCmd command %q", command)
-			}
-			return "applied", "", 0, nil
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
-		"cmd":  "echo",
-		"args": []any{"hello"},
-	}, ExecutionOptions{
-		Become: &BecomeOptions{
-			Enabled:  true,
-			User:     "kiosk",
-			Password: "secret",
-		},
-	}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected StatusChanged, got %q", result.Status)
-	}
-	if !sawCredentialRunner {
-		t.Fatalf("expected become credential runner to be executed")
-	}
-}
-
-func TestBuildWindowsCredentialRunnerUsesScheduledTask(t *testing.T) {
-	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
-		User:     "kiosk",
-		Password: "secret",
-	})
-	if err != nil {
-		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
-	}
-	// A remote (WinRM/SSH) session is non-interactive and has no window
-	// station, so the payload must run through a scheduled task rather than
-	// CreateProcessWithLogonW / System.Diagnostics.Process credentials.
-	for _, want := range []string{
-		"SeBatchLogonRight",          // batch-logon right granted to the target
-		"Register-ScheduledTask",     // payload runs via a scheduled task
-		"New-ScheduledTaskPrincipal", // task runs as the target principal
-		"-LogonType Password",        // password logon (target need not be signed in)
-		"Unregister-ScheduledTask",   // task is cleaned up afterward
-		"runas exited with code",     // non-zero exit is surfaced
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("expected credential runner to contain %q, got:\n%s", want, script)
-		}
-	}
-	if strings.Contains(script, "System.Diagnostics.ProcessStartInfo") {
-		t.Fatalf("expected credential runner to use a scheduled task, not ProcessStartInfo")
-	}
-}
-
-func TestBuildWindowsCredentialRunnerPassesUserToPrincipal(t *testing.T) {
-	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
-		User:     `CORP\serviceacct`,
-		Password: "secret",
-	})
-	if err != nil {
-		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
-	}
-	// DOMAIN\user is handled natively by the task principal, so the runner must
-	// not manually split the domain the way the old ProcessStartInfo path did.
-	if strings.Contains(script, `$becomeUser -like '*\*'`) {
-		t.Fatalf("expected no manual domain splitting, got:\n%s", script)
-	}
-	if !strings.Contains(script, "-UserId $becomeUser") {
-		t.Fatalf("expected the task principal to use $becomeUser, got:\n%s", script)
-	}
-}
-
-func TestBuildWindowsCredentialRunnerPrependsVarsBeforeEmbeddedScript(t *testing.T) {
-	if strings.TrimSpace(becomeWindowsTaskScript) == "" {
-		t.Fatalf("expected becomeWindowsTaskScript to be non-empty")
-	}
-	script, err := buildWindowsCredentialRunner(`C:\Windows\Temp\preflight`, "Write-Output 'hi'", &BecomeOptions{
-		User:     "kiosk",
-		Password: "secret",
-	})
-	if err != nil {
-		t.Fatalf("buildWindowsCredentialRunner returned error: %v", err)
-	}
-	bodyIndex := strings.Index(script, becomeWindowsTaskScript)
-	if bodyIndex < 0 {
-		t.Fatalf("expected generated script to contain the embedded task script verbatim, got:\n%s", script)
-	}
-	for _, want := range []string{"$becomeUser", "$becomePassword", "$payload", "$tempRoot"} {
-		varIndex := strings.Index(script, want+" =")
-		if varIndex < 0 {
-			t.Fatalf("expected generated script to declare %s, got:\n%s", want, script)
-		}
-		if varIndex >= bodyIndex {
-			t.Fatalf("expected %s declaration to precede the embedded task script body", want)
-		}
 	}
 }
 
@@ -397,7 +277,7 @@ func TestWinRMTarget_ExecuteRecyclesPersistentSessionAfterPowerShellModule(t *te
 	_, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
 		"check_script": "$true",
 		"script":       "Write-Output 'noop'",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -418,7 +298,7 @@ func TestWinRMTarget_ExecuteKeepsPersistentSessionAfterBuiltinModule(t *testing.
 	_, err := tgt.Execute(context.Background(), "task-shell", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -495,7 +375,7 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-2", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'applied'",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -646,7 +526,7 @@ func TestWinRMTarget_ApplyPackageStagesInstallersToWindowsPath(t *testing.T) {
 			map[string]any{"product_id": "{APP-1}", "source": msi},
 			map[string]any{"product_id": "{APP-2}", "source": exe},
 		},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -689,7 +569,7 @@ func TestWinRMTarget_ApplyPackageAbsentSkipsUpload(t *testing.T) {
 		"packages": []any{
 			map[string]any{"product_id": "{APP-1}", "ensure": "absent"},
 		},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -745,7 +625,7 @@ func TestWinRMTarget_ExecuteShortcutDetectsDriftAndCreatesParentDir(t *testing.T
 		"target":      `C:\Program Files\App\app.exe`,
 		"args":        "--kiosk",
 		"icon":        `C:\Program Files\App\app.ico`,
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -781,7 +661,7 @@ func TestWinRMTarget_ExecuteShortcutAbsentRemovesShortcut(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-shortcut-absent", "shortcut", map[string]any{
 		"destination": `C:\Users\Public\Desktop\App.lnk`,
 		"ensure":      "absent",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -827,7 +707,7 @@ func TestWinRMTarget_ExecuteUserHonorsPasswordAndGroupSemantics(t *testing.T) {
 		"name":     "kiosk",
 		"password": "secret",
 		"groups":   []any{"Users", "Remote Desktop Users"},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -860,7 +740,7 @@ func TestWinRMTarget_ExecuteUserAbsentRemovesUser(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-user-absent", "user", map[string]any{
 		"name":   "kiosk",
 		"ensure": "absent",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -965,7 +845,7 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 		"action":    "allow",
 		"protocol":  "tcp",
 		"ports":     []any{80, 443},
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}
@@ -989,7 +869,7 @@ func TestWinRMTarget_ExecuteForwardsOutputLinesViaCallback(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-1", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'step'",
-	}, ExecutionOptions{}, false, func(line string) {
+	}, false, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
@@ -1021,7 +901,7 @@ func TestWinRMTarget_ExecuteShellForwardsOutputLinesViaCallback(t *testing.T) {
 	result, err := tgt.Execute(context.Background(), "task-2", "shell", map[string]any{
 		"cmd":  "echo",
 		"args": []any{"hello"},
-	}, ExecutionOptions{}, false, func(line string) {
+	}, false, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
@@ -1039,60 +919,12 @@ func TestWinRMTarget_ExecuteShellForwardsOutputLinesViaCallback(t *testing.T) {
 	}
 }
 
-func TestWinRMTarget_ExecutePowerShellWithBecomeForwardsOutput(t *testing.T) {
-	// Verifies that become output lines reach onOutput. The credential runner
-	// forwards subprocess stdout via Write-Output $line; those lines flow back
-	// through the batch replay path and then through the ensure hold-back.
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
-	tgt.client = &fakeWinRMClient{
-		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			switch {
-			case strings.Contains(command, "[IO.File]::WriteAllBytes($path,"):
-			case strings.Contains(command, "[IO.File]::Open($path, [IO.FileMode]::Append"):
-			case strings.Contains(command, "Remove-Item -LiteralPath $path -Force"):
-			case strings.Contains(command, "System.Diagnostics.ProcessStartInfo"):
-				return "become-line-1\nbecome-line-2\nchanged", "", 0, nil
-			default:
-				t.Fatalf("unexpected powershell command %q", command)
-			}
-			return "", "", 0, nil
-		},
-		runCmd: func(_ context.Context, _ string) (string, string, int, error) {
-			return "become-line-1\nbecome-line-2\nchanged", "", 0, nil
-		},
-	}
-
-	var gotLines []string
-	result, err := tgt.Execute(context.Background(), "task-become-ps", "powershell", map[string]any{
-		"check_script": "return $true",
-		"script":       "Write-Output 'become-output'",
-	}, ExecutionOptions{
-		Become: &BecomeOptions{
-			Enabled:  true,
-			User:     "kiosk",
-			Password: "secret",
-		},
-	}, false, func(line string) {
-		gotLines = append(gotLines, line)
-	})
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected StatusChanged, got %q", result.Status)
-	}
-	want := []string{"become-line-1", "become-line-2"}
-	if !reflect.DeepEqual(gotLines, want) {
-		t.Fatalf("gotLines = %v, want %v", gotLines, want)
-	}
-}
-
 func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 	t.Run("unknown module", func(t *testing.T) {
 		tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 		tgt.client = &fakeWinRMClient{}
 
-		_, err := tgt.Execute(context.Background(), "task-1", "nonexistent_module", nil, ExecutionOptions{}, false, nil)
+		_, err := tgt.Execute(context.Background(), "task-1", "nonexistent_module", nil, false, nil)
 		if err == nil {
 			t.Fatal("expected error for unknown module, got nil")
 		}
@@ -1118,7 +950,7 @@ func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 		})
 		tgt.client = &fakeWinRMClient{}
 
-		res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{}, false, nil)
+		res, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, false, nil)
 		if err != nil {
 			t.Fatalf("plugin should run over winrm, got error: %v", err)
 		}
@@ -1132,34 +964,6 @@ func TestWinRMTarget_ExecuteUnknownModuleErrors(t *testing.T) {
 			t.Errorf("status = %q, want %q", res.Status, StatusOK)
 		}
 	})
-}
-
-func TestWinRMTarget_PluginBecomeRefused(t *testing.T) {
-	// Plugin+become is refused in v1 with a uniform plugin_become error across
-	// transports. Over WinRM the plugin is deliberately not merged into the
-	// registry when become is set, so the unsupported callback classifies it.
-	plugin := &recordingPluggableModule{fakePluggableModule: fakePluggableModule{path: "/tmp/custom-plugin"}}
-	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, ModuleRegistry{
-		"custom": plugin,
-	})
-	tgt.client = &fakeWinRMClient{}
-
-	_, err := tgt.Execute(context.Background(), "task-plugin", "custom", nil, ExecutionOptions{
-		Become: &BecomeOptions{Enabled: true, User: "Administrator"},
-	}, false, nil)
-	if err == nil {
-		t.Fatal("expected plugin+become to be refused, got nil")
-	}
-	var mse *ModuleSupportError
-	if !errors.As(err, &mse) {
-		t.Fatalf("expected *ModuleSupportError, got %T: %v", err, err)
-	}
-	if mse.Class != ClassPluginBecome {
-		t.Errorf("class = %q, want %q", mse.Class, ClassPluginBecome)
-	}
-	if mse.ReasonCode() != "plugin_become" {
-		t.Errorf("reason = %q, want plugin_become", mse.ReasonCode())
-	}
 }
 
 func TestLineStreamWriterSplitsOnNewline(t *testing.T) {
@@ -1261,7 +1065,7 @@ func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-1", "powershell", map[string]any{
 		"check_script": "return $true",
 		"script":       "Write-Output 'x'",
-	}, ExecutionOptions{}, false, func(line string) {
+	}, false, func(line string) {
 		gotLines = append(gotLines, line)
 	})
 	if err != nil {
@@ -1300,7 +1104,7 @@ func TestWinRMTarget_ExecuteFirewallRuleAbsentRemovesRule(t *testing.T) {
 	_, err := tgt.Execute(context.Background(), "task-firewall-absent", "firewall_rule", map[string]any{
 		"name":   "HTTP",
 		"ensure": "absent",
-	}, ExecutionOptions{}, false, nil)
+	}, false, nil)
 	if err != nil {
 		t.Fatalf("Execute returned error: %v", err)
 	}

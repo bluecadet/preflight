@@ -29,7 +29,7 @@ func TestLocalTargetCloseClosesModuleResources(t *testing.T) {
 	mod := &closeableModule{needsChange: true}
 	tgt := NewLocalTarget(ModuleRegistry{"custom": mod})
 
-	if _, err := tgt.Execute(context.Background(), "task-1", "custom", nil, ExecutionOptions{}, false, nil); err != nil {
+	if _, err := tgt.Execute(context.Background(), "task-1", "custom", nil, false, nil); err != nil {
 		t.Fatalf("Execute() error = %v", err)
 	}
 	if mod.closeCalls != 0 {

@@ -73,7 +73,7 @@ func TestIntegration_WingetPackage(t *testing.T) {
 		// ================================================================
 		// Branch: present — initial apply installs the package
 		// ================================================================
-		mustExecute(t, tgt, "winget-present", "winget_package", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "winget-present", "winget_package", desiredParams, false, StatusChanged)
 		if !isWingetPackageInstalledOracle(t, runner, pkgID) {
 			t.Fatal("independent oracle: expected package to be installed after apply")
 		}
@@ -81,8 +81,8 @@ func TestIntegration_WingetPackage(t *testing.T) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "winget-idemp-check", "winget_package", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "winget-idemp-apply", "winget_package", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "winget-idemp-check", "winget_package", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "winget-idemp-apply", "winget_package", desiredParams, false, StatusOK)
 		if !isWingetPackageInstalledOracle(t, runner, pkgID) {
 			t.Fatal("independent oracle: expected package to remain installed after idempotent re-apply")
 		}
@@ -99,7 +99,7 @@ func TestIntegration_WingetPackage(t *testing.T) {
 				},
 			},
 		}
-		mustExecute(t, tgt, "winget-dryrun", "winget_package", dryRunAbsentParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "winget-dryrun", "winget_package", dryRunAbsentParams, true, StatusChanged)
 		// Oracle confirms package is still installed — the dry run must not mutate.
 		if !isWingetPackageInstalledOracle(t, runner, pkgID) {
 			t.Fatal("independent oracle: expected package to remain installed after dry-run (no mutation)")
@@ -124,16 +124,16 @@ func TestIntegration_WingetPackage(t *testing.T) {
 		}
 
 		// Check detects the drift (package is absent, desired is present → Changed)
-		mustExecute(t, tgt, "winget-drift-check", "winget_package", desiredParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "winget-drift-check", "winget_package", desiredParams, true, StatusChanged)
 
 		// Apply converges back to the desired state
-		mustExecute(t, tgt, "winget-drift-apply", "winget_package", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "winget-drift-apply", "winget_package", desiredParams, false, StatusChanged)
 		if !isWingetPackageInstalledOracle(t, runner, pkgID) {
 			t.Fatal("independent oracle: expected package to be re-installed after drift convergence")
 		}
 
 		// Confirm idempotence after convergence
-		mustExecute(t, tgt, "winget-drift-idemp", "winget_package", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "winget-drift-idemp", "winget_package", desiredParams, false, StatusOK)
 
 		// ================================================================
 		// Branch: absent — remove the package
@@ -146,13 +146,13 @@ func TestIntegration_WingetPackage(t *testing.T) {
 				},
 			},
 		}
-		mustExecute(t, tgt, "winget-absent", "winget_package", absentParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "winget-absent", "winget_package", absentParams, false, StatusChanged)
 		if isWingetPackageInstalledOracle(t, runner, pkgID) {
 			t.Fatal("independent oracle: expected package to be absent after removal")
 		}
 
 		// Idempotent absent — re-check returns OK (already absent)
-		mustExecute(t, tgt, "winget-absent-idemp", "winget_package", absentParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "winget-absent-idemp", "winget_package", absentParams, false, StatusOK)
 	})
 }
 

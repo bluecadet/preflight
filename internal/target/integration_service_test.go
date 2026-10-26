@@ -71,7 +71,7 @@ if ($null -eq $svc) {
 			"startup_type": "automatic",
 		}
 
-		mustExecute(t, tgt, "svc-present", "service", desiredParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "svc-present", "service", desiredParams, false, StatusChanged)
 
 		state := readServiceOracle(t, runner, serviceName)
 		if !state.Present {
@@ -84,8 +84,8 @@ if ($null -eq $svc) {
 		// ================================================================
 		// Branch: idempotent — re-check returns OK, re-apply is a no-op
 		// ================================================================
-		mustExecute(t, tgt, "svc-idemp-check", "service", desiredParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "svc-idemp-apply", "service", desiredParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "svc-idemp-check", "service", desiredParams, false, StatusOK)
+		mustExecute(t, tgt, "svc-idemp-apply", "service", desiredParams, false, StatusOK)
 
 		state = readServiceOracle(t, runner, serviceName)
 		if state.StartupType != "Auto" {
@@ -100,7 +100,7 @@ if ($null -eq $svc) {
 			"name":         serviceName,
 			"startup_type": "disabled", // different from current Auto
 		}
-		mustExecute(t, tgt, "svc-dryrun", "service", dryRunParams, ExecutionOptions{}, true, StatusChanged)
+		mustExecute(t, tgt, "svc-dryrun", "service", dryRunParams, true, StatusChanged)
 		// Oracle confirms startup_type is still Auto — the dry run must not
 		// mutate the target.
 		state = readServiceOracle(t, runner, serviceName)
@@ -116,7 +116,7 @@ if ($null -eq $svc) {
 			"name":         serviceName,
 			"startup_type": "manual",
 		}
-		mustExecute(t, tgt, "svc-update-startup-manual", "service", updateParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "svc-update-startup-manual", "service", updateParams, false, StatusChanged)
 		state = readServiceOracle(t, runner, serviceName)
 		if state.StartupType != "Manual" {
 			t.Fatalf("independent oracle: expected StartupType=Manual after update, got %q", state.StartupType)
@@ -127,7 +127,7 @@ if ($null -eq $svc) {
 			"name":  serviceName,
 			"state": "disabled",
 		}
-		mustExecute(t, tgt, "svc-update-state-disabled", "service", disabledParams, ExecutionOptions{}, false, StatusChanged)
+		mustExecute(t, tgt, "svc-update-state-disabled", "service", disabledParams, false, StatusChanged)
 		state = readServiceOracle(t, runner, serviceName)
 		if state.State != "Stopped" {
 			t.Fatalf("independent oracle: expected State=Stopped, got %q", state.State)
@@ -139,8 +139,8 @@ if ($null -eq $svc) {
 		// ================================================================
 		// Branch: idempotent — re-check and re-apply on state=disabled
 		// ================================================================
-		mustExecute(t, tgt, "svc-idemp-disabled-check", "service", disabledParams, ExecutionOptions{}, false, StatusOK)
-		mustExecute(t, tgt, "svc-idemp-disabled-apply", "service", disabledParams, ExecutionOptions{}, false, StatusOK)
+		mustExecute(t, tgt, "svc-idemp-disabled-check", "service", disabledParams, false, StatusOK)
+		mustExecute(t, tgt, "svc-idemp-disabled-apply", "service", disabledParams, false, StatusOK)
 	})
 }
 

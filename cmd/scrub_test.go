@@ -17,7 +17,7 @@ import (
 // way a script that prints its environment would.
 type echoSecretTarget struct{}
 
-func (echoSecretTarget) Execute(_ context.Context, taskID, _ string, params map[string]any, _ target.ExecutionOptions, _ bool, onOutput target.OutputFunc) (target.Result, error) {
+func (echoSecretTarget) Execute(_ context.Context, taskID, _ string, params map[string]any, _ bool, onOutput target.OutputFunc) (target.Result, error) {
 	env, _ := params["env"].(map[string]any)
 	line := "password is " + env["PASSWORD"].(string)
 	if onOutput != nil {

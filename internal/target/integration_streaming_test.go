@@ -51,7 +51,7 @@ Write-Output 'done'`
 			result, execErr = tgt.Execute(ctx, "streaming-test", "powershell", map[string]any{
 				"check_script": "return $true",
 				"script":       script,
-			}, ExecutionOptions{}, false, func(line string) {
+			}, false, func(line string) {
 				mu.Lock()
 				got = append(got, stampedLine{line: line, at: time.Now()})
 				mu.Unlock()

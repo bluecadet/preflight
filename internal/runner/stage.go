@@ -162,10 +162,7 @@ func (r *Runner) analyzeStagePlan(ctx context.Context, plan *ExecutionPlan) (*st
 		if err != nil {
 			return nil, fmt.Errorf("stage: preview task %q: %w", task.Name, err)
 		}
-		analysis := AnalyzeSecretValues(map[string]any{
-			"params": preview.Params,
-			"become": preview.Become,
-		})
+		analysis := AnalyzeSecretValues(preview.Params)
 		if analysis.HasLiteralSecrets && !r.config.AllowPlaintextSecretsInBundle {
 			return nil, fmt.Errorf("stage: task %q depends on secret values that cannot be embedded in a staged bundle", preview.Name)
 		}

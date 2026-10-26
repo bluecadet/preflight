@@ -50,32 +50,11 @@ func (t *LocalTarget) Transport() Transport { return TransportLocal }
 
 // Execute looks up the named module and dispatches through the unified
 // executeModule executor. The local target is Windows-only.
-func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
+func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, dryRun bool, onOutput OutputFunc) (Result, error) {
 	if runtime.GOOS != "windows" {
 		err := errLocalRequiresWindows()
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
-	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
-	if err != nil {
-		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-	}
-
-	if become != nil {
-		subReg, err := newSubprocessBecomeRegistry(t.registry, RuntimeKindWindowsPowerShell, become)
-		if err != nil {
-			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-		}
-
-		unsupported := func(module string) error {
-			if _, ok := t.registry[module]; ok {
-				return wrapLocalTargetError("", fmt.Errorf("module %q does not support become", module))
-			}
-			return wrapLocalTargetError("", NewUnknownModuleError(module))
-		}
-
-		return executeModule(ctx, taskID, module, params, dryRun, onOutput, subReg, unsupported)
-	}
-
 	return executeModule(ctx, taskID, module, params, dryRun, onOutput, t.registry, func(module string) error {
 		return wrapLocalTargetError("", NewUnknownModuleError(module))
 	})

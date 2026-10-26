@@ -21,9 +21,6 @@ const (
 	// ClassMissingPrerequisite: the module is supported on this runtime in
 	// principle but an environment prerequisite is absent (Detail names it).
 	ClassMissingPrerequisite ModuleSupportClass = "missing_prerequisite"
-	// ClassPluginBecome: a plugin module was invoked with become enabled;
-	// plugin+become is refused.
-	ClassPluginBecome ModuleSupportClass = "plugin_become"
 	// ClassPluginProtocol: a plugin failed the protocol handshake (version
 	// mismatch / pre-v1 plugin rejected).
 	ClassPluginProtocol ModuleSupportClass = "plugin_protocol"
@@ -68,11 +65,6 @@ func NewMissingPrerequisiteError(module string, kind RuntimeKind, detail string)
 	}
 }
 
-// NewPluginBecomeError constructs a plugin_become error.
-func NewPluginBecomeError(module string) *ModuleSupportError {
-	return &ModuleSupportError{Class: ClassPluginBecome, Module: module}
-}
-
 // NewPluginProtocolError constructs a plugin_protocol error.
 func NewPluginProtocolError(module string, detail string) *ModuleSupportError {
 	return &ModuleSupportError{Class: ClassPluginProtocol, Module: module, Detail: detail}
@@ -97,8 +89,6 @@ func (e *ModuleSupportError) Error() string {
 	case ClassMissingPrerequisite:
 		return fmt.Sprintf("module %q is missing a prerequisite on %s: %s",
 			e.Module, e.RuntimeKind, e.Detail)
-	case ClassPluginBecome:
-		return fmt.Sprintf("plugin module %q does not support become", e.Module)
 	case ClassPluginProtocol:
 		return fmt.Sprintf("plugin module %q: %s", e.Module, e.Detail)
 	default:

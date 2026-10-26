@@ -65,41 +65,27 @@ func analyzeSecretValue(key string, value any, refs map[string]struct{}, forceSe
 	}
 }
 
-func StateParamHash(source, params, sourceBecome, become map[string]any) string {
-	return hashValue(NormalizeParamsForState(source, params, sourceBecome, become))
+func StateParamHash(source, params map[string]any) string {
+	return hashValue(NormalizeParamsForState(source, params))
 }
 
-func StateParamSummary(source, params, sourceBecome, become map[string]any) any {
-	return NormalizeParamsForState(source, params, sourceBecome, become)
+func StateParamSummary(source, params map[string]any) any {
+	return NormalizeParamsForState(source, params)
 }
 
-func NormalizeParamsForState(source, params, sourceBecome, become map[string]any) map[string]any {
+func NormalizeParamsForState(source, params map[string]any) map[string]any {
 	if params == nil {
-		if become == nil {
-			return nil
-		}
+		return nil
 	}
 	sourceMap := source
 	if sourceMap == nil {
 		sourceMap = params
 	}
-	normalized := normalizeStateValue("", sourceMap, params)
-	if become == nil && sourceBecome == nil {
-		normalizedMap, ok := normalized.(map[string]any)
-		if !ok {
-			return nil
-		}
-		return normalizedMap
+	normalizedMap, ok := normalizeStateValue("", sourceMap, params).(map[string]any)
+	if !ok {
+		return nil
 	}
-
-	becomeSource := sourceBecome
-	if becomeSource == nil {
-		becomeSource = become
-	}
-	return map[string]any{
-		"params": normalized,
-		"become": normalizeStateValue("become", becomeSource, become),
-	}
+	return normalizedMap
 }
 
 func normalizeStateValue(key string, source, resolved any) any {
