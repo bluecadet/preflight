@@ -115,9 +115,7 @@ func buildSecretsResolver(projectDir string, cfg *config.Config) *secrets.Resolv
 	if cfg == nil || len(cfg.Secrets.Entries) == 0 {
 		return secrets.NewResolver(nil)
 	}
-	return secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: secrets.NewRepoProvider(projectDir, cfg.Secrets),
-	})
+	return secrets.NewResolver(secrets.NewRepoProvider(projectDir, cfg.Secrets))
 }
 
 func loadPlaybookRunContext(playbookPath string) (*action.Playbook, string, *config.Config, *secrets.Resolver, action.Chain, error) {

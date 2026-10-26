@@ -34,9 +34,7 @@ func TestApplyWritesFileContentFromSecret(t *testing.T) {
 
 	dest := filepath.Join(dir, "out", "license.txt")
 	r := New(target.NewLocalTarget(nil), emptyResolver(), Config{
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets: secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "file-secret-test",
@@ -84,9 +82,7 @@ func TestApplyWritesFileContentTemplateWithSecret(t *testing.T) {
 
 	dest := filepath.Join(dir, "out", "app.ini")
 	r := New(target.NewLocalTarget(nil), emptyResolver(), Config{
-		Secrets: secrets.NewResolver(map[string]secrets.Provider{
-			secrets.DefaultProviderName: provider,
-		}),
+		Secrets: secrets.NewResolver(provider),
 	})
 	plan := &ExecutionPlan{
 		PlaybookName: "file-secret-template-test",

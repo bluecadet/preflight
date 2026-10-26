@@ -310,9 +310,7 @@ hosts:
 	}
 
 	provider := &fakeSecretProvider{values: map[string]string{"jump-password": "hunter2"}}
-	resolver := secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	})
+	resolver := secrets.NewResolver(provider)
 
 	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
@@ -357,9 +355,7 @@ hosts:
 		"jump-private-key": "-----BEGIN JUMP KEY-----",
 		"jump-passphrase":  "jump-hunter2",
 	}}
-	resolver := secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	})
+	resolver := secrets.NewResolver(provider)
 
 	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
@@ -405,9 +401,7 @@ hosts:
 	}
 
 	provider := &fakeSecretProvider{values: map[string]string{}}
-	resolver := secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	})
+	resolver := secrets.NewResolver(provider)
 
 	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
@@ -454,9 +448,7 @@ hosts:
 	}
 
 	provider := &fakeSecretProvider{values: map[string]string{}}
-	resolver := secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	})
+	resolver := secrets.NewResolver(provider)
 
 	_, err = targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err == nil {

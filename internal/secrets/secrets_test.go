@@ -87,9 +87,7 @@ func TestResolverResolveMap(t *testing.T) {
 		t.Fatalf("Encrypt: %v", err)
 	}
 
-	resolver := secrets.NewResolver(map[string]secrets.Provider{
-		secrets.DefaultProviderName: provider,
-	})
+	resolver := secrets.NewResolver(provider)
 	params := map[string]any{
 		"password": "secret:db-password",
 		"nested": map[string]any{
