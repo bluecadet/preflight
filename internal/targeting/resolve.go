@@ -140,7 +140,7 @@ func prepareHost(
 
 	return ResolvedHost{
 		Name:         host.Name,
-		Vars:         cloneMap(host.Vars),
+		Vars:         maps.Clone(host.Vars),
 		TargetVars:   safeTargetVars(host),
 		Target:       tgt,
 		InventoryRef: host,
@@ -209,13 +209,4 @@ func safeTargetVars(host inventory.Host) map[string]any {
 		"transport": string(host.Transport),
 		"port":      host.Port,
 	}
-}
-
-func cloneMap(src map[string]any) map[string]any {
-	if src == nil {
-		return map[string]any{}
-	}
-	dst := make(map[string]any, len(src))
-	maps.Copy(dst, src)
-	return dst
 }

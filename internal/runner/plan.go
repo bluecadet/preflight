@@ -188,7 +188,7 @@ func buildPlanTask(t *action.Task, module string, params map[string]any, lineage
 	if len(displayLineage) > 1 {
 		actionPath = strings.Join(displayLineage[:len(displayLineage)-1], "/")
 	}
-	rawParams := cloneMap(params)
+	rawParams := maps.Clone(params)
 	dependsOn := make([]string, 0, len(t.DependsOn))
 	for _, dep := range t.DependsOn {
 		dependsOn = append(dependsOn, lineageDependencyRef(ancestorLineage, dep))
