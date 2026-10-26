@@ -4,6 +4,7 @@ package module
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/bluecadet/preflight/internal/target"
@@ -42,7 +43,5 @@ func init() {
 
 // addWindowsModules registers Windows-native module implementations.
 func addWindowsModules(reg target.ModuleRegistry) {
-	for name, mod := range windowsModuleTypes {
-		reg[name] = mod
-	}
+	maps.Copy(reg, windowsModuleTypes)
 }
