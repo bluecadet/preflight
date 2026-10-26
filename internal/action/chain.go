@@ -9,7 +9,7 @@ import (
 
 // DefaultChain builds the standard resolver chain:
 //
-//	embedded stdlib → local ./actions/ → user cache → git (stub)
+//	embedded stdlib → local ./actions/ → user cache → git (clones and pins remote refs)
 func DefaultChain(projectDir string) Chain {
 	home, _ := os.UserHomeDir()
 	cacheDir := filepath.Join(home, ".preflight", "actions")
