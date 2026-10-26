@@ -53,7 +53,7 @@ An action is an `action.yml` file that packages tasks behind named inputs.
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `type` | enum | `string`, `bool`, `int`, or `path`; documentation only, values are not checked |
+| `type` | enum | `string`, `bool`, `int`, `path`, or `list`; documentation only, values are not checked |
 | `required` | bool | Fail planning with `required input "<name>" is missing` when the value is absent or empty |
 | `default` | any | Value used when the task's `with` omits the input |
 | `description` | string | Description |

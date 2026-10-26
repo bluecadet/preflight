@@ -45,7 +45,7 @@ tasks:
 ```
 
 - Set `name` to the ref.
-- `inputs` declares the values callers pass. Each has a `type` (`string`, `bool`, `int`, or `path`), and can be `required` or have a `default`.
+- `inputs` declares the values callers pass. Each has a `type` (`string`, `bool`, `int`, `path`, or `list`), and can be `required` or have a `default`.
 - Tasks read inputs as `vars.<input>`.
 - Tasks use the same schema as playbook tasks.
 

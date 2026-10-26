@@ -22,6 +22,7 @@ Expressions use [expr](https://expr-lang.org) syntax with these Preflight rules:
 | `&&`, `\|\|`, `!` | Boolean logic |
 | `'text'` | String literal |
 | `secret("name")` | Secret contents; valid only in `file` `content_template` |
+| `toJSON(value)` | JSON text of a value, such as a `list` input passed into a script |
 
 ```yaml
 when: "{{ vars.theme_mode != 'unchanged' }}"
