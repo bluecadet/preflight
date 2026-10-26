@@ -141,7 +141,7 @@ type RemoteCacheMissError struct {
 }
 
 func (e *RemoteCacheMissError) Error() string {
-	return fmt.Sprintf("remote action %q is not cached; run 'preflight action fetch %s' or 'preflight apply ...' to fetch it", e.Ref, e.Ref)
+	return fmt.Sprintf("remote action %q is not cached; run 'preflight action fetch %s' to fetch it", e.Ref, e.Ref)
 }
 
 // IsRemoteCacheMiss reports whether err is a remote cache miss.
