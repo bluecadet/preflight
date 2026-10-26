@@ -12,6 +12,7 @@ func TestEmbeddedSchemasAvailable(t *testing.T) {
 	cases := []string{
 		"action.schema.json",
 		"playbook.schema.json",
+		"modules.schema.json",
 		"inventory.schema.json",
 		"config.schema.json",
 		"runlog.schema.json",

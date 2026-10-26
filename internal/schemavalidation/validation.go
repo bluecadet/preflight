@@ -41,12 +41,14 @@ var (
 	// allResources is the single point where a schema must be registered to
 	// be resolvable by ValidateYAML/ValidateDocument, including as the target
 	// of a cross-schema $ref (e.g. config.schema.json's "inventory" property
-	// refs into inventory.schema.json#/$defs/inventory). Callers cannot
+	// refs into inventory.schema.json#/$defs/inventory, and the task/module
+	// definitions action and playbook share via modules.schema.json). Callers cannot
 	// influence which schemas get compiled; adding a new schemaURL requires
 	// adding it here.
 	allResources = []resource{
 		{URL: "https://preflight.dev/schema/action.schema.json", Path: "action.schema.json"},
 		{URL: "https://preflight.dev/schema/playbook.schema.json", Path: "playbook.schema.json"},
+		{URL: "https://preflight.dev/schema/modules.schema.json", Path: "modules.schema.json"},
 		{URL: "https://preflight.dev/schema/inventory.schema.json", Path: "inventory.schema.json"},
 		{URL: "https://preflight.dev/schema/config.schema.json", Path: "config.schema.json"},
 		{URL: "https://preflight.dev/schema/runlog.schema.json", Path: "runlog.schema.json"},
