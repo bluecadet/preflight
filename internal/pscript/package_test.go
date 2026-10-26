@@ -25,7 +25,7 @@ func TestWingetPackageScriptsInvokeWingetWithArgumentArray(t *testing.T) {
 	} {
 		for _, fragment := range []string{
 			"function Invoke-Winget",
-			"& winget.exe @Arguments 2>&1",
+			"& $wingetExe @Arguments 2>&1",
 		} {
 			if !strings.Contains(script, fragment) {
 				t.Fatalf("expected %s winget script to contain %q, got:\n%s", name, fragment, script)
@@ -74,6 +74,44 @@ func TestWingetPackageApplyTreatsUpdateNotApplicableAsSuccessfulNoop(t *testing.
 	} {
 		if !strings.Contains(WingetPackageApplyScript, fragment) {
 			t.Fatalf("expected winget apply script to contain %q, got:\n%s", fragment, WingetPackageApplyScript)
+		}
+	}
+}
+
+func TestWingetPackageScriptsPointAtBootstrapWhenWingetIsNotReady(t *testing.T) {
+	for name, script := range map[string]string{
+		"check": WingetPackageCheckScript,
+		"apply": WingetPackageApplyScript,
+	} {
+		for _, fragment := range []string{
+			`Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe'`,
+			"winget.exe was not found for $wingetUser. Add a task with 'uses: preflight/winget'",
+			"$null -eq $doc.Sources -and $null -eq (Get-AppxPackage -Name Microsoft.Winget.Source)",
+			"the winget source is not registered for $wingetUser",
+		} {
+			if !strings.Contains(script, fragment) {
+				t.Fatalf("expected %s winget script to contain %q, got:\n%s", name, fragment, script)
+			}
+		}
+		if strings.Contains(script, "Get-Command winget.exe -ErrorAction Stop") {
+			t.Fatalf("expected %s winget script to resolve winget without a raw Get-Command failure", name)
+		}
+	}
+}
+
+func TestWingetPackageScriptsSkipNullExportEntries(t *testing.T) {
+	for name, script := range map[string]string{
+		"check": WingetPackageCheckScript,
+		"apply": WingetPackageApplyScript,
+	} {
+		for _, fragment := range []string{
+			"if (Test-Path -LiteralPath $tempPath)",
+			"@($doc.Sources | Where-Object { $null -ne $_ })",
+			"@($src.Packages | Where-Object { $_.PackageIdentifier })",
+		} {
+			if !strings.Contains(script, fragment) {
+				t.Fatalf("expected %s winget script to contain %q, got:\n%s", name, fragment, script)
+			}
 		}
 	}
 }
