@@ -3,8 +3,10 @@ package secrets
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
 
 const (
@@ -28,6 +30,10 @@ type Ref struct {
 // Resolver resolves secret references through named providers.
 type Resolver struct {
 	providers map[string]Provider
+
+	mu        sync.Mutex
+	resolved  []string
+	observers []func(value string)
 }
 
 // NewResolver builds a Resolver from the given providers map.
@@ -72,7 +78,32 @@ func (r *Resolver) ResolveRef(ctx context.Context, ref string) (string, error) {
 	if err != nil {
 		return "", RedactError(fmt.Errorf("resolve %q: %w", ref, err))
 	}
-	return string(data), nil
+	value := string(data)
+	r.record(value)
+	return value, nil
+}
+
+// Observe registers fn to receive every plaintext value this resolver has
+// returned, replaying values resolved before registration. Callers use it to
+// scrub secrets from output before they can be echoed.
+func (r *Resolver) Observe(fn func(value string)) {
+	r.mu.Lock()
+	past := slices.Clone(r.resolved)
+	r.observers = append(r.observers, fn)
+	r.mu.Unlock()
+	for _, v := range past {
+		fn(v)
+	}
+}
+
+func (r *Resolver) record(value string) {
+	r.mu.Lock()
+	r.resolved = append(r.resolved, value)
+	observers := slices.Clone(r.observers)
+	r.mu.Unlock()
+	for _, fn := range observers {
+		fn(value)
+	}
 }
 
 // ResolveValue recursively resolves secret references anywhere within v.

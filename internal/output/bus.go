@@ -2,6 +2,7 @@ package output
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -31,7 +32,11 @@ func (b *Bus) AddSink(sink Renderer) {
 func (b *Bus) Scrub(secrets []string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.secrets = append(b.secrets, secrets...)
+	for _, s := range secrets {
+		if s != "" && !slices.Contains(b.secrets, s) {
+			b.secrets = append(b.secrets, s)
+		}
+	}
 }
 
 // Emit broadcasts the event to all sinks sequentially.

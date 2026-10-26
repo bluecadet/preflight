@@ -126,6 +126,9 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 	// already gets — Bus.Emit dispatches to sinks without holding its own
 	// lock.
 	bus := output.NewBus(termRenderer, output.Synchronized(runLogSink), output.Synchronized(output.NewProjectionSink(tally)))
+	// Every resolved secret is scrubbed from all sinks (terminal, JSON,
+	// run.jsonl) before the event that could echo it is published.
+	session.Secrets.Observe(func(v string) { bus.Scrub([]string{v}) })
 	// bus.Close's error (which folds in RunLogSink's) must reach the command's
 	// exit code: a disk-full or permission failure writing run.json is a real
 	// run failure, not something to swallow after the fact.
@@ -252,7 +255,7 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	}
 	defer cancel()
 
-	renderer := newRenderer(cmd)
+	renderer := output.NewBus(newRenderer(cmd))
 	defer func() { _ = renderer.Close() }()
 
 	extracted, err := bundle.Extract(bundlePath)
@@ -283,6 +286,8 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 	if err != nil {
 		return fmt.Errorf("apply bundle: %w", err)
 	}
+
+	secretResolver.Observe(func(v string) { renderer.Scrub([]string{v}) })
 
 	// TargetName is set from the bundle manifest so the state file and recap
 	// output correctly identify the original target, not the local machine.
