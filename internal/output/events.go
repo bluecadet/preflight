@@ -31,7 +31,6 @@ const (
 	EventTaskChanged       EventType = "task_changed"
 	EventTaskSkipped       EventType = "task_skipped"
 	EventTaskFailed        EventType = "task_failed"
-	EventSupportGate       EventType = "support_gate"
 	EventDiagnostic        EventType = "diagnostic"
 	EventTargetUnreachable EventType = "target_unreachable"
 	EventRunSummary        EventType = "run_summary"
@@ -231,7 +230,6 @@ func (TaskOKEvent) Type() EventType            { return EventTaskOK }
 func (TaskChangedEvent) Type() EventType       { return EventTaskChanged }
 func (TaskSkippedEvent) Type() EventType       { return EventTaskSkipped }
 func (TaskFailedEvent) Type() EventType        { return EventTaskFailed }
-func (SupportGateEvent) Type() EventType       { return EventSupportGate }
 func (DiagnosticEvent) Type() EventType        { return EventDiagnostic }
 func (TargetUnreachableEvent) Type() EventType { return EventTargetUnreachable }
 func (RunSummaryEvent) Type() EventType        { return EventRunSummary }
@@ -245,7 +243,6 @@ func (e TaskOKEvent) CorrelationIDs() (string, string)            { return e.Tar
 func (e TaskChangedEvent) CorrelationIDs() (string, string)       { return e.Target, e.TaskID }
 func (e TaskSkippedEvent) CorrelationIDs() (string, string)       { return e.Target, e.TaskID }
 func (e TaskFailedEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
-func (e SupportGateEvent) CorrelationIDs() (string, string)       { return e.Target, "" }
 func (e DiagnosticEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
 func (e TargetUnreachableEvent) CorrelationIDs() (string, string) { return e.Target, "" }
 func (e TaskOutputEvent) CorrelationIDs() (string, string)        { return e.Target, e.TaskID }
@@ -257,7 +254,6 @@ func (e PlanEvent) CorrelationIDs() (string, string)              { return e.Tar
 // Leveled implementations.
 
 func (TaskFailedEvent) Level() string        { return "error" }
-func (SupportGateEvent) Level() string       { return "error" }
 func (DiagnosticEvent) Level() string        { return "error" }
 func (TargetUnreachableEvent) Level() string { return "error" }
 func (WarningEvent) Level() string           { return "warn" }
@@ -300,10 +296,6 @@ func (e TaskChangedEvent) LogMessage() string { return e.TaskName + " changed" }
 func (e TaskSkippedEvent) LogMessage() string { return e.TaskName + " skipped" }
 
 func (e TaskFailedEvent) LogMessage() string { return e.TaskName + " failed" }
-
-func (e SupportGateEvent) LogMessage() string {
-	return fmt.Sprintf("gate: %d task(s) cannot run on this target (%s)", len(e.Violations), e.Runtime)
-}
 
 func (e DiagnosticEvent) LogMessage() string        { return e.Summary }
 func (e TargetUnreachableEvent) LogMessage() string { return "unreachable: " + e.Reason }
@@ -487,19 +479,6 @@ func (e TaskFailedEvent) Redact(secrets []string) Event {
 	return e
 }
 
-func (e SupportGateEvent) Redact(secrets []string) Event {
-	e.Target = scrubString(e.Target, secrets)
-	e.Runtime = scrubString(e.Runtime, secrets)
-	e.Reason = scrubString(e.Reason, secrets)
-	for i := range e.Violations {
-		e.Violations[i].TaskName = scrubString(e.Violations[i].TaskName, secrets)
-		e.Violations[i].Module = scrubString(e.Violations[i].Module, secrets)
-		e.Violations[i].Reason = scrubString(e.Violations[i].Reason, secrets)
-		e.Violations[i].Message = scrubString(e.Violations[i].Message, secrets)
-	}
-	return e
-}
-
 func (e DiagnosticEvent) Redact(secrets []string) Event {
 	e.Target = scrubString(e.Target, secrets)
 	e.TaskID = scrubString(e.TaskID, secrets)
@@ -589,28 +568,6 @@ type TaskFailedEvent struct {
 	Reason      string
 }
 
-// SupportGateEvent is emitted when the apply-start support gate refuses a
-// run: one or more runnable tasks reference modules unsupported on the
-// target's resolved runtime. It is a terminal target-level event — the run
-// is refused before task 1 executes, so no task_started/failed events are
-// emitted for the gated tasks. Reason carries the gate-level code
-// ("unsupported_on_runtime"); each violation carries its own class.
-type SupportGateEvent struct {
-	Target     string
-	Runtime    string
-	Reason     string
-	Violations []SupportGateViolation
-}
-
-// SupportGateViolation is one task-level support-matrix violation surfaced
-// by the apply-start gate.
-type SupportGateViolation struct {
-	TaskName string `json:"task"`
-	Module   string `json:"module"`
-	Reason   string `json:"reason"`
-	Message  string `json:"message"`
-}
-
 // DiagnosticEvent carries the error body following a task failure or target_unreachable.
 // It is always paired with a preceding failure identity event.
 type DiagnosticEvent struct {
@@ -666,7 +623,6 @@ func (TaskOKEvent) isEvent()            {}
 func (TaskChangedEvent) isEvent()       {}
 func (TaskSkippedEvent) isEvent()       {}
 func (TaskFailedEvent) isEvent()        {}
-func (SupportGateEvent) isEvent()       {}
 func (DiagnosticEvent) isEvent()        {}
 func (TargetUnreachableEvent) isEvent() {}
 func (RunSummaryEvent) isEvent()        {}

@@ -30,15 +30,6 @@ func TestModuleSupportError_EachClassMessageShape(t *testing.T) {
 			class: ClassUnsupportedOnRuntime,
 		},
 		{
-			name: "missing_prerequisite",
-			err:  NewMissingPrerequisiteError("powershell", RuntimeKind("other-shell"), "pwsh or powershell binary not found"),
-			mustContain: []string{
-				`module "powershell" is missing a prerequisite on other-shell`,
-				"pwsh or powershell binary not found",
-			},
-			class: ClassMissingPrerequisite,
-		},
-		{
 			name:        "plugin_protocol",
 			err:         NewPluginProtocolError("custom", "protocol version 0 not supported"),
 			mustContain: []string{`plugin module "custom"`, "protocol version 0 not supported"},

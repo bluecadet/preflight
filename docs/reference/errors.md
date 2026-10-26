@@ -3,13 +3,12 @@
 This page lists the typed reason codes Preflight attaches to task failures
 and run refusals. Every transport surfaces the same typed error classes, so
 wording and reason codes stay uniform across local, SSH, and WinRM. The
-JSON run-log carries a `reason` field on task-failed and gate-refusal
-events; the same codes appear in text output.
+JSON run-log carries a `reason` field on task-failed events; the same codes appear in text output.
 
 ## Where Errors Surface
 
 A module that is not supported on a target's runtime is never silently
-skipped. Gaps surface in three layers, and nothing executes if the plan
+skipped. Gaps surface at plan time, and nothing executes if the plan
 cannot complete:
 
 1. **Plan-time (offline).** Unknown module names — whether a catalog
@@ -20,25 +19,12 @@ cannot complete:
    declared platform when present. SSH's runtime is only known after probing
    the remote host, so plan-time can only name-check SSH tasks when no staging
    platform is declared. Plan violations exit non-zero like any plan error.
-2. **Apply-start gate.** After the runtime kind is resolved and facts are
-   gathered — and before task 1 — every task that will actually run is
-   validated against the support matrix. When any runnable task is
-   unsupported, the whole run is refused with **all** violations listed,
-   not just the first. The gate is `when`-aware (facts and vars are fixed
-   by then, so `when: false` tasks are excluded) and `ignore_errors`-exempt
-   (those tasks keep fail-and-continue at execution time). Gate refusal is
-   its own run-log event, not synthetic task failures.
-3. **Per-task apply-time errors.** These remain only for environment
-   prerequisites the matrix cannot know. They are probed inside module execution and
-   surface with the codes below.
-
 ## Reason Codes
 
 | Reason code | Meaning |
 | --- | --- |
 | `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
 | `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
-| `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent; the detail names what was probed |
 | `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
 ## Task Skip Reasons

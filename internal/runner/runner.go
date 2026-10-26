@@ -117,7 +117,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	r.emitTargetComplete(targetName, elapsedMs, hasFailure)
 
 	if applyErr != nil {
-		if !isApplyTaskFailureSummary(applyErr) && !errIsGateRefusal(applyErr) {
+		if !isApplyTaskFailureSummary(applyErr) {
 			slog.Error("apply phase failed", "error", applyErr)
 		}
 		return applyErr

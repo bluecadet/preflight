@@ -159,7 +159,7 @@ Once connected, the SSH target sends an OpenSSH keepalive request every 30s (fix
 
 ## Why Unsupported Modules Fail Loudly
 
-A module that is not supported on a target's runtime is never silently skipped. Gaps surface in three layers — plan-time name checks, an apply-start gate that refuses the whole run with every violation listed, and typed per-task errors for environment prerequisites the matrix cannot know. Nothing executes if the plan can't complete, and a cross-platform `when`-guarded playbook passes by construction because the gate evaluates `when` after facts are fixed.
+A module that is not supported on a target's runtime is never silently skipped. Gaps surface as plan-time errors, so nothing executes if the plan can't complete.
 
 The design bet is that complete facts beat suggestions: every message names the module, the target's runtime, and the supporting runtimes, with no did-you-mean heuristics. The layer-by-layer behavior and the full reason-code table live in the [error reference](../reference/errors.md).
 

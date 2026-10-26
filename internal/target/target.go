@@ -125,8 +125,7 @@ func NormalizeArchitecture(raw string) string {
 //
 // RuntimeKind is the resolved runtime the target's modules speak
 // (windows-powershell), set by every Info() implementation
-// after the runtime is probed. The apply-start support gate reads it to
-// validate every runnable task against the support matrix.
+// after the runtime is probed.
 type TargetInfo struct {
 	Hostname    string
 	OSVersion   string
