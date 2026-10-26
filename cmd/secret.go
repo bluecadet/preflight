@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"time"
 
 	"filippo.io/age"
@@ -271,11 +272,7 @@ func runSecretEdit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("secret edit: write temp file: %w", err)
 	}
 
-	editor := os.Getenv("EDITOR")
-	if editor == "" {
-		editor = "vi"
-	}
-	editCmd := exec.Command(editor, tmpPath)
+	editCmd := exec.Command(resolveEditor(os.Getenv("EDITOR"), runtime.GOOS), tmpPath)
 	editCmd.Stdin = os.Stdin
 	editCmd.Stdout = os.Stdout
 	editCmd.Stderr = os.Stderr
@@ -438,4 +435,15 @@ func sanitizeSecretName(name string) string {
 		return "secret"
 	}
 	return clean
+}
+
+// resolveEditor returns env when set, otherwise the platform default editor.
+func resolveEditor(env, goos string) string {
+	if env != "" {
+		return env
+	}
+	if goos == "windows" {
+		return "notepad"
+	}
+	return "vi"
 }

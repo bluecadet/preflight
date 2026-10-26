@@ -104,7 +104,7 @@ The output shows each secret name and its encrypted file path.
 EDITOR=nvim preflight secret edit autologin-password
 ```
 
-Preflight decrypts the secret to a temporary file outside the repo, opens `EDITOR` (default `vi`), re-encrypts the result, and deletes the temporary file.
+Preflight decrypts the secret to a temporary file outside the repo, opens `EDITOR` (default `notepad` on Windows, `vi` elsewhere), re-encrypts the result, and deletes the temporary file.
 
 ## 5. Reference secrets in YAML
 

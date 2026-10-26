@@ -16,6 +16,19 @@ import (
 	"github.com/bluecadet/preflight/internal/secrets"
 )
 
+func TestResolveEditor(t *testing.T) {
+	tests := []struct{ env, goos, want string }{
+		{"code --wait", "windows", "code --wait"},
+		{"", "windows", "notepad"},
+		{"", "linux", "vi"},
+	}
+	for _, tt := range tests {
+		if got := resolveEditor(tt.env, tt.goos); got != tt.want {
+			t.Errorf("resolveEditor(%q, %q) = %q, want %q", tt.env, tt.goos, got, tt.want)
+		}
+	}
+}
+
 func TestRunSecretEncryptFromFile(t *testing.T) {
 	dir := t.TempDir()
 	restore := chdirForTest(t, dir)
