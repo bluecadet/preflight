@@ -10,7 +10,7 @@ import (
 
 // Input describes a typed input parameter for an action.
 type Input struct {
-	Type        string `yaml:"type"` // string, bool, int, path
+	Type        string `yaml:"type"` // string, bool, int, path, list
 	Required    bool   `yaml:"required"`
 	Default     any    `yaml:"default"`
 	Description string `yaml:"description"`
