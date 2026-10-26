@@ -94,7 +94,7 @@ connection from the controller to the target only — it is never made
 available to `git` or other tools running on the target. To
 authenticate git over SSH on a target, pass the key through
 `ssh_private_key` as shown above, or place a dedicated deploy key in
-the target account's `~/.ssh` with `file` tasks run under `become`.
+the transport account's `~/.ssh` with `file` tasks.
 
 ## Troubleshooting
 
@@ -124,5 +124,5 @@ was staged against.
   workflow and `secret:<name>` references
 - [Embedded Stdlib Action Reference](../reference/stdlib-actions.md#preflightgit-sync) —
   full `preflight/git-sync` input table
-- [Run Tasks As Another User](./run-tasks-as-another-user.md) — running
-  `preflight/git-sync` under a dedicated kiosk account
+- [Configure Another User's Settings](./configure-another-users-settings.md) —
+  per-user settings and running commands as another account

@@ -87,14 +87,13 @@ it to drop local references to branches deleted upstream. Use `depth`
 to limit fetch/clone to a shallow history when the full commit history
 of an exhibit content repository is not needed.
 
-## 4. Run As The Exhibit Account
+## 4. Account Ownership
 
-By default, `preflight/git-sync` runs as whichever account executes
-the task. If exhibit content should be owned by a dedicated kiosk
-account rather than the transport account, add `become` to the task.
-See [Run Tasks As Another User](./run-tasks-as-another-user.md) for the
-full pattern; `preflight/git-sync` does not need any special handling
-beyond the standard `become` fields.
+`preflight/git-sync` runs as the account your transport authenticates
+with, so synced content is owned by that account. Preflight cannot run a
+task as another user; to sync as a dedicated kiosk account, run the
+sync from a `scheduled_task` with `run_as`. See
+[Configure Another User's Settings](./configure-another-users-settings.md#run-a-command-as-another-user).
 
 ## 5. Understand Safe Directory Handling
 
@@ -132,7 +131,7 @@ remote updates when `fetch` is enabled for an existing repository.
   authenticating `preflight/git-sync` against private repositories
 - [Embedded Stdlib Action Reference](../reference/stdlib-actions.md#preflightgit-sync) —
   full `preflight/git-sync` input table
-- [Run Tasks As Another User](./run-tasks-as-another-user.md) — using
-  `become` so synced content is owned by the right account
+- [Configure Another User's Settings](./configure-another-users-settings.md) —
+  per-user settings and running commands as another account
 - [Built-in module reference](../reference/modules.md) — `winget_package`,
   `package` for installing `git` itself

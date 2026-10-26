@@ -145,7 +145,7 @@ The three-layer model — **Modules → Actions → Playbooks** — is central t
 
 The single most important invariant: **the runner is always target-agnostic**. No `localhost` assumptions in runner code. Every operation must go through the `Target` interface. Violating this blocks the distributed orchestration path.
 
-Task execution metadata such as `become` lives alongside tasks and targets, not inside module params. When changing execution identity behavior, make sure planning, staging, state hashing, and target execution all stay aligned.
+Per-user settings are module params (`user:` on registry and environment), resolved through the shared profile helper in `internal/pscript`.
 
 ---
 
@@ -184,7 +184,7 @@ When adding or materially changing a stdlib action, update the public docs that 
 - `docs/reference/stdlib-actions.md` for the embedded action surface
 - `docs/reference/modules.md` if the action depends on new built-in module fields or behavior
 
-For Windows stdlib actions, prefer a clear scope model over flexible-but-ambiguous toggles. Current-user preferences should apply to the current execution identity; use playbook/task `become` when callers need to target a different user. Reserve machine-scoped behavior for settings that are truly machine or policy backed.
+For Windows stdlib actions, prefer a clear scope model over flexible-but-ambiguous toggles. User preferences accept `user:` to target another profile. Reserve machine-scoped behavior for settings that are truly machine or policy backed.
 
 ---
 

@@ -321,10 +321,6 @@ Every handle op is a transport round trip. Over SSH and especially WinRM, round 
 - **One in-flight op at a time.** The protocol allows one in-flight target op per session. Do not issue a second `RunCommand` before the first returns.
 - **Pass `ctx` to every op.** A long batched script is the right shape, but only if it can be interrupted.
 
-## The `become` Limitation
-
-A plugin task cannot run with `become` enabled. If you set `become: { enabled: true }` on a plugin task, Preflight refuses it with a typed `plugin_become` error before the plugin runs. Run plugins as the connection user (or root directly); privilege escalation through the plugin handle is planned for a future protocol version.
-
 ## 8. Distribute The Plugin
 
 Plugins execute controller-side, so they must run on the machine running `preflight`. Build the plugin for the controller's OS and architecture. First-party plugins ship for `windows/linux/darwin` × `amd64/arm64`.
@@ -364,10 +360,6 @@ That reported name is what belongs in `module:`.
 ### `plugin_protocol` error at runtime
 
 Your plugin was built against an older SDK. Update to the current SDK, add the `context.Context` first argument to `Check`/`Apply`, and rebuild.
-
-### `plugin_become` error
-
-A plugin task had `become` enabled. Remove `become` from the task (or run the connection account with the privileges the plugin needs). Plugin+become is not supported.
 
 ## Related Docs
 

@@ -72,16 +72,10 @@ sentinel, then prints the connection vars (with the password) for your
 `.env.test`. If the VM has no internet access, copy the script over and run
 `.\bootstrap-user-vm.ps1` — you will be prompted for the password.
 
-Two setup steps are not covered by the scripts; run them manually in the
+One setup step is not covered by the scripts; run it manually in the
 same elevated PowerShell session:
 
 ```powershell
-# A second throwaway admin account for the become integration tests, which
-# exercise credential delegation to a non-connecting user.
-$pass2 = ConvertTo-SecureString "password" -AsPlainText -Force
-New-LocalUser "pf-become" -Password $pass2 -PasswordNeverExpires
-Add-LocalGroupMember -Group "Administrators" -Member "pf-become"
-
 # Allow remote token elevation (required for WinRM admin sessions).
 New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System" `
   -Name LocalAccountTokenFilterPolicy -Value 1 -PropertyType DWord -Force

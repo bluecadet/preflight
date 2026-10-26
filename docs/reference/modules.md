@@ -123,7 +123,7 @@ Manage Windows registry keys and values.
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `path` | string | Registry key path |
-| `user` | string | Optional Windows user for `HKCU`/`HKEY_CURRENT_USER` paths |
+| `user` | string | Windows user whose `HKCU`/`HKEY_CURRENT_USER` hive to edit; the profile is loaded on demand |
 | `values` | list | Typed value spec list |
 | `ensure` | `present` or `absent` | Desired state |
 
@@ -401,6 +401,7 @@ Manage environment variables.
 | `name` | string | Variable name |
 | `value` | string | Variable value |
 | `scope` | `machine` or `user` | Target scope |
+| `user` | string | Windows user whose environment to edit; requires `scope: user`, and the profile is loaded on demand |
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `firewall_rule`

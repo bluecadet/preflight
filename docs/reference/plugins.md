@@ -139,15 +139,10 @@ Plugins execute **controller-side**: the plugin process always runs on the machi
 
 Process lifetime is run-scoped: a plugin is spawned lazily on first use, reused across every task in the run that invokes that module, and hard-killed at the end of the run.
 
-## `become` Limitation
-
-A plugin task with `become` enabled is refused with a typed `plugin_become` error before the plugin runs. Privilege escalation through the plugin handle is planned for a future protocol version; for now, run plugins as the connection user (or root directly).
-
 ## Stated Limitations
 
 Protocol v2 carries a few deliberate limits, documented here so plugin authors can design around them rather than discover them at runtime:
 
-- **`become` is refused** — the handle does not carry `ExecOpts`; see the section above.
 - **Cancellation is cooperative** — the host delivers `cancel` and waits a two-second grace window, but it cannot force a plugin that ignores its context to stop. Such a plugin is killed when the window closes.
 - **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params and a context; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
 - **One in-flight target op per session** — the protocol allows one `run_command`/`put_file`/`get_file` in flight at a time; do not issue a second before the first returns. Batching guidance in [Write a plugin](../how-to/write-a-plugin.md) shows the script-shaped-exec pattern that keeps this from dominating latency.

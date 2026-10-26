@@ -24,7 +24,7 @@ Configure Windows automatic logon.
 
 Clone or update a Git repository on a Windows target.
 
-Use `become` when the checkout should be owned by a kiosk, exhibit, or service account. Authentication values should usually be passed as `secret:<name>` values. The action passes HTTPS and SSH credentials through environment variables to the PowerShell process instead of putting them in the script text.
+The checkout is owned by the transport account. Authentication values should usually be passed as `secret:<name>` values. The action passes HTTPS and SSH credentials through environment variables to the PowerShell process instead of putting them in the script text.
 
 By default, the action adds `dest` to Git's global `safe.directory` list before running sync checks. This prevents Git for Windows from rejecting repositories whose files are owned by another account, which is common when setup runs as an administrator but the exhibit app runs as a kiosk user.
 
@@ -73,7 +73,7 @@ Configure machine-level baseline settings.
 
 Configure desktop and Explorer defaults for the current execution identity, or set `user` to write supported settings for a named Windows account without switching process identity.
 
-When `user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
+When `user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md). Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
 
 Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
 
@@ -106,7 +106,7 @@ Some shell visual changes do not update an already-running Explorer session imme
 
 Configure input, gesture, and text-scale preferences. User-facing preferences apply to the current execution identity, or to `user` when set. Policy-backed edge-swipe settings apply at machine scope.
 
-When `user` is set, user-scoped registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
+When `user` is set, user-scoped registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md).
 
 User-scoped visual input changes may require sign-out or a new Explorer session before the desktop reflects them.
 
@@ -148,7 +148,7 @@ Reduce background system changes driven by Windows Update and Microsoft Store po
 
 Manage named power plans and user-scoped screensaver defaults.
 
-When `user` is set, screen saver registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`.
+When `user` is set, screen saver registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md).
 
 Screen saver changes are persisted immediately but may require sign-out or a new Explorer session before the shell reflects them.
 
@@ -170,7 +170,7 @@ Use the `scheduled_task` module directly when a machine needs a recurring reboot
 
 Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype, OneDrive) and set privacy, Copilot, search, taskbar, and Game DVR policies.
 
-When `user` is set, user-scoped registry settings are written through the target user's profile hive. The target hive must already be loaded, such as while that user is signed in or by running with `become.load_profile`. App removal and machine policy settings are not profile-scoped. Use `remove_appx_packages` directly if you need a custom app list.
+When `user` is set, user-scoped registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md). App removal and machine policy settings are not profile-scoped. Use `remove_appx_packages` directly if you need a custom app list.
 
 | Input | Type | Meaning |
 | --- | --- | --- |
