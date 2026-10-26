@@ -77,15 +77,10 @@ go test ./pkg/plugin/sdk/...
 
 When you change host-selection behavior, cover embedded `preflight.yml` inventory, no-inventory local fallback, group selectors, host selectors, and verify that `--target local` still forces a local target.
 
-For output and renderer changes, also exercise the simulator so text, TUI, and JSON output stay aligned:
+For output and renderer changes, run the renderer tests so text, TUI, and JSON output stay aligned:
 
 ```bash
 go test ./internal/output/... ./cmd/...
-go run ./tools/sim list
-go run ./tools/sim streaming --format tui
-go run ./tools/sim streaming-multi-host --format tui --verbose
-go run ./tools/sim failures --format text
-go run ./tools/sim basic --format json
 ```
 
 **Run vet:**
