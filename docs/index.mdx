@@ -22,14 +22,14 @@ import {
   <HeroEyebrows>
     <HeroEyebrow tone="state">windows-first</HeroEyebrow>
     <HeroEyebrow>single binary</HeroEyebrow>
-    <HeroEyebrow>winrm or ssh</HeroEyebrow>
+    <HeroEyebrow>ssh or winrm</HeroEyebrow>
   </HeroEyebrows>
   <HeroActions>
     <Button href="/how-to/install-preflight/" variant="primary">Install</Button>
     <Button href="/tutorials/quickstart/" variant="secondary">Quickstart</Button>
   </HeroActions>
   <HeroNotes>
-    <HeroNote>No control plane. WinRM or SSH is the whole transport.</HeroNote>
+    <HeroNote>No control plane: the CLI connects over SSH or WinRM.</HeroNote>
   </HeroNotes>
 </Hero>
 
@@ -43,45 +43,45 @@ import {
 
 <Features>
   <Feature title="Check() before Apply()">
-    Every built-in and plugin module answers `Check()` before `Apply()` ever runs. Dry-run and real
-    execution share one code path, not two.
+    Every built-in and plugin module answers `Check()` before `Apply()` runs. Dry runs call the same
+    `Check()` code as a real apply.
   </Feature>
   <Feature title="Offline-capable staging">
-    `stage` writes a per-target bundle: plan, manifest, plugins, secrets. `apply --bundle` converges
-    a target with no network at all.
+    `stage` writes a per-target bundle: plan, manifest, plugins, and encrypted secrets. `apply --bundle`
+    runs it on the target with no network.
   </Feature>
   <Feature title="Explicit phases">
-    Fetch pins actions. Plan builds a DAG without touching targets. Stage writes the bundle. Apply is
-    the only phase that mutates anything.
+    Fetch pins actions. Plan builds a DAG without touching targets. Stage writes the bundle. Only Apply
+    changes a machine.
   </Feature>
 </Features>
 
-<GlyphList intro="What Preflight handles out of the box.">
+<GlyphList intro="Included in the binary.">
   <Fragment slot="title">
-    Preflight's <em>Key Features</em>
+    Preflight's <em>key features</em>
   </Fragment>
-  <GlyphItem glyph="✓" lead="Run the same path everywhere.">
-    Local, remote, or staged-and-offline: `apply` converges the same playbook the same way.
+  <GlyphItem glyph="✓" lead="One playbook, any delivery.">
+    `apply` runs the same playbook locally, over SSH or WinRM, or from an offline bundle.
   </GlyphItem>
-  <GlyphItem glyph="✓" lead="Select targets by host, group, or tag.">
-    Inventory variables cascade from inventory to group to host, and CLI commands fan out across a
-    selector instead of one target at a time.
+  <GlyphItem glyph="✓" lead="Select targets by host or group.">
+    Variables merge from inventory to group to host, and one command runs across every selected
+    host.
   </GlyphItem>
   <GlyphItem glyph="✓" lead="Facts and templating built in.">
-    `{{ facts.os.arch }}`, `{{ target.name }}`, and friends resolve at plan time, so one playbook
-    reads the same across every target.
+    `{{ facts.os.arch }}` and `{{ target.name }}` resolve per target at run time, so one playbook
+    covers every host.
   </GlyphItem>
   <GlyphItem glyph="✓" lead="Repo-backed, `age`-encrypted secrets.">
-    Secret values travel with the project's config and decrypt only at apply time. No plaintext,
-    no central vault.
+    Encrypted secrets live in the project repo and decrypt on the machine running `preflight`. No
+    plaintext in YAML and no central vault.
   </GlyphItem>
   <GlyphItem glyph="✓" lead="Per-user settings without signing in.">
-    `registry` and `environment` edit another user's profile hive directly, loading it on demand
-    when that user is signed out.
+    `registry` and `environment` edit another user's profile hive, loading it on demand when that
+    user is signed out.
   </GlyphItem>
   <GlyphItem glyph="✓" lead="A stdlib that ships with the binary.">
-    Embedded actions like `windows-machine` and `autologin` are versioned with the release and
-    resolved before any project-local action.
+    Embedded actions such as `preflight/windows-machine` and `preflight/autologin` ship with each
+    release and resolve before project-local actions.
   </GlyphItem>
 </GlyphList>
 
@@ -93,10 +93,10 @@ import {
     Add a Windows host, encrypt its password, test the connection, and apply a playbook.
   </CtaCard>
   <CtaCard label="reference" title="CLI reference" href="reference/cli/">
-    Every command and flag, and which phase each one touches.
+    Every command and flag.
   </CtaCard>
-  <CtaCard label="explanation" title="Why use Preflight (and when not to)" href="explanation/why-preflight/">
-    Where it fits, and where Ansible, DSC, or Intune fit better.
+  <CtaCard label="explanation" title="Choosing Preflight" href="explanation/why-preflight/">
+    When to choose Ansible, DSC, or Intune instead.
   </CtaCard>
 </CtaCards>
 
