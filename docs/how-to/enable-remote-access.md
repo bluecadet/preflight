@@ -1,37 +1,20 @@
-# Enable Remote Access On A Windows Target
+# Enable remote access on a Windows target
 
-Use this guide when you have a real Windows machine — a workstation, kiosk,
-or server you manage day to day — and want Preflight to be able to reach it
-remotely. It walks through the transport switches only; it does not create or
-manage user accounts.
-
-> [!NOTE]
-> Setting up a disposable test VM for Preflight's own integration test suite
-> is a different task with its own scripts and guide — see
-> [Run the integration test suite](../development/winrm-integration-testing.md). This
-> guide is for a target you actually intend to manage.
+Turn on SSH or WinRM on a Windows machine so Preflight can manage it from a controller. This guide does not create user accounts. To set up a disposable VM for the integration tests, see [Run the integration test suite](../development/winrm-integration-testing.md) instead.
 
 ## Prerequisites
 
-- Administrator access on the target Windows machine
-- An existing local or domain account you intend to use in `preflight.yml` —
-  this guide does not create one for you
-- Network connectivity from wherever you run `preflight` to the target, on
-  port 22 (SSH) and/or 5985 (WinRM)
+- Administrator access on the target
+- An existing local or domain account for Preflight to log in as
+- Network access from the controller to the target on port 22 (SSH) or 5985 (WinRM)
 
-## 1. Choose A Transport
+## 1. Choose a transport
 
-Preflight can reach Windows hosts over SSH or WinRM. If you are unsure,
-prefer SSH:
+Use SSH unless you have a reason not to. SSH encrypts traffic by default. The setup script configures WinRM over HTTP with Basic auth, which sends credentials and output unencrypted; use it only on a trusted network.
 
-- SSH is the default transport and is encrypted out of the box.
-- WinRM, as configured by this script, uses HTTP with Basic auth, which
-  sends credentials unencrypted. It is only appropriate on a trusted or
-  internal network (see the security note in step 3).
+## 2. Run the setup script
 
-## 2. Run The Setup Script
-
-On the target machine, open **PowerShell as Administrator** and run:
+On the target, open PowerShell as Administrator and run:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
@@ -40,98 +23,46 @@ iex ((New-Object System.Net.WebClient).DownloadString(
 ))
 ```
 
-By default this enables **SSH only**. Pass `-Transport` to change that:
+The script enables SSH only. Pass `-Transport WinRM` or `-Transport Both` to change that:
 
 ```powershell
-# Enable WinRM only
-iex "& { $((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/setup-preflight-access.ps1')) } -Transport WinRM"
-
-# Enable both
 iex "& { $((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/bluecadet/preflight/main/scripts/setup-preflight-access.ps1')) } -Transport Both"
 ```
 
-If you already have the repository checked out, or copy the script to the
-target first, you can call it directly instead:
+With a local copy of the script, run `.\setup-preflight-access.ps1 -Transport Both`.
 
-```powershell
-.\setup-preflight-access.ps1 -Transport Both
-```
+For SSH, the script installs the OpenSSH Server capability if missing, sets `sshd` to start automatically, starts it, and opens TCP port 22. For WinRM, it runs `winrm quickconfig`, enables Basic auth and unencrypted traffic, and opens TCP port 5985.
 
-What the script does, per transport:
+To encrypt WinRM, configure an HTTPS listener with a certificate the controller trusts, then set `https: true` on the host. The port defaults to 5986.
 
-- **SSH**: installs the OpenSSH Server capability if missing, starts and
-  enables `sshd`, and opens the firewall for port 22.
-- **WinRM**: runs `winrm quickconfig`, enables Basic auth over HTTP, and
-  opens the firewall for port 5985.
+## 3. Add the host to `preflight.yml`
 
-It does not touch user accounts, groups, or any application state.
-
-## 3. Read The Security Note
-
-If you enabled WinRM, the script prints a warning: HTTP with Basic auth
-sends credentials and command output unencrypted. Only run WinRM this way on
-a trusted or internal network. For an encrypted setup, configure a WinRM
-HTTPS listener yourself, then set `https: true` and `port: 5986` on the host
-in `preflight.yml`. Where possible, prefer SSH instead.
-
-## 4. Add The Host To `preflight.yml`
-
-The script prints a ready-to-edit inventory snippet for the transport(s) you
-enabled. For SSH:
+The script prints an inventory snippet for each transport it enabled. Fill in the address and an existing account:
 
 ```yaml
 inventory:
   hosts:
     - name: my-workstation
       address: 192.168.1.50
-      transport: ssh
+      transport: ssh          # or winrm
       username: preflight-svc
       password: secret:my-workstation-password
 ```
 
-For WinRM:
+SSH hosts can use `private_key` instead of `password`. See the [Inventory reference](../reference/inventory.md) for every field.
 
-```yaml
-inventory:
-  hosts:
-    - name: my-workstation
-      address: 192.168.1.50
-      transport: winrm
-      username: preflight-svc
-      password: secret:my-workstation-password
-```
+## 4. Verify
 
-Replace `username` and the secret reference with the account you already
-have on the target. See the [inventory reference](../reference/inventory.md)
-for every available field.
-
-## 5. Confirm It Works
-
-From wherever you run `preflight`:
+From the controller:
 
 ```bash
-preflight facts my-workstation --output json
+preflight facts my-workstation
 ```
 
-A successful response confirms both authentication and remote execution. If
-you get a connection error or `401`, see
-[Troubleshoot remote connections](./troubleshoot-remote-connections.md).
+Gathered facts confirm that authentication and remote execution work. For connection errors or `401` responses, see [Troubleshoot remote connections](./troubleshoot-remote-connections.md).
 
-## Troubleshooting
-
-| Symptom | Likely cause |
-|---------|--------------|
-| `connection refused` | The transport was never enabled, or the wrong port/address |
-| Script requires elevation | Re-open PowerShell with "Run as Administrator" |
-
-For connection and authentication problems once a transport is enabled, see
-[Troubleshoot remote connections](./troubleshoot-remote-connections.md).
-
-## Related Docs
+## Related docs
 
 - [Manage your first Windows target](../tutorials/first-windows-target.md)
-- [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
-- [Install Preflight](./install-preflight.md)
 - [Run a playbook against remote hosts](./remote-execution.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)
-- [Inventory reference](../reference/inventory.md)

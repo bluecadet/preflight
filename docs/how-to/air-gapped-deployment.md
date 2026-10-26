@@ -1,43 +1,27 @@
-# Stage Bundles For Air-Gapped Deployment
+# Stage bundles for air-gapped deployment
 
-Use this guide when you want to prepare a run on one machine, transfer the result to an isolated environment, and apply it there without re-reading the original playbook or re-fetching actions.
+Stage a playbook into a per-target bundle on a connected controller, carry it to an isolated Windows machine, and apply it there. The offline machine needs neither the playbook nor network access to fetch actions.
 
 ## Prerequisites
 
-- A working `preflight` binary on the staging machine
-- A working `preflight` binary on each offline target that will run `preflight apply --bundle`
+- `preflight` installed on the staging controller and on each offline target
 - A playbook that passes `preflight validate`
-- Any referenced plugin executables discoverable during staging and built for
-  the destination OS and architecture
-- No tasks that would require embedding decrypted secret values into the bundle
+- For plugin modules: a Windows controller with the same architecture as the targets, and the plugins discoverable (`preflight plugin list`)
 
-## 1. Prepare Encrypted Secrets For Target-Side Apply
+## 1. Prepare encrypted secrets for target-side apply
 
-Skip this section if the staged plan does not reference `secret:<name>` values.
+Skip this step if the playbook does not use `secret:<name>` references.
 
-If the staged plan references secrets, the bundle includes the encrypted secret files. The offline machine still needs an identity that can decrypt those files when it runs `preflight apply --bundle`.
+A bundle carries the encrypted secret files it needs. The target decrypts them at apply time with its own age identity.
 
-Use this pattern when the target should decrypt the bundle locally:
+1. On the target, generate an identity and print its public recipient:
 
-1. Keep or create a developer identity on the staging machine:
-
-   ```bash
-   preflight secret identity generate --out .age/keys.txt
+   ```powershell
+   preflight secret identity generate --out .age\target-keys.txt
+   preflight secret identity recipient .age\target-keys.txt
    ```
 
-2. Generate a separate identity on the target machine:
-
-   ```bash
-   preflight secret identity generate --out .age/target-keys.txt
-   ```
-
-3. On the target, print the target's public recipient:
-
-   ```bash
-   preflight secret identity recipient .age/target-keys.txt
-   ```
-
-4. Copy only the public recipient string back to the project and add it beside the developer recipient in `preflight.yml`:
+2. On the controller, add the target's recipient to `preflight.yml`, beside your own:
 
    ```yaml
    secrets:
@@ -50,19 +34,17 @@ Use this pattern when the target should decrypt the bundle locally:
          file: "secrets/autologin-password.age"
    ```
 
-5. Re-encrypt the configured secrets to the updated recipient list:
+3. Re-encrypt the secrets to the new recipient list:
 
    ```bash
    preflight secret rekey
    ```
 
-Adding a recipient to `preflight.yml` does not change existing encrypted files by itself. Run `preflight secret rekey` after recipient changes so the staged encrypted secret payloads can be decrypted by the new target identity.
+   Existing secret files stay encrypted to the old recipients until you run `rekey`.
 
-## 2. Stage The Bundles
+## 2. Declare the target platform
 
-Declare each offline host's destination platform in `preflight.yml`. The
-transport may describe how the host is normally managed; staging does not
-connect through it when `platform` is present:
+Give each offline host a `platform` in `preflight.yml`:
 
 ```yaml
 inventory:
@@ -75,109 +57,54 @@ inventory:
         arch: amd64
 ```
 
-Run:
+With `platform` set, `stage` builds the bundle without connecting to the host, so any controller, including macOS or Linux, can stage for it. Without `platform`, `stage` connects to the host to read its OS and architecture.
+
+## 3. Stage the bundles
 
 ```bash
 preflight stage playbooks/lobby.yml --target lobby-pc-01
 ```
 
-Preflight validates the plan for `windows-powershell` and creates the bundle
-without connecting to `lobby-pc-01`. This allows a macOS or Linux controller
-to stage Windows playbooks for an unreachable host. If `platform` is omitted,
-Preflight connects to the selected host to discover its OS and architecture.
+`stage` writes one zip per selected host to `dist/bundles/`. Use `--bundle-output-dir` to write elsewhere. Each file is named `<playbook>-<target>-<os>-<arch>.zip`; the same values appear in the bundle's `manifest.json`.
 
-By default bundles are written under `dist/bundles/`.
+A bundle holds the resolved plan, the plugins the plan uses, and any encrypted secrets it references. See the [Bundle reference](../reference/bundles.md) for the format.
 
-Choose another output directory if needed:
+## 4. Transfer each bundle
 
-```bash
-preflight stage playbooks/lobby.yml --bundle-output-dir ./out/bundles
+Copy each bundle to the machine it was staged for. A bundle's plan is specific to one host.
+
+## 5. Apply the bundle
+
+On the offline machine:
+
+```powershell
+preflight apply --bundle .\lobby-lobby-pc-01-windows-amd64.zip
 ```
 
-Preflight creates one bundle per resolved target, not one site-wide archive.
+If the bundle contains encrypted secrets, pass the target identity:
 
-## 3. Understand What The Bundle Contains
-
-Each bundle is a zip archive that contains:
-
-- `manifest.json`
-- `plan.json`
-- any referenced plugin executables under `plugins/`
-- any bundled secret payloads under `secrets/` when the staged plan references `secret:<name>` values
-
-The manifest records:
-
-- playbook name
-- target name
-- target OS and architecture
-- build metadata for the staging binary
-- referenced modules
-- checksums
-- lockfile entries for fetched remote actions
-
-This design keeps staged execution reproducible. The offline machine runs the exact task DAG and module structure that was staged. Expressions in `when`, task name templates, and parameters that reference `facts`, `env`, or `target.*` values are rendered at apply time against the target.
-
-## 4. Transfer The Correct Bundle
-
-Copy the target-specific zip to the isolated machine using your normal transfer method.
-
-If you staged more than one target, make sure each machine receives its own bundle. The plan inside the bundle is already target-specific.
-
-## 5. Apply The Bundle Offline
-
-Run:
-
-```bash
-preflight apply --bundle dist/bundles/<bundle>.zip
+```powershell
+preflight apply --bundle .\lobby-lobby-pc-01-windows-amd64.zip --secret-identity .age\target-keys.txt
 ```
 
-If the bundle includes encrypted secrets, pass the target identity:
-
-```bash
-preflight apply --bundle ./bundle.zip --secret-identity .age/target-keys.txt
-```
-
-Bundle apply reads `plan.json` directly from the archive, extracts the payload to a temporary directory, builds a module registry from the bundled plugins, and then executes the plan locally with the installed `preflight` binary on that machine.
-
-## 6. Know The Important Limits
-
-Staging fails when:
-
-- a task would require embedding a decrypted secret value
-- the plan references an unknown module
-- a referenced plugin cannot be initialized, reports the wrong logical name,
-  or cannot be copied into the bundle
-- a referenced plugin is being staged for an OS or architecture different
-  from the controller
-
-Offline apply does not:
-
-- re-fetch actions
-- re-read the source playbook
-- rediscover plugins from your normal global plugin directories
-
-That isolation is a feature. It keeps the staged artifact predictable and independent from the original project checkout.
+`apply --bundle` runs the bundled plan on the local machine. It does not read the source playbook, fetch actions, or load plugins from outside the bundle. Templates that reference `facts`, `env`, or `target.*` render on the target at apply time.
 
 ## Troubleshooting
 
-### Staging fails because of secrets
+### Staging fails with "depends on secret values that cannot be embedded"
 
-The runner refuses to embed secret values into a staged bundle. Use encrypted bundle secrets with a target identity, or refactor the playbook so the staged run does not depend on those secret-bearing parameters.
+A secret-like parameter, such as a `password`, holds a literal value instead of a `secret:<name>` reference, and `stage` refuses to write it into the bundle. Replace the value with a `secret:<name>` reference so the bundle carries the encrypted file. `--allow-plaintext-secrets-in-bundle` overrides the check and writes plaintext secrets into the zip; use it only when you control the transfer path end to end.
 
-### A plugin works normally but not when staged
+### Staging fails for a plugin
 
-Confirm the plugin is discoverable before staging:
+`stage` copies only the plugins the plan uses, and runs each one to check that it reports the expected module name. Plugins stage only when the controller's OS and architecture match the target's. Confirm the plugin appears in `preflight plugin list` on a matching controller.
 
-```bash
-preflight plugin list
-```
+### Staging fails with "unknown module"
 
-Only plugins actually referenced by the staged plan are copied into the bundle, and each referenced plugin is initialized during staging to verify that its reported logical name matches the module name used by the plan.
+The plan uses a module that is neither built in nor a discovered plugin. Check the module name, or install the plugin on the controller.
 
-Cross-platform staging currently supports built-in modules only. A plugin
-bundle must be staged on the same OS and architecture as the destination
-because plugin discovery provides the controller-native executable.
+## Related docs
 
-### I am not sure which bundle belongs to which host
-
-The filename includes the playbook name, target name, target OS, and target architecture. The same values also appear in `manifest.json`.
+- [Bundle reference](../reference/bundles.md)
+- [Manage secrets](./manage-secrets.md)
+- [Deploy across restricted networks](../explanation/restricted-network-deployment.md)

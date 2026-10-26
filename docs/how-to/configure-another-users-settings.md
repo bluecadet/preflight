@@ -1,18 +1,17 @@
-# Configure Another User's Settings
+# Configure another user's settings
 
-Use this guide when a task must change settings that belong to a specific user account, such as a kiosk account's registry preferences or environment variables, without signing in as that user.
+Change registry settings or environment variables for a specific Windows account, such as a kiosk user, without signing in as that user.
 
-Preflight does not switch identity for a task. Every task runs as the account your transport (local, WinRM, or SSH) authenticates with. The `registry` and `environment` modules instead edit the target user's profile hive directly, and the `preflight/windows-*` stdlib actions pass the same `user` input through to `registry`.
+Every task runs as the account the transport authenticates with. The `registry` and `environment` modules take a `user` parameter and edit that user's profile hive directly.
 
 ## Prerequisites
 
-- A working playbook and target connection
-- A transport account that can read and write other users' profiles (a local administrator)
-- The target user has signed in at least once, so the profile exists
+- A transport account in the local Administrators group on the target
+- A profile for the target user. The user must have signed in at least once.
 
-## Set Registry Values For A User
+## Set registry values for a user
 
-Add `user` to a `registry` task whose path starts with `HKCU:` or `HKEY_CURRENT_USER`:
+Add `user` to a `registry` task whose path starts with `HKCU:` or `HKEY_CURRENT_USER`. Other hives reject `user`.
 
 ```yaml
 tasks:
@@ -26,11 +25,9 @@ tasks:
           data: "0"
 ```
 
-`user` is rejected for any other hive.
+## Set environment variables for a user
 
-## Set Environment Variables For A User
-
-`environment.user` requires `scope: user`:
+Set `scope: user` and `user`:
 
 ```yaml
   - name: Set exhibit mode
@@ -41,14 +38,14 @@ tasks:
       user: exhibit
 ```
 
-The variable is written to `HKEY_USERS\<SID>\Environment`. Without `user`, `scope: user` applies to the transport account.
+Without `user`, `scope: user` writes to the transport account's environment.
 
-## Configure Settings Through Stdlib Actions
+## Use stdlib actions
 
-`preflight/windows-shell`, `preflight/windows-input`, `preflight/windows-power`, and `preflight/debloat` accept `with.user` for their user-scoped registry settings:
+`preflight/windows-shell`, `preflight/windows-input`, `preflight/windows-power`, `preflight/windows-quiet-mode`, and `preflight/debloat` accept a `user` input for their per-user settings:
 
 ```yaml
-  - name: Configure shell defaults for exhibit user
+  - name: Configure shell defaults for exhibit
     uses: preflight/windows-shell
     with:
       user: exhibit
@@ -56,25 +53,15 @@ The variable is written to `HKEY_USERS\<SID>\Environment`. Without `user`, `scop
       taskbar_auto_hide: true
 ```
 
-Some shell-facing changes are saved to the profile immediately but only appear after the user signs out and back in, Explorer restarts, or the machine reboots.
+Some shell settings take effect only after the user signs out and back in, Explorer restarts, or the machine reboots.
 
-## Signed-In Versus Signed-Out Users
+## Signed-in and signed-out users
 
-Preflight resolves the user's SID and checks whether the profile hive is loaded:
+If the user is signed in, Preflight edits the loaded hive under `HKEY_USERS\<SID>`. If not, Preflight loads the user's `NTUSER.DAT` as `HKEY_USERS\preflight-<SID>`, applies the change, and unloads it.
 
-- **Signed in.** The hive is already loaded under `HKEY_USERS\<SID>`. Preflight edits it in place and leaves it loaded.
-- **Signed out.** Preflight loads `NTUSER.DAT` from the user's profile directory as `HKEY_USERS\preflight-<SID>`, applies the change, and unloads it again.
+## Run a command as another user
 
-If the user has no profile, the task fails with `user <name> has no profile on this machine; sign in once to create it`.
-
-## Limitations
-
-- `winget_package` with `scope: user` and `remove_appx_packages` with `scope: current_user` act on the transport account. They cannot target another user.
-- Only registry-backed settings are covered. Tasks that need a user's files, `APPDATA`, or a running session are not.
-
-## Run A Command As Another User
-
-When a command must run as that user, schedule it with `scheduled_task`:
+To run a program as another user, register it with `scheduled_task` and `run_as`:
 
 ```yaml
   - name: Run the exhibit setup as exhibit
@@ -85,18 +72,23 @@ When a command must run as that user, schedule it with `scheduled_task`:
       run_as: exhibit
 ```
 
+The task runs with an interactive logon, so it runs only while that user is signed in.
+
+## Limitations
+
+- `winget_package` with `scope: user` and `remove_appx_packages` with `scope: current_user` act on the transport account, not another user.
+- `user` covers registry-backed settings only. It does not reach a user's files, `APPDATA`, or running session.
+
 ## Troubleshooting
 
-### `user <name> was not found on this machine`
+| Error | Fix |
+|---|---|
+| `user <name> was not found on this machine` | Preflight cannot resolve the name to a SID. Use `DOMAIN\name` for a domain account. |
+| `user <name> has no profile on this machine; sign in once to create it` | Sign in as the user once to create the profile. |
+| `could not unload the profile hive` | Another process held the hive open. Retry the task, or sign the user in so Preflight edits the loaded hive instead. |
 
-The name could not be resolved to a SID. Use `DOMAIN\name` or `MACHINE\name` for accounts outside the local machine.
+## Related docs
 
-### `could not unload the profile hive`
-
-Another process kept a handle open on the hive. Retry the task; if it persists, sign the user in so the hive stays loaded.
-
-## Related Docs
-
-- [Playbook and action YAML reference](../reference/playbooks.md)
-- [Built-in module reference](../reference/modules.md) for `registry`, `environment`, and `scheduled_task`
+- [Built-in module reference](../reference/modules.md)
 - [Stdlib actions reference](../reference/stdlib-actions.md)
+- [Playbook reference](../reference/playbooks.md)
