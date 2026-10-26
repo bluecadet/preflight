@@ -5,6 +5,7 @@ type EnvironmentParams struct {
 	Name   string `param:"name,required"`
 	Value  string `param:"value"`
 	Scope  string `param:"scope"`
+	User   string `param:"user"`
 	Ensure string `param:"ensure" default:"present"`
 }
 

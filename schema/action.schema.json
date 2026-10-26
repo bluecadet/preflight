@@ -171,7 +171,8 @@
         },
         "user": {
           "type": "string",
-          "description": "Optional Windows user for HKCU/HKEY_CURRENT_USER paths"
+          "pattern": "\\S",
+          "description": "Windows user whose HKCU/HKEY_CURRENT_USER hive to edit; the profile is loaded on demand"
         },
         "values": {
           "description": "Registry value spec list",
@@ -637,10 +638,21 @@
           "default": "machine",
           "description": "Scope of the environment variable"
         },
+        "user": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "Windows user whose environment to configure (requires scope: user); the profile is loaded on demand"
+        },
         "ensure": {
           "type": "string",
           "enum": ["present", "absent"],
           "default": "present"
+        }
+      },
+      "dependentSchemas": {
+        "user": {
+          "required": ["scope"],
+          "properties": { "scope": { "const": "user" } }
         }
       }
     },

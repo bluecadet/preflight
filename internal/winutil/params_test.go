@@ -358,3 +358,55 @@ func TestNormalizeFirewallPorts(t *testing.T) {
 		})
 	}
 }
+
+func TestEnvironmentUser(t *testing.T) {
+	cases := []struct {
+		name    string
+		params  map[string]any
+		want    string
+		wantErr bool
+	}{
+		{"unset", map[string]any{"scope": "machine"}, "", false},
+		{"blank", map[string]any{"user": "  "}, "", false},
+		{"user scope", map[string]any{"user": " alice ", "scope": "User"}, "alice", false},
+		{"machine scope", map[string]any{"user": "alice", "scope": "machine"}, "", true},
+		{"missing scope", map[string]any{"user": "alice"}, "", true},
+		{"not a string", map[string]any{"user": 7, "scope": "user"}, "", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := EnvironmentUser(tc.params)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("err = %v, wantErr %v", err, tc.wantErr)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeRegistryParams_RejectsUnsafeTargets(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		params  map[string]any
+		wantErr string
+	}{
+		{"user on HKLM", map[string]any{"path": `HKLM:\SOFTWARE\Foo`, "user": "kiosk"}, "user can only be used with HKCU"},
+		{"absent on HKCU root", map[string]any{"path": `HKCU:\`, "user": "kiosk", "ensure": "absent"}, "cannot remove a hive root"},
+		{"absent on HKLM root", map[string]any{"path": `HKEY_LOCAL_MACHINE`, "ensure": "absent"}, "cannot remove a hive root"},
+		{"user on HKCU key", map[string]any{"path": `HKCU:\Software\Foo`, "user": "kiosk", "ensure": "absent"}, ""},
+		{"blank user on HKLM", map[string]any{"path": `HKLM:\SOFTWARE\Foo`, "user": " "}, ""},
+	} {
+		_, err := NormalizeRegistryParams(tc.params)
+		if tc.wantErr == "" {
+			if err != nil {
+				t.Errorf("%s: unexpected error: %v", tc.name, err)
+			}
+			continue
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Errorf("%s: got error %v, want %q", tc.name, err, tc.wantErr)
+		}
+	}
+}

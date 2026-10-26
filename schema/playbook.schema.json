@@ -131,7 +131,7 @@
       "required": ["path"],
       "properties": {
         "path": { "type": "string" },
-        "user": { "type": "string" },
+        "user": { "type": "string", "pattern": "\\S" },
         "values": {
           "type": "array",
           "items": { "$ref": "#/$defs/registryValueSpec" }
@@ -432,7 +432,14 @@
         "name": { "type": "string" },
         "value": { "type": "string" },
         "scope": { "type": "string", "enum": ["machine", "user"], "default": "machine" },
+        "user": { "type": "string", "pattern": "\\S" },
         "ensure": { "type": "string", "enum": ["present", "absent"], "default": "present" }
+      },
+      "dependentSchemas": {
+        "user": {
+          "required": ["scope"],
+          "properties": { "scope": { "const": "user" } }
+        }
       }
     },
     "moduleFirewallRule": {
