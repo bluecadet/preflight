@@ -1,20 +1,10 @@
-# Write An Action
+# Write an action
 
-Use this guide when you want to package a reusable task sequence behind named inputs.
+Package a task sequence behind named inputs so several playbooks can reuse it. Keep logic that only one playbook needs inline in that playbook.
 
-## When To Reach For An Action
+## 1. Create the action directory
 
-Write an action when you have a task sequence that should be:
-
-- reused across several playbooks
-- parameterized with inputs
-- shared inside a project or fetched remotely later
-
-If the logic is only needed once, keep it inline in the playbook instead.
-
-## 1. Create The Action Directory
-
-Project-local actions live under `actions/`:
+Project-local actions live under `actions/` in the project root:
 
 ```text
 actions/
@@ -23,15 +13,9 @@ actions/
       action.yml
 ```
 
-The resulting ref is:
-
-```text
-myorg/display-config
-```
+The directory path under `actions/` is the ref: `myorg/display-config`.
 
 ## 2. Define `action.yml`
-
-Example:
 
 ```yaml
 name: myorg/display-config
@@ -55,56 +39,48 @@ tasks:
       ensure: present
 
   - name: Write content marker
-    shell:
-      cmd: /bin/sh
-      args:
-        - -c
-        - printf '%s\n' "{{ vars.label }}" > "{{ vars.content_root }}/marker.txt"
-      creates: "{{ vars.content_root }}/marker.txt"
+    file:
+      dest: "{{ vars.content_root }}\\marker.txt"
+      content: "{{ vars.label }}"
 ```
 
-Important details:
+- Set `name` to the ref.
+- `inputs` declares the values callers pass. Each has a `type` (`string`, `bool`, `int`, or `path`), and can be `required` or have a `default`.
+- Tasks read inputs as `vars.<input>`.
+- Tasks use the same schema as playbook tasks.
 
-- `name` should match the ref you plan to use.
-- `inputs` define the external API of the action.
-- Inside the action, inputs become template variables under `vars.*`.
-- Tasks inside an action use the same task schema as playbooks.
-
-## 3. Call The Action From A Playbook
+## 3. Call the action from a playbook
 
 ```yaml
 tasks:
   - name: Prepare lobby content
     uses: myorg/display-config
     with:
-      content_root: "./tmp/lobby"
+      content_root: "C:\\Exhibits\\Lobby"
       label: lobby
 ```
 
-During planning, Preflight resolves the action, renders the `with:` values, applies any input defaults, verifies required inputs, and expands the action’s tasks into the final execution plan.
+During planning, Preflight renders the `with:` values, applies defaults, rejects missing required inputs, and expands the action's tasks into the plan.
 
-## 4. Inspect The Action
-
-Use the built-in inspection commands:
+## 4. Inspect the action
 
 ```bash
 preflight action list
 preflight action info myorg/display-config
 ```
 
-`action info` is the fastest way to confirm the action name, inputs, and task count are what you expect.
+`action info` shows the action's name, inputs, and task names.
 
-## 5. Validate The Calling Playbook
+## 5. Validate the calling playbook
 
 ```bash
 preflight validate playbooks/lobby.yml
 preflight plan playbooks/lobby.yml
 ```
 
-That verifies both the playbook and the action ref, then shows the expanded tasks after action resolution.
+`validate` checks the playbook and the action ref. `plan` shows the expanded tasks.
 
 ## Notes
 
-- Resolution order is embedded stdlib, then local `actions/`, then the user cache, then Git-backed refs.
-- The embedded stdlib in this repo includes leaf actions such as `preflight/autologin`, plus grouped Windows actions such as `preflight/windows-machine` and `preflight/windows-power`.
-- Remote actions can be fetched and pinned into `preflight.lock`, but you do not need that machinery for project-local actions.
+- Preflight resolves refs from the embedded stdlib (`preflight/...`) first, then local `actions/`, then the user cache, then Git-backed refs.
+- To share an action across projects, publish it in a Git repository and reference it remotely. See [Update and pin remote actions](./update-and-pin-actions.md).

@@ -1,26 +1,16 @@
-# Write A Plugin
+# Write a plugin
 
-Use this guide when you want to add a custom module to Preflight as a standalone executable.
+Add a custom module to Preflight as a standalone executable built with the Go SDK in `pkg/plugin/sdk`.
 
-## Before You Start
+## Prerequisites
 
-You need:
+- Go
+- A `preflight` binary for testing
+- A module name that no built-in module uses
 
-- Go installed locally
-- A working `preflight` binary for local testing
-- A plugin name that does not conflict with a built-in module name
+A plugin speaks JSON-RPC over stdin and stdout and follows the same `Check()` then `Apply()` contract as built-in modules. It runs on the controller, the machine running `preflight`, and never on the target. Every target effect goes through the handle passed to `Check` and `Apply`, so the plugin works unchanged over local, SSH, and WinRM targets. Do not touch the local filesystem or start local processes to change the target. For the wire protocol, see the [Plugin reference](../reference/plugins.md).
 
-Preflight plugins are regular executables, not Go `.so` plugins. They speak JSON-RPC over stdin/stdout and follow the same `Check()` then `Apply()` contract as built-in modules.
-
-## How Plugin Execution Works
-
-The plugin process runs **on the controller** — the machine running `preflight`. It is never copied to or staged on the target. `Check` and `Apply` receive a **target handle**, and **all** target effects flow through that handle: `RunCommand`, `PutFile`, `GetFile`, and `Output`. This is true even when the target is the local machine, so a plugin works identically over local, SSH, and WinRM without knowing which transport it is on.
-
-The handle is the only way a plugin touches the target. Do not read the local filesystem or spawn local processes to affect the target — go through the handle, so your plugin is transport-agnostic.
-
-## 1. Create A Small Go Module
-
-Create a new repository or directory for the plugin:
+## 1. Create a Go module
 
 ```bash
 mkdir preflight-plugin-marker-file
@@ -29,9 +19,7 @@ go mod init example.com/preflight-plugin-marker-file
 go get github.com/bluecadet/preflight@latest
 ```
 
-That pulls in the Go SDK from `github.com/bluecadet/preflight/pkg/plugin/sdk`.
-
-## 2. Implement The Plugin Contract
+## 2. Implement the module
 
 Create `main.go`:
 
@@ -41,6 +29,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/bluecadet/preflight/pkg/plugin/sdk"
@@ -57,8 +46,6 @@ func (markerFileModule) Check(ctx context.Context, args map[string]any, h sdk.Ha
 		return sdk.CheckResult{}, errors.New("path is required")
 	}
 
-	// Probe the target through the handle — never the local filesystem — and
-	// pass ctx so the op can be interrupted.
 	res, err := h.RunCommand(ctx, "if (Test-Path -LiteralPath "+psQuote(path)+" -PathType Leaf) { 'yes' } else { 'no' }")
 	if err != nil {
 		return sdk.CheckResult{}, err
@@ -69,119 +56,50 @@ func (markerFileModule) Check(ctx context.Context, args map[string]any, h sdk.Ha
 
 func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
 	path, _ := args["path"].(string)
-	script := "Set-Content -LiteralPath " + psQuote(path) + " -Value 'managed by preflight plugin'"
-	if _, err := h.RunCommand(ctx, script); err != nil {
+	script := "$ErrorActionPreference = 'Stop'; Set-Content -LiteralPath " + psQuote(path) + " -Value 'managed by preflight plugin'"
+	res, err := h.RunCommand(ctx, script)
+	if err != nil {
 		return sdk.ApplyResult{}, err
 	}
-
-	msg := "created " + path
-	// NegotiatedFromContext reports what this plugin and the host agreed on
-	// during initialize. Gate optional behavior on a capability instead of a
-	// protocol version, so a host that does not know about "checksum" yet
-	// still works with this plugin unchanged.
-	if neg, ok := sdk.NegotiatedFromContext(ctx); ok && neg.HasCapability("marker_file/checksum") {
-		sum, err := h.RunCommand(ctx, "(Get-FileHash -LiteralPath "+psQuote(path)+" -Algorithm SHA256).Hash")
-		if err == nil {
-			msg += ", sha256=" + strings.TrimSpace(sum.Stdout)
-		}
+	if res.ExitCode != 0 {
+		return sdk.ApplyResult{}, fmt.Errorf("write %s: %s", path, strings.TrimSpace(res.Stderr))
 	}
-	return sdk.ApplyResult{Message: msg}, nil
+	return sdk.ApplyResult{Message: "created " + path}, nil
 }
 
-// psQuote wraps s in PowerShell single quotes so it is safe to interpolate.
+// psQuote wraps s in PowerShell single quotes.
 func psQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func main() {
-	// Capabilities is this plugin's half of capability negotiation: it tells
-	// any host that also knows about "marker_file/checksum" that Apply will
-	// report a checksum, without requiring either side to bump a protocol
-	// version for it.
-	sdk.Serve(markerFileModule{}, sdk.ServeOptions{
-		Capabilities: []string{"marker_file/checksum"},
-	})
+	sdk.Serve(markerFileModule{}, sdk.ServeOptions{})
 }
 ```
 
-Important details:
+- `Name()` is the name users put in `module:`. It must match the executable name in step 3.
+- `Version()` appears in `preflight plugin list` and `preflight plugin info`.
+- `Check()` returns `NeedsChange: true` only when `Apply()` should run.
+- `Check()` and `Apply()` receive the task's `params:` map as `args`.
+- Pass `ctx` to every handle call. See [Honour cancellation](#honour-cancellation).
 
-- `Name()` is the module name users put in `module:`.
-- `Version()` is reported by `preflight plugin list` and `preflight plugin info`.
-- `Check()` must return `NeedsChange: true` only when `Apply()` should run.
-- `Apply()` receives the same `params:` map that was defined in YAML.
-- All target effects go through `h` (the handle). Use `h.RunCommand`, `h.PutFile`, `h.GetFile`, `h.Info`, and `h.Output`.
-- `ctx` is a real cancellation signal. Pass it to every handle op and check it around anything long-running. See [Honouring cancellation](#honouring-cancellation).
-- `ctx` also carries the negotiated handshake result. Call `sdk.NegotiatedFromContext(ctx)` to read the protocol version and capability set this plugin and the host agreed on. See [Capabilities](#capabilities).
+### Handle methods
 
-## 3. The Handle API
+| Method | Use |
+|---|---|
+| `RunCommand(ctx, script)` | Run a PowerShell script on the target. Returns `Stdout`, `Stderr`, and `ExitCode`; a non-zero exit code is not an error, so check it. |
+| `PutFile(ctx, path, data)` | Write bytes to a file on the target. |
+| `GetFile(ctx, path)` | Read a file from the target. |
+| `Info()` | Return the target's `Family`, `Version`, `Arch` (for example `amd64`), `Hostname`, and `RuntimeKind` (`windows-powershell`). Missing values are empty strings. |
+| `Output(line)` | Stream a progress or diagnostic line to the user. |
 
-The handle exposes three target primitives plus streaming output and the target info delivered at initialize.
+Each handle call except `Info()` and `Output()` is a round trip to the target, and the protocol allows one in flight at a time. Over SSH and WinRM, round trips dominate runtime, so combine work into one `RunCommand` script: check, write, and report in a single call, and return file contents on stdout instead of making a separate `GetFile` call.
 
-### RunCommand
+`PutFile` and `GetFile` send the whole file in one message held in memory. Keep payloads to a few megabytes.
 
-```go
-res, err := h.RunCommand(ctx, script)
-// res.Stdout, res.Stderr, res.ExitCode
-```
+### Honour cancellation
 
-`script` runs as PowerShell on the target.
-
-**RunCommand is the batching lever.** Each handle op is a transport round trip; over SSH or WinRM that round trip has real latency. Prefer one script that does several things over several `RunCommand` calls. For example, check a file, write it if missing, and set its mode in a single script instead of three.
-
-### PutFile / GetFile
-
-```go
-err := h.PutFile(ctx, `C:\Exhibits\config.txt`, []byte("contents"))
-data, err := h.GetFile(ctx, `C:\Exhibits\config.txt`)
-```
-
-`PutFile` takes raw bytes; the host handles chunking for high-latency transports, so the plugin sees a single call regardless of transport. `GetFile` returns the file's bytes.
-
-### Info
-
-```go
-info := h.Info()
-// info.Family (windows)
-// info.Version, info.Arch, info.Hostname
-// info.RuntimeKind (windows-powershell)
-```
-
-`Info()` returns the `TargetInfo` delivered at `initialize`. Absent signals are empty strings, never missing keys, so you can branch with simple equality:
-
-```go
-if h.Info().Arch == "amd64" { ... }
-```
-
-Do not re-probe what the controller already cached — `Info()` is the authoritative view.
-
-### Output
-
-```go
-h.Output("progress: 50%")
-```
-
-`Output` streams a line back to the host's output channel during `Check` or `Apply`. Call it for progress or diagnostics; the host surfaces lines to the user as they arrive.
-
-## Honouring Cancellation
-
-`Check` and `Apply` receive a `context.Context`. It is not a placeholder: when Preflight abandons the call — a `--timeout` expiring, the run being interrupted — it sends a protocol-level `cancel` notification and the SDK cancels the context inside your plugin process.
-
-Two rules follow.
-
-**Pass `ctx` to every handle op.** An op issued with `context.Background()` cannot be interrupted:
-
-```go
-// Good: interruptible.
-res, err := h.RunCommand(ctx, script)
-
-// Bad: this op runs to completion no matter what the host wants.
-res, err := h.RunCommand(context.Background(), script)
-```
-
-Passing `ctx` also cancels downward. If your `Check` is waiting on a `RunCommand` when cancellation arrives, the host cancels the command it was running on the target — the interrupt reaches the process on the far side of SSH or WinRM, not just your plugin.
-
-**Check `ctx` around long work of your own.** Anything that is not a handle op — a loop, a sleep, a local computation — should watch `ctx.Done()`:
+When Preflight abandons a call, for example when `--timeout` expires or the run is interrupted, the SDK cancels `ctx`. Passing `ctx` to a handle call also cancels the command running on the target. Check `ctx` inside your own loops:
 
 ```go
 for _, item := range items {
@@ -192,65 +110,65 @@ for _, item := range items {
 }
 ```
 
-You get a **two-second grace window** after cancellation to unwind: release locks, remove half-written files, and return. That window is an upper bound, not a promise. A plugin that ignores its context is killed when the window closes, mid-operation, with no chance to clean up.
+After cancellation the plugin has two seconds to clean up and return before Preflight kills it.
 
-## 4. Build The Executable With The Required Name
+## 3. Build the executable
 
-On macOS or Linux:
+Name the executable `preflight-plugin-<name>`, where `<name>` matches `Name()`. On Windows, add `.exe`.
+
+macOS or Linux:
 
 ```bash
 go build -o preflight-plugin-marker_file .
 ```
 
-On Windows:
+Windows:
 
 ```bash
 go build -o preflight-plugin-marker_file.exe .
 ```
 
-The filename matters. Preflight only discovers executables named `preflight-plugin-<name>` or, on Windows, `preflight-plugin-<name>.exe`.
+Build for the controller's OS and architecture. For staged bundles, see [Use plugin modules in playbooks](./use-plugin-modules.md#3-stage-plugin-tasks-into-offline-bundles).
 
-The plugin's `Name()` result must match that `<name>` value. Preflight validates that the discovered filename, YAML module name, and reported logical name all line up.
+## 4. Install the plugin
 
-## 5. Install It Into A Plugin Directory
+Preflight looks for plugins in:
 
-Preflight scans plugin directories in this order:
+- the directory containing the `preflight` binary
+- `~/.preflight/plugins`
+- `plugins/` in the project root
 
-1. alongside the `preflight` binary
-2. `~/.preflight/plugins`
-3. `./plugins` relative to the current working directory
-
-For project-local testing:
+A plugin name may appear in only one of these directories. For project-local testing:
 
 ```bash
 mkdir -p plugins
 mv preflight-plugin-marker_file plugins/
 ```
 
-## 6. Verify Discovery
+To version the plugin with the project, commit it under `plugins/`. To share it more widely, publish prebuilt binaries or ship them alongside `preflight`.
 
-Check that Preflight can start the plugin and read its metadata:
+## 5. Verify discovery
+
+From the project root:
 
 ```bash
 preflight plugin list
 preflight plugin info marker_file
 ```
 
-Fix discovery or initialization errors here before using the plugin in a playbook.
+`plugin info` shows `Initialize:  ok` when Preflight can start the plugin and complete the handshake.
 
-## 7. Call The Plugin From YAML
-
-Use the explicit `module` plus `params` form:
+## 6. Call the plugin from YAML
 
 ```yaml
 tasks:
   - name: Create marker file through plugin
     module: marker_file
     params:
-      path: "/var/lib/preflight/marker.txt"
+      path: "C:\\ProgramData\\Preflight\\marker.txt"
 ```
 
-Then validate or run the playbook as usual:
+Then run the playbook as usual:
 
 ```bash
 preflight validate playbooks/lobby.yml
@@ -258,37 +176,9 @@ preflight plan playbooks/lobby.yml
 preflight apply playbooks/lobby.yml
 ```
 
-## Protocol Version 2 (Breaking Change)
-
-Plugin protocol v2 is a **clean break** from v1. If you have a v1 plugin, you must update it:
-
-- `Check` and `Apply` take a `context.Context` as their **first** argument. Pass it to every handle op instead of `context.Background()`.
-- The protocol gained a `cancel` notification, which is what makes that context fire; the SDK wires it up for you.
-- Everything else is unchanged: the `Handle` still carries all target effects, `initialize` still delivers `protocol_version` and `TargetInfo`, and streaming is still `h.Output(line)`.
-
-Migrating is mechanical:
-
-```go
-// v1
-func (m myModule) Check(args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
-	res, err := h.RunCommand(context.Background(), script)
-
-// v2
-func (m myModule) Check(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.CheckResult, error) {
-	res, err := h.RunCommand(ctx, script)
-```
-
-v1 plugins are rejected with a clear `plugin_protocol` error. There is no compatibility mode — update and rebuild.
-
-### Version Compatibility
-
-As a plugin author you do not set `protocol_version` yourself — the SDK you build against advertises it for you during `initialize`. The host and plugin must report exactly the same protocol version (currently 2); a plugin built against any other version is rejected with a `plugin_protocol` error naming both versions. Rebuild against the current SDK whenever the protocol version changes.
-
 ## Capabilities
 
-Capabilities are a second, independent extension point alongside the protocol version: a way for either side to advertise an optional feature by name instead of forcing a protocol version bump for every addition. The handshake is symmetric — both the host and the plugin advertise a set, and both sides see the intersection.
-
-Advertise your plugin's capabilities in `ServeOptions`, passed to `Serve`:
+Capabilities let a plugin and host agree on optional features by name without a protocol version change. Advertise them in `ServeOptions`:
 
 ```go
 sdk.Serve(markerFileModule{}, sdk.ServeOptions{
@@ -296,70 +186,31 @@ sdk.Serve(markerFileModule{}, sdk.ServeOptions{
 })
 ```
 
-Read the negotiated outcome — the agreed protocol version and the capability names both sides advertised — from `ctx` in `Check` or `Apply`:
+Read the agreed set from `ctx` in `Check` or `Apply`:
 
 ```go
 if neg, ok := sdk.NegotiatedFromContext(ctx); ok && neg.HasCapability("marker_file/checksum") {
-	// Both this plugin and the host know about "marker_file/checksum";
-	// do the optional work.
+	// The host also advertised this capability.
 }
 ```
 
-`ok` is only false if `ctx` did not come from a real `Check`/`Apply` call (for example, one built directly in a unit test). The full reference example above wires this up: it advertises `marker_file/checksum` and reports a checksum in `Apply`'s message when the host also recognizes it.
-
-A capability your plugin advertises but no current host checks for is not wasted — it documents intent, and it means a future host can start using the feature without requiring you to rebuild the plugin or bump anything.
-
-## Batching Guidance For High-Latency Transports
-
-Every handle op is a transport round trip. Over SSH and especially WinRM, round trips dominate runtime. Design your plugin to minimize them:
-
-- **One script, several actions.** Instead of `RunCommand` to check, `RunCommand` to create, `RunCommand` to set mode, write one script that does all three and reports the outcome. PowerShell lets you branch on results within a single script.
-- **Avoid redundant `GetFile`.** If `RunCommand` can read what you need and include it in stdout, do that instead of a separate `GetFile` round trip.
-- **Cache `Info()` once.** Call `h.Info()` and keep the struct; do not re-fetch per op (it is in-memory, but the call pattern reads better).
-- **One in-flight op at a time.** The protocol allows one in-flight target op per session. Do not issue a second `RunCommand` before the first returns.
-- **Pass `ctx` to every op.** A long batched script is the right shape, but only if it can be interrupted.
-
-## 8. Distribute The Plugin
-
-Plugins execute controller-side, so they must run on the machine running `preflight`. Build the plugin for the controller's OS and architecture. First-party plugins ship for `windows/linux/darwin` × `amd64/arm64`.
-
-Common patterns:
-
-- publish source plus build instructions for Go users
-- attach prebuilt binaries to a GitHub release
-- ship the plugin executable alongside the `preflight` binary in an internal tools package
-- commit the executable under a project-local `plugins/` directory when the team wants the plugin versioned with the repo
-
-If you use `preflight stage`, the plugin must be discoverable on the staging machine. Preflight copies referenced plugin executables into the staged bundle automatically, but staging fails if the plugin cannot initialize or reports the wrong logical name.
-
-The discovered executable must also match the staged host's OS and
-architecture. During bundle apply, the destination host becomes the
-controller and starts that executable locally. Preflight rejects
-cross-platform plugin staging rather than copying a controller-native binary
-that cannot run on the destination. Stage plugin bundles from a matching
-platform; cross-platform staging currently supports built-in modules only.
+`HasCapability` returns `true` only for names both sides advertise. Preflight advertises no capabilities today, so these checks return `false` when Preflight runs the plugin.
 
 ## Troubleshooting
 
 ### `preflight plugin list` does not show the plugin
 
-Check the filename first. It must start with `preflight-plugin-`, and on Windows it must end with `.exe`.
+Check the filename. It must start with `preflight-plugin-`, and on Windows end with `.exe`. Run the command from the project root if the plugin is in `plugins/`.
 
-### The plugin appears, but the module is unknown in YAML
+### The module is unknown in YAML
 
-Use the logical name reported by:
+The `module:` value must equal the filename suffix. If `plugin list` shows a different name, `Name()` disagrees with the filename; make them match.
 
-```bash
-preflight plugin info <name>
-```
+### `plugin_protocol` error
 
-That reported name is what belongs in `module:`.
+The plugin and host must speak exactly the same protocol version. Rebuild the plugin against the SDK from the `preflight` release you run.
 
-### `plugin_protocol` error at runtime
-
-Your plugin was built against an older SDK. Update to the current SDK, add the `context.Context` first argument to `Check`/`Apply`, and rebuild.
-
-## Related Docs
+## Related docs
 
 - [Use plugin modules in playbooks](./use-plugin-modules.md)
 - [Plugin reference](../reference/plugins.md)

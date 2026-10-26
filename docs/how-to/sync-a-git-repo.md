@@ -1,23 +1,14 @@
-# Sync A Git Repo On A Target
+# Sync a Git repo on a target
 
-Use this guide when a target needs to clone or update a Git repository
-as part of a playbook run — for example, a museum kiosk pulling the
-latest exhibit content before it opens for the day. On Windows targets,
-the embedded `preflight/git-sync` action wraps the fetch, checkout,
-reset, and clean steps in a single idempotent task.
+Clone or update a Git repository on a target with the `preflight/git-sync` action, for example to pull exhibit content onto a kiosk before it opens.
 
 ## Prerequisites
 
-- A working playbook and a Windows target connection
-- `git` installed on the target (use `winget_package` or `package`; see
-  the [built-in module reference](../reference/modules.md))
-- If the repository is private, credentials configured as described in
-  [Configure Git Credentials For A Target](./configure-git-credentials.md)
+- A playbook and a Windows target connection
+- `git` installed on the target (use `winget_package` or `package`; see the [module reference](../reference/modules.md))
+- For a private repository, credentials as described in [Configure Git credentials for a target](./configure-git-credentials.md)
 
-## 1. Sync A Repository
-
-`preflight/git-sync` clones the repository into `dest` if it does not
-exist yet, or fetches and checks out `ref` if it does:
+## 1. Sync a repository
 
 ```yaml
 tasks:
@@ -29,15 +20,11 @@ tasks:
       ref: main
 ```
 
-Re-running the task leaves an up-to-date working tree at `dest` with
-`ref` checked out. Set `create_parent: true` if the parent of `dest`
-does not exist yet, and `set_remote_url: true` if `repo` may change
-between runs and the existing remote should be updated to match.
+If `dest` has no repository, the action clones `repo` into it, creating the parent directory. Otherwise it fetches, checks out `ref`, and hard-resets the working tree to it. It also points the remote at `repo` if the URL changed.
 
-## 2. Pin To A Ref
+## 2. Pin to a ref
 
-`ref` accepts a branch, tag, or commit. Pin exhibit content to a tag so
-that a kiosk never picks up unreviewed commits on `main`:
+`ref` accepts a branch, tag, or commit. Pin to a tag so the kiosk never picks up unreviewed commits:
 
 ```yaml
 tasks:
@@ -50,88 +37,55 @@ tasks:
       detach: true
 ```
 
-`detach: true` checks out `ref` directly instead of creating or moving
-a local branch. Use `local_branch` to name the branch that tracks `ref`
-when you do want a branch checked out.
+`detach: true` checks out `ref` without a local branch. To check it out on a named branch instead, set `local_branch`.
 
-## 3. Reset And Clean The Working Tree
+## 3. Clean the working tree
 
-Exhibit content trees accumulate stray files over time: a kiosk
-application may write cache files, logs, or scratch state into the
-content directory, and a previous sync may leave behind files that no
-longer exist upstream. Set `reset` and `clean` so every sync starts
-from a pristine copy of `ref`:
+Kiosk apps can leave cache files and logs in the content directory. By default the action discards changes to tracked files but keeps untracked ones. To remove untracked files too, set `clean`:
 
 ```yaml
 tasks:
-  - name: Sync and reset exhibit content
+  - name: Sync and clean exhibit content
     uses: preflight/git-sync
     with:
       repo: https://github.com/example/content.git
       dest: C:\Exhibits\Content
       ref: main
-      reset: true
       clean: true
       clean_ignored: true
 ```
 
-`reset: true` hard-resets the working tree to the resolved `ref`,
-discarding local modifications. `clean: true` removes untracked files
-after checkout; add `clean_ignored: true` to also remove files that
-match `.gitignore` patterns, such as cached thumbnails an exhibit
-viewer generates locally.
+`clean_ignored: true` also removes files matched by `.gitignore`, such as generated thumbnails.
 
-Set `fetch: true` (the default when the repository already exists) to
-fetch remote updates before resolving `ref`, and `prune: true` alongside
-it to drop local references to branches deleted upstream. Use `depth`
-to limit fetch/clone to a shallow history when the full commit history
-of an exhibit content repository is not needed.
+Other defaults you can change:
 
-## 4. Account Ownership
+- `reset: false` keeps local changes to tracked files.
+- `fetch: false` skips fetching from the remote for an existing repository.
+- `prune: false` keeps local refs to branches deleted upstream.
+- `depth: <n>` limits clone and fetch to `n` commits of history.
 
-`preflight/git-sync` runs as the account your transport authenticates
-with, so synced content is owned by that account. Preflight cannot run a
-task as another user; to sync as a dedicated kiosk account, run the
-sync from a `scheduled_task` with `run_as`. See
-[Configure Another User's Settings](./configure-another-users-settings.md#run-a-command-as-another-user).
+## 4. Choose the account that owns the checkout
 
-## 5. Understand Safe Directory Handling
+The action runs as the account your transport authenticates with, and that account owns the checkout. To sync as a kiosk account, run the sync from a `scheduled_task` with `run_as`. See [Run a command as another user](./configure-another-users-settings.md#run-a-command-as-another-user).
 
-`preflight/git-sync` adds `dest` to Git's global `safe.directory` list
-before running sync checks, because `safe_directory` defaults to
-`true`. This avoids Git for Windows "dubious ownership" failures when
-the checkout is owned by a different Windows account than the one
-running the sync — a common situation when provisioning runs as an
-administrator but the exhibit app runs under a kiosk account. Set
-`safe_directory: false` only if your environment already manages the
-`safe.directory` list another way.
+The action adds `dest` to the global Git `safe.directory` list (`safe_directory: true` by default). This prevents Git for Windows "dubious ownership" errors when one account provisions the checkout and another runs the exhibit app. Set `safe_directory: false` only if you manage `safe.directory` another way.
 
 ## Troubleshooting
 
-**Sync fails with a "dubious ownership" error even though
-`safe_directory` is enabled.** Confirm you did not explicitly set
-`safe_directory: false` on the task, and that `dest` matches the exact
-path git reports as unsafe — a trailing slash or a different casing of
-a drive letter can produce a path git treats as distinct.
+### "Dubious ownership" error with `safe_directory` enabled
 
-**`reset`/`clean` removed content the kiosk generated at runtime.**
-This is expected: `reset` and `clean` return the working tree to
-exactly what `ref` contains upstream. Store any state the kiosk
-application needs to keep across syncs outside of `dest`, such as in a
-sibling directory the action does not manage.
+Confirm the task does not set `safe_directory: false`, and that `dest` matches the path Git reports. A trailing slash or different drive-letter case makes Git treat the paths as distinct.
 
-**Task reports success but the target is still on the old commit.**
-Check that `fetch` is not disabled and that `ref` resolves to the
-commit you expect on the remote; `preflight/git-sync` only fetches
-remote updates when `fetch` is enabled for an existing repository.
+### The sync removed files the kiosk wrote
 
-## Related Docs
+`reset` and `clean` return the working tree to the contents of `ref`. Store runtime state outside `dest`.
 
-- [Configure Git Credentials For A Target](./configure-git-credentials.md) —
-  authenticating `preflight/git-sync` against private repositories
-- [Embedded Stdlib Action Reference](../reference/stdlib-actions.md#preflightgit-sync) —
-  full `preflight/git-sync` input table
-- [Configure Another User's Settings](./configure-another-users-settings.md) —
-  per-user settings and running commands as another account
-- [Built-in module reference](../reference/modules.md) — `winget_package`,
-  `package` for installing `git` itself
+### The task succeeds but the target stays on the old commit
+
+Check that `fetch` is not `false` and that `ref` resolves to the commit you expect on the remote.
+
+## Related docs
+
+- [Configure Git credentials for a target](./configure-git-credentials.md)
+- [`preflight/git-sync` input reference](../reference/stdlib-actions.md#preflightgit-sync)
+- [Configure another user's settings](./configure-another-users-settings.md)
