@@ -177,7 +177,7 @@ Fails with `secret encrypt: no recipients configured (set secrets.recipients or 
 
 ### `preflight secret edit <name>`
 
-Decrypts the secret to a temporary file, opens it in `$EDITOR`, and re-encrypts the result.
+Decrypts the secret to a temporary file, opens it in `$EDITOR`, and re-encrypts the result. `EDITOR` defaults to `notepad` on Windows.
 
 | Flag | Type | Description |
 | --- | --- | --- |
