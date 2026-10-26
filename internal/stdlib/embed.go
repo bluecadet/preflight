@@ -4,5 +4,5 @@ import "embed"
 
 // FS holds the embedded standard library actions.
 //
-//go:embed all:actions
+//go:embed actions/preflight/*/action.yml
 var FS embed.FS
