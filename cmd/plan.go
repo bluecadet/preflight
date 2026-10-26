@@ -27,7 +27,7 @@ func init() {
 
 func runPlan(cmd *cobra.Command, args []string) error {
 	playbookPath := getPlaybookPath(args)
-	if err := validateLocalOnlyRunFlags(cmd); err != nil {
+	if err := validateConcurrency(cmd); err != nil {
 		return err
 	}
 

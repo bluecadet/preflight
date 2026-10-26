@@ -9,10 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func validateLocalOnlyRunFlags(cmd *cobra.Command) error {
-	return validateConcurrency(cmd)
-}
-
 func validateConcurrency(cmd *cobra.Command) error {
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
 	if concurrency >= 0 {
