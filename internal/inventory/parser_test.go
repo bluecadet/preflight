@@ -609,6 +609,7 @@ hosts:
 	jump := hosts[0].Jump
 	if jump == nil {
 		t.Fatal("expected Jump to be populated")
+		return
 	}
 	if jump.Address != "bastion.example.com" {
 		t.Errorf("Jump.Address: got %q, want %q", jump.Address, "bastion.example.com")

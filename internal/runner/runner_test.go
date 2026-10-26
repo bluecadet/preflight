@@ -166,6 +166,7 @@ func TestPlanSingleTask(t *testing.T) {
 	}
 	if plan == nil {
 		t.Fatal("Plan returned nil plan")
+		return
 	}
 	if len(plan.Tasks) != 1 {
 		t.Fatalf("expected 1 task, got %d", len(plan.Tasks))
@@ -531,6 +532,7 @@ func TestPlanStdlibWindowsShellCarriesUserToUserScopedTasks(t *testing.T) {
 		task := byName[name]
 		if task == nil {
 			t.Fatalf("missing expanded task %q", name)
+			return
 		}
 		if task.Module != "registry" {
 			t.Fatalf("%s: expected registry module, got %q", name, task.Module)
@@ -543,6 +545,7 @@ func TestPlanStdlibWindowsShellCarriesUserToUserScopedTasks(t *testing.T) {
 	taskbar := byName["Configure taskbar auto-hide"]
 	if taskbar == nil {
 		t.Fatal("missing taskbar auto-hide task")
+		return
 	}
 	if taskbar.Module != "registry" {
 		t.Fatalf("taskbar auto-hide should use registry module, got %q", taskbar.Module)
@@ -576,6 +579,7 @@ func TestPlanStdlibWindowsShellCarriesUserToUserScopedTasks(t *testing.T) {
 	shortcuts := byName["Clear desktop shortcuts"]
 	if shortcuts == nil {
 		t.Fatal("missing clear desktop shortcuts task")
+		return
 	}
 	shortcutEnv, ok := shortcuts.Params["env"].(map[string]any)
 	if !ok {
