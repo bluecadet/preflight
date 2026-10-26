@@ -74,7 +74,7 @@
         },
         "private_key": {
           "type": "string",
-          "description": "Path to SSH private key file"
+          "description": "SSH private key as PEM content or a file path; accepts secret:<name>"
         },
         "private_key_passphrase": {
           "type": "string",

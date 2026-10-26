@@ -21,7 +21,7 @@
         },
         "uses": {
           "type": "string",
-          "description": "Action reference, e.g. preflight/kiosk-mode, ./actions/local, github.com/org/name@v1"
+          "description": "Action reference, e.g. preflight/kiosk-mode, myorg/display-config (from ./actions/), github.com/org/name@v1"
         },
         "module": {
           "type": "string",
