@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/bluecadet/preflight/internal/target"
-	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 // LoadedPlugin is one plugin executable registered into the runtime module map.
@@ -30,7 +29,7 @@ type Options struct {
 func BuildRegistry(opts Options) (target.ModuleRegistry, []LoadedPlugin, error) {
 	registry := make(target.ModuleRegistry)
 
-	discovered, err := sdk.Scan(sdk.DiscoveryOptions{
+	discovered, err := Scan(DiscoveryOptions{
 		BinaryDir:           opts.BinaryDir,
 		WorkingDir:          opts.WorkingDir,
 		PreferredDirs:       opts.PreferredDirs,

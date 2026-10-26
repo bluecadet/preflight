@@ -14,7 +14,6 @@ import (
 	"github.com/bluecadet/preflight/internal/bundle"
 	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/target"
-	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 // stage assembles a self-contained artifact bundle (zip).
@@ -297,7 +296,7 @@ func (r *Runner) stageModuleFiles(ctx context.Context, plan *ExecutionPlan, info
 			if err != nil {
 				return nil, nil, fmt.Errorf("stage: read plugin %q: %w", plugin.Path, err)
 			}
-			status := sdk.InspectPlugin(ctx, plugin.Path, plugin.Source)
+			status := plugins.InspectPlugin(ctx, plugin.Path, plugin.Source)
 			if status.ErrorMessage != "" {
 				return nil, nil, fmt.Errorf("stage: inspect plugin %q: %s", plugin.Path, status.ErrorMessage)
 			}

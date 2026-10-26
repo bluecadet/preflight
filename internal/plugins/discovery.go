@@ -1,4 +1,4 @@
-package sdk
+package plugins
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+
+	"github.com/bluecadet/preflight/pkg/plugin/sdk"
 )
 
 // pluginPrefix is the filename prefix for all preflight plugins.
@@ -106,7 +108,7 @@ func InspectPlugin(ctx context.Context, path, source string) PluginStatus {
 		status.Name = name
 	}
 
-	client, err := NewClientFromCmd(ctx, exec.Command(path), ClientOptions{})
+	client, err := sdk.NewClientFromCmd(ctx, exec.Command(path), sdk.ClientOptions{})
 	if err != nil {
 		status.ErrorMessage = err.Error()
 		return status
