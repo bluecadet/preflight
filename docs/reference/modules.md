@@ -232,6 +232,7 @@ Each entry:
 - Without `version`, an installed package satisfies `present`. With `version`, the installed version must match.
 - Each `id` may appear once, compared case-insensitively. WinGet can't install two versions of one package side by side.
 - Installs run `winget install --id <id> --exact --silent --scope <scope>` with agreements accepted. Removals run `winget uninstall --id <id> --exact`.
+- After making changes, the task reads installed packages again and fails if any changed entry still isn't in its desired state. WinGet sometimes reports a successful uninstall of a portable package that it didn't remove.
 - `winget` runs as the transport account. If `winget.exe` or the `winget` source isn't registered for that account, the task fails and asks for a [`preflight/winget`](./stdlib-actions.md#preflightwinget) task first. This happens on editions without WinGet, such as Windows IoT Enterprise LTSC, and for accounts that have never signed in interactively.
 
 ```yaml
