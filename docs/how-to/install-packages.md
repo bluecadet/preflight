@@ -1,6 +1,6 @@
 # Install packages with a package manager
 
-Install software on a Windows target with WinGet, including editions and accounts where WinGet isn't ready yet.
+Install software on a Windows target with WinGet or Chocolatey, including targets where the package manager isn't installed yet.
 
 ## Prerequisites
 
@@ -47,6 +47,24 @@ The `winget` source is a package index. The bootstrap re-provisions it once it i
 ```
 
 Set `source_max_age: "0"` to provision the source once and never refresh it.
+
+## Use Chocolatey instead
+
+Bootstrap Chocolatey with `preflight/chocolatey`, then manage packages with `choco_package`:
+
+```yaml
+tasks:
+  - name: Chocolatey
+    uses: preflight/chocolatey
+  - name: Tools
+    choco_package:
+      packages:
+        - id: 7zip
+        - id: jq
+          version: "1.7.1"
+```
+
+Chocolatey installs machine-wide for every account. To install from an internal feed, list it in the bootstrap's `sources` and set `source` on the package entry. See [`preflight/chocolatey`](../reference/stdlib-actions.md#preflightchocolatey) and [`choco_package`](../reference/modules.md#choco_package).
 
 ## Related docs
 

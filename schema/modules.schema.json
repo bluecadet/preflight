@@ -84,6 +84,9 @@
         "winget_package": {
           "$ref": "#/$defs/moduleWingetPackage"
         },
+        "choco_package": {
+          "$ref": "#/$defs/moduleChocoPackage"
+        },
         "remove_appx_packages": {
           "$ref": "#/$defs/moduleRemoveAppxPackages"
         },
@@ -624,6 +627,58 @@
                   "user"
                 ],
                 "default": "machine"
+              },
+              "ensure": {
+                "type": "string",
+                "enum": [
+                  "present",
+                  "absent"
+                ],
+                "default": "present"
+              }
+            }
+          }
+        }
+      }
+    },
+    "moduleChocoPackage": {
+      "type": "object",
+      "description": "Manage packages through Chocolatey",
+      "additionalProperties": false,
+      "required": [
+        "packages"
+      ],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of packages to manage",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string",
+                "description": "Source name or URL to install from"
+              },
+              "params": {
+                "type": "string",
+                "description": "Package parameters, passed as --params"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Additional choco command arguments"
               },
               "ensure": {
                 "type": "string",

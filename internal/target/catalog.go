@@ -15,6 +15,7 @@ var catalogModules = []string{
 	"scheduled_task",
 	"user",
 	"winget_package",
+	"choco_package",
 	"remove_appx_packages",
 	"power_plan",
 	"windows_feature",
