@@ -1,6 +1,7 @@
 package winutil
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -132,6 +133,50 @@ func TestNormalizeRegistryParams_TypedSpecList(t *testing.T) {
 	}
 	if typedValues[1]["ensure"] != "absent" {
 		t.Fatalf("unexpected typed value[1]: %#v", typedValues[1])
+	}
+}
+
+func TestNormalizeRegistryParams_BinaryPatchBytes(t *testing.T) {
+	tests := []struct {
+		data    any
+		want    int64
+		wantErr bool
+	}{
+		{data: "0", want: 0},
+		{data: "200", want: 200},
+		{data: "255", want: 255},
+		{data: "256", wantErr: true},
+		{data: "-1", wantErr: true},
+		{data: 255, want: 255},
+		{data: 256, wantErr: true},
+		{data: -1, wantErr: true},
+		{data: float64(300), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%T/%v", tt.data, tt.data), func(t *testing.T) {
+			params, err := NormalizeRegistryParams(map[string]any{
+				"values": []any{
+					map[string]any{
+						"name":  "Settings",
+						"type":  "binary",
+						"patch": []any{map[string]any{"offset": 0, "data": tt.data}},
+					},
+				},
+			})
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for %#v", tt.data)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			patch := params["values"].([]map[string]any)[0]["patch"].([]map[string]any)
+			if patch[0]["data"] != tt.want {
+				t.Fatalf("data = %#v, want %d", patch[0]["data"], tt.want)
+			}
+		})
 	}
 }
 
@@ -409,6 +454,38 @@ func TestNormalizeRegistryParams_RejectsUnsafeTargets(t *testing.T) {
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 			t.Errorf("%s: got error %v, want %q", tc.name, err, tc.wantErr)
+		}
+	}
+}
+
+func TestNormalizeRegistryParams_BinaryListRejectsOutOfRangeBytes(t *testing.T) {
+	for _, item := range []any{256, -1, "256"} {
+		_, err := NormalizeRegistryParams(map[string]any{
+			"values": []any{
+				map[string]any{"name": "Blob", "type": "binary", "data": []any{1, item}},
+			},
+		})
+		if err == nil {
+			t.Errorf("expected error for byte %#v", item)
+		}
+	}
+}
+
+func TestNormalizeRegistryParams_DwordRange(t *testing.T) {
+	for _, tc := range []struct {
+		data    any
+		wantErr bool
+	}{
+		{data: 2147483647},
+		{data: -2147483648},
+		{data: 2147483648, wantErr: true},
+		{data: "2147483648", wantErr: true},
+	} {
+		_, err := NormalizeRegistryParams(map[string]any{
+			"values": []any{map[string]any{"name": "N", "type": "dword", "data": tc.data}},
+		})
+		if (err != nil) != tc.wantErr {
+			t.Errorf("data %#v: err = %v, wantErr %v", tc.data, err, tc.wantErr)
 		}
 	}
 }

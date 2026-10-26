@@ -197,6 +197,23 @@ func durationToISODuration(duration time.Duration) (string, error) {
 }
 
 func normalizeIntegralValue(value any, bits int) (int64, error) {
+	n, err := parseIntegralValue(value, bits)
+	if err != nil {
+		return 0, err
+	}
+	// Byte values are unsigned: 0-255. Wider values are signed.
+	lo, hi := int64(0), int64(math.MaxUint8)
+	if bits != 8 {
+		hi = math.MaxInt64 >> (64 - bits)
+		lo = -hi - 1
+	}
+	if n < lo || n > hi {
+		return 0, fmt.Errorf("value %d out of range [%d, %d]", n, lo, hi)
+	}
+	return n, nil
+}
+
+func parseIntegralValue(value any, bits int) (int64, error) {
 	switch typed := value.(type) {
 	case bool:
 		if typed {
@@ -220,7 +237,7 @@ func normalizeIntegralValue(value any, bits int) (int64, error) {
 		case "false":
 			return 0, nil
 		}
-		parsed, err := strconv.ParseInt(s, 10, bits)
+		parsed, err := strconv.ParseInt(s, 10, 64)
 		if err != nil {
 			return 0, err
 		}
