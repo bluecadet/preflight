@@ -74,6 +74,9 @@ func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
 		}
 		cloned["user"] = strings.TrimSpace(user)
 	}
+	if err := validateRegistryTarget(cloned); err != nil {
+		return nil, err
+	}
 	values, err := normalizeRegistryValues(cloned["values"])
 	if err != nil {
 		return nil, err
@@ -82,6 +85,25 @@ func NormalizeRegistryParams(params map[string]any) (map[string]any, error) {
 		cloned["values"] = values
 	}
 	return cloned, nil
+}
+
+// validateRegistryTarget rejects a user task on a non-HKCU path, and a key
+// removal aimed at a hive root, which would delete the whole hive.
+func validateRegistryTarget(params map[string]any) error {
+	path, _ := params["path"].(string)
+	qualified := len(path) > len("Registry::") && strings.EqualFold(path[:len("Registry::")], "Registry::")
+	if !qualified {
+		return nil
+	}
+	hive, rest, _ := strings.Cut(path[len("Registry::"):], `\`)
+	if user, _ := params["user"].(string); user != "" && !strings.EqualFold(hive, "HKEY_CURRENT_USER") {
+		return fmt.Errorf("registry: user can only be used with HKCU/HKEY_CURRENT_USER paths, got %q", path)
+	}
+	ensure, _ := params["ensure"].(string)
+	if strings.EqualFold(strings.TrimSpace(ensure), "absent") && strings.Trim(rest, `\`) == "" {
+		return fmt.Errorf("registry: ensure: absent cannot remove a hive root (%q)", path)
+	}
+	return nil
 }
 
 func normalizeRegistryValues(raw any) ([]map[string]any, error) {

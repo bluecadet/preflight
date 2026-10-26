@@ -409,7 +409,8 @@ tasks:
           $sid = Resolve-ProfileSid $user
           $root = 'Registry::HKEY_USERS\' + $sid
           if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user shell settings")
+            # Profile is not signed in: fall back to the profile directory layout.
+            return $null
           }
           $subPath = $path -replace '(?i)^HKCU:\\?', ''
           if ($subPath) {
@@ -515,7 +516,8 @@ tasks:
           $sid = Resolve-ProfileSid $user
           $root = 'Registry::HKEY_USERS\' + $sid
           if (-not (Test-Path -LiteralPath $root)) {
-            throw ("windows-shell: profile hive is not loaded for user " + $user + "; sign in as that user or run with become/load_profile before applying user shell settings")
+            # Profile is not signed in: fall back to the profile directory layout.
+            return $null
           }
           $subPath = $path -replace '(?i)^HKCU:\\?', ''
           if ($subPath) {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bluecadet/preflight/internal/pscript"
 	"github.com/bluecadet/preflight/internal/winutil"
 )
 
@@ -479,6 +480,16 @@ func checkWindowsEnvironment(ctx context.Context, backend windowsPowerShellBacke
 	}
 	value, _ := params["value"].(string)
 
+	user, err := winutil.EnvironmentUser(params)
+	if err != nil {
+		return CheckResult{}, err
+	}
+	if user != "" {
+		return checkWindowsBooleanScript(ctx, backend, map[string]any{
+			"name": name, "value": value, "ensure": ensure, "user": user,
+		}, pscript.EnvironmentUserCheckScript)
+	}
+
 	script, err := powershellJSONVar("name", name)
 	if err != nil {
 		return CheckResult{}, err
@@ -520,7 +531,18 @@ func applyWindowsEnvironment(ctx context.Context, backend windowsPowerShellBacke
 	}
 	value, _ := params["value"].(string)
 
-	_, err := windowsRunScript(ctx, backend, map[string]any{
+	user, err := winutil.EnvironmentUser(params)
+	if err != nil {
+		return err
+	}
+	if user != "" {
+		_, err = windowsRunScript(ctx, backend, map[string]any{
+			"name": name, "value": value, "ensure": ensure, "user": user,
+		}, pscript.EnvironmentUserApplyScript)
+		return err
+	}
+
+	_, err = windowsRunScript(ctx, backend, map[string]any{
 		"name":   name,
 		"value":  value,
 		"scope":  normalizeEnvScope(scope),
@@ -549,6 +571,26 @@ func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBack
 		scope = "Machine"
 	}
 	value, _ := params["value"].(string)
+
+	user, err := winutil.EnvironmentUser(params)
+	if err != nil {
+		return EnsureResult{}, err
+	}
+	if user != "" {
+		needs, err := checkWindowsEnvironment(ctx, backend, params)
+		if err != nil {
+			return EnsureResult{}, err
+		}
+		if !needs.NeedsChange {
+			return EnsureResult{}, nil
+		}
+		if !dryRun {
+			if err := applyWindowsEnvironment(ctx, backend, params); err != nil {
+				return EnsureResult{}, err
+			}
+		}
+		return EnsureResult{Changed: true}, nil
+	}
 
 	preamble := powerShellDryRunPreamble(dryRun)
 	out, err := windowsRunScript(ctx, backend, map[string]any{

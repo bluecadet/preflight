@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/bluecadet/preflight/internal/pscript"
 	"github.com/bluecadet/preflight/internal/target"
+	"github.com/bluecadet/preflight/internal/winutil"
 )
 
 // EnvironmentModule manages environment variables on Windows.
@@ -16,6 +18,14 @@ func (m *EnvironmentModule) Check(ctx context.Context, params map[string]any, _ 
 	var p EnvironmentParams
 	if err := Decode(params, &p); err != nil {
 		return target.CheckResult{}, err
+	}
+	user, err := winutil.EnvironmentUser(params)
+	if err != nil {
+		return target.CheckResult{}, err
+	}
+	if user != "" {
+		needed, err := runWindowsPowerShellBool(ctx, params, pscript.EnvironmentUserCheckScript)
+		return target.CheckResult{NeedsChange: needed}, err
 	}
 	needed, err := runWindowsPowerShellBool(ctx, params, `
 $name   = [string]$params.name
@@ -38,7 +48,17 @@ func (m *EnvironmentModule) Apply(ctx context.Context, params map[string]any, _ 
 	if err := Decode(params, &p); err != nil {
 		return target.ApplyResult{}, err
 	}
-	_, err := runWindowsPowerShellWithParams(ctx, params, `
+	user, err := winutil.EnvironmentUser(params)
+	if err != nil {
+		return target.ApplyResult{}, err
+	}
+	if user != "" {
+		if _, err := runWindowsPowerShellWithParams(ctx, params, pscript.EnvironmentUserApplyScript); err != nil {
+			return target.ApplyResult{}, fmt.Errorf("environment: %w", err)
+		}
+		return target.ApplyResult{}, nil
+	}
+	_, err = runWindowsPowerShellWithParams(ctx, params, `
 $name   = [string]$params.name
 $scope  = if ($params.scope)  { [string]$params.scope  } else { 'machine' }
 $ensure = if ($params.ensure) { [string]$params.ensure } else { 'present' }
