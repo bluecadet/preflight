@@ -39,7 +39,6 @@ cannot complete:
 | `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
 | `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
 | `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent; the detail names what was probed |
-| `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
 | `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
 ## Task Skip Reasons
@@ -119,6 +118,6 @@ part of the contract callers rely on to tell the two apart.
 
 - [Built-in module reference](./modules.md) — per-module supported
   runtimes
-- [How `become` works](../explanation/become.md)
+- [Configure another user's settings](../how-to/configure-another-users-settings.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)
 - [Plugin reference](./plugins.md)

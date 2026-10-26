@@ -34,7 +34,7 @@ Each task snapshot records:
 | `module` | string | Module name |
 | `depends_on` | string[] | Stable keys for dependencies |
 | `task_hash` | string | Hash of task identity plus params |
-| `param_hash` | string | Hash of rendered params plus task execution options such as `become` |
+| `param_hash` | string | Hash of rendered params |
 | `param_summary` | object | Redacted summary of rendered params and execution options used for comparisons |
 | `status` | string | Recorded execution status |
 | `message` | string | Recorded task message |
@@ -49,7 +49,6 @@ State files do not persist decrypted secret values.
 - passwords
 - tokens
 - private keys
-- become passwords
 - any `secret:<name>` reference values
 
 ## Diff Statuses

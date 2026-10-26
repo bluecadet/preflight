@@ -82,7 +82,7 @@ sidebar:
       - label: Credentials And Identity
         items:
           - how-to/manage-secrets
-          - how-to/run-tasks-as-another-user
+          - how-to/configure-another-users-settings
       - label: Source And State
         items:
           - how-to/sync-a-git-repo
@@ -121,7 +121,6 @@ sidebar:
       - explanation/architecture
       - explanation/execution-model
       - explanation/targets-and-transports
-      - explanation/become
       - explanation/secrets-and-age
       - explanation/restricted-network-deployment
   - label: Development

@@ -53,8 +53,6 @@ tasks:
       timezone: Eastern Standard Time
 
   - name: Create content directory
-    become:
-      user: exhibit
     directory:
       path: "C:\\Exhibits\\Content"
       ensure: present
@@ -130,10 +128,10 @@ Implemented today:
 
 - Local execution and inventory-backed host selection
 - WinRM and SSH targets
-- Task-level `become` with inherited defaults and named-user execution via `runas`
+- Per-user registry and environment settings via `user:`, loading the profile hive on demand
 - Embedded, local, cached, and Git-backed action resolution
 - Embedded Windows stdlib actions for machine, shell, input, quiet mode, updates, power, apps, and Git checkout sync
-- User-scoped shell and input stdlib actions apply to the current execution identity; use `become` when you need to target a different Windows user
+- User-scoped shell and input stdlib actions accept `user:` to target another Windows profile
 - Repo-backed `age` secrets
 - Plugin discovery and plugin-backed module execution
 - Bundle staging and bundle apply

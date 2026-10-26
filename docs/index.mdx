@@ -75,9 +75,9 @@ import {
     Secret values travel with the project's config and decrypt only at apply time. No plaintext,
     no central vault.
   </GlyphItem>
-  <GlyphItem glyph="✓" lead="Identity-aware execution.">
-    `become` runs a task under a different user account when the outcome depends on whose
-    registry keys or files get touched.
+  <GlyphItem glyph="✓" lead="Per-user settings without signing in.">
+    `registry` and `environment` edit another user's profile hive directly, loading it on demand
+    when that user is signed out.
   </GlyphItem>
   <GlyphItem glyph="✓" lead="A stdlib that ships with the binary.">
     Embedded actions like `windows-machine` and `autologin` are versioned with the release and

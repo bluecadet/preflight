@@ -141,4 +141,4 @@ for why and for the workarounds.
 - [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
 - [Inventory Reference](../reference/inventory.md)
 - [State Reference](../reference/state.md)
-- [Run tasks as another user](./run-tasks-as-another-user.md)
+- [Configure another user's settings](./configure-another-users-settings.md)

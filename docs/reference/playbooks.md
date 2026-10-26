@@ -113,7 +113,6 @@ Mixing these forms in the same task is an error.
 | `id` | string | Optional stable task reference for `depends_on` |
 | `uses` | string | Action reference |
 | `with` | object | Inputs passed to the referenced action |
-| `become` | object | Execute the task as another user |
 | `module` | string | Explicit module name, including plugin-backed modules |
 | `params` | object | Parameters for `module` |
 | `when` | string | Template condition expression |
@@ -139,51 +138,6 @@ tasks:
     params:
       source: "\\\\nas01\\content"
       destination: "C:\\Content"
-```
-
-### Task Defaults
-
-Playbooks and actions may define:
-
-```yaml
-defaults:
-  become:
-    enabled: true
-    user: exhibit
-    method: runas
-```
-
-Task defaults are inherited into child tasks. `become` precedence is:
-
-```text
-playbook defaults -> action defaults -> task become
-```
-
-If a `become` object is present and omits `enabled`, Preflight treats it as enabled. Setting `enabled: false` on a task disables inherited `become` for that task.
-
-### `become`
-
-`become` is task execution metadata, not a module parameter. It changes which user the task runs as while leaving `params` unchanged.
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `enabled` | bool | Enable alternate-user execution |
-| `user` | string | Target user to execute as |
-| `password` | string | Optional password or secret reference |
-| `method` | string | Runtime method (`runas`, the default) |
-| `load_profile` | bool | Windows-focused profile loading hint |
-
-Example:
-
-```yaml
-tasks:
-  - name: Configure kiosk shell
-    become:
-      user: exhibit
-      password: secret:exhibit-password
-    powershell:
-      script: |
-        Write-Output $env:USERNAME
 ```
 
 ### Explicit Module Tasks
