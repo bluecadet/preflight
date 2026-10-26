@@ -1,58 +1,39 @@
-# Deploy Across Restricted Networks
+# Deploy across restricted networks
 
-When managed Windows hosts live on secure networks, the first question is not "WinRM or SSH?" It is "who is allowed to initiate the connection?" Preflight's remote transports are controller-initiated today: the machine running `preflight` opens WinRM or SSH to each target. Preflight does not currently include a resident agent, a callback transport, or a built-in tunnel manager.
+On a secure network, the first question is which side may open the connection. Preflight's remote transports are controller-initiated: the machine running `preflight` opens SSH or WinRM to each target. Preflight has no resident agent, callback transport, or tunnel manager.
 
-That still leaves several workable deployment patterns. The right choice depends on whether you can run Preflight from inside the secure network, whether the targets can open outbound SSH connections, and whether you can execute a staged bundle locally on each machine.
+Several deployment patterns still work. The choice depends on whether you can run Preflight inside the secure network, whether targets can open outbound SSH connections, and whether you can run a staged bundle on each machine.
 
-## Start With Connection Direction
+## Start with connection direction
 
-- If the machine running Preflight can open an approved connection to the target, use normal remote execution.
-- If the target can dial out but cannot accept inbound management traffic, an externally managed reverse SSH tunnel can expose an SSH endpoint that Preflight can use.
-- If no live remote session is acceptable, stage a bundle and run it locally on the target.
+- If the controller can open an approved connection to the target, use normal remote execution.
+- If the target can dial out but cannot accept inbound management traffic, an externally managed reverse SSH tunnel can expose an SSH endpoint for Preflight.
+- If no live remote session is acceptable, stage a bundle and run it on the target.
 
-## Run Preflight From Inside The Secure Network
+## Run Preflight inside the secure network
 
-In many locked-down environments, the simplest answer is to move the controller instead of forcing a new path through the firewall. That usually means running Preflight from:
+In many locked-down environments, moving the controller is simpler than opening a new path through the firewall. Run Preflight from:
 
 - a jump host
-- an admin workstation already inside the target VLAN
-- a VPN-connected machine that can reach the private addressing space
+- an admin workstation inside the target VLAN
+- a VPN-connected machine that can reach the private address space
 
-This works especially well for Windows fleets because it keeps the normal WinRM model intact. Inventory entries can use the internal hostnames or addresses, and Preflight does not need any tunnel-specific awareness.
+Inventory entries then use internal hostnames or addresses, and Preflight needs no tunnel-specific configuration. Use SSH by default, or WinRM where SSH is not available. SSH supports every built-in module; a few cannot finish over WinRM (see [WinRM session limitations](../reference/modules.md#winrm-session-limitations)).
 
-## Use WinRM When The Controller Can Reach Windows Hosts
+An SSH-reachable bastion that cannot run Preflight itself still works through a [jump host](./targets-and-transports.md#bastion--jump-hosts) entry.
 
-WinRM is the right transport when you need the full Windows-native module surface, including:
+## Use reverse SSH tunnels when targets can dial out
 
-- `registry`
-- `service`
-- `user`
-- `scheduled_task`
-- `windows_feature`
-- PowerShell-heavy configuration work
+When a target may open an outbound SSH connection to a bastion but the controller cannot reach the target directly, a reverse tunnel bridges the gap.
 
-WinRM is a strong fit when:
-
-- the controller already sits inside the secure network
-- a bastion host can run Preflight on your behalf
-- an approved VPN or network overlay lets the controller reach the WinRM endpoint
-
-The key tradeoff is that WinRM is not itself a reverse-connection strategy. If the target cannot accept controller-initiated traffic, WinRM alone does not solve the access problem. You need some other approved network path to the WinRM listener, or you need a different deployment pattern such as staged bundles.
-
-## Use Reverse SSH Tunnels When Targets Can Dial Out
-
-Reverse SSH tunneling can help when the target is allowed to make an outbound SSH connection to a bastion, but the controller cannot connect to the target directly.
-
-Preflight does not create or maintain that tunnel. Another tool or operating-system service has to keep the reverse tunnel alive. From Preflight's perspective, it is simply connecting to a reachable SSH host and port.
-
-Typical shape:
+Preflight does not create or maintain the tunnel. Another tool or an operating-system service keeps it alive. Preflight just connects to a reachable SSH host and port:
 
 ```text
 target --outbound ssh -R--> bastion
 operator running preflight ----ssh----> bastion:forwarded-port -> target:22
 ```
 
-That means your inventory entry points at the forwarded endpoint rather than the target's private address:
+The inventory entry points at the forwarded endpoint instead of the target's private address:
 
 ```yaml
 - name: signage-host-01
@@ -63,46 +44,42 @@ That means your inventory entry points at the forwarded endpoint rather than the
   private_key: secret:signage-key
 ```
 
-This pattern is useful when outbound SSH is approved and the Windows target exposes a usable PowerShell runtime over SSH; it can then use the full built-in Windows module set. Plugin modules run over SSH like any other transport. If the environment cannot provide that runtime, use WinRM from a reachable controller or switch to bundle-based local execution.
+The target must provide Windows PowerShell over SSH. Every built-in and plugin module then works through the tunnel.
 
-For the operational detail this section only sketches — hardening a shared bastion, scoping one key per target so machines can't reach each other's tunnels, and the manual-trigger model that keeps a tunnel from outliving the person who opened it — see [Set up a reverse-tunnel bastion](../how-to/set-up-a-tunnel-bastion.md) and [Onboard a target through a reverse-tunnel bastion](../how-to/onboard-a-target-through-a-bastion.md).
+For hardening a shared bastion, scoping one key per target so machines cannot reach each other's tunnels, and opening tunnels only on demand, see [Set up a reverse-tunnel bastion](../how-to/set-up-a-tunnel-bastion.md) and [Onboard a target through a reverse-tunnel bastion](../how-to/onboard-a-target-through-a-bastion.md).
 
-## Stage Bundles When No Inbound Management Path Is Available
+## Stage bundles when no inbound path exists
 
-Staged bundles are usually the most robust answer when the target network cannot allow inbound administration at all. `preflight stage` renders a target-specific plan into a zip archive. `preflight apply --bundle` then runs locally on the target, so the apply step no longer depends on WinRM or SSH.
+When the target network allows no inbound administration at all, use staged bundles. `preflight stage` renders a target-specific plan into a zip archive, and `preflight apply --bundle` runs it locally on the target with no SSH or WinRM connection.
 
-Inventory can declare the destination platform, allowing a controller on a
-different OS to stage the bundle without contacting the host. The
-[inventory reference](../reference/inventory.md#platform-fields) owns that
-configuration contract.
+An inventory host can declare its `platform`, so a controller can stage the bundle without contacting the host. The [inventory reference](../reference/inventory.md#platform-fields) defines that field.
 
-This is a good fit when:
+Bundles fit when:
 
-- you can transfer files into the environment through an approved channel
-- a person, MDM/RMM tool, scheduled task, or remote-support session can launch the bundle locally
-- you still need the full Windows module set
+- you can move files into the environment through an approved channel
+- a person, MDM or RMM tool, scheduled task, or remote-support session can launch the bundle on the target
 
-This model is often easier to approve in secure environments because the execution artifact is explicit and the target does not need a permanently reachable management listener.
+Bundles are often easier to approve in secure environments: the execution artifact is explicit, and the target needs no listening management service.
 
-The main tradeoffs are operational:
+Tradeoffs:
 
-- each bundle is target-specific
-- you need a path to transfer and launch it
-- staging fails if the run would require embedding decrypted secret values
+- each bundle is specific to one target
+- you need a way to transfer and launch it
+- secret references travel encrypted, so the target needs an `age` identity that matches a project recipient
+- staging fails if a task carries a plaintext secret value; `--allow-plaintext-secrets-in-bundle` overrides that but writes every referenced secret into the bundle as plaintext
+- a bundle that includes plugins must be staged on a controller with the target's OS and architecture
 
-## Choose The Pattern That Matches The Constraint
+## Choosing a pattern
 
 | Pattern | Best when | Strengths | Limits |
 | --- | --- | --- | --- |
-| Run Preflight inside the secure network with WinRM | A controller or bastion can reach Windows hosts | Full Windows module support with the normal remote model | Requires a trusted machine inside the environment or another approved path to WinRM |
-| Direct SSH or reverse-tunneled SSH | Outbound SSH is allowed and the target exposes PowerShell over SSH | Useful for Windows built-ins over PowerShell without direct inbound access, and plugin modules run over SSH | Requires PowerShell on the target |
-| Stage bundles and apply locally | No live inbound management path can be approved | No remote transport during apply and full local module behavior | Requires bundle transfer plus local execution on each target |
+| Run Preflight inside the secure network | A controller or bastion can reach the Windows hosts | Normal remote model with every module | Requires a trusted machine inside the environment or another approved path |
+| Reverse-tunneled SSH | Targets may open outbound SSH, but nothing can reach them | Every module without inbound access | Requires PowerShell over SSH and an externally managed tunnel |
+| Staged bundles applied locally | No live management path can be approved | No remote transport during apply | Requires transferring and launching a bundle on each target |
 
-## Practical Recommendation
+Place the controller inside the network boundary when you can. Use reverse SSH tunnels when targets can only dial out. When no controller-initiated connection is acceptable, stage bundles.
 
-For managed Windows hosts, use WinRM when you can place the controller on the right side of the network boundary. Use reverse SSH only as a narrow operator-managed escape hatch for SSH-friendly tasks. When the environment cannot support controller-initiated administration, staged bundles are usually the clearest and most supportable option.
-
-## Related Docs
+## Related docs
 
 - [Run a playbook against remote hosts](../how-to/remote-execution.md)
 - [Stage bundles for air-gapped deployment](../how-to/air-gapped-deployment.md)

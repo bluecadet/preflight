@@ -1,106 +1,56 @@
-# Execution Model
+# Execution model
 
-The central question in Preflight is not just "how do tasks run?" It is
-"what should already be knowable before we touch a machine, and what
-must wait until execution time?"
+Most of the runner's design follows from one split: what Preflight can know before it touches a machine, and what must wait until execution.
 
-That question explains most of the runner design, from planning through
-the way actions are resolved and pinned before a plan ever touches a
-host.
-
-## Plan First, Mutate Later
-
-The runner treats planning as a first-class phase.
+## Plan first, change later
 
 During `plan`, Preflight:
 
 - loads the playbook
-- merges any imported playbooks
+- merges imported playbooks
 - resolves `uses:` references
 - expands actions into a flat task list
 - merges variable layers
 - builds and validates the task DAG
 
-What it does not do:
+Planning does not run modules, gather facts, or change a target. Configuration logic stays separate from machine state.
 
-- contact hosts
-- gather facts
-- decrypt secrets unnecessarily
-- mutate the target
+## Actions
 
-This preserves a clean boundary between configuration logic and machine
-state.
-
-## Why Actions Exist
-
-Modules are intentionally small. They are the primitive operations —
-one module, one kind of change. Actions sit one level above modules so
-operators can:
+Modules are small: one module, one kind of change. Actions sit one level above modules so operators can:
 
 - package repeatable task sequences
 - give those sequences named inputs
 - share them across playbooks
 - pin remote behavior when reproducibility matters
 
-Resolving a `uses:` reference into its expanded tasks is part of what
-the plan phase above does before it builds the DAG. Without actions,
-every playbook would have to duplicate its own orchestration logic
-instead of expanding a shared one.
+The plan phase expands each `uses:` reference into its tasks before building the DAG. Without actions, every playbook would duplicate its own orchestration logic.
 
-## Action Resolution Order
+## Action resolution order
 
-Because action expansion happens during planning, the plan phase also
-owns a fixed resolver order:
+Because expansion happens during planning, the plan phase owns a fixed resolver order:
 
 1. embedded stdlib
 2. local project `actions/`
 3. user cache `~/.preflight/actions`
 4. Git-backed remote refs
 
-That order encodes a policy, not just an implementation detail:
+The order encodes a policy:
 
 - the binary always has a dependable baseline
-- project-local work stays easy to author and test
-- cached remote content can be reused offline
-- remote Git is available without becoming the only source of truth
+- project-local actions are easy to author and test
+- cached remote content works offline
+- remote Git is available without becoming the only source
 
-The embedded stdlib is versioned with the binary, so `preflight/...`
-actions work without a registry or a first fetch. The cost is that
-stdlib actions do not get independent versioning — when an operator
-needs a separately pinned lifecycle for an action, a remote ref is the
-better fit than waiting for a stdlib change. See
-[Stdlib Actions Reference](../reference/stdlib-actions.md) for the
-current list.
+The embedded stdlib is versioned with the binary, so `preflight/...` actions work without a registry or a first fetch. Stdlib actions cannot be versioned independently; when an action needs its own pinned lifecycle, use a remote ref. See the [stdlib action reference](../reference/stdlib-actions.md) for the current list.
 
-## Why Remote Refs Are Pinned
+## Pinned remote refs
 
-Remote refs identify an action by repository and revision:
-`host/org/repo[/path/to/action]@revision`. A revision can be a tag, a
-branch, or a commit SHA. Floating refs such as tags or branches are
-convenient to write but bad for reproducibility on their own, so the
-resolver always pins what it fetches to the exact commit SHA and caches
-that content locally.
+A remote ref names an action by repository and revision: `host/org/repo[/path/to/action]@revision`. The revision can be a tag, a branch, or a commit SHA. Tags and branches move, so the resolver pins every fetch to its commit SHA and caches that content locally.
 
-`preflight.lock` is what makes that pin durable across runs and across
-controllers. It records the exact commit resolved for each fetched
-remote ref, which gives the project two properties a floating ref
-cannot on its own:
+`preflight.lock` records the commit resolved for each fetched remote ref, including nested remote actions fetched along the way. A later `plan` reads the cache and lockfile instead of asking the remote again. Disconnected planning, consistent staging, and controlled upgrades all depend on resolution being a lookup against recorded pins. [Update and pin remote actions](../how-to/update-and-pin-actions.md) covers the workflow.
 
-- repeatable future resolution — a later `plan` reads the cache and the
-  lockfile instead of re-resolving the ref against the remote
-- a clear record of what remote content was actually used, including
-  any nested remote actions fetched recursively along the way
-
-That is why the resolver, cache, and lockfile behave together like a
-pinned dependency model rather than a "latest by default" package
-lookup: disconnected planning, consistent staging, and controlled
-upgrades all depend on resolution being a lookup against recorded
-state, not a fresh network decision every time. The operational
-workflow for fetching, inspecting, and moving a pinned ref forward is
-covered in
-[Update And Pin Remote Actions](../how-to/update-and-pin-actions.md).
-
-## Why Facts Wait For Execution
+## Facts wait for execution
 
 Many useful conditions depend on the target:
 
@@ -109,85 +59,39 @@ Many useful conditions depend on the target:
 - environment variables
 - transport metadata
 
-If planning gathered those values, the plan phase would stop being
-pure. Preflight instead preserves unknown fact-dependent expressions
-during preview and resolves them only during `check` or `apply`.
+Gathering them during planning would make planning impure. Preflight keeps fact-dependent expressions unresolved in `plan` output and resolves them during `check` or `apply`. Planning stays cheap and deterministic, and execution still adapts to each host.
 
-That tradeoff is intentional:
+## Dry run uses the real module contract
 
-- planning stays cheap and deterministic
-- execution still gets host-aware behavior
+Every module must answer whether a change is needed, so `check` calls the same `Check()` code that `apply` calls before `Apply()`. A dry run therefore exercises the same planning, rendering, dependency, and targeting logic as a real run, with no separate simulation path.
 
-## Why Dry-Run Uses The Real Module Contract
+## The plan is a DAG
 
-Some tools fake dry-run behavior with a separate code path. Preflight
-does not.
+`depends_on` turns the task list into a graph. The runner uses it to:
 
-Dry-run works because modules already have to answer a real question:
-"is change needed?" The runner can use the same `Check()` path in both
-dry-run and apply mode.
+- detect cycles before execution
+- reject dependencies on unknown tasks
+- run tasks in dependency order
+- tell tasks skipped because a dependency failed apart from tasks whose `when` condition was false
 
-This makes dry-run more trustworthy because it exercises the same
-planning, rendering, dependency, and targeting logic as a real run.
+## Staging uses a rendered plan
 
-## Why The Plan Becomes A DAG
-
-Tasks are not just a list. `depends_on` turns them into a graph.
-
-That matters because the runner needs to:
-
-- detect cycles early
-- reject unknown dependencies
-- execute tasks in dependency order
-- distinguish skipped work caused by dependency failures from tasks
-  that were never applicable
-
-The DAG is one of the places where Preflight becomes more than a
-simple YAML loop.
-
-## Why State Uses Stable Task Keys
-
-Comparing raw list positions produces noisy diffs. Insert one task near
-the top of a playbook and suddenly everything below it looks new.
-
-Preflight avoids that by deriving task identities from lineage:
-
-- the playbook task name or module form
-- action expansion ancestry
-- repeated task disambiguation
-
-That makes state comparisons much more useful after normal refactors.
-
-## Why Staging Uses A Rendered Plan
-
-The stage phase does not archive the original source tree and ask the
-offline machine to re-plan later. It stages the rendered execution plan
-plus the runtime pieces needed to execute it.
-
-When inventory declares the host platform, stage uses that declaration for
-module validation and bundle metadata without contacting the host. Otherwise,
-it probes the host for the same information. See
-[Platform Fields](../reference/inventory.md#platform-fields).
-
-That choice keeps offline execution predictable:
+`stage` does not archive the source tree for the offline machine to re-plan. It writes the rendered execution plan plus the plugins and secrets needed to run it. Offline execution then involves:
 
 - no fresh action resolution
-- no dependency on live network access
-- no accidental drift from changed source files
+- no network access
+- no drift from changed source files
 
-The cost is that staged bundles cannot safely embed decrypted secrets,
-so those plans are rejected.
+When an inventory host declares `platform`, stage uses that declaration instead of contacting the host. Otherwise it probes the host. See [Platform fields](../reference/inventory.md#platform-fields).
 
-## Why Host Fan-Out Lives Above The Runner
+Secret references (`secret:<name>`) travel in the bundle as `age`-encrypted files, and the applying machine decrypts them with its own identity. Staging refuses tasks that carry a plaintext value under a secret-like key. `--allow-plaintext-secrets-in-bundle` lifts that check and also decrypts every referenced secret into the bundle as plaintext.
 
-The runner is single-target by design. Host selection, concurrency, and
-per-host state paths live in the command layer above it.
+## Host fan-out sits above the runner
 
-That split keeps each part simpler:
+The runner handles one target. Host selection and concurrency live in the command layer:
 
-- inventory logic handles selectors and host preparation
+- inventory logic resolves selectors and prepares hosts
 - transports stay behind the `Target` interface
-- the runner stays focused on one plan and one execution context
+- the runner handles one plan and one execution context
 
-It is a small amount of extra orchestration code in exchange for much
-clearer boundaries.
+The cost is a little extra orchestration code in the command layer.

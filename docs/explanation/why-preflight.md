@@ -1,114 +1,98 @@
-# Why Use Preflight (And When Not To)
+# Choosing Preflight
 
-Preflight exists for a practical deployment problem: repeatable Windows configuration in environments where reliability, low ceremony, and offline-friendly workflows matter.
+Preflight targets one deployment problem: repeatable Windows configuration where reliability, low ceremony, and offline delivery matter.
 
-This page answers a practical question:
+## Summary
 
-```text
-Why use Preflight over other common approaches?
-```
+Preflight fits when you want:
 
-## The Short Version
-
-Preflight is a strong fit when you want:
-
-- one static binary with minimal runtime dependencies
-- idempotent apply behavior with real dry-run checks
-- YAML-defined reusable tasks and playbooks
+- one static binary with no runtime dependencies
+- idempotent applies and dry runs that call the real module checks
+- reusable tasks and playbooks defined in YAML
 - explicit `fetch -> plan -> stage -> apply` phases
-- an offline-capable staging and bundle workflow
+- offline delivery through staged bundles
 
-Preflight is a weaker fit when you primarily need:
+It fits poorly when you mainly need:
 
-- deep enterprise policy management across very large fleets
-- cloud-native endpoint governance and compliance dashboards
-- highly dynamic secrets and centralized secret brokering
-- mature Linux-first module ecosystems
+- enterprise policy management across very large fleets
+- cloud endpoint governance and compliance dashboards
+- dynamic secrets and centralized secret brokering
+- Linux or macOS targets
 
-## Preflight Vs Ad-Hoc PowerShell Scripts
+## Preflight vs. ad hoc PowerShell scripts
 
-PowerShell scripts are often the default starting point on Windows. They are powerful, but they usually leave lifecycle concerns up to each script author.
+PowerShell scripts are the usual starting point on Windows, but each script author handles idempotency, ordering, and reuse alone. Preflight adds:
 
-Why you might prefer Preflight over script-only workflows:
+- an idempotency contract: modules answer `Check()` before `Apply()`, so dry runs and applies share one execution model
+- composition: actions package task sequences with typed inputs instead of copied script fragments
+- dependency ordering: DAG validation rejects broken `depends_on` graphs before anything runs
 
-- **Idempotency contract:** modules must answer `Check()` before `Apply()`, so dry-run and apply use the same execution model.
-- **Reusable composition:** actions package task sequences with typed inputs instead of copy-pasting script fragments between machines.
-- **Dependency ordering:** task DAG validation catches bad `depends_on` graphs early.
-- **State and diff model:** stable task keys make before/after comparisons useful across playbook refactors.
+Scripts alone remain the better choice for:
 
-Where script-only can still be better:
+- one-off migrations
+- custom procedural logic not worth modeling as an action
+- environments that need no shared conventions
 
-- one-off migration tasks
-- highly custom procedural logic not worth modeling as reusable actions
-- environments that do not need shared config conventions
+## Preflight vs. Ansible
 
-## Preflight Vs Ansible (General Purpose Automation)
+Ansible covers many platforms with a large module ecosystem. Preflight narrows its scope to Windows endpoints:
 
-Ansible has a broad ecosystem and cross-platform depth. Preflight intentionally optimizes for a narrower Windows-first niche.
+- modules and stdlib actions target common kiosk and signage tasks
+- a single static binary is easier to deploy into locked-down environments
+- staged bundles are a first-class workflow
+- phases separate pure planning from target changes
 
-Why choose Preflight over Ansible in some environments:
+Choose Ansible when:
 
-- **Windows-focused defaults:** module surface and stdlib actions target common kiosk/signage style Windows tasks.
-- **Single static binary:** simpler deployment footprint in constrained or locked-down environments.
-- **Offline staging model:** staged bundles are a first-class workflow, not an afterthought.
-- **Opinionated execution phases:** clearer boundaries between pure planning and target mutation.
+- you need a large existing module and role ecosystem
+- you mostly automate Linux or Unix infrastructure
+- your team already runs Ansible well
 
-Why choose Ansible instead:
+## Preflight vs. DSC, Intune, and endpoint management platforms
 
-- you need a very large existing module/role ecosystem
-- your automation is primarily Linux/Unix infrastructure
-- your environment already has strong Ansible operational maturity
+These tools solve adjacent problems. Preflight offers:
 
-## Preflight Vs DSC / Intune / Endpoint Management Platforms
+- project-local config: playbooks, actions, and encrypted secrets live in the project repo
+- portable execution: the same playbook runs locally, against remote targets, or from a staged bundle
+- low setup cost for small and medium deployments, with no management plane to stand up
 
-These tools solve adjacent but not identical problems.
-
-Preflight advantages in the environments it targets:
-
-- **Project-local declarative config:** playbooks, actions, and encrypted secrets live with the project repo.
-- **Portable execution:** same configuration can run locally, against remote targets, or from staged bundles.
-- **Low setup overhead for small/medium deployments:** no requirement to stand up a management plane before first value.
-
-Platform advantages over Preflight:
+Platforms offer:
 
 - centralized policy, reporting, and governance at enterprise scale
-- richer inventory/compliance reporting across very large device fleets
-- built-in administrative controls and organization-level policy tooling
+- inventory and compliance reporting across very large fleets
+- organization-level administrative controls
 
-A hybrid approach is possible: a platform for fleet governance and Preflight for deterministic application/environment shaping.
+The two can coexist: a platform for fleet governance and Preflight for application and environment setup.
 
-## Preflight Vs "Just Use CI To Push Scripts"
+## Preflight vs. CI pushing scripts
 
-CI-only orchestration can work, but it tends to conflate planning, artifact preparation, and mutation in one pipeline.
+CI-only orchestration tends to merge planning, artifact preparation, and changes into one pipeline. Preflight separates them:
 
-Preflight gives a clearer operational model:
-
-- `plan` can be reviewed without target mutation
-- `fetch` and lockfile pinning produce repeatable action resolution
+- `plan` can be reviewed without touching a target
+- `fetch` and the lockfile make action resolution repeatable
 - `stage` makes offline handoff explicit
-- `apply` runs the idempotent execution contract on target contexts
+- `apply` runs the idempotent module contract on each target
 
-That separation is useful when deployment windows are tight and operators need confidence before touching managed endpoints.
+The separation helps when deployment windows are short and operators need confidence before touching endpoints.
 
-## Decision Heuristics
+## Decision guide
 
-Choose Preflight when most of these are true:
+Choose Preflight when most of these hold:
 
-- your critical targets are Windows kiosks, signage systems, exhibit PCs, or other dedicated endpoints
-- you need repeatable, idempotent machine configuration from versioned YAML
-- you want dry-run behavior that reflects real execution logic
-- your environment benefits from offline-ready staging
-- you prefer small operational footprint over large control-plane features
+- your critical targets are Windows kiosks, signage, exhibit PCs, or other dedicated endpoints
+- you want repeatable machine configuration from versioned YAML
+- you want dry runs that reflect real execution logic
+- you need offline staging
+- you prefer a small operational footprint over control-plane features
 
-Consider alternatives first when most of these are true:
+Consider alternatives first when most of these hold:
 
 - you need organization-wide endpoint governance and compliance tooling
-- your workloads are mostly Linux/cloud infrastructure automation
-- you need heavyweight central policy engines more than portable execution
+- your workloads are mostly Linux or cloud infrastructure
+- you need a central policy engine more than portable execution
 
-## Related Docs
+## Related docs
 
 - [Architecture](./architecture.md)
 - [Execution model](./execution-model.md)
 - [Targets, transports, and plugins](./targets-and-transports.md)
-- [Execution model](./execution-model.md)

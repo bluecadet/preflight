@@ -1,100 +1,59 @@
-# Secrets And `age`
+# Secrets and `age`
 
-Preflight uses repo-backed [`age`](https://age-encryption.org/)
-encryption so secret material can travel with a project's
-configuration without ever being stored in plaintext. This page
-explains why that model was chosen and what it does and does not
-protect. For the commands that create identities, encrypt values, and
-reference them from YAML, see
-[Manage Secrets](../how-to/manage-secrets.md).
+Preflight encrypts secrets with [`age`](https://age-encryption.org/) and stores them in the project repo, so secrets travel with the configuration without ever sitting in plaintext. This page explains the model and its limits. For the commands, see [Manage secrets](../how-to/manage-secrets.md).
 
-## Why `age`
+## The `age` model
 
-`age` encrypts data to one or more public **recipients** and decrypts
-it with a matching private **identity** file. Preflight maps that
-directly onto its own configuration: `secrets.recipients` lists who
-can encrypt new secrets, and `secrets.identity` names the private key
-a given machine uses to decrypt them.
+`age` encrypts data to one or more public recipients and decrypts it with a matching private identity file. Preflight maps that onto its config: `secrets.recipients` lists the public keys each secret is encrypted to, and `secrets.identity` names the private key a machine uses to decrypt.
 
-That model fits Preflight's deployment style well:
+The model suits Preflight's deployments:
 
-- it works offline, with no external service to reach at apply time
+- no external service is needed at apply time, so it works offline
 - encrypted secrets sit next to the playbooks that use them
-- a project can be copied wholesale to another machine and still
-  resolve its own secrets, given the right identity file
-- the runner resolves secret references at execution time, so
-  playbooks and inventory never carry plaintext
+- a project copied to another machine still resolves its secrets, given a matching identity file
+- playbooks and inventory reference secrets by name and never hold plaintext
 
-The tradeoff is that `age` does not manage key distribution for you.
-Encryption only helps if identity files are stored and shared
-carefully.
+`age` does not distribute keys. Encryption helps only if identity files are stored and shared carefully.
 
-## How It Compares
+## Alternatives
 
-| Alternative | When it wins | What Preflight loses by not using it |
+| Alternative | When it wins | Drawback |
 |---|---|---|
-| Plaintext in the repo | Never, for anything sensitive | N/A — this is the baseline `age` improves on |
-| Local `.env` / unencrypted files | Quick local experiments | Files are easy to commit, back up, or leave on disk by mistake |
-| Environment variables | Injecting a secret at run time | Not secure at rest; exposed via process listings, crash dumps, or CI logs |
-| External secret manager (KMS, vault service) | Centralized access control, audit trails, short-lived credentials, machine-to-machine delivery at scale | Requires connectivity and infrastructure Preflight's offline-friendly model doesn't assume |
+| Plaintext in the repo | Never, for anything sensitive | Anyone with the repo reads the secret |
+| Local `.env` or other unencrypted files | Quick local experiments | Easy to commit, back up, or leave on disk by mistake |
+| Environment variables | Injecting a secret at run time | Unprotected at rest; exposed through process listings, crash dumps, and CI logs |
+| External secret manager (KMS, vault service) | Centralized access control, audit trails, short-lived credentials, delivery at scale | Requires connectivity and infrastructure that Preflight's offline model does not assume |
 
-Repo-backed `age` secrets are a practical middle ground: better than
-anything stored in plaintext, and simpler to operate than a dedicated
-secret manager, at the cost of the centralized controls that a
-managed service provides.
+Repo-backed `age` secrets sit between plaintext files and a dedicated secret manager: safer than the first and simpler to run than the second, without the central controls a managed service provides.
 
-## Threat Model
+## Threat model
 
-`age` protects a secret **at rest** in the repository. Anyone who
-obtains the repo alone — through a clone, a backup, or a leaked
-archive — sees only ciphertext.
+`age` protects a secret at rest. Anyone who obtains only the repo, through a clone, a backup, or a leaked archive, sees ciphertext.
 
-It does not protect:
+It does not protect against:
 
-- a stolen laptop or target machine that also holds a private
-  identity file
-- a compromised controller, which can decrypt anything its configured
-  identity has access to
-- decrypted temporary files or in-memory values on a machine that is
-  itself untrusted
-- careless distribution of the identity file itself
+- a stolen laptop or target machine that also holds a private identity file
+- a compromised controller, which can decrypt anything its identity can
+- decrypted temporary files or in-memory values on an untrusted machine
+- careless distribution of the identity file
+- secrets shorter than 4 characters, or transformed before printing (re-encoded, split across lines, truncated), which output does not mask
 
-The right question is not "encrypted or not," but where secrets live,
-who can decrypt them, and how much control that requires. Securing
-developer laptops, CI runners, and deployment machines remains your
-responsibility regardless of encryption.
+Preflight replaces each resolved secret with `***` in terminal output, JSON output, and run logs. It matches the exact value only.
 
-## Key Ownership Model
+You remain responsible for securing developer laptops, CI runners, and deployment machines.
 
-Recipients belong to whichever principals need to decrypt: a
-developer, an operator, a CI job, or a target machine. Sharing one
-private identity across a team is usually a worse default than giving
-each principal its own identity and listing every public recipient in
-`secrets.recipients`. The encrypted files stay identical; only the
-list of who can open them changes. That way one compromised or
-departing identity can be dropped without re-issuing everyone else's
-key, and a human's access is never conflated with a machine's.
+## Key ownership
 
-Because recipients are additive, changing that list requires
-re-encrypting existing secrets so the new recipient set can actually
-decrypt them — Preflight calls this rekeying. A single project-wide
-identity is still workable for small or air-gapped setups, but it
-blurs the distinction between human and machine access and makes
-rotation more painful as the project grows.
+Give each principal that needs to decrypt (a developer, an operator, a CI job, a target machine) its own identity, and list every public recipient in `secrets.recipients`. Sharing one identity across a team is a worse default. With separate identities, you can drop one compromised or departing identity without reissuing everyone else's key, and human access stays distinct from machine access.
 
-## Where Secrets Appear At Runtime
+Changing the recipient list requires re-encrypting existing secrets so the new set can decrypt them. Preflight calls this rekeying. A single project-wide identity still works for small or air-gapped setups, but it blurs human and machine access and makes rotation harder as the project grows.
 
-Decryption happens on whichever machine is running `preflight`, using
-the identity referenced by `secrets.identity`. If you run `apply` on
-your laptop, your laptop needs the identity; if a target machine runs
-`preflight` against itself, the target needs it; if you `apply` from a
-staged bundle, the identity on the applying machine must match a
-recipient the bundle's secrets were encrypted to. The encrypted files
-and public recipients are safe to move around with the project — only
-the private identity is sensitive enough to distribute deliberately.
+## Decryption
 
-## Related Docs
+The machine running `preflight` decrypts secrets with the identity named in `secrets.identity`. If you run `apply` from your laptop, your laptop needs the identity. If a target runs `preflight` against itself, the target needs it. For a staged bundle, pass an identity that matches one of the project's recipients with `apply --bundle <path> --secret-identity <file>`. Encrypted files and public recipients are safe to move with the project; only private identities need deliberate distribution.
 
-- [Manage Secrets](../how-to/manage-secrets.md)
-- [Config Reference](../reference/config.md)
-- [Configure Git Credentials](../how-to/configure-git-credentials.md)
+## Related docs
+
+- [Manage secrets](../how-to/manage-secrets.md)
+- [Config reference](../reference/config.md)
+- [Configure Git credentials](../how-to/configure-git-credentials.md)

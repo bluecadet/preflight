@@ -1,26 +1,28 @@
 # Quickstart
 
-This tutorial gets a minimal Preflight project running in one sitting. You will create a project, validate it, inspect the plan, dry-run it, apply it, and confirm idempotency.
+In this tutorial you create a minimal Preflight project, then validate, plan, dry-run, and apply it on your own machine. A second apply shows that a converged machine needs no changes.
 
-## Before You Start
+## Before you start
 
 You need:
 
-- A `preflight` binary installed and on your `PATH`
-- A terminal in an empty working directory
+- A Windows machine with `preflight` on its `PATH`. Without an inventory, Preflight runs against the local machine, and the local target requires Windows.
+- A PowerShell window in an empty working directory
+
+On a macOS or Linux controller, skip to [Manage your first Windows target](./first-windows-target.md), which applies a playbook to a remote Windows host.
 
 If you still need the CLI, follow [Install Preflight](../how-to/install-preflight.md).
 
-Confirm the binary is available:
+Confirm the binary runs:
 
-```bash
+```powershell
 preflight --version
 ```
 
-## 1. Create A Project Directory
+## 1. Create a project
 
-```bash
-mkdir -p preflight-quickstart/playbooks
+```powershell
+mkdir preflight-quickstart\playbooks
 cd preflight-quickstart
 ```
 
@@ -31,13 +33,13 @@ project: docs-demo
 environment: development
 
 vars:
-  demo_dir: "./tmp/demo"
-  demo_file: "./tmp/demo/hello.txt"
+  demo_dir: 'C:\PreflightQuickstart'
+  demo_file: 'C:\PreflightQuickstart\hello.txt'
 ```
 
-`preflight.yml` is the project-level config file. In this example it only carries shared variables, but the same file also holds repo-backed secret settings when you need them later.
+`preflight.yml` is the project config file. Here it holds shared variables. Later it can also hold an inventory and secret settings.
 
-## 2. Create A Playbook
+## 2. Create a playbook
 
 Create `playbooks/quickstart.yml`:
 
@@ -52,99 +54,57 @@ tasks:
       ensure: present
 
   - name: Write demo file
-    shell:
-      cmd: /bin/sh
-      args:
-        - -c
-        - printf 'Hello from Preflight\n' > "{{ vars.demo_file }}"
+    powershell:
+      script: Set-Content -Path '{{ vars.demo_file }}' -Value 'Hello from Preflight'
       creates: "{{ vars.demo_file }}"
 ```
 
-This playbook uses two built-in modules:
+The playbook uses two built-in modules:
 
-- `directory` ensures the directory exists.
-- `shell` runs a command, but only when `creates` is missing, which makes the task naturally idempotent.
+- `directory` creates the directory if it is missing.
+- `powershell` runs the script only when the `creates` path does not exist, so the task is idempotent.
 
-## 3. Validate The Input Files
+## 3. Validate the playbook
 
-Run:
-
-```bash
+```powershell
 preflight validate playbooks/quickstart.yml
 ```
 
-Expected result:
+Preflight reports the playbook name, its task count, and any `uses:` references it resolved. Validation parses the YAML and resolves action references without contacting a target.
 
-```text
-OK
-```
+## 4. Inspect the plan
 
-Why this matters:
-
-- It proves the YAML parses.
-- It catches direct `uses:` resolution errors before you contact any targets.
-- It is the fastest way to catch structural mistakes early.
-
-## 4. Inspect The Plan
-
-Run:
-
-```bash
+```powershell
 preflight plan playbooks/quickstart.yml
 ```
 
-You should see a flattened task list. `plan` is intentionally pure: it expands tasks and renders whatever it can from known variables, but it does not gather facts or mutate the machine.
+You see the flattened task list. `plan` does not gather facts or change the machine.
 
-## 5. Dry-Run The Changes
+## 5. Dry-run the changes
 
-Run:
-
-```bash
+```powershell
 preflight check playbooks/quickstart.yml
 ```
 
-This drives every task through the `Check()` side of the module contract. Nothing is changed, but you get the same planning, templating, dependency ordering, and task filtering behavior that a real run would use.
+`check` calls each module's `Check()` and reports the directory and file as pending changes. Nothing changes yet.
 
-## 6. Apply The Playbook
+## 6. Apply the playbook
 
-Run:
+```powershell
+preflight apply playbooks/quickstart.yml
+Get-Content C:\PreflightQuickstart\hello.txt
+```
 
-```bash
+The file contains `Hello from Preflight`.
+
+## 7. Run it again
+
+```powershell
 preflight apply playbooks/quickstart.yml
 ```
 
-Inspect the results:
+This time both tasks report no change. Each module checks first and applies only when the machine differs from the playbook.
 
-```bash
-cat ./tmp/demo/hello.txt
-```
+## Next steps
 
-At this point the machine has changed.
-
-## 7. Run It Again
-
-Run the same command a second time:
-
-```bash
-preflight apply playbooks/quickstart.yml
-```
-
-The second run should report fewer or no changes. That is the core promise of Preflight: modules report whether work is needed first, then apply only when necessary.
-
-## What You Learned
-
-You now have a working mental model for the normal flow:
-
-1. Define shared project configuration in `preflight.yml`.
-2. Describe desired state in a playbook.
-3. Use `validate` to catch structural issues.
-4. Use `plan` to inspect what will run.
-5. Use `check` to dry-run real execution logic.
-6. Use `apply` to converge the machine and record state.
-
-## Next Step
-
-Continue with [Manage your first Windows target](./first-windows-target.md) to
-add inventory, encrypt a credential, and apply a playbook over SSH. For
-everyday execution options, see
-[Run a playbook](../how-to/run-a-playbook.md).
+Continue with [Manage your first Windows target](./first-windows-target.md) to add an inventory, encrypt a credential, and apply a playbook over SSH. For everyday execution options, see [Run a playbook](../how-to/run-a-playbook.md).

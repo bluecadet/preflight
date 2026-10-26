@@ -4,43 +4,39 @@
   <img src="assets/header.gif" alt="preflight apply across a mixed-transport fleet" width="640" />
 </p>
 
-Preflight is a Windows-first configuration management CLI for managed endpoints such as kiosks, signage, exhibit PCs, and other dedicated systems. It compiles to a single static binary and is designed around idempotent modules, reusable YAML actions, and explicit execution phases.
+Preflight is a configuration management CLI for Windows endpoints such as kiosks, signage, and exhibit PCs. It ships as a single static binary. Targets must run Windows; macOS and Linux machines can act as controllers.
 
 ```bash
 preflight apply playbooks/lobby.yml
 ```
 
-## What It Is
+## Concepts
 
-Preflight is built around three layers:
+- Modules are the execution primitives, built in or supplied by plugins.
+- Actions are reusable YAML bundles of tasks with typed inputs.
+- Playbooks declare the tasks for a machine or environment.
 
-- **Modules** are built-in or plugin-backed execution primitives.
-- **Actions** are reusable YAML bundles of tasks with typed inputs.
-- **Playbooks** are the top-level machine or environment declarations you run.
-
-Every module follows the same contract:
+Every module implements the same contract:
 
 ```text
 Check() -> (needsChange, err)
 Apply() -> err
 ```
 
-That makes dry-run mode a real execution path instead of a fake preview path.
+Dry runs call `Check()` on the real modules, so a dry run exercises the same code as an apply.
 
-## Execution Model
-
-Runs flow through four explicit phases:
+## Execution model
 
 ```text
 Fetch -> Plan -> Stage -> Apply
 ```
 
-- **Fetch** acquires remote action refs into the local cache and records pinned SHAs in `preflight.lock`.
-- **Plan** loads YAML, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
-- **Stage** writes a per-target bundle containing the staged plan (task DAG), manifest, referenced plugins that pass initialization/name validation, and any bundled secrets needed for offline apply.
-- **Apply** gathers facts, renders execution-time templates using `target`, `facts`, and `env`, executes tasks, and records state.
+- Fetch downloads remote action refs into the local cache and pins their commit SHAs in `preflight.lock`.
+- Plan loads YAML, merges imports, resolves actions, expands tasks, and builds a DAG without contacting targets.
+- Stage writes a per-target bundle with the rendered plan, a manifest, any referenced plugins, and encrypted copies of the secrets the plan uses.
+- Apply gathers facts, renders templates that use `target`, `facts`, and `env`, runs tasks, and writes a run log.
 
-## Quick Example
+## Example
 
 ```yaml
 name: quickstart
@@ -60,7 +56,7 @@ tasks:
 
 ## Installation
 
-### macOS And Linux
+### macOS and Linux
 
 ```bash
 curl -fsSL https://preflight.bluecadet.com/install.sh | sh
@@ -72,9 +68,9 @@ curl -fsSL https://preflight.bluecadet.com/install.sh | sh
 irm https://preflight.bluecadet.com/install.ps1 | iex
 ```
 
-For manual verification and source builds, see [Install Preflight](docs/how-to/install-preflight.md).
+For checksum verification and source builds, see [Install Preflight](docs/how-to/install-preflight.md).
 
-## Common Commands
+## Common commands
 
 ```bash
 preflight validate playbooks/lobby.yml
@@ -85,16 +81,15 @@ preflight plugin list
 preflight action list
 ```
 
-Inventory-backed examples:
+With an inventory:
 
 ```bash
-preflight apply playbooks/lobby.yml
 preflight plan playbooks/lobby.yml --target lobby
 preflight apply playbooks/lobby.yml --target lobby
 preflight facts --target lobby
 ```
 
-When `preflight.yml` contains an `inventory:` block, omitting `--target` fans out to all inventory hosts. Use `--target local` to force a local-only run.
+When `preflight.yml` contains an `inventory:` block, omitting `--target` runs against every inventory host. `--target local` runs on the controller, which must be a Windows machine.
 
 Air-gapped flow:
 
@@ -104,8 +99,6 @@ preflight apply --bundle dist/bundles/<bundle>.zip
 ```
 
 ## Docs
-
-The full docs live under [`docs/`](docs/):
 
 - [Quickstart](docs/tutorials/quickstart.md)
 - [Run a playbook](docs/how-to/run-a-playbook.md)
@@ -118,37 +111,32 @@ The full docs live under [`docs/`](docs/):
 - [CLI reference](docs/reference/cli.md)
 - [Embedded stdlib action reference](docs/reference/stdlib-actions.md)
 - [Built-in module reference](docs/reference/modules.md)
-- [Why use Preflight (and when not to)](docs/explanation/why-preflight.md)
+- [Choosing Preflight](docs/explanation/why-preflight.md)
 - [Architecture](docs/explanation/architecture.md)
 
-## Current Scope
+## Current scope
 
-Implemented today:
-
-- Local execution and inventory-backed host selection
-- WinRM and SSH targets
-- Per-user registry and environment settings via `user:`, loading the profile hive on demand
-- Embedded, local, cached, and Git-backed action resolution
-- Embedded Windows stdlib actions for machine, shell, input, quiet mode, updates, power, apps, and Git checkout sync
-- User-scoped shell and input stdlib actions accept `user:` to target another Windows profile
+- Local, SSH, and WinRM targets, with host and group selection from inventory
+- Per-user settings via `user:` on the `registry` and `environment` modules and the `windows-shell`, `windows-input`, `windows-power`, `windows-quiet-mode`, and `debloat` stdlib actions, loading the profile hive on demand
+- Action resolution from the embedded stdlib, the project, the user cache, and Git
+- Embedded stdlib actions for machine baseline, shell, input, quiet mode, Windows Update, power, autologin, debloat, and Git sync
 - Repo-backed `age` secrets
-- Plugin discovery and plugin-backed module execution
-- Bundle staging and bundle apply
-- Output renderers for `text`, `tui`, and `json`, including streamed task output during apply plus richer TUI layouts for plan, facts, state, validate, and action inspection commands
+- Plugin modules discovered as standalone executables
+- Bundle staging and offline bundle apply
+- `text`, `tui`, and `json` output, with task output streamed during apply
 
-Important current limits:
+Known limits:
 
-- SSH targets must expose a Windows PowerShell runtime and support the built-in Windows module set; plugin modules run over every transport, including SSH. See the [module reference](docs/reference/modules.md#platform-and-transport-support) for the full per-module transport matrix.
+- Targets must run Windows. SSH targets must provide Windows PowerShell.
+- The local target and `apply --bundle` require a Windows controller.
+- Some modules cannot finish over WinRM; see [WinRM session limitations](docs/reference/modules.md#winrm-session-limitations).
 
-## Build And Test
+## Build and test
 
 ```bash
 go test ./...
-go test ./internal/runner/...
 go vet ./...
 ```
-
-Build commands:
 
 ```bash
 GOOS=windows GOARCH=amd64 go build -o dist/preflight-windows-amd64.exe .

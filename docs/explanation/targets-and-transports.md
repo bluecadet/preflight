@@ -1,89 +1,43 @@
-# Targets, Transports, And Plugins
+# Targets, transports, and plugins
 
-Preflight is not just "local shell commands with YAML." A **target** is the runtime abstraction the runner executes against — an inventory host resolved to a concrete transport (local, SSH, or WinRM). The target layer is what lets the same runner work locally, remotely, and through staged bundles.
+A target is what the runner executes against: an inventory host resolved to a concrete transport (local, SSH, or WinRM). Every target runs Windows. The target layer lets one runner work locally, remotely, and from staged bundles.
 
-## The `Target` Interface Is The Fulcrum
+## The `Target` interface
 
-Every target implementation provides the same core operations:
+Every target implements the same small interface:
 
-- execute a module
-- copy a file
-- read a file
-- report reachability
+- execute a module, in check or apply mode
 - report basic machine information
+- report its transport
 
-That keeps the runner from caring whether the task runs:
+The runner never needs to know whether a task runs on the same machine, over SSH, or over WinRM.
 
-- on the same machine
-- over WinRM
-- over SSH
-- through a future agent-based transport
+## Local target
 
-## Local Target
+The local target requires a Windows controller. It runs the same Windows PowerShell module implementations as the remote transports, running each script from a temporary `.ps1` file with `powershell.exe -File` on the local machine instead of sending scripts over a connection. As a result:
 
-The local target runs on Windows controllers only. It executes the same Windows PowerShell module implementations as the remote transports, by running `powershell.exe -EncodedCommand` on the local machine instead of sending scripts over a connection.
+- each module has one implementation, local or remote
+- there is no connection setup, which makes it the fastest path during development
+- `apply --bundle` runs staged bundles through it
 
-Why it matters:
+## Default transport
 
-- one implementation per module, whether the target is local or remote
-- no connection setup, so it is the fastest path for development
-- the execution mode used when applying a staged bundle
+A host entry without a `transport` field uses `ssh` on port 22 with `host_key_policy: accept-new`. Set `transport: winrm` on hosts that should use WinRM.
 
-## Default Transport
+## SSH target
 
-A host entry with no `transport` field resolves to `ssh` on port 22, with `host_key_policy: accept-new` pinning the remote key on first connect. This was previously `winrm`.
+SSH is the default remote transport. The remote host must provide Windows PowerShell; connecting to a host without it fails. Over SSH, Preflight supports every built-in module, streams task output as it arrives, and encrypts traffic by default. See [Enable remote access on a Windows target](../how-to/enable-remote-access.md).
 
-**Migration note:** inventories that relied on the implicit WinRM default must now set `transport: winrm` explicitly on every host that should connect that way. Hosts left without a `transport` field will connect over SSH instead.
+### SSH authentication
 
-## WinRM Target
+SSH targets try these methods in order and use the first that yields a usable credential:
 
-WinRM is the main remote Windows transport. It is where the Windows-first design shows up most clearly.
+1. Explicit private key: `private_key` (inline PEM or a file path) on the host entry. For an encrypted key, set `private_key_passphrase` too. An encrypted key without a passphrase fails with an error instead of falling through to other methods.
+2. SSH agent: when `SSH_AUTH_SOCK` is set on the controller, Preflight offers the agent's keys. A dead agent socket is skipped when another method is available; when the agent is the only candidate, its connection error is reported.
+3. Default keys: when neither `private_key` nor `password` is set, Preflight tries `~/.ssh/id_ed25519`, `~/.ssh/id_ecdsa`, and `~/.ssh/id_rsa` on the controller, in that order. It skips encrypted or unparsable keys.
+4. Password: `password` on the host entry, tried last, matching OpenSSH's preference for public-key auth.
 
-The WinRM target supports the full built-in module set by translating operations into PowerShell or Windows command invocations on the remote host.
-
-This is the right transport for:
-
-- registry edits
-- service control
-- user management
-- Windows feature management
-- PowerShell-heavy configuration
-
-### The Network-Logon Ceiling
-
-The WinRM transport authenticates with NTLM/Negotiate and runs each operation under a non-interactive network logon. That session class is a structural ceiling: some Windows operations require privileges or a user profile that a network logon cannot provide, so no amount of PowerShell inside the session can perform them. The authoritative list of affected modules and the workarounds lives in the [built-in module reference](../reference/modules.md#winrm-session-limitations).
-
-### Would CredSSP Help?
-
-CredSSP authentication (which preflight does not currently support) creates an interactive logon session on the target rather than a network logon. The following analysis explains whether adding CredSSP to the transport would lift each limitation:
-
-- **DISM online servicing — YES, CredSSP would fix this.** The symlink restriction is a direct consequence of the network-logon session class (LogonType 3). An interactive logon (LogonType 2, which CredSSP provides) has broader reparse-point traversal rights and can follow the WinSxS component-store symlinks that DISM needs to access. This is well-documented in Microsoft enterprise deployment guidance.
-
-- **`remove_appx_packages` with all-users scope — NO, CredSSP does not fix this.** CredSSP gives the *connecting user* an interactive session, but `-AllUsers` needs to access AppX package state in every user profile on the machine. Profiles for users who are not logged in cannot be reliably loaded, regardless of how the connecting user authenticated. The proper solution is running as the SYSTEM account (for example via a scheduled task) or using per-user package operations.
-
-- **Incremental output streaming — NO, WS-Man buffering is auth-independent.** The WS-Management protocol delivers command output through a `Receive` operation that returns whatever the WinRM service has accumulated in its internal buffer. This buffer is filled by a pipe-reading loop deep in the WinRM service implementation — well below the authentication layer. The authentication mechanism (NTLM, Kerberos, or CredSSP) cannot change this. The CRT stdout buffering mode differs slightly between interactive and network logons (line-buffered vs fully buffered), but the WinRM service still accumulates output server-side and delivers it on the next `Receive` call. **Real-time output streaming is not achievable over WS-Man regardless of authentication method.** Windows-over-SSH is the correct path for incremental output.
-
-## SSH Target
-
-SSH requires the remote host to expose a usable Windows PowerShell runtime (`windows-powershell`); connecting to a host without one fails.
-
-- Windows-over-SSH uses the same built-in Windows module surface as WinRM.
-- Plugin modules run over SSH the same way they run locally and over WinRM: the plugin process runs controller-side and its target effects flow through the transport's handle ops. Nothing is ever delivered to the target.
-
-SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
-
-SSH is also the safer default to set up: it's encrypted out of the box, while the easy WinRM setup path (`winrm quickconfig`, HTTP with Basic auth) is not — credentials and command output travel unencrypted unless you configure a WinRM HTTPS listener yourself. See [Enable remote access on a Windows target](../how-to/enable-remote-access.md).
-
-### SSH Authentication
-
-SSH targets try the following authentication methods in order, using the first that yields a usable credential:
-
-1. **Explicit private key** — `private_key` (inline PEM or a file path) on the host entry. If the key is encrypted, set `private_key_passphrase` alongside it; without a passphrase, an encrypted `private_key` fails with a clear error rather than silently trying other methods.
-2. **SSH agent** — when the `SSH_AUTH_SOCK` environment variable is set on the machine running Preflight, its keys are offered to the remote host. A dead or unreachable agent socket is skipped silently as long as another auth method (private key, default key, or password) is available; if the agent is the only candidate, its connection error is surfaced.
-3. **Default keys** — when neither `private_key` nor `password` is set, Preflight looks for `~/.ssh/id_ed25519`, `~/.ssh/id_ecdsa`, and `~/.ssh/id_rsa` (in that order) on the machine running Preflight and offers whichever exist and parse as unencrypted keys. Encrypted or unparsable default keys are skipped rather than treated as errors.
-4. **Password** — `password` on the host entry, tried last (matching OpenSSH's preference for public-key auth).
-
-If none of these produce a usable auth method, connecting fails immediately with an error naming the host, instead of attempting a connection with no credentials.
+If no method yields a credential, the connection fails immediately with an error naming the host.
 
 ```yaml
 inventory:
@@ -95,15 +49,15 @@ inventory:
       private_key_passphrase: secret:signage-key-passphrase
 ```
 
-### SSH Host-Key Verification
+### SSH host-key verification
 
-SSH targets verify the remote host key against a known_hosts file according to `host_key_policy`. There is no way to silently trust an unknown host by omission; every policy either establishes trust explicitly or fails loudly.
+SSH targets check the remote host key against a known_hosts file according to `host_key_policy`. Each policy either establishes trust explicitly or fails.
 
-- **`accept-new`** (default) — trust-on-first-use (TOFU). Verification runs against `known_hosts_file`; a host with no existing entry is trusted and its key is appended to the file (the file and its parent directory are created with `0600`/`0700` permissions if missing), and a notice is logged. A host with an existing entry whose key no longer matches fails immediately with an error, since that can indicate a MITM attack — if the change is expected (e.g. the remote machine was reimaged), remove the stale line from the known_hosts file and reconnect.
-- **`strict`** — verification only; both unknown hosts and mismatched keys fail. Use this for hardened setups where trust must be established out of band before Preflight ever connects: either connect once with `accept-new` to pin the key, or pre-seed the file with `ssh-keyscan -H <host> >> <known_hosts_file>`.
-- **`insecure`** — disables host-key verification entirely (the pre-hardening default). Every connection logs a prominent warning. Only appropriate for throwaway labs or fully isolated networks where host identity is established by other means.
+- `accept-new` (default): trust on first use. A host with no entry in `known_hosts_file` is trusted, its key is appended, and a notice is logged. Preflight creates a missing file with mode `0600` and its directory with `0700`. A host whose key no longer matches its entry fails immediately, since a changed key can mean a man-in-the-middle attack. If the change is expected, for example after a reimage, delete the stale line and reconnect.
+- `strict`: verification only. Unknown hosts and mismatched keys both fail. Establish trust before Preflight connects, either by connecting once with `accept-new` or by seeding the file with `ssh-keyscan -H <host> >> <known_hosts_file>`.
+- `insecure`: no host-key verification. Every connection logs a warning. Use it only in throwaway labs or isolated networks where host identity is established another way.
 
-When `known_hosts_file` is omitted, it defaults to `known_hosts` under the same directory used for default SSH key discovery (normally `~/.ssh/known_hosts`).
+`known_hosts_file` defaults to `known_hosts` in the default SSH key directory, normally `~/.ssh/known_hosts`.
 
 ```yaml
 inventory:
@@ -117,11 +71,11 @@ inventory:
         - ssh-ed25519
 ```
 
-`host_key_algorithms` is optional. When set, only the listed algorithms are accepted during the handshake. When omitted, the SSH client library's default host-key algorithm list is used; the accepted algorithms are not inferred from the contents of the `known_hosts` file.
+`host_key_algorithms` restricts the handshake to the listed algorithms. Without it, the SSH library's default list applies; Preflight does not infer algorithms from `known_hosts`.
 
-### Bastion / Jump Hosts
+### Bastion / jump hosts
 
-An SSH host can be reached through a single-hop bastion by adding a `jump` block. Preflight dials the jump host first, then tunnels a second SSH handshake to the real target over that connection (an SSH ProxyJump):
+A `jump` block routes an SSH host through a single-hop bastion. Preflight connects to the jump host, then tunnels a second SSH handshake to the target over that connection, like OpenSSH's ProxyJump:
 
 ```yaml
 inventory:
@@ -136,13 +90,13 @@ inventory:
         private_key: secret:bastion-key
 ```
 
-The jump host has its own independent authentication and host-key policy — it does not inherit `username`, `password`, `private_key`, `known_hosts_file`, or `host_key_policy` from the host it fronts. Only a single hop is supported; a jump host cannot itself specify a `jump` block.
+The jump host has its own authentication and host-key policy. It inherits none of `username`, `password`, `private_key`, `known_hosts_file`, or `host_key_policy` from the target. A jump host cannot have its own `jump` block.
 
-The keepalive request described below rides the target connection only, not the bastion directly. Since the target connection's traffic flows through the bastion's TCP connection, keeping the target alive also keeps the bastion connection alive.
+Keepalives travel on the target connection. Because that connection runs through the bastion's TCP connection, they keep both alive.
 
-### Connection Timeout
+### Connection timeout
 
-Both SSH and WinRM targets support a `timeout` host field, a Go duration string such as `30s` or `1m`, that bounds how long the initial connection/handshake may take. SSH defaults to 30s when `timeout` is omitted; WinRM defaults to 60s (the underlying client library's default).
+SSH and WinRM hosts accept a `timeout` field, a Go duration such as `30s` or `1m`, that bounds the initial connection and handshake. SSH defaults to 30s; WinRM uses its client library's default of 60s.
 
 ```yaml
 inventory:
@@ -153,70 +107,71 @@ inventory:
       timeout: 10s
 ```
 
-### Keepalive And Reconnect
+### Keepalive and reconnect
 
-Once connected, the SSH target sends an OpenSSH keepalive request every 30s (fixed, not configurable) to keep the connection alive across NAT/firewall idle timeouts during long-running playbooks. If a connection drops mid-run — the keepalive fails twice in a row, or any command hits a connection-level error such as a closed socket or `EOF` — Preflight transparently reconnects once and retries the failed command before giving up. Command-level failures (a non-zero exit code, a script error) and a cancelled/expired context are never retried.
+The SSH target sends an OpenSSH keepalive request every 30 seconds, a fixed interval, so NAT and firewall idle timeouts do not drop long runs. If the connection drops mid-run, because two keepalives fail in a row or a command hits a connection error such as `EOF`, Preflight reconnects once and retries the failed command. It never retries command failures (a non-zero exit code or a script error) or a cancelled context.
 
-## Why Unsupported Modules Fail Loudly
+## WinRM target
 
-A module that is not supported on a target's runtime is never silently skipped. Gaps surface as plan-time errors, so nothing executes if the plan can't complete.
+WinRM is the alternative for hosts where SSH is not an option. It runs the same PowerShell module implementations, though a few cannot finish their changes over a WinRM session (see below).
 
-The design bet is that complete facts beat suggestions: every message names the module, the target's runtime, and the supporting runtimes, with no did-you-mean heuristics. The layer-by-layer behavior and the full reason-code table live in the [error reference](../reference/errors.md).
+The quick WinRM setup (`winrm quickconfig` with HTTP and Basic auth) sends credentials and output unencrypted. Configure an HTTPS listener before using WinRM on an untrusted network.
 
-## Persistent PowerShell Sessions
+### The network-logon ceiling
 
-Remote Windows tasks are slow if every Check and Apply call starts a fresh `powershell.exe` process. PowerShell startup takes 200–500 ms, and on WinRM each invocation also creates and tears down a WinRM shell — a further five HTTP round-trips. A 20-task playbook against a remote Windows host could spend 20 seconds doing nothing but process startup.
+WinRM authenticates with Basic auth, so it works with local accounts only, and runs each operation under a non-interactive network logon. Some Windows operations need privileges or a user profile that a network logon cannot provide, so no PowerShell inside the session can perform them. The [built-in module reference](../reference/modules.md#winrm-session-limitations) lists the affected modules and workarounds.
 
-Both the WinRM and SSH Windows runtimes address this by keeping a single PowerShell process alive for the duration of a run.
+### Would CredSSP help?
 
-### How it works
+Preflight does not support CredSSP. CredSSP creates an interactive logon on the target instead of a network logon, but it would lift only one of the limitations:
 
-When the first Check or Apply call arrives, the target creates a persistent PowerShell session:
+- DISM online servicing (`windows_feature`): yes. The symlink restriction comes from the network-logon session class. An interactive logon can follow the WinSxS component-store symlinks DISM needs.
+- `remove_appx_packages` with all-users scope: no. CredSSP gives the connecting user an interactive session, but `-AllUsers` needs AppX state from every profile on the machine, including profiles of users who are not signed in. Run the removal as SYSTEM, for example from a scheduled task, or remove packages per user.
+- Incremental output streaming: no. WS-Management returns output through a `Receive` operation that drains a buffer inside the WinRM service, below the authentication layer. No authentication method changes that. Use SSH for incremental output.
 
-- **WinRM:** calls `CreateShell()` once on the underlying WinRM client, then launches `powershell.exe -NoProfile -NonInteractive -Command -` inside that shell.
-- **SSH Windows:** opens a single SSH channel and starts the same PowerShell invocation inside it.
+## Unknown modules fail at plan time
 
-`-Command -` tells PowerShell to read commands from stdin rather than terminate. The session stays open until the run completes.
+Preflight never skips a task silently. A module name that is neither a built-in nor a discovered plugin fails during planning, before anything runs. Error messages state the facts without guessing at a fix. The [error reference](../reference/errors.md) lists the reason codes.
 
-Each subsequent script is delivered via a marker-based protocol:
+## Persistent PowerShell sessions
 
-1. The script is base64-encoded and sent to PowerShell's stdin as a single line that decodes and executes it as a `ScriptBlock`.
-2. The wrapper appends a unique random marker to stdout when the script finishes — `DONE` on success, `ERR:<base64-error>` on a thrown exception.
-3. The Go side reads stdout line by line until it sees that marker, then returns the collected output or error.
+Starting a fresh `powershell.exe` for every `Check()` and `Apply()` costs 200 to 500 ms, and on WinRM each start also creates and tears down a remote shell, adding about five HTTP round trips. A 20-task playbook could spend 20 seconds on process startup alone.
 
-This reduces per-task overhead to roughly one write and one read on the existing pipe, with no new process or shell creation.
+The SSH and WinRM targets instead keep one PowerShell process alive for the whole run. On the first call, the target starts it:
 
-### Tradeoffs
+- WinRM: creates one remote shell and runs `powershell.exe -NoProfile -NonInteractive -Command -` inside it.
+- SSH: opens one channel and runs the same command.
 
-**State does not persist between tasks.** Each script runs in a fresh child scope. Variables set in one task are not visible to the next. This preserves the idempotency contract — a task that can be re-run safely in isolation should not depend on ambient state left by a prior task.
+`-Command -` makes PowerShell read commands from stdin until the run ends. Each script then follows a marker protocol:
 
-**The session is not shared across concurrent target calls.** A mutex serialises access. Task execution is already serial within a single target, so this is not a practical constraint.
+1. The script is base64-encoded and sent to stdin as one line that decodes and runs it as a `ScriptBlock`.
+2. When the script finishes, the wrapper writes a unique marker to stdout: `DONE` on success, `ERR:<base64-error>` on a thrown exception.
+3. Preflight reads stdout until it sees the marker, then returns the output or the error.
 
-**Graceful degradation.** If the WinRM client or SSH runner in use does not expose raw shell or session creation (which is the case for test fakes), the persistent session is skipped and each script runs via the per-invocation path. If the persistent session breaks mid-run due to a transport failure, it is discarded and the failing call is retried via the per-invocation path. Script-level errors (thrown exceptions) do not reset the session — only transport failures do.
+Per-task overhead drops to one write and one read on an open pipe.
 
-### When to expect the speedup
+Tradeoffs:
 
-The benefit is proportional to the number of tasks that reach a remote Windows target. A 20-task playbook against a Windows host over WinRM or SSH will run noticeably faster. A playbook that runs mostly against local targets, or one where most tasks are skipped because the host is already in the desired state, will see less of a difference in wall-clock time — though Check calls are still faster because they also go through the persistent session.
+- Each script runs in a fresh child scope, so variables from one task are invisible to the next. Tasks stay safe to re-run in isolation.
+- A mutex serializes access to the session. Tasks already run serially within a target, so this costs nothing in practice.
+- If the session breaks because of a transport failure, Preflight discards it and retries the call in a new `powershell.exe` process. Script errors do not reset the session.
 
-## Why Plugin Modules Fit Cleanly
+The speedup grows with the number of tasks that reach a remote host. Runs where most tasks are already satisfied gain less, though their `Check()` calls also go through the session.
 
-Plugin modules are adapted into the same module contract the targets already use. That is a strong architectural signal: plugins are not a sidecar feature. They are part of the execution model.
+## Plugin modules
 
-Because plugins satisfy the same `Check()` then `Apply()` shape, dry-run, staging, and state tracking all work unchanged, and the target layer does not need a second concept of "custom task". And because a plugin runs controller-side, reaching the target only through transport-backed handle ops, the same plugin binary runs unchanged against local, SSH, and WinRM — plugins bypass the module×runtime support matrix entirely rather than adding per-transport rows to it. The mechanics — discovery, the JSON-RPC protocol, process lifetime, and the v1 limitations — live in the [plugin reference](../reference/plugins.md#execution-model).
+Plugin modules satisfy the same `Check()` then `Apply()` contract as built-ins, so dry runs and staging work unchanged and the target layer needs no second kind of task. A plugin process runs on the controller and reaches the target only through transport-backed handle operations, so one plugin binary runs against local, SSH, and WinRM targets. The [plugin reference](../reference/plugins.md#execution-model) covers discovery, the JSON-RPC protocol, process lifetime, and limitations.
 
-## Why Safe Target Metadata Exists
+## Safe target metadata
 
-Templates can read `target.*`, but only from a sanitized metadata map. This exposes useful context like host name, address, transport, and port without leaking authentication details into templating or output.
+Templates can read `target.name`, `target.hostname`, `target.address`, `target.transport`, and `target.port`. Authentication fields never reach templates or output, because inventory entries may contain secret-backed credentials.
 
-That boundary matters because inventory entries may contain secret-backed credentials.
+## Host orchestration above targets
 
-## Why Host Orchestration Lives Above Targets
-
-Inventory selection and host concurrency are handled before the runner receives a target. Each resolved host becomes:
+The command layer selects inventory hosts and runs them concurrently before the runner sees a target. Each resolved host becomes:
 
 - a concrete transport
 - a host-specific variable map
-- a host-specific state path
-- a safe target metadata map
+- safe target metadata
 
-This keeps the target abstraction small and reusable while still letting one CLI invocation fan out across many machines.
+The target abstraction stays small while one command fans out across many machines.
