@@ -44,43 +44,17 @@ func TestPlatformRuntimeKind(t *testing.T) {
 	}
 }
 
-func TestValidateModuleForPlan_UnknownModuleFails(t *testing.T) {
-	err := ValidateModuleForPlan("nope", RuntimeKindWindowsPowerShell, true, nil)
+func TestValidateModuleForPlan(t *testing.T) {
+	err := ValidateModuleForPlan("nope", nil)
 	var mse *ModuleSupportError
 	if !errors.As(err, &mse) || mse.Class != ClassUnknownModule {
 		t.Fatalf("expected unknown_module, got %v", err)
 	}
-}
-
-func TestValidateModuleForPlan_SSHNameChecksOnly(t *testing.T) {
-	// SSH: kindKnown=false. A Windows-only built-in (registry) is not
-	// unsupported at plan time — SSH only name-checks. It must be a known
-	// module name though.
-	if err := ValidateModuleForPlan("registry", "", false, nil); err != nil {
-		t.Errorf("ssh name-check: expected nil for known module registry, got %v", err)
+	if err := ValidateModuleForPlan("registry", nil); err != nil {
+		t.Errorf("catalog module: expected nil, got %v", err)
 	}
-	// Unknown still fails on SSH.
-	if err := ValidateModuleForPlan("nope", "", false, nil); err == nil {
-		t.Error("ssh name-check: expected error for unknown module")
-	}
-}
-
-func TestValidateModuleForPlan_SupportedModulePasses(t *testing.T) {
-	if err := ValidateModuleForPlan("registry", RuntimeKindWindowsPowerShell, true, nil); err != nil {
-		t.Errorf("registry on windows-powershell: expected nil, got %v", err)
-	}
-}
-
-func TestValidateModuleForPlan_PluginsBypassMatrix(t *testing.T) {
-	reg := ModuleRegistry{
-		"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
-	}
-	// A plugin is known and bypasses the runtime matrix on every runtime.
-	if err := ValidateModuleForPlan("custom", RuntimeKindWindowsPowerShell, true, reg); err != nil {
-		t.Errorf("plugin on windows-powershell: expected nil, got %v", err)
-	}
-	// SSH: plugin is known, passes name-check.
-	if err := ValidateModuleForPlan("custom", "", false, reg); err != nil {
-		t.Errorf("plugin on ssh: expected nil, got %v", err)
+	reg := ModuleRegistry{"custom": fakePluggableModule{path: "/tmp/custom-plugin"}}
+	if err := ValidateModuleForPlan("custom", reg); err != nil {
+		t.Errorf("plugin: expected nil, got %v", err)
 	}
 }

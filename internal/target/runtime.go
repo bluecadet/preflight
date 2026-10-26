@@ -14,10 +14,6 @@ const (
 	RuntimeKindWindowsPowerShell RuntimeKind = "windows-powershell"
 )
 
-var knownRemoteModules = CatalogNames(CapabilityRemote)
-
-var knownRemoteModuleSet = CatalogSet(CapabilityRemote)
-
 // moduleFuncs lets a Module be registered via function literals rather than
 // a concrete type. Used heavily by the Windows PowerShell registry, where
 // modules are defined as closures over a script backend.
@@ -32,49 +28,6 @@ func (m moduleFuncs) Check(ctx context.Context, params map[string]any, out Outpu
 
 func (m moduleFuncs) Apply(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	return m.apply(ctx, params, out)
-}
-
-// unsupportedModule returns a Module that fails Check and Apply with the
-// given error. Used to populate registry slots for modules the runtime does
-// not implement, so dispatch reports a clear error at execution time.
-func unsupportedModule(err error) Module {
-	return moduleFuncs{
-		check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
-			return CheckResult{}, err
-		},
-		apply: func(context.Context, map[string]any, OutputFunc) (ApplyResult, error) {
-			return ApplyResult{}, err
-		},
-	}
-}
-
-// buildRemoteModuleRegistry assembles a complete ModuleRegistry for a remote
-// runtime: it copies the supplied supported entries and fills every other
-// known remote-capable module name with an unsupportedModule that surfaces
-// the runtime-specific error. It also verifies the supported set against the
-// catalog matrix: every entry must be a known remote module AND a module the
-// catalog marks as supported on this runtime. A mismatch is a programming
-// error (registry drift) and panics.
-func buildRemoteModuleRegistry(kind RuntimeKind, supported ModuleRegistry, unsupported func(module string) error) ModuleRegistry {
-	registry := make(ModuleRegistry, len(knownRemoteModules))
-	for module, impl := range supported {
-		if _, ok := knownRemoteModuleSet[module]; !ok {
-			panic(fmt.Sprintf("%s runtime: unknown module registration %q", kind, module))
-		}
-		if !CatalogSupportsRuntime(module, kind) {
-			panic(fmt.Sprintf("%s runtime: module %q is registered as supported but the catalog does not list it for this runtime", kind, module))
-		}
-		registry[module] = impl
-	}
-
-	for _, module := range knownRemoteModules {
-		if _, ok := registry[module]; ok {
-			continue
-		}
-		registry[module] = unsupportedModule(unsupported(module))
-	}
-
-	return registry
 }
 
 // executeModule is the single dispatch path used by every Target. It

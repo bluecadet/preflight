@@ -16,10 +16,6 @@ type Input struct {
 	Description string `yaml:"description"`
 }
 
-var knownInlineModules = target.CatalogNames(target.CapabilityInline)
-
-var knownInlineModuleSet = target.CatalogSet(target.CapabilityInline)
-
 // Task is a single step inside an action or playbook.
 //
 // A Task holds only decode-time state. The canonical module+params form is
@@ -81,7 +77,7 @@ func (t *Task) UnmarshalYAML(value *yaml.Node) error {
 
 	for i := 0; i+1 < len(value.Content); i += 2 {
 		key := value.Content[i].Value
-		if _, ok := knownInlineModuleSet[key]; !ok {
+		if !target.CatalogKnownModule(key) {
 			continue
 		}
 
@@ -213,7 +209,7 @@ func ParsePlaybook(data []byte) (*Playbook, error) {
 
 func resolveTaskModule(t *Task) (string, map[string]any, bool, error) {
 	var found []string
-	for _, name := range knownInlineModules {
+	for _, name := range target.CatalogNames() {
 		if t.InlineModules[name] != nil {
 			found = append(found, name)
 		}

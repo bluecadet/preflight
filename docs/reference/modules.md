@@ -1,10 +1,8 @@
 # Built-In Module Reference
 
 This page is the authoritative reference for the built-in modules: what
-each one does, which runtimes support it, its fields, and its known
-limitations. The per-module `Supported runtimes` lines below are asserted
-against the module catalog in code by a drift test, so this page cannot
-silently disagree with the binary.
+each one does, its fields, and its known limitations. Every built-in runs
+on Windows PowerShell targets.
 
 Modules on this page:
 [`registry`](#registry) ·
@@ -116,8 +114,6 @@ When you need these operations:
 
 ### `registry`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage Windows registry keys and values.
 
 | Field | Type | Meaning |
@@ -153,8 +149,6 @@ Use `patch` when a Windows setting is stored inside an existing binary registry 
 
 ### `service`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage Windows services.
 
 | Field | Type | Meaning |
@@ -164,8 +158,6 @@ Manage Windows services.
 | `startup_type` | `automatic`, `manual`, or `disabled` | Startup behavior |
 
 ### `file`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage files.
 
@@ -204,8 +196,6 @@ the rendered file body.
 
 ### `directory`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage directories.
 
 | Field | Type | Meaning |
@@ -214,8 +204,6 @@ Manage directories.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `package`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage local MSI or EXE installations on Windows.
 
@@ -242,8 +230,6 @@ Manage local MSI or EXE installations on Windows.
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
 
 ### `winget_package`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage packages through `winget`.
 
@@ -278,8 +264,6 @@ Put package-specific `winget` flags under `args` on that package entry. Do not a
 
 ### `remove_appx_packages`
 
-**Supported runtimes:** `windows-powershell`
-
 Remove built-in Windows Store-style packages.
 
 ```yaml
@@ -303,8 +287,6 @@ Installed Appx packages that Windows marks `NonRemovable` are ignored so checks 
 
 ### `shortcut`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage Windows `.lnk` shortcuts.
 
 | Field | Type | Meaning |
@@ -315,8 +297,6 @@ Manage Windows `.lnk` shortcuts.
 | `icon` | string | Optional icon path |
 
 ### `scheduled_task`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage Windows scheduled tasks.
 
@@ -339,8 +319,6 @@ Manage Windows scheduled tasks.
 
 ### `user`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage local users.
 
 | Field | Type | Meaning |
@@ -357,8 +335,6 @@ Requested `groups` are additive and ensure membership in those groups without
 removing other existing memberships.
 
 ### `power_plan`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage named Windows power plans.
 
@@ -381,8 +357,6 @@ Each entry in `settings` supports:
 
 ### `windows_feature`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage Windows optional features.
 
 | Field | Type | Meaning |
@@ -391,8 +365,6 @@ Manage Windows optional features.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `environment`
-
-**Supported runtimes:** `windows-powershell`
 
 Manage environment variables.
 
@@ -406,8 +378,6 @@ Manage environment variables.
 
 ### `firewall_rule`
 
-**Supported runtimes:** `windows-powershell`
-
 Manage Windows firewall rules.
 
 | Field | Type | Meaning |
@@ -420,8 +390,6 @@ Manage Windows firewall rules.
 | `ensure` | `present` or `absent` | Desired state |
 
 ### `powershell`
-
-**Supported runtimes:** `windows-powershell`
 
 Run PowerShell.
 
@@ -446,8 +414,6 @@ When `working_dir` is set, relative `creates` paths are checked from that direct
 
 ### `shell`
 
-**Supported runtimes:** `windows-powershell`
-
 Run a shell command.
 
 | Field | Type | Meaning |
@@ -462,8 +428,6 @@ When `working_dir` is set, relative `creates` paths are checked from that direct
 
 ### `reboot`
 
-**Supported runtimes:** `windows-powershell`
-
 Request a reboot.
 
 | Field | Type | Meaning |
@@ -472,8 +436,6 @@ Request a reboot.
 | `timeout` | integer | Reconnect-wait timeout in seconds (default: `300`) |
 
 ### `wait`
-
-**Supported runtimes:** `windows-powershell`
 
 Wait for a condition to be met before continuing.
 
