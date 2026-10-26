@@ -164,10 +164,12 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 			switch {
 			case strings.Contains(decoded, "preflight-windows"):
 				return "preflight-windows", "", 0, nil
-			case strings.Contains(decoded, "__pf_check_script"):
-				// Combined ensure script: simulate apply output + sentinel.
+			case strings.Contains(decoded, "__PREFLIGHT_CHECK_RESULT__"):
 				call++
-				return "applied\nchanged", "", 0, nil
+				return powerShellCheckResultLine(true), "", 0, nil
+			case strings.Contains(decoded, "Write-Output 'applied'"):
+				call++
+				return "applied", "", 0, nil
 			default:
 				t.Fatalf("unexpected powershell script %q", decoded)
 				return "", "", 0, nil
@@ -185,8 +187,8 @@ func TestSSHTarget_WindowsPowerShellModuleCheckScript(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected changed result, got %q", result.Status)
 	}
-	if call != 1 {
-		t.Fatalf("expected 1 combined powershell invocation after detection, got %d", call)
+	if call != 2 {
+		t.Fatalf("expected check then apply after detection, got %d invocations", call)
 	}
 }
 
@@ -202,11 +204,11 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 			case strings.Contains(decoded, "preflight-windows"):
 				return "preflight-windows", "", 0, nil
 			case strings.Contains(decoded, "GetEnvironmentVariable"):
-				return "changed", "", 0, nil
+				return "true", "", 0, nil
 			case strings.Contains(decoded, "switch ($params.condition)"):
 				return "true", "", 0, nil
 			case strings.Contains(decoded, "Normalize-RegistryKind"):
-				return "changed", "", 0, nil
+				return "true", "", 0, nil
 			case strings.Contains(decoded, "shutdown /r /t 45"):
 				return "", "", 0, nil
 			default:

@@ -7,9 +7,8 @@ import (
 
 func TestRegistryScriptsSupportBinaryPatch(t *testing.T) {
 	for name, script := range map[string]string{
-		"check":  RegistryCheckScript,
-		"apply":  RegistryApplyScript,
-		"ensure": RegistryEnsureScript,
+		"check": RegistryCheckScript,
+		"apply": RegistryApplyScript,
 	} {
 		t.Run(name, func(t *testing.T) {
 			for _, fragment := range []string{
@@ -22,8 +21,7 @@ func TestRegistryScriptsSupportBinaryPatch(t *testing.T) {
 		})
 	}
 	for name, script := range map[string]string{
-		"check":  RegistryCheckScript,
-		"ensure": RegistryEnsureScript,
+		"check": RegistryCheckScript,
 	} {
 		t.Run(name+" check", func(t *testing.T) {
 			if !strings.Contains(script, "registry: patch is only supported for binary values") {
@@ -32,8 +30,7 @@ func TestRegistryScriptsSupportBinaryPatch(t *testing.T) {
 		})
 	}
 	for name, script := range map[string]string{
-		"apply":  RegistryApplyScript,
-		"ensure": RegistryEnsureScript,
+		"apply": RegistryApplyScript,
 	} {
 		t.Run(name+" apply", func(t *testing.T) {
 			if !strings.Contains(script, "binary patch offset") {

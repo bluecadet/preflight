@@ -117,39 +117,3 @@ foreach ($spec in $pkgs) {
   }
 }
 `
-
-// RemoveAppxEnsureScript combines check and apply in one invocation, calling
-// Get-AppxProvisionedPackage -Online exactly once regardless of outcome.
-// Outputs "ok", "would-change" (dry-run), or "changed". $__pf_dry_run must be
-// set before $params by the caller.
-const RemoveAppxEnsureScript = RemoveAppxHelperFunctions + `
-$needs = $false
-foreach ($spec in $pkgs) {
-  $name = [string]$spec.name
-  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-  if ((Get-InstalledAppxMatches $scope $name).Count -gt 0) { $needs = $true; break }
-  if ((Get-ProvisionedAppxMatches $scope $name $hasWildcard).Count -gt 0) { $needs = $true; break }
-}
-if (-not $needs) { Write-Output 'ok'; exit 0 }
-if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
-foreach ($spec in $pkgs) {
-  $name = [string]$spec.name
-  $scope = if ($spec.scope) { [string]$spec.scope } else { 'both' }
-  $hasWildcard = [WildcardPattern]::ContainsWildcardCharacters($name)
-  if ($scope -ne 'provisioned') {
-    foreach ($pkg in (Get-InstalledAppxMatches $scope $name)) {
-      if ($null -eq $pkg) { continue }
-      $packageFullName = [string]$pkg.PackageFullName
-      if ([string]::IsNullOrWhiteSpace($packageFullName)) { continue }
-      Remove-AppxInstalledSafe $packageFullName $scope
-    }
-  }
-  if ($scope -eq 'provisioned' -or $scope -eq 'both') {
-    @(Get-ProvisionedAppxMatches $scope $name $hasWildcard) | ForEach-Object {
-      Remove-AppxProvisionedSafe $_.PackageName
-    }
-  }
-}
-Write-Output 'changed'
-`

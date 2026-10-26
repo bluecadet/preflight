@@ -8,11 +8,6 @@ import (
 	"strings"
 )
 
-// ErrEnsureNotHandled is returned by EnsureModule.Ensure to signal that it
-// cannot handle the given params and the caller should fall back to the
-// standard Check+Apply path.
-var ErrEnsureNotHandled = errors.New("ensure not handled")
-
 type RuntimeKind string
 
 const (
@@ -24,15 +19,11 @@ var knownRemoteModules = CatalogNames(CapabilityRemote)
 var knownRemoteModuleSet = CatalogSet(CapabilityRemote)
 
 // moduleFuncs lets a Module be registered via function literals rather than
-// a concrete type. Used heavily by the remote runtime registries
-// (windows-powershell) where modules are defined as closures
-// over a transport backend. Implements both Module and EnsureModule; the
-// Ensure method returns ErrEnsureNotHandled when the ensure closure is nil
-// so callers fall back to the standard Check+Apply path.
+// a concrete type. Used heavily by the Windows PowerShell registry, where
+// modules are defined as closures over a script backend.
 type moduleFuncs struct {
-	check  func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error)
-	apply  func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error)
-	ensure func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error)
+	check func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error)
+	apply func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error)
 }
 
 func (m moduleFuncs) Check(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
@@ -41,13 +32,6 @@ func (m moduleFuncs) Check(ctx context.Context, params map[string]any, out Outpu
 
 func (m moduleFuncs) Apply(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	return m.apply(ctx, params, out)
-}
-
-func (m moduleFuncs) Ensure(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
-	if m.ensure == nil {
-		return EnsureResult{}, ErrEnsureNotHandled
-	}
-	return m.ensure(ctx, params, dryRun, out)
 }
 
 // unsupportedModule returns a Module that fails Check and Apply with the
@@ -94,9 +78,8 @@ func buildRemoteModuleRegistry(kind RuntimeKind, supported ModuleRegistry, unsup
 }
 
 // executeModule is the single dispatch path used by every Target. It
-// resolves the named module from the registry, runs ensure (if supported)
-// or Check+Apply, and translates the module's Check/Apply/Ensure results
-// into a Result with status, message, and captured output.
+// resolves the named module from the registry, runs Check then Apply,
+// and translates the results into a Result with status, message, and captured output.
 func executeModule(
 	ctx context.Context,
 	taskID string,
@@ -118,26 +101,6 @@ func executeModule(
 		captured = append(captured, line)
 		if onOutput != nil {
 			onOutput(line)
-		}
-	}
-
-	// Ensure fast-path. Worthwhile on high-latency transports where Check+Apply
-	// doubles round trips. Modules opt in by implementing EnsureModule and
-	// return ErrEnsureNotHandled to fall back when their params do not fit.
-	if em, ok := mod.(EnsureModule); ok {
-		res, err := em.Ensure(ctx, params, dryRun, capture)
-		if !errors.Is(err, ErrEnsureNotHandled) {
-			if err != nil {
-				return Result{TaskID: taskID, Status: StatusFailed, Output: captured, Error: err}, err
-			}
-			if !res.Changed {
-				return Result{TaskID: taskID, Status: StatusOK, Message: defaultMessage(res.Message, "already in desired state"), Output: captured}, nil
-			}
-			fallback := "change applied"
-			if dryRun {
-				fallback = "would apply change (dry-run)"
-			}
-			return Result{TaskID: taskID, Status: StatusChanged, Message: defaultMessage(res.Message, fallback), Output: captured}, nil
 		}
 	}
 
@@ -196,17 +159,6 @@ func applyStreamed(output string, out OutputFunc) ApplyResult {
 		return ApplyResult{Message: lines[0]}
 	}
 	return ApplyResult{}
-}
-
-// powerShellDryRunPreamble returns a PowerShell snippet that sets
-// $__pf_dry_run to $true or $false. Ensure scripts inspect this variable to
-// short-circuit the apply branch with "would-change" when dryRun is set.
-// Centralised so every ensure script uses the same variable name and form.
-func powerShellDryRunPreamble(dryRun bool) string {
-	if dryRun {
-		return "$__pf_dry_run = $true\n"
-	}
-	return "$__pf_dry_run = $false\n"
 }
 
 func splitOutputLines(output string) []string {

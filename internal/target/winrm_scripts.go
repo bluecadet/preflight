@@ -34,20 +34,9 @@ const registryCheckScript = pscript.RegistryCheckScript
 
 const registryApplyScript = pscript.RegistryApplyScript
 
-// registryEnsureScript combines check and apply in one PowerShell invocation.
-// It outputs "ok", "changed", or "would-change" (dry-run). $__pf_dry_run must
-// be injected by the caller before $params.
-const registryEnsureScript = pscript.RegistryEnsureScript
-
 const removeAppxPackagesCheckScript = pscript.RemoveAppxCheckScript
 
 const removeAppxPackagesApplyScript = pscript.RemoveAppxApplyScript
-
-// removeAppxPackagesEnsureScript combines check and apply in one invocation,
-// calling Get-AppxProvisionedPackage -Online exactly once regardless of outcome.
-// Outputs "ok", "would-change" (dry-run), or "changed". $__pf_dry_run must be
-// set before $params by the caller.
-const removeAppxPackagesEnsureScript = pscript.RemoveAppxEnsureScript
 
 const powerPlanCheckScript = pscript.PowerPlanCheckScript
 

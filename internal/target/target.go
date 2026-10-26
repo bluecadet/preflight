@@ -54,25 +54,6 @@ type ApplyResult struct {
 	Message string
 }
 
-// EnsureModule is an optional capability for modules that can combine Check
-// and Apply into a single round trip. Worthwhile on high-latency transports
-// (e.g. WinRM) where two separate invocations double overhead. Implementations
-// may return ErrEnsureNotHandled to fall back to the standard Check+Apply
-// path (e.g. when params don't support the fast path).
-type EnsureModule interface {
-	Module
-	Ensure(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error)
-}
-
-// EnsureResult is the outcome of an ensure single-round-trip operation.
-type EnsureResult struct {
-	// Changed reports whether the module made (or, in dry-run, would have
-	// made) a change.
-	Changed bool
-	// Message is an optional human-readable summary.
-	Message string
-}
-
 // PluggableModule is implemented by modules that delegate to an out-of-process
 // adapter (typically a preflight plugin executable). Targets clone these
 // per-instance so each target gets its own adapter client state, and transports
