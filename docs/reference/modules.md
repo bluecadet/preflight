@@ -501,7 +501,6 @@ Schedules a restart with `shutdown /r /t <timeout>`.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `timeout` | integer | no | `300` | Seconds before the restart |
-| `condition` | `always`, `if_needed` | no | | Accepted but not applied |
 
 - The task always reports a change.
 - Preflight does not wait for the target to restart or reconnect. Tasks after `reboot` run while the restart is pending.

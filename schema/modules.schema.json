@@ -1017,14 +1017,6 @@
       "description": "Reboot the target machine",
       "additionalProperties": false,
       "properties": {
-        "condition": {
-          "type": "string",
-          "enum": [
-            "always",
-            "if_needed"
-          ],
-          "default": "if_needed"
-        },
         "timeout": {
           "type": "integer",
           "description": "Timeout in seconds to wait for reboot",
