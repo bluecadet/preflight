@@ -57,9 +57,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 	if secretIdentity != "" && bundlePath == "" {
 		return fmt.Errorf("apply: --secret-identity requires --bundle")
 	}
-	if allowPlaintextSecrets && bundlePath != "" {
-		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle is only valid when staging a playbook")
-	}
 	if bundlePath != "" {
 		if len(args) > 0 {
 			return fmt.Errorf("apply: playbook path and --bundle cannot be used together")
@@ -89,9 +86,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 	tags, _ := cmd.Flags().GetStringSlice("tags")
 	skipTags, _ := cmd.Flags().GetStringSlice("skip-tags")
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
-	if allowPlaintextSecrets && !opts.stageOnly {
-		return fmt.Errorf("apply: --allow-plaintext-secrets-in-bundle requires the stage command")
-	}
 
 	session, err := newPlaybookSession(ctx, playbookPath, false)
 	if err != nil {
