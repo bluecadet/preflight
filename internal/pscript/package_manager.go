@@ -8,6 +8,8 @@ package pscript
 //	Invoke-PmChange -Spec $s -Ensure $e -Installed $i
 //	                                         installs or removes one entry; throws on failure
 //
+// Apply calls Get-PmInstalled again after making changes to verify them.
+//
 // Adapters own version-comparison semantics: winget compares the exact
 // version string, while choco normalizes versions before comparing. The
 // engine only asks whether an entry is present as desired.
@@ -36,15 +38,28 @@ foreach ($spec in $pkgs) {
 Write-Output 'false'
 `
 
+// managerPackageApplyTail re-reads state after changing anything, because
+// package managers can report success without converging.
 const managerPackageApplyTail = `
 $installed = Get-PmInstalled
+$changed = @()
 foreach ($spec in $pkgs) {
   if (-not (Test-PmNeedsChange -Spec $spec -Installed $installed)) { continue }
   Invoke-PmChange -Spec $spec -Ensure (Get-PmEnsure $spec) -Installed $installed
+  $changed += $spec
   # Later entries and tasks should see binaries the change put on PATH.
   $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
   $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
   $env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOrEmpty($_) }) -join ';'
+}
+if ($changed.Count -gt 0) {
+  $installed = Get-PmInstalled
+  $stuck = @(foreach ($spec in $changed) {
+    if (Test-PmNeedsChange -Spec $spec -Installed $installed) { "$($spec.id) ($(Get-PmEnsure $spec))" }
+  })
+  if ($stuck.Count -gt 0) {
+    throw ("the package manager reported success, but these packages are not in the desired state: " + ($stuck -join ', '))
+  }
 }
 `
 

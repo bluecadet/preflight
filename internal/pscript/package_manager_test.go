@@ -110,6 +110,20 @@ func TestManagerPackageEngine(t *testing.T) {
 	}
 }
 
+func TestManagerPackageEngineFailsWhenChangeDoesNotConverge(t *testing.T) {
+	out, err := execManagerScript(t, managerPackageSetup+fakeAdapter+managerPackageApplyTail, map[string]any{
+		"packages":  []any{map[string]any{"id": "a", "ensure": "absent"}, map[string]any{"id": "c"}},
+		"installed": map[string]any{"a": "1.0"},
+		"stuck":     []any{"a"},
+	})
+	if err == nil {
+		t.Fatalf("expected apply to fail, got:\n%s", out)
+	}
+	if !strings.Contains(out, "not in the desired state: a (absent)") {
+		t.Fatalf("expected the stuck package in the error, got:\n%s", out)
+	}
+}
+
 // The winget harness runs the real winget adapter with Get-Command,
 // Get-AppxPackage and Invoke-Winget replaced, so tests control what "winget"
 // returns. Invoke-Winget can't be a shell fake because winget exit codes such
@@ -374,5 +388,23 @@ func TestManagerPackageScriptsParse(t *testing.T) {
 		if err != nil || strings.TrimSpace(string(out)) != "" {
 			t.Fatalf("%s script does not parse: %v\n%s", name, err, out)
 		}
+	}
+}
+
+// The post-apply verification turns a "no upgrade" install that left the
+// package missing into a failure, where it used to pass silently.
+func TestWingetAdapterUpdateNotApplicableFailsVerification(t *testing.T) {
+	out, err := execWingetHarness(t, managerPackageApplyTail, map[string]any{
+		"packages": []any{map[string]any{"id": "a"}},
+		"winget": map[string]any{
+			"export":  wingetEmptyExport,
+			"install": map[string]any{"exit": wingetUpdateNotApplicable, "output": wingetNoUpgradeOutput},
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected apply to fail, got:\n%s", out)
+	}
+	if !strings.Contains(out, "not in the desired state: a (present)") {
+		t.Fatalf("expected the verification error, got:\n%s", out)
 	}
 }
