@@ -71,7 +71,7 @@ Useful targeted examples:
 
 ```bash
 go test ./internal/runner/...
-go test ./internal/module/...
+go test ./internal/target/...
 go test ./pkg/plugin/sdk/...
 ```
 
@@ -151,19 +151,19 @@ Per-user settings are module params (`user:` on registry and environment), resol
 
 ## Adding a Module
 
-Modules live in `internal/module/`. Each module must implement the two-method idempotency contract:
+Built-in modules are PowerShell-backed and live in `internal/target/` (registry in `runtime_windows_runtime.go`, scripts in `internal/pscript/`). Local, WinRM, and SSH targets share that one registry through the `windowsPowerShellBackend` interface. Each module implements the two-method idempotency contract:
 
 ```go
-Check(ctx context.Context, params Params) (needed bool, err error)
-Apply(ctx context.Context, params Params) error
+Check(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error)
+Apply(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error)
 ```
 
 Rules:
 - `Check` must be safe to call repeatedly and must not modify system state.
 - `Apply` must be idempotent — calling it twice must not break anything.
-- Built-in modules currently receive `map[string]any`; validate and normalize params early so the module still has a clear internal contract.
-- Add a `_windows.go` / `_stub.go` pair if the module is Windows-only so the binary still compiles on other platforms.
-- Modules that produce user-visible command output can also implement the optional streaming `ApplyWithOutput(ctx, params, onOutput)` hook via `target.StreamingModule` so renderers receive line-by-line updates during `apply`.
+- Built-in modules receive `map[string]any`; validate and normalize params early so the module still has a clear internal contract.
+- Register the module in the catalog (`catalog.go`) and in `newWindowsPowerShellRegistry`.
+- Modules that produce user-visible command output call `out` line by line so renderers receive updates during `apply`.
 
 ---
 

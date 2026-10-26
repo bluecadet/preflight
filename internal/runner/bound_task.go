@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/template"
 )
@@ -34,10 +33,18 @@ func evaluateTaskWhen(task *PlanTask, rt *template.RuntimeContext) (bool, error)
 	return eng.RenderBool(task.When)
 }
 
+// preservesSecretRefs reports whether the named module requires template
+// rendering to preserve secret refs rather than resolving them eagerly.
+// The file module defers secret resolution because content_template is
+// bound as a late step after main param rendering.
+func preservesSecretRefs(name string) bool {
+	return name == "file"
+}
+
 // bindTask renders template expressions in the task against the RuntimeContext.
 func bindTask(task *PlanTask, rt *template.RuntimeContext, bindMode template.BindMode) (*BoundTask, error) {
 	eng := task.Scope.Engine(rt, bindMode)
-	if module.PreservesSecretRefs(task.Module) {
+	if preservesSecretRefs(task.Module) {
 		eng = eng.WithPreserveSecretRefs()
 	}
 

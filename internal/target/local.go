@@ -19,29 +19,27 @@ func (r ModuleRegistry) Lookup(name string) (Module, bool) {
 	return m, ok
 }
 
-// LocalTarget executes modules in-process on the local machine.
+// LocalTarget executes modules on the local machine through powershell.exe,
+// using the same Windows module registry as the remote transports.
 type LocalTarget struct {
 	registry ModuleRegistry
 }
 
-// NewLocalTarget creates a LocalTarget backed by the given registry.
+// NewLocalTarget creates a LocalTarget. Modules in registry (plugins) are bound
+// to this target and overlay the built-in Windows modules.
 func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
-	if registry == nil {
-		registry = make(ModuleRegistry)
-	}
-	t := &LocalTarget{registry: registry}
+	t := &LocalTarget{}
 	// Each target binds plugins to its own (local) ops backend so the plugin's
 	// target effects flow through the handle even locally. *LocalTarget itself
 	// implements TargetOps (Exec/PutFile/GetFile/Info).
-	bound := make(ModuleRegistry, len(registry))
+	merged := newWindowsPowerShellRegistry(localPowerShellBackend{})
 	for name, mod := range registry {
 		if pluggable, ok := mod.(PluggableModule); ok {
-			bound[name] = pluggable.BindTarget(t)
-			continue
+			mod = pluggable.BindTarget(t)
 		}
-		bound[name] = mod
+		merged[name] = mod
 	}
-	t.registry = bound
+	t.registry = merged
 	return t
 }
 
@@ -61,19 +59,8 @@ func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string,
 }
 
 // CopyFile copies src (local path) to dst (local path), preserving file permissions.
-func (t *LocalTarget) CopyFile(_ context.Context, src, dst string) error {
-	info, err := os.Stat(src)
-	if err != nil {
-		return wrapLocalTargetError(fmt.Sprintf("stat src %q", src), err)
-	}
-	data, err := os.ReadFile(src)
-	if err != nil {
-		return wrapLocalTargetError(fmt.Sprintf("read src %q", src), err)
-	}
-	if err := os.WriteFile(dst, data, info.Mode()); err != nil {
-		return wrapLocalTargetError(fmt.Sprintf("write dst %q", dst), err)
-	}
-	return nil
+func (t *LocalTarget) CopyFile(ctx context.Context, src, dst string) error {
+	return localPowerShellBackend{}.CopyFile(ctx, src, dst)
 }
 
 // ReadFile reads and returns the contents of path on the local machine.
@@ -106,13 +93,15 @@ func (t *LocalTarget) Exec(ctx context.Context, script string) (ExecResult, erro
 }
 
 func (t *LocalTarget) execPowerShell(ctx context.Context, script string) (ExecResult, error) {
-	cmd := exec.CommandContext(ctx, "powershell.exe",
-		"-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-Command", script)
+	cmd, cleanup, err := localPowerShellCommand(ctx, script)
+	if err != nil {
+		return ExecResult{}, err
+	}
+	defer cleanup()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err := cmd.Run()
+	err = cmd.Run()
 	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
 	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
 		res.ExitCode = exitErr.ExitCode()
@@ -150,16 +139,7 @@ func (t *LocalTarget) RunPowerShell(ctx context.Context, script string) (string,
 	if runtime.GOOS != "windows" {
 		return "", wrapLocalTargetError("", fmt.Errorf("powershell is only available on Windows"))
 	}
-	out, err := exec.CommandContext(ctx, "powershell.exe",
-		"-NoProfile",
-		"-NonInteractive",
-		"-ExecutionPolicy", "Bypass",
-		"-Command", script,
-	).CombinedOutput()
-	if err != nil {
-		return "", wrapLocalTargetError("powershell failed", fmt.Errorf("%w\noutput: %s", err, string(out)))
-	}
-	return string(out), nil
+	return localPowerShellBackend{}.RunPowerShellScript(ctx, script, nil)
 }
 
 // Close releases any module-level resources owned by this target instance.

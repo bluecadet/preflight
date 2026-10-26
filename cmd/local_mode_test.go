@@ -732,7 +732,7 @@ inventory:
       transport: local
       groups: [lab]
       vars:
-        cmd: echo
+        cmd: hostname
         sentinel: "`+sentinelConfigPath+`"
         run_skip: "false"
     - name: kiosk-b
