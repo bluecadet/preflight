@@ -10,7 +10,7 @@ inputs:
     description: Username to auto-login as
   password:
     type: string
-    required: false
+    default: ""
     description: Password for the auto-login user
   domain:
     type: string

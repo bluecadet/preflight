@@ -40,8 +40,17 @@ func TestAllStdlibActions(t *testing.T) {
 			t.Errorf("empty action file: %s", path)
 			continue
 		}
-		if _, err := action.ParseAction(data); err != nil {
+		parsed, err := action.ParseAction(data)
+		if err != nil {
 			t.Errorf("invalid stdlib action %s: %v", name, err)
+			continue
+		}
+		// An optional input without a default is undefined when omitted, so any
+		// task that renders it fails.
+		for input, spec := range parsed.Inputs {
+			if !spec.Required && spec.Default == nil {
+				t.Errorf("stdlib action %s: optional input %q has no default", name, input)
+			}
 		}
 	}
 }
