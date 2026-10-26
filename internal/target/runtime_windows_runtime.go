@@ -598,11 +598,11 @@ switch ($params.condition) {
   'port_open' {
     $parts = $params.target.Split(':')
     if ($parts.Length -lt 2) { throw "wait: port_open target must be host:port" }
-    $host = $parts[0]
+    $targetHost = $parts[0]
     $port = [int]$parts[1]
     $client = New-Object System.Net.Sockets.TcpClient
     try {
-      $async = $client.BeginConnect($host, $port, $null, $null)
+      $async = $client.BeginConnect($targetHost, $port, $null, $null)
       $connected = $async.AsyncWaitHandle.WaitOne(2000, $false)
       if ($connected -and $client.Connected) {
         $client.EndConnect($async) | Out-Null
