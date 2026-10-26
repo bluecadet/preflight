@@ -231,6 +231,7 @@ Each entry:
 
 - Without `version`, an installed package satisfies `present`. With `version`, the installed version must match.
 - Installs run `winget install --id <id> --exact --silent --scope <scope>` with agreements accepted. Removals run `winget uninstall --id <id> --exact`.
+- `winget` runs as the transport account. If `winget.exe` or the `winget` source isn't registered for that account, the task fails and asks for a [`preflight/winget`](./stdlib-actions.md#preflightwinget) task first. This happens on editions without WinGet, such as Windows IoT Enterprise LTSC, and for accounts that have never signed in interactively.
 
 ```yaml
 - name: Install tools

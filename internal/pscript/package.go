@@ -61,11 +61,23 @@ $env:Path = (@($machinePath, $userPath) | Where-Object { -not [string]::IsNullOr
 `
 
 const wingetPackagePresenceScript = `
+$wingetUser = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+$wingetExe = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
+if (-not $wingetExe) {
+  # Remote sessions may lack the per-user WindowsApps alias directory on PATH.
+  if ($env:LOCALAPPDATA) {
+    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe'
+    if (Test-Path -LiteralPath $alias) { $wingetExe = $alias }
+  }
+}
+if (-not $wingetExe) {
+  throw "winget.exe was not found for $wingetUser. Add a task with 'uses: preflight/winget' before this one."
+}
 function Invoke-Winget {
   param(
     [string[]]$Arguments
   )
-  $output = & winget.exe @Arguments 2>&1
+  $output = & $wingetExe @Arguments 2>&1
   $exitCode = $LASTEXITCODE
   $details = @()
   if ($output) {
@@ -111,11 +123,12 @@ function Test-WingetDesiredPresent {
 }
 `
 
-const WingetPackageCheckScript = `
-$pkgs = @($params.packages)
-Get-Command winget.exe -ErrorAction Stop | Out-Null
-` + wingetPackagePresenceScript + `
+// wingetInstalledScript builds $installedMap from winget export. Without a
+// registered winget source, export exits 0 with no Sources, which would make
+// every package look absent.
+const wingetInstalledScript = `
 $tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
+$doc = $null
 try {
   $result = Invoke-Winget -Arguments @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
   if ($result.ExitCode -ne 0) {
@@ -124,16 +137,26 @@ try {
     }
     throw "winget export failed with exit code $($result.ExitCode)"
   }
-  $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
+  if (Test-Path -LiteralPath $tempPath) {
+    $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
+  }
 } finally {
   Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
+if ($null -eq $doc.Sources -and $null -eq (Get-AppxPackage -Name Microsoft.Winget.Source)) {
+  throw "the winget source is not registered for $wingetUser, so installed packages can't be read. Add a task with 'uses: preflight/winget' before this one."
+}
 $installedMap = @{}
-foreach ($src in @($doc.Sources)) {
-  foreach ($pkg in @($src.Packages)) {
-    $installedMap[$pkg.PackageIdentifier] = $pkg
+foreach ($src in @($doc.Sources | Where-Object { $null -ne $_ })) {
+  foreach ($pkg in @($src.Packages | Where-Object { $_.PackageIdentifier })) {
+    $installedMap[[string]$pkg.PackageIdentifier] = $pkg
   }
 }
+`
+
+const WingetPackageCheckScript = `
+$pkgs = @($params.packages)
+` + wingetPackagePresenceScript + wingetInstalledScript + `
 foreach ($spec in $pkgs) {
   $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
   $isPresent = Test-WingetDesiredPresent -Spec $spec -InstalledMap $installedMap
@@ -148,27 +171,7 @@ Write-Output 'false'
 
 const WingetPackageApplyScript = `
 $pkgs = @($params.packages)
-Get-Command winget.exe -ErrorAction Stop | Out-Null
-` + wingetPackagePresenceScript + `
-$tempPath = Join-Path $env:TEMP ("preflight-winget-" + [guid]::NewGuid().ToString() + ".json")
-try {
-  $result = Invoke-Winget -Arguments @('export', '--output', $tempPath, '--include-versions', '--accept-source-agreements', '--disable-interactivity')
-  if ($result.ExitCode -ne 0) {
-    if ($result.Details.Count -gt 0) {
-      throw ("winget export failed with exit code $($result.ExitCode)" + [Environment]::NewLine + [string]::Join([Environment]::NewLine, $result.Details))
-    }
-    throw "winget export failed with exit code $($result.ExitCode)"
-  }
-  $doc = Get-Content -LiteralPath $tempPath -Raw | ConvertFrom-Json
-} finally {
-  Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-}
-$installedMap = @{}
-foreach ($src in @($doc.Sources)) {
-  foreach ($pkg in @($src.Packages)) {
-    $installedMap[$pkg.PackageIdentifier] = $pkg
-  }
-}
+` + wingetPackagePresenceScript + wingetInstalledScript + `
 foreach ($spec in $pkgs) {
   $id = [string]$spec.id
   $ensure = if ($spec.ensure) { [string]$spec.ensure } else { 'present' }
