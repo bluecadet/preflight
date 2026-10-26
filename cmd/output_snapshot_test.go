@@ -6,10 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/bluecadet/preflight/internal/runner"
-	"github.com/bluecadet/preflight/internal/target"
 )
 
 func TestCommandTUISnapshots(t *testing.T) {
@@ -35,32 +31,6 @@ func TestCommandTUISnapshots(t *testing.T) {
 				})
 				if err != nil {
 					t.Fatalf("runPlan: %v", err)
-				}
-				return out
-			},
-			normalize: normalizeCommandSnapshot,
-		},
-		{
-			name: "state-show",
-			run: func(t *testing.T) string {
-				dir := t.TempDir()
-				restore := chdirForTest(t, dir)
-				defer restore()
-
-				statePath := filepath.Join(dir, "state.json")
-				writeCommandStateFile(t, statePath)
-				cmd := newTestCommand()
-				if err := cmd.Flags().Set("output", "tui"); err != nil {
-					t.Fatalf("Set output: %v", err)
-				}
-				if err := cmd.Flags().Set("state-file", filepath.Base(statePath)); err != nil {
-					t.Fatalf("Set state-file: %v", err)
-				}
-				out, err := captureStdout(t, func() error {
-					return runStateShow(cmd, nil)
-				})
-				if err != nil {
-					t.Fatalf("runStateShow: %v", err)
 				}
 				return out
 			},
@@ -216,24 +186,3 @@ var (
 	cmdDurationRE    = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ms|s|m|h)\b`)
 	cmdSectionRuleRE = regexp.MustCompile(`^─{10,}$`)
 )
-
-func writeCommandStateFile(t *testing.T, path string) {
-	t.Helper()
-
-	state := &runner.State{
-		LastApplied: time.Date(2026, 4, 9, 17, 0, 0, 0, time.UTC),
-		Tasks: map[string]runner.TaskSnapshot{
-			"echo": {
-				TaskKey:   "echo",
-				TaskName:  "echo",
-				Module:    "shell",
-				TaskHash:  "task-hash",
-				ParamHash: "param-hash",
-				Status:    target.StatusOK,
-			},
-		},
-	}
-	if err := state.Save(path); err != nil {
-		t.Fatalf("Save state: %v", err)
-	}
-}

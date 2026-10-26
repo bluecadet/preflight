@@ -16,7 +16,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/inventory"
-	"github.com/bluecadet/preflight/internal/runner"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/targeting"
@@ -159,12 +158,12 @@ func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing
 		t.Run(tc.name, func(t *testing.T) {
 			oldResolveHosts := resolveInventoryHosts
 			var calls int
-			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver) ([]targeting.ResolvedHost, error) {
 				calls++
 				if !reflect.DeepEqual(selectors, []string{}) {
 					t.Fatalf("unexpected selectors: %#v", selectors)
 				}
-				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
+				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver)
 			}
 			defer func() { resolveInventoryHosts = oldResolveHosts }()
 
@@ -189,7 +188,7 @@ func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
 	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	oldResolveHosts := resolveInventoryHosts
-	resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver, string) ([]targeting.ResolvedHost, error) {
+	resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver) ([]targeting.ResolvedHost, error) {
 		t.Fatal("expected explicit local target to bypass inventory resolution")
 		return nil, nil
 	}
@@ -269,12 +268,12 @@ func TestRunFactsDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T)
 		t.Run(tc.name, func(t *testing.T) {
 			oldResolveHosts := resolveInventoryHosts
 			var calls int
-			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+			resolveInventoryHosts = func(ctx context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver) ([]targeting.ResolvedHost, error) {
 				calls++
 				if !reflect.DeepEqual(selectors, []string{}) {
 					t.Fatalf("unexpected selectors: %#v", selectors)
 				}
-				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver, baseStatePath)
+				return targeting.ResolveHosts(ctx, inv, selectors, registry, resolver)
 			}
 			defer func() { resolveInventoryHosts = oldResolveHosts }()
 
@@ -394,19 +393,11 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 	}
 
 	applyCmd := newTestCommand()
-	statePath := filepath.Join(filepath.Dir(playbookPath), "state", "bundle.json")
 	if err := applyCmd.Flags().Set("bundle", matches[0]); err != nil {
 		t.Fatalf("Set bundle: %v", err)
 	}
-	if err := applyCmd.Flags().Set("state-file", statePath); err != nil {
-		t.Fatalf("Set state-file: %v", err)
-	}
 	if err := runApply(applyCmd, nil); err != nil {
 		t.Fatalf("apply bundle: %v", err)
-	}
-
-	if _, err := os.Stat(statePath); err != nil {
-		t.Fatalf("expected bundle apply state file, got %v", err)
 	}
 }
 
@@ -474,154 +465,6 @@ func TestRunPlanDoesNotFetchRemoteActions(t *testing.T) {
 	}
 }
 
-func TestRunDiffFetchesRemoteActions(t *testing.T) {
-	requireWindowsLocal(t)
-	playbookPath := writeRemoteActionPlaybook(t)
-	resolver := &testRemoteActionResolver{}
-
-	oldChain := newActionChain
-	newActionChain = func(string) action.Chain { return action.Chain{resolver} }
-	defer func() { newActionChain = oldChain }()
-
-	cmd := newTestCommand()
-	statePath := filepath.Join(t.TempDir(), "state.json")
-	if err := cmd.Flags().Set("state-file", statePath); err != nil {
-		t.Fatalf("Set state-file: %v", err)
-	}
-
-	if _, err := captureStdout(t, func() error {
-		return runDiff(cmd, []string{playbookPath})
-	}); err != nil {
-		t.Fatalf("runDiff: %v", err)
-	}
-
-	if resolver.fetchCalls != 1 {
-		t.Fatalf("expected one remote fetch, got %d", resolver.fetchCalls)
-	}
-}
-
-func TestRunDiffUsesResolvedHostContext(t *testing.T) {
-	requireWindowsLocal(t)
-	dir := t.TempDir()
-	playbookPath := filepath.Join(dir, "playbook.yml")
-	configPath := filepath.Join(dir, "preflight.yml")
-	statePath := filepath.Join(dir, "state", "kiosk-a.json")
-
-	if err := os.WriteFile(playbookPath, []byte(`
-name: host-aware-diff
-tasks:
-  - name: echo {{ target.name }}
-    shell:
-      cmd: echo
-      args: ["{{ vars.message }}", "{{ target.address }}"]
-`), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", playbookPath, err)
-	}
-	if err := os.WriteFile(configPath, []byte(`
-inventory:
-  groups:
-    lab: {}
-  hosts:
-    - name: kiosk-a
-      address: 10.0.0.1
-      transport: local
-      groups: [lab]
-`), 0o644); err != nil {
-		t.Fatalf("WriteFile(%q): %v", configPath, err)
-	}
-
-	hostVars := map[string]any{"message": "hello"}
-	targetVars := map[string]any{
-		"name":      "kiosk-a",
-		"hostname":  "kiosk-a",
-		"address":   "10.0.0.1",
-		"transport": string(inventory.TransportLocal),
-	}
-
-	registry, _, err := buildModuleRegistry(dir)
-	if err != nil {
-		t.Fatalf("buildModuleRegistry: %v", err)
-	}
-	pb, err := action.LoadPlaybookFile(playbookPath)
-	if err != nil {
-		t.Fatalf("LoadPlaybookFile: %v", err)
-	}
-
-	hostRunner := runner.New(target.NewLocalTarget(registry), action.Chain{}, runner.Config{
-		InventoryVars: hostVars,
-		TargetVars:    targetVars,
-	})
-	plan, err := hostRunner.Plan(context.Background(), pb)
-	if err != nil {
-		t.Fatalf("Plan: %v", err)
-	}
-	plannedState, err := hostRunner.PlannedTaskState(context.Background(), plan)
-	if err != nil {
-		t.Fatalf("PlannedTaskState: %v", err)
-	}
-
-	state := &runner.State{Tasks: make(map[string]runner.TaskSnapshot)}
-	for _, task := range plannedState {
-		state.RecordTask(runner.TaskSnapshot{
-			TaskKey:      task.TaskKey,
-			TaskName:     task.TaskName,
-			Module:       task.Module,
-			DependsOn:    task.DependsOn,
-			TaskHash:     task.TaskHash,
-			ParamHash:    task.ParamHash,
-			ParamSummary: task.ParamSummary,
-			Status:       target.StatusOK,
-		})
-	}
-	if err := state.Save(statePath); err != nil {
-		t.Fatalf("Save state: %v", err)
-	}
-
-	oldResolveHosts := resolveInventoryHosts
-	resolveInventoryHosts = func(_ context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
-		if len(selectors) != 1 || selectors[0] != "lab" {
-			t.Fatalf("unexpected selectors: %#v", selectors)
-		}
-		return []targeting.ResolvedHost{{
-			Name:       "kiosk-a",
-			Vars:       hostVars,
-			TargetVars: targetVars,
-			StatePath:  statePath,
-			Target:     target.NewLocalTarget(registry),
-			InventoryRef: inventory.Host{
-				Name:      "kiosk-a",
-				Address:   "10.0.0.1",
-				Transport: inventory.TransportLocal,
-			},
-		}}, nil
-	}
-	defer func() { resolveInventoryHosts = oldResolveHosts }()
-
-	cmd := newTestCommand()
-	if err := cmd.Flags().Set("target", "lab"); err != nil {
-		t.Fatalf("Set target: %v", err)
-	}
-	if err := cmd.Flags().Set("state-file", statePath); err != nil {
-		t.Fatalf("Set state-file: %v", err)
-	}
-
-	out, err := captureStdout(t, func() error {
-		return runDiff(cmd, []string{playbookPath})
-	})
-	if err != nil {
-		t.Fatalf("runDiff: %v", err)
-	}
-	if !strings.Contains(out, "Target: kiosk-a") {
-		t.Fatalf("expected target section for kiosk-a, got %q", out)
-	}
-	if !strings.Contains(out, "echo kiosk-a") {
-		t.Fatalf("expected rendered target-aware task name, got %q", out)
-	}
-	if !strings.Contains(out, "UNCHANGED") {
-		t.Fatalf("expected unchanged comparison, got %q", out)
-	}
-}
-
 func TestRunFactsWithInventoryUsesSecretsResolver(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "preflight.yml")
@@ -648,14 +491,14 @@ inventory:
 	}
 
 	oldResolveHosts := resolveInventoryHosts
-	resolveInventoryHosts = func(_ context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver, baseStatePath string) ([]targeting.ResolvedHost, error) {
+	resolveInventoryHosts = func(_ context.Context, inv *inventory.Inventory, selectors []string, registry target.ModuleRegistry, resolver *secrets.Resolver) ([]targeting.ResolvedHost, error) {
 		if resolver == nil || !resolver.HasProviders() {
 			t.Fatal("expected facts to pass a configured secrets resolver")
 		}
 		if len(selectors) != 1 || selectors[0] != "lab" {
 			t.Fatalf("unexpected selectors: %#v", selectors)
 		}
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, baseStatePath)}, nil
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry)}, nil
 	}
 	defer func() { resolveInventoryHosts = oldResolveHosts }()
 
@@ -753,9 +596,6 @@ inventory:
 	if err := cmd.Flags().Set("run-id", "test-run"); err != nil {
 		t.Fatalf("Set run-id: %v", err)
 	}
-	if err := cmd.Flags().Set("state-file", filepath.Join(dir, "state", "provision.json")); err != nil {
-		t.Fatalf("Set state-file: %v", err)
-	}
 
 	// kiosk-b's task fails, so apply is expected to return an error even
 	// though the run summary must still reflect every host's true counts.
@@ -810,7 +650,6 @@ func newTestCommand() *cobra.Command {
 	cmd.Flags().String("bundle", "", "")
 	cmd.Flags().String("secret-identity", "", "")
 	cmd.Flags().Bool("allow-plaintext-secrets-in-bundle", false, "")
-	cmd.Flags().String("state-file", "", "")
 	cmd.Flags().Bool("fail-fast", false, "")
 	cmd.Flags().String("run-id", "", "")
 	cmd.Flags().Int("keep-runs", 20, "")

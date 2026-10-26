@@ -336,7 +336,6 @@ func TestRunProjection_StaticCards(t *testing.T) {
 	}{
 		{"FactsEvent", "facts", FactsEvent{Target: "host-a", Facts: map[string]any{"k": "v"}}},
 		{"PlanEvent", "plan", PlanEvent{Target: "host-a", Tasks: []PlanTaskEntry{}}},
-		{"StateEvent", "state", StateEvent{Target: "host-a", StatePath: "state.json"}},
 		{"ValidationEvent", "validate", ValidationEvent{PlaybookPath: "test.yml"}},
 		{"ActionCatalogEvent", "action_catalog", ActionCatalogEvent{EmbeddedRefs: []string{"preflight/test"}}},
 		{"ActionInfoEvent", "action_info", ActionInfoEvent{Ref: "test"}},

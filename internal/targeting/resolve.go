@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"path/filepath"
 
 	"github.com/bluecadet/preflight/internal/inventory"
 	"github.com/bluecadet/preflight/internal/secrets"
@@ -12,13 +11,12 @@ import (
 )
 
 // ResolvedHost is a fully prepared execution target, including merged
-// inventory vars, safe template metadata, derived state path, and a concrete
+// inventory vars, safe template metadata, and a concrete
 // target implementation.
 type ResolvedHost struct {
 	Name         string
 	Vars         map[string]any
 	TargetVars   map[string]any
-	StatePath    string
 	Target       target.Target
 	InventoryRef inventory.Host
 }
@@ -29,7 +27,6 @@ func ResolveHosts(
 	selectors []string,
 	registry target.ModuleRegistry,
 	resolver *secrets.Resolver,
-	baseStatePath string,
 ) ([]ResolvedHost, error) {
 	if inv == nil {
 		return nil, fmt.Errorf("resolve hosts: nil inventory")
@@ -42,7 +39,7 @@ func ResolveHosts(
 
 	resolved := make([]ResolvedHost, 0, len(hosts))
 	for _, host := range hosts {
-		prepared, err := prepareHost(ctx, host, registry, resolver, hostStatePath(baseStatePath, host.Name))
+		prepared, err := prepareHost(ctx, host, registry, resolver)
 		if err != nil {
 			return nil, err
 		}
@@ -52,7 +49,7 @@ func ResolveHosts(
 	return resolved, nil
 }
 
-func ResolveLocalHost(registry target.ModuleRegistry, statePath string) ResolvedHost {
+func ResolveLocalHost(registry target.ModuleRegistry) ResolvedHost {
 	return ResolvedHost{
 		Name: "localhost",
 		Vars: map[string]any{},
@@ -62,8 +59,7 @@ func ResolveLocalHost(registry target.ModuleRegistry, statePath string) Resolved
 			"address":   "localhost",
 			"transport": string(inventory.TransportLocal),
 		},
-		StatePath: statePath,
-		Target:    target.NewLocalTarget(registry),
+		Target: target.NewLocalTarget(registry),
 		InventoryRef: inventory.Host{
 			Name:      "localhost",
 			Address:   "localhost",
@@ -115,7 +111,6 @@ func prepareHost(
 	host inventory.Host,
 	registry target.ModuleRegistry,
 	resolver *secrets.Resolver,
-	statePath string,
 ) (ResolvedHost, error) {
 	auth, err := resolveAuth(ctx, resolver, hostAuth{
 		password:   host.Password,
@@ -147,7 +142,6 @@ func prepareHost(
 		Name:         host.Name,
 		Vars:         cloneMap(host.Vars),
 		TargetVars:   safeTargetVars(host),
-		StatePath:    statePath,
 		Target:       tgt,
 		InventoryRef: host,
 	}, nil
@@ -215,13 +209,6 @@ func safeTargetVars(host inventory.Host) map[string]any {
 		"transport": string(host.Transport),
 		"port":      host.Port,
 	}
-}
-
-func hostStatePath(baseStatePath, hostname string) string {
-	if baseStatePath == "" {
-		return filepath.Join("state", "targets", hostname+".json")
-	}
-	return filepath.Join(filepath.Dir(baseStatePath), "targets", hostname+".json")
 }
 
 func cloneMap(src map[string]any) map[string]any {

@@ -25,22 +25,18 @@ func resolveRunHosts(
 	resolver *secrets.Resolver,
 ) ([]targeting.ResolvedHost, error) {
 	selectors, _ := cmd.Flags().GetStringSlice("target")
-	statePath, err := stateFilePath(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("resolve state file path: %w", err)
-	}
 	if selectorsAreLocal(selectors) {
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}, nil
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry)}, nil
 	}
 
 	if projectCfg == nil || projectCfg.Inventory == nil {
 		if len(selectors) > 0 {
 			return nil, fmt.Errorf("no inventory configured in %s", config.FileName)
 		}
-		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}, nil
+		return []targeting.ResolvedHost{targeting.ResolveLocalHost(registry)}, nil
 	}
 
-	hosts, err := resolveInventoryHosts(ctx, projectCfg.Inventory, selectors, registry, resolver, statePath)
+	hosts, err := resolveInventoryHosts(ctx, projectCfg.Inventory, selectors, registry, resolver)
 	if err != nil {
 		return nil, err
 	}

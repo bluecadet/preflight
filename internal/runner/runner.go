@@ -38,7 +38,6 @@ type Config struct {
 	Renderer                      output.Renderer
 	Secrets                       *secrets.Resolver
 	SecretsConfig                 config.SecretsConfig
-	StatePath                     string
 	ModuleRegistry                target.ModuleRegistry
 	BundleOutputDir               string
 	BundlePlugins                 []plugins.LoadedPlugin
@@ -259,19 +258,6 @@ func (r *Runner) emitActivityResult(message, status string) {
 
 func (r *Runner) isRemoteTarget() bool {
 	return r.target != nil && r.target.Transport() != target.TransportLocal
-}
-
-// PlannedTaskState renders the current plan with execution-time target context
-// so state comparisons use the same task names and params that apply records.
-func (r *Runner) PlannedTaskState(ctx context.Context, plan *ExecutionPlan) ([]PlannedTaskState, error) {
-	if r.target == nil {
-		return nil, fmt.Errorf("state: target is not configured")
-	}
-	execCtx, _, err := r.buildExecutionContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return BuildPlannedTaskState(ctx, plan, execCtx, r.config.Secrets)
 }
 
 func (r *Runner) Fetch(ctx context.Context, playbook *action.Playbook) error {

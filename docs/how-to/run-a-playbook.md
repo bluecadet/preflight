@@ -141,7 +141,6 @@ fact-dependent rendering happens during `check` and `apply`.
 ## Related Docs
 
 - [Run a playbook against remote hosts](./remote-execution.md)
-- [Inspect state and diffs](./inspect-state-and-diff.md)
 - [Stage bundles for air-gapped deployment](./air-gapped-deployment.md)
 - [Variable Merge Order](../reference/inventory.md#variable-merge-order)
 - [Quickstart](../tutorials/quickstart.md)

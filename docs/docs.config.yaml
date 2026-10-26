@@ -83,11 +83,10 @@ sidebar:
         items:
           - how-to/manage-secrets
           - how-to/configure-another-users-settings
-      - label: Source And State
+      - label: Source
         items:
           - how-to/sync-a-git-repo
           - how-to/configure-git-credentials
-          - how-to/inspect-state-and-diff
           - how-to/update-and-pin-actions
       - label: Restricted Networks
         items:
@@ -113,7 +112,6 @@ sidebar:
       - reference/templating
       - reference/plugins
       - reference/bundles
-      - reference/state
       - reference/errors
   - label: Explanation
     items:

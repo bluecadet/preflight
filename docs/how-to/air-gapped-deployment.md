@@ -131,12 +131,6 @@ Run:
 preflight apply --bundle dist/bundles/<bundle>.zip
 ```
 
-Choose a custom state file if you want:
-
-```bash
-preflight apply --bundle ./bundle.zip --state-file ./state/offline.json
-```
-
 If the bundle includes encrypted secrets, pass the target identity:
 
 ```bash

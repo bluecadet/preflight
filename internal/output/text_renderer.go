@@ -134,8 +134,6 @@ func (r *TextRenderer) Emit(event Event) {
 		r.writeLines(renderTextFacts(e))
 	case PlanEvent:
 		r.writeLines(renderTextPlan(e))
-	case StateEvent:
-		r.writeLines(renderTextState(e))
 	case ValidationEvent:
 		r.writeLines(renderTextValidation(e))
 	case ActionCatalogEvent:

@@ -50,7 +50,7 @@ func TestRunApplyScrubsResolvedSecretsFromAllSinks(t *testing.T) {
 			}
 
 			old := resolveInventoryHosts
-			resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver, string) ([]targeting.ResolvedHost, error) {
+			resolveInventoryHosts = func(context.Context, *inventory.Inventory, []string, target.ModuleRegistry, *secrets.Resolver) ([]targeting.ResolvedHost, error) {
 				return []targeting.ResolvedHost{{Name: "box", Vars: map[string]any{}, TargetVars: map[string]any{}, Target: echoSecretTarget{}}}, nil
 			}
 			defer func() { resolveInventoryHosts = old }()

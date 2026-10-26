@@ -36,7 +36,6 @@ func init() {
 	addTimeoutFlag(applyCmd)
 	applyCmd.Flags().String("bundle", "", "apply from a staged bundle zip")
 	applyCmd.Flags().String("secret-identity", "", "path to an age identity file used to decrypt bundled encrypted secrets")
-	applyCmd.Flags().String("state-file", "", "path to state file (default: "+defaultStatePath+")")
 	rootCmd.AddCommand(applyCmd)
 }
 
@@ -180,7 +179,6 @@ func runPlaybook(cmd *cobra.Command, args []string, opts playbookRunOptions) (er
 			SkipFetch:                     true,
 			Secrets:                       session.Secrets,
 			SecretsConfig:                 session.ProjectCfg.Secrets,
-			StatePath:                     host.StatePath,
 			ModuleRegistry:                session.Registry,
 			BundleOutputDir:               bundleDir,
 			BundlePlugins:                 session.LoadedPlugins,
@@ -289,7 +287,7 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 
 	secretResolver.Observe(func(v string) { renderer.Scrub([]string{v}) })
 
-	// TargetName is set from the bundle manifest so the state file and recap
+	// TargetName is set from the bundle manifest so the recap
 	// output correctly identify the original target, not the local machine.
 	if extracted.Manifest.SecretMode == bundle.SecretModePlaintext && renderer != nil {
 		renderer.Emit(output.WarningEvent{Message: "bundle contains plaintext secrets"})
@@ -300,15 +298,10 @@ func runBundleApply(cmd *cobra.Command, bundlePath string, dryRun bool) error {
 		PlaybookName: plan.PlaybookName,
 		Targets:      []string{displayTargetName(extracted.Manifest.TargetName, target.TransportLocal)},
 	})
-	statePath, err := stateFilePath(cmd)
-	if err != nil {
-		return fmt.Errorf("apply bundle: %w", err)
-	}
 	r := runner.New(target.NewLocalTarget(registry), nil, runner.Config{
 		DryRun:         dryRun,
 		Renderer:       renderer,
 		Secrets:        secretResolver,
-		StatePath:      statePath,
 		TargetName:     extracted.Manifest.TargetName,
 		ModuleRegistry: registry,
 		Version:        extracted.Manifest.Build.Version,

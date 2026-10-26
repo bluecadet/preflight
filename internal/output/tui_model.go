@@ -244,10 +244,6 @@ func (m tuiModel) renderCard(d CardDescriptor) tea.Cmd {
 		if e, ok := d.Event.(PlanEvent); ok {
 			block = renderPlanCard(e)
 		}
-	case "state":
-		if e, ok := d.Event.(StateEvent); ok {
-			block = renderStateCard(e)
-		}
 	case "validate":
 		if e, ok := d.Event.(ValidationEvent); ok {
 			block = renderValidationCard(e)

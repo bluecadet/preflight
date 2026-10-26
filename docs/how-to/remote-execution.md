@@ -113,15 +113,6 @@ fleet of kiosks at the same moment. It only affects fan-out across
 hosts; task order within a single host still follows the playbook's
 dependency graph.
 
-## Per-Host State
-
-Inventory-backed applies write a separate state file per host under
-`state/targets/<host>.json`, instead of the single
-`state/provision.json` a local run uses. See the
-[State Reference](../reference/state.md) for the file shape and
-[Inspect state and diffs](./inspect-state-and-diff.md) for comparing a
-plan against recorded state per host.
-
 ## Troubleshooting
 
 This page only covers inventory and fan-out. For connection failures
@@ -140,5 +131,4 @@ for why and for the workarounds.
 - [Run a playbook](./run-a-playbook.md)
 - [Troubleshoot remote connections](./troubleshoot-remote-connections.md)
 - [Inventory Reference](../reference/inventory.md)
-- [State Reference](../reference/state.md)
 - [Configure another user's settings](./configure-another-users-settings.md)

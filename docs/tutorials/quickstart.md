@@ -117,10 +117,9 @@ Inspect the results:
 
 ```bash
 cat ./tmp/demo/hello.txt
-preflight state show
 ```
 
-At this point you have both a concrete machine change and a persisted state snapshot under `state/provision.json`.
+At this point the machine has changed.
 
 ## 7. Run It Again
 

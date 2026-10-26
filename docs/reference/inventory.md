@@ -180,9 +180,6 @@ During command execution, each resolved host is turned into:
 - a merged variable map
 - a safe `target.*` metadata map for templates
 - a concrete `Target` implementation
-- a derived per-host state path
-
-Inventory-backed applies default to `state/targets/<host>.json`.
 
 ## Transport Notes
 

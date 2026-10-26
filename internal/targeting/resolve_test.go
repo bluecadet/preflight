@@ -58,7 +58,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -111,7 +111,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -143,7 +143,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -178,7 +178,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -217,7 +217,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -275,7 +275,7 @@ hosts:
 		t.Fatalf("parse inventory: %v", err)
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -314,7 +314,7 @@ hosts:
 		secrets.DefaultProviderName: provider,
 	})
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -361,7 +361,7 @@ hosts:
 		secrets.DefaultProviderName: provider,
 	})
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -409,7 +409,7 @@ hosts:
 		secrets.DefaultProviderName: provider,
 	})
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -458,7 +458,7 @@ hosts:
 		secrets.DefaultProviderName: provider,
 	})
 
-	_, err = targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver, "")
+	_, err = targeting.ResolveHosts(context.Background(), inv, []string{"staging-pc-01"}, nil, resolver)
 	if err == nil {
 		t.Fatal("expected error from unresolved jump secret, got nil")
 	}
@@ -476,7 +476,7 @@ func TestResolveHosts_EmptySelectorsDefaultToAllHosts(t *testing.T) {
 		},
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, nil, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}
@@ -499,7 +499,7 @@ func TestResolveHosts_GroupAndHostSelectorsDeduplicate(t *testing.T) {
 		},
 	}
 
-	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"lobby", "kiosk-a"}, nil, nil, "")
+	resolved, err := targeting.ResolveHosts(context.Background(), inv, []string{"lobby", "kiosk-a"}, nil, nil)
 	if err != nil {
 		t.Fatalf("ResolveHosts: %v", err)
 	}

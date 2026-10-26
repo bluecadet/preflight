@@ -245,8 +245,6 @@ func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 		return []CommitDescriptor{CardDescriptor{Kind: "facts", Event: e}}
 	case PlanEvent:
 		return []CommitDescriptor{CardDescriptor{Kind: "plan", Event: e}}
-	case StateEvent:
-		return []CommitDescriptor{CardDescriptor{Kind: "state", Event: e}}
 	case ValidationEvent:
 		return []CommitDescriptor{CardDescriptor{Kind: "validate", Event: e}}
 	case ActionCatalogEvent:

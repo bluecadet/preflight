@@ -268,11 +268,6 @@ func (s *RunLogSink) buildJSON(event Event, env runLogEnvelope) map[string]any {
 	case PlanEvent:
 		m["play"] = e.PlaybookName
 		m["tasks"] = e.Tasks
-	case StateEvent:
-		m["play"] = e.PlaybookName
-		m["state_path"] = e.StatePath
-		m["last_applied"] = e.LastApplied
-		m["comparisons"] = e.Comparisons
 	case ValidationEvent:
 		m["play"] = e.PlaybookName
 		m["playbook_path"] = e.PlaybookPath
