@@ -164,6 +164,41 @@ Removes built-in Microsoft and third-party Store apps, uninstalls the OneDrive d
 | --- | --- | --- | --- |
 | `user` | string | `""` | Windows user for user-scoped privacy and taskbar settings |
 
+## `preflight/winget`
+
+Installs WinGet machine-wide and registers it for the transport account, so `winget_package` works over SSH and WinRM. Use it on editions that ship without WinGet, such as Windows IoT Enterprise LTSC, and for accounts that have never signed in interactively. The transport account must be an administrator.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `source_max_age` | string | `24h` | Re-provision the `winget` source once its build is older than this, in `s`, `m`, `h` or `d`. `0` only provisions a missing source |
+
+The action runs three tasks:
+
+1. Provision App Installer: unless it is already provisioned, downloads the latest App Installer bundle and its dependencies for the target's architecture from the `winget-cli` GitHub releases, then provisions them for all users.
+2. Provision the `winget` source: downloads `source2.msix` from the WinGet CDN and provisions it when it is missing or older than `source_max_age`.
+3. Register WinGet for the transport account: registers both packages by family name when App Installer is missing for the account, or its source is older than the provisioned one.
+
+WinGet can't install these packages for a remote session itself; per-user installs fail with `0x80073D19`. Provisioning machine-wide, then registering, avoids that path.
+
+- The target needs internet access to GitHub and `cdn.winget.microsoft.com`.
+- The source is refreshed from the CDN. If the CDN build is older than `source_max_age`, the task reports `changed` on every run.
+- `preflight check` on a target without WinGet reports later `winget_package` tasks as failed, because the bootstrap has not run yet.
+
+Known limitations:
+
+- App Installer comes from the `winget-cli` `releases/latest` download, unpinned and without a hash check. Each fresh provisioning takes whatever release is current.
+- The source guard only detects a missing `Microsoft.Winget.Source` package. A present but broken source isn't detected or repaired.
+
+```yaml
+tasks:
+  - name: WinGet
+    uses: preflight/winget
+  - name: Tools
+    winget_package:
+      packages:
+        - id: 7zip.7zip
+```
+
 ## Related docs
 
 - [Built-in module reference](./modules.md)

@@ -1,0 +1,97 @@
+name: preflight/winget
+version: "1.0.0"
+description: Install WinGet machine-wide and register it for the connecting user
+author: preflight
+
+inputs:
+  source_max_age:
+    type: string
+    default: 24h
+    description: Re-provision the winget source when its build is older than this (e.g. 12h, 7d); 0 only provisions a missing source
+
+tasks:
+  - name: Provision App Installer
+    powershell:
+      check_script: |
+        $provisioned = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq 'Microsoft.DesktopAppInstaller'
+        return ($null -eq $provisioned)
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        # PROCESSOR_ARCHITEW6432 holds the real architecture under 32-bit PowerShell on 64-bit Windows.
+        $nativeArch = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+        $arch = @{ 'ARM64' = 'arm64'; 'AMD64' = 'x64'; 'x86' = 'x86' }[$nativeArch]
+        if (-not $arch) { throw "unsupported processor architecture $nativeArch" }
+        $work = Join-Path $env:TEMP ('preflight-winget-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $work -Force | Out-Null
+        try {
+          $base = 'https://github.com/microsoft/winget-cli/releases/latest/download'
+          $bundle = Join-Path $work 'AppInstaller.msixbundle'
+          $depsZip = Join-Path $work 'Dependencies.zip'
+          Invoke-WebRequest "$base/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" -OutFile $bundle -UseBasicParsing
+          Invoke-WebRequest "$base/DesktopAppInstaller_Dependencies.zip" -OutFile $depsZip -UseBasicParsing
+          Expand-Archive -LiteralPath $depsZip -DestinationPath (Join-Path $work 'deps') -Force
+          $deps = @(Get-ChildItem (Join-Path $work 'deps') -Recurse -Filter *.appx |
+            Where-Object { $_.Directory.Name -eq $arch } | ForEach-Object FullName)
+          if ($deps.Count -eq 0) { throw "no App Installer dependencies found for $arch" }
+          Add-AppxProvisionedPackage -Online -PackagePath $bundle -DependencyPackagePath $deps -SkipLicense | Out-Null
+          Write-Output "provisioned App Installer with $($deps.Count) $arch dependencies"
+        } finally {
+          Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Provision winget source
+    powershell:
+      check_script: |
+        $maxAge = @'
+        {{ vars.source_max_age }}
+        '@
+        $maxAge = $maxAge.Trim()
+        $provisioned = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq 'Microsoft.Winget.Source' |
+          Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
+        if ($null -eq $provisioned) { return $true }
+        if ($maxAge -eq '0') { return $false }
+        if ($maxAge -notmatch '^(\d+)([smhd])$') { throw "source_max_age must look like 30m, 24h or 7d, got '$maxAge'" }
+        $unit = @{ s = 1; m = 60; h = 3600; d = 86400 }[$Matches[2]]
+        $limit = [timespan]::FromSeconds([double]$Matches[1] * $unit)
+        # The source version encodes its UTC build time as yyyy.Mdd.Hmm.n. An
+        # undecodable version counts as stale so the source is re-provisioned.
+        try {
+          $v = [version]$provisioned.Version
+          $built = [datetime]::SpecifyKind((New-Object datetime $v.Major, ([math]::Floor($v.Minor / 100)), ($v.Minor % 100), ([math]::Floor($v.Build / 100)), ($v.Build % 100), 0), 'Utc')
+        } catch {
+          return $true
+        }
+        return (([datetime]::UtcNow - $built) -gt $limit)
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $msix = Join-Path $env:TEMP ('preflight-winget-source-' + [guid]::NewGuid().ToString('N') + '.msix')
+        try {
+          Invoke-WebRequest 'https://cdn.winget.microsoft.com/cache/source2.msix' -OutFile $msix -UseBasicParsing
+          Add-AppxProvisionedPackage -Online -PackagePath $msix -SkipLicense | Out-Null
+          $provisioned = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq 'Microsoft.Winget.Source' |
+            Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
+          Write-Output "provisioned winget source $($provisioned.Version)"
+        } finally {
+          Remove-Item -LiteralPath $msix -Force -ErrorAction SilentlyContinue
+        }
+
+  - name: Register WinGet for the connecting user
+    powershell:
+      check_script: |
+        if ($null -eq (Get-AppxPackage -Name Microsoft.DesktopAppInstaller)) { return $true }
+        $provisioned = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq 'Microsoft.Winget.Source' |
+          Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
+        $registered = Get-AppxPackage -Name Microsoft.Winget.Source | Sort-Object { [version]$_.Version } -Descending | Select-Object -First 1
+        if ($null -eq $registered) { return $true }
+        if ($null -eq $provisioned) { return $false }
+        return ([version]$registered.Version -lt [version]$provisioned.Version)
+      script: |
+        $ErrorActionPreference = 'Stop'
+        foreach ($family in 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe', 'Microsoft.Winget.Source_8wekyb3d8bbwe') {
+          Add-AppxPackage -RegisterByFamilyName -MainPackage $family
+        }
+        Write-Output "registered WinGet for $([Security.Principal.WindowsIdentity]::GetCurrent().Name)"
