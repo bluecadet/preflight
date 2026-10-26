@@ -22,7 +22,6 @@ type Config struct {
 	DryRun        bool
 	Tags          []string
 	SkipTags      []string
-	Concurrency   int
 	ProjectDir    string
 	ProjectName   string
 	ProjectEnv    string
@@ -33,8 +32,6 @@ type Config struct {
 	TargetName    string
 	// StagePlatform overrides live target discovery only while assembling a bundle.
 	StagePlatform                 *target.Platform
-	Phase                         string // "plan", "fetch", "stage", "apply" (empty = all)
-	SkipFetch                     bool
 	Renderer                      output.Renderer
 	Secrets                       *secrets.Resolver
 	SecretsConfig                 config.SecretsConfig
@@ -48,7 +45,7 @@ type Config struct {
 	BuildDate                     string
 }
 
-// Runner orchestrates the Plan→Fetch→Stage→Apply pipeline.
+// Runner orchestrates the Plan→Stage→Apply pipeline.
 type Runner struct {
 	target   target.Target
 	resolver action.Chain
@@ -74,9 +71,8 @@ func (r *Runner) closeTarget() error {
 	return nil
 }
 
-// Run executes the playbook through the configured phases.
-// If Config.Phase is empty, all phases run in order: plan, fetch, stage, apply.
-// Otherwise only the specified phase runs (plan is always required first).
+// Run plans and applies the playbook. Remote action refs must already be
+// fetched by the caller.
 func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error) {
 	defer func() {
 		err = errors.Join(err, r.closeTarget())
@@ -84,36 +80,16 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	targetName := r.targetName()
 
-	if r.config.Phase == "plan" {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		slog.Debug("starting phase", "phase", "plan")
-		_, err := r.Plan(ctx, playbook)
-		if err != nil {
-			slog.Error("plan phase failed", "error", err)
-		}
-		return err
-	}
-
-	// Past this point, Run is committed to the tallied pipeline: every
+	// Run is committed to the tallied pipeline: every
 	// return path must leave exactly one TargetStartEvent paired with
 	// exactly one TargetCompleteEvent, since TargetTallies (and the
 	// TUI/text renderer's live target roster) is folded purely from that
 	// pair. The normal pair is emitted just before apply, further down. A
-	// failure before that point (cancellation, Fetch, or Plan) would
+	// failure before that point (cancellation or Plan) would
 	// otherwise return with no target event at all, silently dropping the
 	// host from run.json's tallies — so planFailed emits the pair itself.
 	if err := ctx.Err(); err != nil {
 		return r.planFailed(targetName, err)
-	}
-
-	if !r.config.SkipFetch {
-		slog.Debug("starting phase", "phase", "fetch")
-		if err := r.Fetch(ctx, playbook); err != nil {
-			slog.Error("fetch phase failed", "error", err)
-			return r.planFailed(targetName, err)
-		}
 	}
 
 	slog.Debug("starting phase", "phase", "plan")
@@ -121,19 +97,6 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	if err != nil {
 		slog.Error("plan phase failed", "error", err)
 		return r.planFailed(targetName, err)
-	}
-
-	if r.config.Phase == "fetch" {
-		return nil
-	}
-
-	if r.config.Phase == "stage" {
-		slog.Debug("starting phase", "phase", "stage")
-		err := r.stage(ctx, plan)
-		if err != nil {
-			slog.Error("stage phase failed", "error", err)
-		}
-		return err
 	}
 
 	// Emit target start before the apply phase.
@@ -215,7 +178,7 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 
 // planFailed emits a synthetic TargetStartEvent/TargetCompleteEvent pair for
 // a target that failed before reaching the apply phase (context
-// cancellation, Fetch, or Plan — including DAG cycles, template errors, and
+// cancellation or Plan — including DAG cycles, template errors, and
 // validatePlanTasks rejections), then returns cause unchanged. Without this
 // pair, the failure would return with no target event at all: TargetTallies
 // is folded purely from TargetStart/TargetComplete, so the host would
@@ -258,10 +221,6 @@ func (r *Runner) emitActivityResult(message, status string) {
 
 func (r *Runner) isRemoteTarget() bool {
 	return r.target != nil && r.target.Transport() != target.TransportLocal
-}
-
-func (r *Runner) Fetch(ctx context.Context, playbook *action.Playbook) error {
-	return r.fetch(ctx, playbook)
 }
 
 func (r *Runner) Plan(ctx context.Context, playbook *action.Playbook) (*ExecutionPlan, error) {

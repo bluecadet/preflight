@@ -67,7 +67,6 @@ func runPlan(cmd *cobra.Command, args []string) error {
 			Vars:           vars,
 			TargetVars:     host.TargetVars,
 			TargetName:     host.Name,
-			Phase:          "plan",
 			Secrets:        session.Secrets,
 			ModuleRegistry: session.Registry,
 		}
