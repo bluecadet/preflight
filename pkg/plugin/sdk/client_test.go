@@ -138,7 +138,7 @@ func newClient(t *testing.T, m Module, info TargetInfo, ops HandleServer) *Clien
 }
 
 func TestClientStream_Initialize(t *testing.T) {
-	c := newClient(t, mockModule{}, TargetInfo{Family: "linux"}, NoopHandleServer())
+	c := newClient(t, mockModule{}, TargetInfo{Family: "windows"}, nil)
 	defer func() { _ = c.Close() }()
 
 	if c.Name() != "mock" {
@@ -150,7 +150,7 @@ func TestClientStream_Initialize(t *testing.T) {
 }
 
 func TestClientStream_Check(t *testing.T) {
-	c := newClient(t, mockModule{}, TargetInfo{}, NoopHandleServer())
+	c := newClient(t, mockModule{}, TargetInfo{}, nil)
 	defer func() { _ = c.Close() }()
 
 	result, err := c.Check(context.Background(), map[string]any{}, nil)
@@ -163,7 +163,7 @@ func TestClientStream_Check(t *testing.T) {
 }
 
 func TestClientStream_Apply(t *testing.T) {
-	c := newClient(t, mockModule{}, TargetInfo{}, NoopHandleServer())
+	c := newClient(t, mockModule{}, TargetInfo{}, nil)
 	defer func() { _ = c.Close() }()
 
 	_, err := c.Apply(context.Background(), map[string]any{}, nil)
@@ -255,9 +255,8 @@ func rawFrameServer(t *testing.T, initResp string) (r io.Reader, w io.Writer, cl
 }
 
 func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
-	// A pre-v1 initialize response: name/version but no protocol_version or
-	// min_protocol_version at all (both decode to their zero value), so its
-	// range never overlaps this SDK's.
+	// A pre-v1 initialize response: name/version but no protocol_version
+	// at all (decodes to zero), so it never matches this SDK's version.
 	preV1 := `{"name":"old","version":"0.1.0"}`
 	r, w, closeFn := rawFrameServer(t, preV1)
 	_, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
@@ -270,47 +269,22 @@ func TestClientStream_RejectsPreV1Plugin(t *testing.T) {
 }
 
 func TestClientStream_RejectsProtocolMismatch(t *testing.T) {
-	// A future plugin whose entire supported range (v9-v9) sits above this
-	// SDK's (v2-v2): the ranges do not overlap.
-	mismatch := `{"name":"future","version":"9.0.0","protocol_version":9,"min_protocol_version":9}`
+	// A future plugin speaking v9 against this SDK's v3.
+	mismatch := `{"name":"future","version":"9.0.0","protocol_version":9}`
 	r, w, closeFn := rawFrameServer(t, mismatch)
 	_, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
 	if err == nil {
 		t.Fatal("expected initialize failure for protocol mismatch, got nil")
 	}
-	if !IsProtocolError(err) {
-		t.Fatalf("expected *ProtocolError, got %T: %v", err, err)
-	}
 	var pe *ProtocolError
 	if !errors.As(err, &pe) {
-		t.Fatalf("expected *ProtocolError, got %T", err)
+		t.Fatalf("expected *ProtocolError, got %T: %v", err, err)
 	}
-	if pe.LocalMin != MinProtocolVersion || pe.LocalMax != ProtocolVersion {
-		t.Errorf("LocalMin/LocalMax = %d/%d, want %d/%d", pe.LocalMin, pe.LocalMax, MinProtocolVersion, ProtocolVersion)
+	if pe.Local != ProtocolVersion || pe.Peer != 9 {
+		t.Errorf("Local/Peer = %d/%d, want %d/9", pe.Local, pe.Peer, ProtocolVersion)
 	}
-	if pe.PeerMin != 9 || pe.PeerMax != 9 {
-		t.Errorf("PeerMin/PeerMax = %d/%d, want 9/9", pe.PeerMin, pe.PeerMax)
-	}
-	if !strings.Contains(err.Error(), "v2-v2") || !strings.Contains(err.Error(), "v9-v9") {
-		t.Errorf("error %q does not name both sides' ranges", err.Error())
-	}
-}
-
-// TestClientStream_NegotiatesOverlappingRange asserts that a peer advertising
-// a wider range than this SDK's still succeeds, negotiating down to the
-// highest version both sides support — the whole point of a range instead of
-// an exact-match version string.
-func TestClientStream_NegotiatesOverlappingRange(t *testing.T) {
-	// Peer supports v1 through v5; this SDK supports v2-v2. Overlap is v2.
-	wide := `{"name":"wide","version":"1.0.0","protocol_version":5,"min_protocol_version":1}`
-	r, w, closeFn := rawFrameServer(t, wide)
-	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{})
-	if err != nil {
-		t.Fatalf("NewClient: %v", err)
-	}
-	defer func() { _ = c.Close() }()
-	if got := c.ProtocolVersion(); got != ProtocolVersion {
-		t.Errorf("negotiated version = %d, want %d", got, ProtocolVersion)
+	if !strings.Contains(err.Error(), "v3") || !strings.Contains(err.Error(), "v9") {
+		t.Errorf("error %q does not name both versions", err.Error())
 	}
 }
 
@@ -319,7 +293,7 @@ func TestClientStream_NegotiatesOverlappingRange(t *testing.T) {
 // HasCapability answers accordingly — the mechanism that lets a feature be
 // detected at runtime instead of gated on a version bump.
 func TestClientStream_CapabilityIntersection(t *testing.T) {
-	resp := `{"name":"caps","version":"1.0.0","protocol_version":2,"min_protocol_version":2,"capabilities":["foo","bar"]}`
+	resp := `{"name":"caps","version":"1.0.0","protocol_version":3,"capabilities":["foo","bar"]}`
 	r, w, closeFn := rawFrameServer(t, resp)
 	c, err := NewClient(context.Background(), r, w, closeFn, ClientOptions{Capabilities: []string{"bar", "baz"}})
 	if err != nil {

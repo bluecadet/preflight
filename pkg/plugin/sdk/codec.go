@@ -11,10 +11,6 @@ import (
 	"time"
 )
 
-// errHandleUnavailable is returned by noopHandleServer; defined here to keep the
-// protocol file free of imports beyond context.
-var errHandleUnavailable = errors.New("plugin handle: no target is bound")
-
 // methodCancel is the bidirectional notification a peer sends to abandon an
 // in-flight request. It is the only protocol message the codec handles itself
 // rather than delegating, because cancellation is transport-level: it must
