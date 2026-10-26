@@ -270,7 +270,7 @@ func TestWinRMTarget_ExecuteRecyclesPersistentSessionAfterPowerShellModule(t *te
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			tgt.psSession = &winRMPersistentPS{}
-			return "ok", "", 0, nil
+			return powerShellCheckResultLine(true), "", 0, nil
 		},
 	}
 
@@ -357,6 +357,12 @@ func TestNormalizeArchitecture(t *testing.T) {
 	}
 }
 
+// powerShellCheckResultLine builds the marker line a check_script run prints.
+func powerShellCheckResultLine(needsChange bool) string {
+	payload, _ := json.Marshal(map[string]bool{"needs_change": needsChange})
+	return "__PREFLIGHT_CHECK_RESULT__:" + base64.StdEncoding.EncodeToString(payload)
+}
+
 func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	var commands []string
 
@@ -364,11 +370,10 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
 			commands = append(commands, command)
-			if !strings.Contains(command, "__pf_check_script") {
-				t.Fatalf("expected combined ensure script, got %q", command)
+			if strings.Contains(command, "__PREFLIGHT_CHECK_RESULT__") {
+				return powerShellCheckResultLine(true), "", 0, nil
 			}
-			// Simulate apply output followed by the ensure sentinel.
-			return "applied\nchanged", "", 0, nil
+			return "applied", "", 0, nil
 		},
 	}
 
@@ -382,8 +387,8 @@ func TestWinRMTarget_ExecutePowerShellCheckScript(t *testing.T) {
 	if result.Status != StatusChanged {
 		t.Fatalf("expected StatusChanged, got %q", result.Status)
 	}
-	if len(commands) != 1 {
-		t.Fatalf("expected 1 combined PowerShell invocation, got %d", len(commands))
+	if len(commands) != 2 {
+		t.Fatalf("expected check then apply PowerShell invocations, got %d", len(commands))
 	}
 }
 
@@ -855,13 +860,16 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 }
 
 func TestWinRMTarget_ExecuteForwardsOutputLinesViaCallback(t *testing.T) {
-	// Verifies the full path: WinRMTarget.Execute → ensurePowerShellModule →
+	// Verifies the full path: WinRMTarget.Execute → check + apply →
 	// onOutput called once per line for all non-marker output. This exercises
 	// the same code path that fires during long-running apply scripts.
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
-		runPS: func(_ context.Context, _ string) (string, string, int, error) {
-			return "step-1\nstep-2\nstep-3\nchanged", "", 0, nil
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			if strings.Contains(command, "__PREFLIGHT_CHECK_RESULT__") {
+				return powerShellCheckResultLine(true), "", 0, nil
+			}
+			return "step-1\nstep-2\nstep-3", "", 0, nil
 		},
 	}
 
@@ -1056,8 +1064,11 @@ func TestWinRMBatchFallbackStripsCRLF(t *testing.T) {
 	// out with \r stripped. Verify the callback receives clean lines.
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
-		runPS: func(_ context.Context, _ string) (string, string, int, error) {
-			return "line-a\r\nline-b\r\nchanged\r\n", "", 0, nil
+		runPS: func(_ context.Context, command string) (string, string, int, error) {
+			if strings.Contains(command, "__PREFLIGHT_CHECK_RESULT__") {
+				return powerShellCheckResultLine(true) + "\r\n", "", 0, nil
+			}
+			return "line-a\r\nline-b\r\n", "", 0, nil
 		},
 	}
 

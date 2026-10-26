@@ -78,9 +78,6 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
 				return applyPowerShellModule(ctx, backend, params, out)
 			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
-				return ensurePowerShellModule(ctx, backend, params, dryRun, out)
-			},
 		},
 		"environment": moduleFuncs{
 			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
@@ -88,9 +85,6 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			},
 			apply: func(ctx context.Context, params map[string]any, _ OutputFunc) (ApplyResult, error) {
 				return ApplyResult{}, applyWindowsEnvironment(ctx, backend, params)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (EnsureResult, error) {
-				return ensureWindowsEnvironment(ctx, backend, params, dryRun)
 			},
 		},
 		"wait": moduleFuncs{
@@ -115,9 +109,6 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			},
 			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
 				return applyWindowsRegistry(ctx, backend, params, out)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, _ OutputFunc) (EnsureResult, error) {
-				return ensureWindowsRegistry(ctx, backend, params, dryRun)
 			},
 		},
 		"service": moduleFuncs{
@@ -179,9 +170,6 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			},
 			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
 				return applyWindowsRemoveAppxPackages(ctx, backend, params, out)
-			},
-			ensure: func(ctx context.Context, params map[string]any, dryRun bool, out OutputFunc) (EnsureResult, error) {
-				return ensureWindowsRemoveAppxPackages(ctx, backend, params, dryRun, out)
 			},
 		},
 		"power_plan": moduleFuncs{
@@ -556,66 +544,6 @@ if ($params.ensure -eq 'absent') {
 	return err
 }
 
-func ensureWindowsEnvironment(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (EnsureResult, error) {
-	name, ok := params["name"].(string)
-	if !ok || name == "" {
-		return EnsureResult{}, fmt.Errorf("environment: required param %q is missing", "name")
-	}
-	ensure, _ := params["ensure"].(string)
-	if ensure == "" {
-		ensure = "present"
-	}
-	scope, _ := params["scope"].(string)
-	if scope == "" {
-		scope = "Machine"
-	}
-	value, _ := params["value"].(string)
-
-	user, err := winutil.EnvironmentUser(params)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	if user != "" {
-		needs, err := checkWindowsEnvironment(ctx, backend, params)
-		if err != nil {
-			return EnsureResult{}, err
-		}
-		if !needs.NeedsChange {
-			return EnsureResult{}, nil
-		}
-		if !dryRun {
-			if err := applyWindowsEnvironment(ctx, backend, params); err != nil {
-				return EnsureResult{}, err
-			}
-		}
-		return EnsureResult{Changed: true}, nil
-	}
-
-	preamble := powerShellDryRunPreamble(dryRun)
-	out, err := windowsRunScript(ctx, backend, map[string]any{
-		"name":   name,
-		"value":  value,
-		"scope":  normalizeEnvScope(scope),
-		"ensure": ensure,
-	}, preamble+`
-$current = [System.Environment]::GetEnvironmentVariable($params.name, $params.scope)
-if ($params.ensure -eq 'absent') {
-  if ($null -eq $current -or $current -eq '') { Write-Output 'ok'; exit 0 }
-  if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
-  [System.Environment]::SetEnvironmentVariable($params.name, $null, $params.scope)
-} else {
-  if ($current -eq $params.value) { Write-Output 'ok'; exit 0 }
-  if ($__pf_dry_run) { Write-Output 'would-change'; exit 0 }
-  [System.Environment]::SetEnvironmentVariable($params.name, [string]$params.value, $params.scope)
-}
-Write-Output 'changed'
-`)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	return parseEnsureMarkerResult("environment", out)
-}
-
 func checkWindowsWait(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
 	condition, _ := params["condition"].(string)
 	targetValue, _ := params["target"].(string)
@@ -761,33 +689,6 @@ func applyWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShe
 	return applyStreamed(output, out), err
 }
 
-func ensureWindowsRemoveAppxPackages(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool, onOutput OutputFunc) (EnsureResult, error) {
-	normalized, err := winutil.NormalizeRemoveAppxParams(params)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	paramsScript, err := powershellJSONVar("params", normalized)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
-	out, err := backend.RunPowerShellScript(ctx, preamble+removeAppxPackagesEnsureScript, nil)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	lines := splitOutputLines(out)
-	if len(lines) == 0 {
-		return EnsureResult{}, fmt.Errorf("remove_appx_packages ensure: empty output")
-	}
-	marker := lines[len(lines)-1]
-	if onOutput != nil {
-		for _, line := range lines[:len(lines)-1] {
-			onOutput(line)
-		}
-	}
-	return parseEnsureMarkerResult("remove_appx_packages", marker)
-}
-
 func applyWindowsPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
 	normalized, err := winutil.NormalizePackageParams(params)
 	if err != nil {
@@ -901,25 +802,6 @@ func applyWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend,
 	}
 	output, err := windowsRunScript(ctx, backend, normalized, registryApplyScript)
 	return applyStreamed(output, out), err
-}
-
-// ensureWindowsRegistry combines check and apply into a single PowerShell
-// invocation, halving WinRM round trips for tasks that need applying.
-func ensureWindowsRegistry(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, dryRun bool) (EnsureResult, error) {
-	normalized, err := winutil.NormalizeRegistryParams(params)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	paramsScript, err := powershellJSONVar("params", normalized)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	preamble := powerShellDryRunPreamble(dryRun) + paramsScript + "\n"
-	out, err := backend.RunPowerShellScript(ctx, preamble+registryEnsureScript, nil)
-	if err != nil {
-		return EnsureResult{}, err
-	}
-	return parseEnsureMarkerResult("registry", out)
 }
 
 func checkWindowsScheduledTask(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {

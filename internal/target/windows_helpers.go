@@ -44,19 +44,6 @@ func parseWindowsBoolOutput(out string) (bool, []string, error) {
 	return value, lines[:len(lines)-1], nil
 }
 
-func parseEnsureMarkerResult(name, out string) (EnsureResult, error) {
-	switch strings.TrimSpace(out) {
-	case "ok":
-		return EnsureResult{Changed: false, Message: "already in desired state"}, nil
-	case "would-change":
-		return EnsureResult{Changed: true, Message: "would apply change (dry-run)"}, nil
-	case "changed":
-		return EnsureResult{Changed: true, Message: "change applied"}, nil
-	default:
-		return EnsureResult{}, fmt.Errorf("%s ensure: unexpected output %q", name, strings.TrimSpace(out))
-	}
-}
-
 func readRemoteWindowsFile(ctx context.Context, transport Transport, run windowsPowerShellRunner, path string) ([]byte, error) {
 	script, err := powershellJSONVar("path", path)
 	if err != nil {

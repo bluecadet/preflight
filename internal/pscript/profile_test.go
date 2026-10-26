@@ -23,11 +23,10 @@ func TestUserProfileHelpersLoadAndUnloadHive(t *testing.T) {
 
 func TestUserScopedScriptsUseProfileHelper(t *testing.T) {
 	for name, script := range map[string]string{
-		"registry check":  RegistryCheckScript,
-		"registry apply":  RegistryApplyScript,
-		"registry ensure": RegistryEnsureScript,
-		"env check":       EnvironmentUserCheckScript,
-		"env apply":       EnvironmentUserApplyScript,
+		"registry check": RegistryCheckScript,
+		"registry apply": RegistryApplyScript,
+		"env check":      EnvironmentUserCheckScript,
+		"env apply":      EnvironmentUserApplyScript,
 	} {
 		if !strings.Contains(script, "Invoke-WithUserHive") {
 			t.Errorf("%s script does not use Invoke-WithUserHive", name)
