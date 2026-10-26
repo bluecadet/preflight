@@ -1,88 +1,82 @@
-# Bundle Reference
+# Bundle reference
 
-This page describes the staged offline bundle format implemented by [`internal/bundle/`](https://github.com/bluecadet/preflight/tree/main/internal/bundle).
+A bundle is a zip archive that holds one staged execution plan for one target. `preflight stage` writes bundles; `preflight apply --bundle` runs them on the local machine without the original playbook, inventory, or action sources.
 
-## Purpose
+## Archive contents
 
-A bundle is a target-specific zip archive that lets you apply a staged execution plan on another machine without re-reading the original playbook or refetching actions.
+| Path | Contents |
+| --- | --- |
+| `manifest.json` | Bundle metadata and checksums |
+| `plan.json` | Execution plan with resolved tasks and module names |
+| `plugins/<file>` | Plugin executables referenced by the plan |
+| `secrets/<name>.age` | Encrypted secret payloads, when `secret_mode` is `encrypted` |
+| `secrets/<name>` | Decrypted secret payloads, when `secret_mode` is `plaintext` |
 
-## Archive Contents
+`plan.json` keeps template expressions that reference `target`, `facts`, or `env`. They render at apply time against the local machine, including `when` conditions and task names.
 
-Every bundle contains:
+`plan.json` and secret payloads use file mode `0600` when the bundle contains plaintext secrets.
 
-- `manifest.json`
-- `plan.json` — the staged execution plan, with the task DAG and module names resolved before bundling; template expressions are preserved and rendered at apply time, including conditions (`when:`), task name templates, and parameters that reference `target`, `facts`, or `env` values from the live execution context
-- zero or more plugin executables under `plugins/`
-- zero or more bundled secret payloads under `secrets/`
+## Bundle file name
 
-## Bundle Filename
+```text
+<playbook>-<target>-<os>-<arch>.zip
+```
 
-Bundle filenames are derived from:
-
-- playbook name
-- target name
-- target OS
-- target architecture
-
-The generated name is sanitized and ends in `.zip`.
+Each segment is sanitized. `<os>` and `<arch>` are the `target_os` and `target_arch` values. Bundles are written to `--bundle-output-dir`, which defaults to `dist/bundles` under the project directory.
 
 ## `manifest.json`
 
-The manifest includes:
-
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
-| `format_version` | integer | Bundle format version |
-| `created_at` | timestamp | Creation time |
+| `format_version` | integer | Bundle format version. Stage writes `2`; apply reads `1` and `2`. A missing value reads as `1`. |
+| `created_at` | timestamp | Creation time in UTC |
 | `playbook_name` | string | Source playbook name |
 | `target_name` | string | Target name used during staging |
-| `target_os` | string | OS declared in inventory or reported by the target |
-| `target_arch` | string | Architecture declared in inventory or reported by the target |
-| `build` | object | Version, commit, and build date of the staging binary |
-| `modules` | array | Referenced built-in and plugin modules |
-| `checksums` | object | File checksum map |
-| `lock_entries` | array | Pinned remote action refs from `preflight.lock` |
-| `secret_mode` | string | Whether bundled secrets are absent, encrypted, or plaintext |
-| `secret_entries` | array | Bundle-local secret payloads referenced by the plan |
+| `target_os` | string | Declared `platform.os`, or the OS version the target reported |
+| `target_arch` | string | Declared `platform.arch`, or the architecture the target reported |
+| `build` | object | `version`, `commit`, and `date` of the staging binary |
+| `modules` | array | Modules the plan references |
+| `checksums` | object | SHA-256 hex digest for every archive entry except `manifest.json`, keyed by path |
+| `lock_entries` | array | Entries from `preflight.lock`, sorted by ref |
+| `secret_mode` | string | `encrypted`, `plaintext`, or omitted when the bundle carries no secrets |
+| `secret_entries` | array | `{name, path}` for each bundled secret |
 
-Each `modules[]` entry records:
+Each `modules[]` entry:
 
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
 | `name` | string | Module name |
 | `kind` | string | `builtin` or `plugin` |
-| `path` | string | Relative plugin path when `kind` is `plugin` |
-| `version` | string | Plugin version when available |
+| `path` | string | Archive path of the plugin executable; plugins only |
+| `version` | string | Version the plugin reported; plugins only |
 
-## Staging Constraints
+## Staging
 
 Staging fails when:
 
 - a task references an unknown module
-- a referenced plugin cannot be initialized, reports the wrong logical name,
-  or cannot be copied
-- a referenced plugin targets a different OS or architecture than the
-  controller; cross-platform staging currently supports built-in modules only
-- a task preview contains secret values that would need to be embedded in the bundle
+- a referenced plugin cannot be read, fails `initialize`, or reports a name that differs from its file name
+- a referenced plugin is built for a different OS or architecture than the target; cross-platform bundles support built-in modules only
+- a parameter whose key contains `password`, `secret`, `token`, `private_key`, or `credential` holds a literal value instead of a `secret:` reference, and `--allow-plaintext-secrets-in-bundle` is not set
+- a referenced secret is not defined in `preflight.yml`
 
-An inventory host with a declared `platform` does not need to be reachable
-during staging. Without a declaration, Preflight connects to the host to
-discover the values recorded in `target_os` and `target_arch`. See the
-[inventory platform fields](./inventory.md#platform-fields).
+Secrets referenced as `secret:<name>` are bundled as the encrypted `.age` files from the project. With `--allow-plaintext-secrets-in-bundle`, stage decrypts them into the bundle instead and prints a warning.
 
-## Bundle Apply
+A host with a declared `platform` is not contacted during staging. Otherwise Preflight connects to the host to read its OS and architecture. See [platform fields](./inventory.md#platform-fields).
+
+## Bundle apply
 
 `preflight apply --bundle <bundle.zip>`:
 
-1. extracts the bundle to a temporary directory
-2. loads `manifest.json`
-3. reads `plan.json`
-4. builds a module registry from built-ins plus bundled plugins
-5. executes the bundled plan locally using the installed `preflight` binary
+1. extracts the archive to a temporary directory
+2. reads `manifest.json` and rejects unsupported format versions
+3. verifies every entry against `checksums`; an extra, missing, or altered entry fails the apply
+4. builds the module registry from built-ins and the bundled `plugins/` directory only
+5. runs `plan.json` on the local machine
 
-Bundle apply is intentionally isolated from the normal project layout.
+Encrypted bundle secrets require `--secret-identity <path>`. A bundle with plaintext secrets prints a warning before the run. The `--target`, `--var`, and tag flags have no effect on bundle apply.
 
-## Related Docs
+## Related docs
 
 - [Stage bundles for air-gapped deployment](../how-to/air-gapped-deployment.md)
 - [Plugin reference](./plugins.md)

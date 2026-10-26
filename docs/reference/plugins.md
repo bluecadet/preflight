@@ -1,63 +1,45 @@
-# Plugin Reference
+# Plugin reference
 
-This page describes how Preflight discovers, initializes, executes, and stages executable plugins.
-
-## Purpose
-
-Preflight plugins extend the module library without using Go `.so` plugins, which are not a practical fit for Windows. A plugin is a standalone executable that speaks JSON-RPC over stdin and stdout.
-
-The runner treats a plugin-backed module like any other module:
-
-- `Check()` runs first
-- `Apply()` runs only when change is needed
-- dry-run stays on the `Check()` side
+A plugin is a standalone executable that adds one module. Preflight talks to it over newline-delimited JSON-RPC 2.0 on stdin and stdout. Plugin modules follow the same `Check()` then `Apply()` contract as built-in modules, and dry-run calls only `Check()`.
 
 ## Discovery
 
-Plugin executables are discovered by filename in this order:
+Preflight scans these directories:
 
-1. The directory alongside the `preflight` binary
-2. `~/.preflight/plugins`
-3. `./plugins` relative to the working directory
+1. the bundle `plugins/` directory, during `apply --bundle`; no other directory is scanned
+2. the directory that contains the `preflight` binary
+3. `~/.preflight/plugins`
+4. `plugins/` in the project directory; `preflight plugin` commands use the current directory
 
-During staged bundle apply, Preflight uses the bundle-local `plugins/` directory and can isolate discovery to that payload.
+Registration fails when a plugin name matches a built-in module or when the same name is found more than once:
 
-Preflight does not initialize every discovered plugin during normal command startup. Initialization is deferred until one of these points:
+```text
+plugin "x" conflicts with built-in module name
+plugin "x" discovered more than once (<path>, <path>)
+```
 
-- `preflight plugin list`
-- `preflight plugin info <name>`
-- staging a bundle that includes the plugin
-- first runtime use of the plugin-backed module
+## File naming
 
-## File Naming
+| OS | File name |
+| --- | --- |
+| Windows | `preflight-plugin-<name>.exe` |
+| macOS, Linux | `preflight-plugin-<name>` |
 
-Plugin executables must use the `preflight-plugin-<name>` prefix.
+`<name>` is the module name. Files without the prefix, or without `.exe` on Windows, are ignored.
 
-Examples:
+## Initialization
 
-- `preflight-plugin-signage_sync`
-- `preflight-plugin-signage_sync.exe`
+Preflight starts a plugin and sends `initialize` at first use, not at discovery. First use is one of:
 
-On Windows, the executable must end in `.exe`.
+- `preflight plugin list` or `preflight plugin info <name>`
+- staging a bundle that references the plugin
+- the first `check` or `apply` of the module on a target
 
-## Registration Rules
+Initialization fails when the process cannot start, `initialize` returns an error, the protocol versions differ, or the plugin reports a name other than `<name>`.
 
-Preflight registers discovered plugin executables by filename and validates the plugin's reported logical name when it is initialized.
+## Task syntax
 
-Registration fails when:
-
-- two discovered plugin filenames resolve to the same module name
-- a discovered plugin filename conflicts with a built-in module name
-
-Initialization fails when:
-
-- the plugin cannot be started
-- `initialize` fails
-- the plugin reports a logical name that does not match the discovered module name
-
-## YAML Invocation
-
-Use the explicit module task form. The `module:` name must match both the executable filename suffix and the plugin's reported logical name:
+Plugin modules use the explicit `module` form. The schema has no inline key for plugin modules.
 
 ```yaml
 tasks:
@@ -67,112 +49,109 @@ tasks:
       source: "\\\\nas01\\signage"
 ```
 
-Plugin-backed modules are discovered at runtime, so they do not appear as static inline-module keys in the JSON schema.
+## Execution model
 
-## JSON-RPC Methods
+The plugin process runs on the controller, never on the target. Every target effect goes through the handle methods below, on local, SSH, and WinRM targets alike.
 
-The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the plugin's stdin/stdout. Both sides act as client and server: the host sends `initialize`/`check`/`apply` requests, and the plugin sends `run_command`/`put_file`/`get_file` requests back to the host for handle ops. Request IDs are correlated on both sides; one target op is in flight per session (a stated limitation).
+Each target gets its own plugin process, started on first use, reused for later tasks on that target, and stopped when the run closes the target.
 
-| Method | Direction | Purpose |
-| --- | --- | --- |
-| `initialize` | host → plugin | Carry the host's protocol version, capabilities, and the enriched `TargetInfo`; plugin responds with its own protocol version, capabilities, and name/version |
-| `check` | host → plugin | Report whether change is needed; plugin may issue handle ops |
-| `apply` | host → plugin | Perform the change; plugin may issue handle ops |
-| `cancel` | both | Notification carrying the `id` of a request the sender is abandoning; no response |
-| `output` | plugin → host | Notification carrying one streaming line; no response |
-| `run_command` | plugin → host | Run a script in the target's native shell, returning stdout/stderr/exit code |
-| `put_file` | plugin → host | Write bytes to a path on the target (host does the chunking) |
-| `get_file` | plugin → host | Read a path's bytes from the target |
+## JSON-RPC methods
 
-### Protocol Version Negotiation
+Both sides send requests. Request IDs are correlated per direction.
 
-`initialize` carries `protocol_version` (an integer) plus an optional `capabilities` array of feature strings. The peer responds with the same two fields for its own side. The handshake succeeds only when both sides report exactly the same `protocol_version`; this SDK build speaks `protocol_version: 2`.
+| Method | Direction | Kind | Description |
+| --- | --- | --- | --- |
+| `initialize` | host to plugin | request | Exchange protocol version, capabilities, and target info; the plugin returns its name and version |
+| `check` | host to plugin | request | Return whether a change is needed |
+| `apply` | host to plugin | request | Make the change |
+| `cancel` | either | notification | Abandon the request with the given `id` |
+| `output` | plugin to host | notification | Stream one output line: `{"line": "..."}` |
+| `run_command` | plugin to host | request | Run a PowerShell script on the target; returns stdout, stderr, and exit code |
+| `put_file` | plugin to host | request | Write a whole file to the target |
+| `get_file` | plugin to host | request | Read a whole file from the target; returns base64 `data` |
 
-A peer reporting a different version (including a plugin that reports no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both versions. Fields neither side recognizes are ignored rather than rejected, so additive wire changes stay backward compatible.
+`check` and `apply` results may carry an `error` string in addition to their result fields.
 
-Capabilities are a second, independent extension point: each side advertises the feature names it supports, and the negotiated capability set is whatever both sides listed. Negotiation is symmetric — the host reads it via `Client.HasCapability`/`Client.Capabilities`, and a plugin reads the same negotiated outcome from inside `Check`/`Apply` via `sdk.NegotiatedFromContext(ctx)`. This lets a future optional feature be detected at runtime on either side, without forcing a protocol version bump just to add it.
+### Protocol version
 
-### Message Ordering: initialize Must Complete First
+`initialize` carries an integer `protocol_version` and an optional `capabilities` string array, in both directions. The current version is `3`. Versions must match exactly. A plugin that reports a different version, or none, fails with a `plugin_protocol` error that names both versions.
 
-`initialize` must be the first message on a session, and the host must receive its response before sending `check`, `apply`, or anything else. This is a hard requirement, not just a convention: the plugin server dispatches every decoded request to its own goroutine as soon as it is decoded, so nothing in the wire format itself stops two requests from being in flight at once if a peer sends them without waiting. `initialize` populates state (the negotiated version/capabilities, the delivered `TargetInfo`) that every other method depends on, so a request racing ahead of it would be racing undefined state.
+Unknown JSON fields are ignored.
 
-A plugin therefore refuses any method but `initialize` — including a second `initialize` once one has already completed — until `initialize` has finished, with a JSON-RPC error, code `-32011`, naming the method that arrived out of order:
+### Capabilities
+
+Each side lists the capability names it supports. The negotiated set is the intersection. The current host advertises no capabilities, so the negotiated set is empty. The host reads it with `Client.HasCapability` and `Client.Capabilities`; a plugin reads it with `sdk.NegotiatedFromContext(ctx)` inside `Check` or `Apply`.
+
+### Message ordering: initialize must complete first
+
+`initialize` must be the first request, and the host must receive its response before it sends any other request. Until `initialize` completes, a plugin rejects every other method, including a second `initialize`, with error code `-32011`:
 
 ```json
 {"jsonrpc":"2.0","id":2,"error":{"code":-32011,"message":"method \"check\" called before initialize completed"}}
 ```
 
-A conforming host — including the bundled Go `Client` — always waits for the `initialize` response before issuing anything else, so it never sees this error in practice. It exists for peers implementing the wire protocol directly rather than through the SDK, and as a defined, specified rejection rather than an unspecified race for anyone who gets the ordering wrong.
+The Go SDK client always waits for the response.
 
 ### Cancellation
 
-`check` and `apply` receive a `context.Context`, and it is a real cancellation signal rather than an unused parameter. When the host abandons a call — a `--timeout` expiring, the run being torn down — it sends a `cancel` notification naming that request's `id`. The plugin SDK cancels the context it handed the module's `Check`/`Apply`.
+When the host abandons a `check` or `apply`, for example on `--timeout` or run teardown, it sends `cancel` with that request's `id`. The SDK cancels the `context.Context` passed to `Check` or `Apply`.
 
-Cancellation is symmetric. If a plugin's `Check` is cancelled while it is waiting on a `run_command`, the plugin sends `cancel` for that op, and the host cancels the target operation it was running — so an interrupt reaches all the way down to the command executing over SSH or WinRM.
+A plugin cancels a pending `run_command`, `put_file`, or `get_file` the same way, and the host cancels the target operation.
 
-After sending `cancel`, the sender waits up to a **two-second grace window** for the abandoned request to unwind and answer before giving up. That window is what a cancelled plugin has to release locks, remove half-written files, and return. It is an upper bound, not a promise: a plugin that ignores its context is killed with the session when the window closes.
+The sender then waits up to 2 seconds for the abandoned request to return. A plugin that has not returned when the grace period ends is killed.
 
-The plugin process is deliberately **not** bound to the operation context. If it were, the process would die the instant the operation was cancelled, and the context inside the plugin would never have a chance to fire.
+### Target info
 
-### TargetInfo
+`initialize` sends `TargetInfo` to the plugin:
 
-`initialize` delivers the `TargetInfo` to the plugin: `{family, version, arch, hostname, runtime_kind}`. Absent signals are empty strings, never missing keys. `runtime_kind` is always `windows-powershell`, the shell `run_command` speaks; the plugin should not re-probe what the controller already cached.
-
-The bundled Go SDK lives in [`pkg/plugin/sdk/`](https://github.com/bluecadet/preflight/tree/main/pkg/plugin/sdk).
-
-## Go SDK Contract
-
-Plugin authors implement:
-
-- `Name() string`
-- `Version() string`
-- `Check(ctx context.Context, args map[string]any, h Handle) (CheckResult, error)`
-- `Apply(ctx context.Context, args map[string]any, h Handle) (ApplyResult, error)`
-
-Then call `sdk.Serve(module, sdk.ServeOptions{})` from `main()`. `ServeOptions.Capabilities` is where a plugin advertises its own capability names during `initialize`; the zero value advertises none beyond what the SDK build itself supports. The `Handle` exposes `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`; see [Write a plugin](../how-to/write-a-plugin.md) for the handle API and batching guidance.
-
-Pass `ctx` to every handle op. An op issued with `context.Background()` cannot be interrupted, and the plugin is torn down mid-flight instead of unwinding. `ctx` also carries the negotiated handshake result — `sdk.NegotiatedFromContext(ctx)` returns the agreed protocol version and capability set, letting `Check`/`Apply` branch on a capability instead of a version bump. See [Capabilities](../how-to/write-a-plugin.md#capabilities).
-
-## Execution Model
-
-Plugins execute **controller-side**: the plugin process always runs on the machine running `preflight`, never on the target. `Check`/`Apply` receive a target handle and all target effects flow through it — including when the target is local. This makes plugins uniform over local, SSH, and WinRM; the plugin does not know (or need to know) which transport it is on.
-
-Process lifetime is run-scoped: a plugin is spawned lazily on first use, reused across every task in the run that invokes that module, and hard-killed at the end of the run.
-
-## Stated Limitations
-
-Protocol v2 carries a few deliberate limits, documented here so plugin authors can design around them rather than discover them at runtime:
-
-- **Cancellation is cooperative** — the host delivers `cancel` and waits a two-second grace window, but it cannot force a plugin that ignores its context to stop. Such a plugin is killed when the window closes.
-- **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params and a context; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
-- **One in-flight target op per session** — the protocol allows one `run_command`/`put_file`/`get_file` in flight at a time; do not issue a second before the first returns. Batching guidance in [Write a plugin](../how-to/write-a-plugin.md) shows the script-shaped-exec pattern that keeps this from dominating latency.
-- **Protocol version is pinned** — host and plugin must report exactly the same `protocol_version`; a plugin reporting a different one (including none at all) is rejected with a `plugin_protocol` error naming both versions. Rebuild plugins when the protocol version changes.
-- **`initialize` must complete before anything else** — a plugin refuses `check`, `apply`, or a second `initialize` arriving before the first `initialize` has finished, with a distinct `-32011` error; see [Message Ordering](#message-ordering-initialize-must-complete-first).
-
-## Bundle Behavior
-
-When a staged plan references a plugin module, the bundle includes:
-
-- the plugin executable under `plugins/`
-- module metadata in `manifest.json`
-
-Staging fails if the plugin cannot be initialized, reports the wrong logical name, or cannot be copied.
-
-The plugin executable must match the staged host's OS and architecture because
-bundle apply runs it locally on that host. Preflight rejects cross-platform
-plugin staging; cross-platform bundles currently support built-in modules
-only.
-
-## Related Commands
-
-| Command | Purpose |
+| Field | Description |
 | --- | --- |
-| `preflight plugin list` | List discovered plugins and initialization status |
-| `preflight plugin info <name>` | Show one plugin’s details |
+| `family` | OS family |
+| `version` | OS version |
+| `arch` | Architecture |
+| `hostname` | Target host name |
+| `runtime_kind` | Always `windows-powershell`, the shell `run_command` uses |
 
-## Related Docs
+Unknown values are empty strings.
+
+## Go SDK
+
+The SDK is in [`pkg/plugin/sdk`](https://github.com/bluecadet/preflight/tree/main/pkg/plugin/sdk). A plugin implements:
+
+```go
+Name() string
+Version() string
+Check(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.CheckResult, error)
+Apply(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.ApplyResult, error)
+```
+
+`main()` calls `sdk.Serve(module, sdk.ServeOptions{})`. `ServeOptions.Capabilities` lists the plugin's capability names.
+
+`Handle` provides `RunCommand`, `PutFile`, `GetFile`, `Info`, and `Output`. Pass the `ctx` from `Check` or `Apply` to every handle call; a call made with `context.Background()` cannot be cancelled. See [Write a plugin](../how-to/write-a-plugin.md) for usage and [Capabilities](../how-to/write-a-plugin.md#capabilities).
+
+## Limitations
+
+- Cancellation is cooperative. A plugin that ignores its context is killed after the 2-second grace period.
+- The protocol carries no state between calls. Keep state in process memory for the run, or on the target.
+- Only one `run_command`, `put_file`, or `get_file` may be in flight per plugin process.
+- `put_file` and `get_file` transfer whole files in one message. Keep payloads to a few MB.
+- Plugins must be rebuilt when the protocol version changes.
+
+## Bundles
+
+`preflight stage` copies each referenced plugin into the bundle under `plugins/` and records it in `manifest.json` `modules[]`. Staging fails when the plugin cannot be read, fails `initialize`, or reports the wrong name.
+
+`apply --bundle` runs the plugin on the machine that applies the bundle, so the plugin must match that machine's OS and architecture. Staging rejects a plugin whose platform differs from the target's. See [Bundle reference](./bundles.md).
+
+## Commands
+
+| Command | Output |
+| --- | --- |
+| `preflight plugin list` | Name, version, status (`ready` or `error`), and path of each discovered plugin |
+| `preflight plugin info <name>` | Name, version, path, source, and initialization result for one plugin |
+
+## Related docs
 
 - [Write a plugin](../how-to/write-a-plugin.md)
 - [Use plugin modules in playbooks](../how-to/use-plugin-modules.md)
-- [Bundle reference](./bundles.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)

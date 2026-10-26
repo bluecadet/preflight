@@ -1,42 +1,46 @@
-# Project Config Reference
+# Project config reference
 
-This page describes `preflight.yml`, the project-level configuration file parsed by [`internal/config/`](https://github.com/bluecadet/preflight/tree/main/internal/config).
+`preflight.yml` is the optional project configuration file. When it is missing, Preflight uses an empty config.
 
-## Purpose
+## Location
 
-`preflight.yml` holds:
+Preflight looks for `preflight.yml` in the project directory. The project directory is the nearest directory, starting at the playbook's directory and walking up, that contains `preflight.yml`, `preflight.lock`, `actions/`, or `.git`. If none is found, the playbook's directory is used.
 
-- project metadata
-- shared variables
-- embedded inventory
-- repo-backed secret configuration
+## Top-level fields
 
-It is optional. If the file is missing, Preflight loads an empty config with empty `vars` and `secrets.entries`.
-
-## Top-Level Fields
-
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
-| `project` | string | Project identifier, available as `vars.preflight.project` in templates |
-| `environment` | string | Environment label such as `production` or `staging`, available as `vars.preflight.environment` in templates |
-| `vars` | object | Project-level variables available to playbooks |
-| `inventory` | object | Host-first inventory for remote or multi-host runs |
-| `secrets` | object | Repo-backed `age` secret configuration |
+| `project` | string | Project name; available as `vars.preflight.project` |
+| `environment` | string | Environment label, such as `production`; available as `vars.preflight.environment` |
+| `vars` | object | Project variables, the lowest-precedence layer in the [variable merge order](./inventory.md#variable-merge-order) |
+| `inventory` | object | Hosts and groups; see [Inventory reference](./inventory.md) |
+| `secrets` | object | `age`-encrypted secret configuration |
+
+Unknown fields fail schema validation.
 
 ## `secrets`
 
-| Field | Type | Meaning |
+| Field | Type | Description |
 | --- | --- | --- |
-| `identity` | string | Path to the `age` private identity used for decryption |
-| `recipients` | string[] | Public `age` recipients used when encrypting secrets |
-| `entries` | object | Logical secret names mapped to encrypted files |
+| `identity` | string | Path to the `age` identity file used for decryption, relative to the project directory unless absolute |
+| `recipients` | string[] | `age` recipients used for encryption |
+| `entries` | object | Secret names mapped to entry objects |
 
-Each `entries.<name>` object supports:
+Each `entries.<name>` object:
 
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `file` | string | Path to the encrypted `.age` file, relative to the project root unless absolute |
-| `type` | string | Optional secret kind hint |
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| `file` | string | yes | Path to the `.age` file, relative to the project directory unless absolute |
+| `type` | string | no | Free-form hint; Preflight does not read it |
+
+## Secret references
+
+A string value that is exactly `secret:<name>` resolves to the decrypted contents of `entries.<name>` when the value is used. It works in:
+
+- task and module parameters
+- inventory `password`, `private_key`, and `private_key_passphrase`, including in `jump` blocks
+
+A file is decrypted only when a reference to it is resolved. Decryption fails with `no secrets.identity configured in preflight.yml` when `identity` is unset. See [Manage secrets](../how-to/manage-secrets.md).
 
 ## Example
 
@@ -46,7 +50,6 @@ environment: production
 
 vars:
   content_root: "C:\\Exhibits\\content"
-  fileserver: "\\\\nas01\\exhibits"
 
 inventory:
   groups:
@@ -62,28 +65,15 @@ inventory:
       groups: [lobby]
 
 secrets:
-  identity: ".age/keys.txt"
+  identity: .age/keys.txt
   recipients:
-    - "age1example..."
+    - age1example...
   entries:
-    autologin-password:
-      file: "secrets/autologin-password.age"
-    gallery-key:
-      file: "secrets/gallery-key.age"
-      type: "file"
+    winrm-password:
+      file: secrets/winrm-password.age
 ```
 
-## Variable Role
-
-`vars` is the project-wide baseline layer — the lowest-precedence layer in
-the [variable merge order](./inventory.md#variable-merge-order); every
-other variable source can override it.
-
-## Secret Resolution Model
-
-Secret files are not decrypted during planning unless a code path explicitly resolves them. At execution time, string fields such as `password` or `private_key` can use inline `secret:<name>` references that resolve through the built-in provider.
-
-## Related Docs
+## Related docs
 
 - [Manage secrets](../how-to/manage-secrets.md)
 - [Templating and facts reference](./templating.md)

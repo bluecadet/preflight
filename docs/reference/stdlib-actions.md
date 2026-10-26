@@ -1,184 +1,171 @@
-# Embedded Stdlib Action Reference
+# Stdlib action reference
 
-This page describes the embedded actions shipped under the `preflight/` namespace. These actions are versioned with the binary and are resolved before project-local or remote actions.
+Stdlib actions are embedded in the `preflight` binary under the `preflight/` namespace. A `preflight/<name>` ref resolves before project, cache, and Git refs. Each action has a `version` field, but the ref cannot pin it; upgrading the binary upgrades the stdlib.
 
-## Resolution And Versioning
+```yaml
+tasks:
+  - name: Machine baseline
+    uses: preflight/windows-machine
+    with:
+      timezone: Eastern Standard Time
+```
 
-- Embedded stdlib actions use refs such as `preflight/windows-machine`.
-- They are bundled into the binary with `//go:embed`.
-- They do not have independent versions. Upgrading the binary upgrades the embedded stdlib.
+An input with no default in the tables below is required.
 
-## Leaf Actions
+User-scoped settings in actions with a `user` input apply to the transport account when `user` is empty. When `user` is set, they are written to that user's profile hive, which is loaded on demand if the user is signed out. See [Configure another user's settings](../how-to/configure-another-users-settings.md).
 
-### `preflight/autologin`
+## `preflight/autologin`
 
-Configure Windows automatic logon.
+Configures Windows automatic logon through the `Winlogon` registry key.
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `username` | string | User name for automatic logon |
-| `password` | string | Password or secret reference |
-| `domain` | string | Domain or `.` for local accounts |
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `username` | string | | Account to sign in as |
+| `password` | string | `""` | Account password; accepts `secret:<name>` |
+| `domain` | string | `.` | Domain; `.` for local accounts |
 
-### `preflight/git-sync`
+## `preflight/git-sync`
 
-Clone or update a Git repository on a Windows target.
+Clones or updates a Git repository on the target. The checkout is owned by the transport account. HTTPS and SSH credentials reach Git through environment variables, not the script text.
 
-The checkout is owned by the transport account. Authentication values should usually be passed as `secret:<name>` values. The action passes HTTPS and SSH credentials through environment variables to the PowerShell process instead of putting them in the script text.
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `repo` | string | | Git remote URL |
+| `dest` | path | | Working tree directory |
+| `ref` | string | `""` | Branch, tag, or commit to check out |
+| `remote` | string | `origin` | Remote name |
+| `local_branch` | string | `""` | Local branch to create or reset from `ref` |
+| `detach` | bool | `false` | Check out `ref` as a detached HEAD |
+| `fetch` | bool | `true` | Fetch when the repository exists |
+| `prune` | bool | `true` | Prune deleted remote refs during fetch |
+| `fetch_tags` | bool | `true` | Fetch tags |
+| `reset` | bool | `true` | Hard-reset the working tree to the resolved ref |
+| `clean` | bool | `false` | Remove untracked files after checkout |
+| `clean_ignored` | bool | `false` | Also remove ignored files when `clean` is set |
+| `submodules` | bool | `false` | Initialize and update submodules recursively |
+| `lfs` | bool | `false` | Run `git lfs install` and `git lfs pull` after checkout |
+| `depth` | int | `0` | Clone or fetch depth; `0` is full history |
+| `git_path` | string | `git` | Git executable |
+| `create_parent` | bool | `true` | Create the parent directory of `dest` |
+| `set_remote_url` | bool | `true` | Set `remote` to `repo` before fetching |
+| `safe_directory` | bool | `true` | Add `dest` to the global Git `safe.directory` list |
+| `http_username` | string | `x-access-token` | HTTPS user name returned by askpass |
+| `http_password` | string | `""` | HTTPS password or token returned by askpass |
+| `ssh_private_key` | string | `""` | SSH private key content, used through a temporary `GIT_SSH_COMMAND` |
+| `ssh_known_hosts` | string | `""` | Known hosts content used with `ssh_private_key` |
+| `ssh_strict_host_key_checking` | bool | `true` | Require SSH host key verification |
 
-By default, the action adds `dest` to Git's global `safe.directory` list before running sync checks. This prevents Git for Windows from rejecting repositories whose files are owned by another account, which is common when setup runs as an administrator but the exhibit app runs as a kiosk user.
+## `preflight/windows-machine`
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `repo` | string | Git remote URL |
-| `dest` | path | Destination working tree directory |
-| `ref` | string | Branch, tag, or commit to check out |
-| `remote` | string | Remote name, default `origin` |
-| `local_branch` | string | Local branch to create or reset from `ref` |
-| `detach` | bool | Check out `ref` detached |
-| `fetch` | bool | Fetch remote updates when the repo already exists |
-| `prune` | bool | Prune deleted remote refs during fetch |
-| `fetch_tags` | bool | Fetch tags during sync |
-| `reset` | bool | Hard-reset the working tree to the resolved ref |
-| `clean` | bool | Remove untracked files after checkout |
-| `clean_ignored` | bool | Include ignored files when cleaning |
-| `submodules` | bool | Sync and update submodules recursively |
-| `lfs` | bool | Run Git LFS install and pull |
-| `depth` | int | Shallow clone or fetch depth; `0` means full history |
-| `git_path` | string | Git executable path |
-| `create_parent` | bool | Create the parent directory for `dest` |
-| `set_remote_url` | bool | Ensure `remote` points at `repo` |
-| `safe_directory` | bool | Add `dest` to Git `safe.directory`, default `true` |
-| `http_username` | string | HTTPS askpass username |
-| `http_password` | string | HTTPS askpass password or token |
-| `ssh_private_key` | string | SSH private key content |
-| `ssh_known_hosts` | string | SSH known hosts content |
-| `ssh_strict_host_key_checking` | bool | Require SSH host key verification |
+Configures machine-wide settings.
 
-## Grouped Windows Baseline Actions
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `computer_name` | string | `""` | Computer name; empty leaves it unchanged |
+| `timezone` | string | `""` | Windows time zone ID; empty leaves it unchanged |
+| `enable_long_paths` | bool | `true` | Long path policy |
+| `ps1_execution_policy` | string | `RemoteSigned` | `LocalMachine` PowerShell execution policy |
+| `disable_new_network_prompt` | bool | `true` | Disable the new network prompt on first connection |
 
-### `preflight/windows-machine`
+## `preflight/windows-shell`
 
-Configure machine-level baseline settings.
+Configures desktop, Explorer, taskbar, and Start settings for the selected user.
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `computer_name` | string | Desired computer name |
-| `timezone` | string | Windows time zone ID |
-| `enable_long_paths` | bool | Enable or disable the long path policy |
-| `ps1_execution_policy` | string | LocalMachine PowerShell execution policy |
-| `disable_new_network_prompt` | bool | Disable the first-connection new network prompt |
+`clear_desktop_shortcuts` removes `.lnk`, `.url`, and `.website` files from the user's Desktop folders, OneDrive desktop folders, and the public desktop, and hides the This PC, Network, and Control Panel desktop icons. Some changes take effect only after sign-out, an Explorer restart, or a reboot.
 
-### `preflight/windows-shell`
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `user` | string | `""` | Windows user to configure |
+| `clear_desktop_background` | bool | `true` | Clear the wallpaper |
+| `clear_desktop_shortcuts` | bool | `true` | Remove desktop shortcuts and hide common desktop icons |
+| `taskbar_auto_hide` | bool | `false` | Taskbar auto-hide |
+| `theme_mode` | string | `unchanged` | `unchanged`, `light`, or `dark`, applied to app and system surfaces |
+| `transparency_effects` | bool | `true` | Transparency effects |
+| `hide_recycle_bin` | bool | `true` | Hide the Recycle Bin desktop icon |
+| `show_hidden_files` | bool | `true` | Show hidden files in Explorer |
+| `show_file_extensions` | bool | `true` | Show file extensions in Explorer |
+| `show_empty_drives` | bool | `true` | Show empty removable drives in Explorer |
+| `show_sync_provider_notifications` | bool | `false` | Show sync provider notifications in Explorer |
+| `aero_shake` | bool | `false` | Aero Shake window minimization |
+| `launch_to_this_pc` | bool | `true` | Open Explorer to This PC instead of Quick Access |
+| `show_item_check_boxes` | bool | `false` | Show item check boxes in Explorer |
+| `taskbar_allow_resize` | bool | `true` | Allow taskbar resizing |
+| `taskbar_on_all_displays` | bool | `false` | Show the taskbar on all displays |
+| `taskbar_allow_multimon` | bool | `true` | Allow the multi-monitor taskbar |
+| `hide_this_pc_folders` | bool | `true` | Hide Music, Pictures, Videos, and 3D Objects from This PC |
+| `disable_network_folder_thumbnails` | bool | `true` | Stop thumbnail caches on network folders |
+| `show_store_apps_on_taskbar` | bool | `false` | Show Microsoft Store apps on the taskbar |
+| `hide_spotlight_desktop_icon` | bool | `true` | Hide the Windows Spotlight "Learn about this picture" desktop icon |
+| `clear_start_pins` | bool | `false` | Replace Start pins with `start_pins_json` |
+| `start_pins_json` | string | `{"pinnedList":[]}` | `ConfigureStartPins` JSON payload |
 
-Configure desktop and Explorer defaults for the current execution identity, or set `user` to write supported settings for a named Windows account without switching process identity.
+## `preflight/windows-input`
 
-When `user` is set, registry-backed settings, including taskbar auto-hide, are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md). Desktop shortcut cleanup resolves the target user's configured Desktop folders, the profile's normal Desktop folder, OneDrive desktop folders, and the public desktop, then removes `.lnk`, `.url`, and `.website` files. It also hides common shell desktop icons such as This PC, Network, and Control Panel.
+Configures touch, gesture, accessibility shortcut, and text scale settings. Edge swipe and touch edge-targeting policies are machine-scoped; the other settings apply to the selected user. Visual changes may take effect only after sign-out or an Explorer restart.
 
-Some shell visual changes do not update an already-running Explorer session immediately. Expect them to apply after sign-out, Explorer restart, or reboot.
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `user` | string | `""` | Windows user to configure |
+| `disable_edge_gestures` | bool | `true` | Disable screen-edge swipe gestures |
+| `disable_touch_feedback` | bool | `true` | Disable touch contact visualization |
+| `disable_touch_gestures` | bool | `true` | Disable gesture visualization |
+| `text_scale_percent` | int | `100` | Text size percentage |
+| `disable_accessibility_shortcuts` | bool | `true` | Disable the Sticky Keys, Filter Keys, and Toggle Keys shortcuts |
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `user` | string | Optional Windows user for user-scoped shell settings |
-| `clear_desktop_background` | bool | Clear the wallpaper |
-| `clear_desktop_shortcuts` | bool | Remove shortcut files from desktop locations and hide common shell desktop icons |
-| `taskbar_auto_hide` | bool | Enable or disable taskbar auto-hide (default: `false`) |
-| `theme_mode` | string | Keep the current theme or set both app and system surfaces to `light` or `dark` |
-| `transparency_effects` | bool | Enable or disable transparency effects (default: `true`) |
-| `hide_recycle_bin` | bool | Hide the Recycle Bin icon |
-| `show_hidden_files` | bool | Show hidden files in Explorer |
-| `show_file_extensions` | bool | Show file extensions in Explorer |
-| `show_empty_drives` | bool | Show empty removable drives in Explorer |
-| `show_sync_provider_notifications` | bool | Show sync provider notifications in Explorer |
-| `aero_shake` | bool | Enable Aero Shake window minimization |
-| `launch_to_this_pc` | bool | Open Explorer to This PC instead of Quick Access |
-| `show_item_check_boxes` | bool | Show item check boxes in Explorer |
-| `taskbar_allow_resize` | bool | Allow taskbar resizing |
-| `taskbar_on_all_displays` | bool | Show taskbar on all displays |
-| `taskbar_allow_multimon` | bool | Allow multi-monitor taskbar behavior |
-| `hide_this_pc_folders` | bool | Hide common library folders from This PC |
-| `disable_network_folder_thumbnails` | bool | Prevent Explorer thumbnail caches on network folders |
-| `show_store_apps_on_taskbar` | bool | Show Microsoft Store apps on the taskbar |
-| `clear_start_pins` | bool | Apply an empty Start pin set |
-| `start_pins_json` | string | Explicit `ConfigureStartPins` JSON payload |
+## `preflight/windows-quiet-mode`
 
-### `preflight/windows-input`
+Suppresses notifications, prompts, and error reporting UI. Notification policy, news and interests, error reporting, consumer features, and restart sign-on are machine-scoped. Notification center, toast, setup prompt, and app suggestion settings apply to the selected user.
 
-Configure input, gesture, and text-scale preferences. User-facing preferences apply to the current execution identity, or to `user` when set. Policy-backed edge-swipe settings apply at machine scope.
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `user` | string | `""` | Windows user for user-scoped settings |
+| `disable_notifications` | bool | `true` | Disable toast and cloud notifications |
+| `disable_news_and_interests` | bool | `true` | Disable the news and interests feed |
+| `disable_error_reporting` | bool | `true` | Disable Windows Error Reporting UI and submission |
+| `disable_windows_setup_prompt` | bool | `true` | Disable consumer and cloud-optimized Windows prompts |
+| `disable_app_restore_on_boot` | bool | `true` | Disable automatic restart sign-on after Windows Update restarts |
+| `disable_app_suggestions` | bool | `true` | Disable consumer app suggestions and silent app installs |
 
-When `user` is set, user-scoped registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md).
+## `preflight/windows-update-lockdown`
 
-User-scoped visual input changes may require sign-out or a new Explorer session before the desktop reflects them.
+Limits Windows Update and Microsoft Store background changes. All settings are machine-scoped.
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `user` | string | Optional Windows user for user-scoped input preferences |
-| `disable_edge_gestures` | bool | Disable edge swipe gestures |
-| `disable_touch_feedback` | bool | Disable touch contact visualization |
-| `disable_touch_gestures` | bool | Disable gesture visualization |
-| `text_scale_percent` | int | Text scale percentage, typically `100` |
-| `disable_accessibility_shortcuts` | bool | Disable Sticky Keys, Filter Keys, and Toggle Keys shortcuts |
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `disable_windows_update` | bool | `true` | Disable automatic Windows Update checks by policy |
+| `disable_windows_update_service` | bool | `true` | Stop and disable the Windows Update, Update Orchestrator, and Windows Update Medic services |
+| `disable_update_auto_reboot` | bool | `true` | Prevent automatic restarts while users are signed in |
+| `disable_store_auto_download` | bool | `true` | Disable Store app automatic downloads |
 
-### `preflight/windows-quiet-mode`
+## `preflight/windows-power`
 
-Reduce notifications, prompts, and recovery UI noise with machine-scoped Windows policy settings.
+Manages a named power plan, hibernation, and the selected user's screen saver. Screen saver changes may take effect only after sign-out.
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `user` | string | Optional Windows user for user-scoped notification and prompt settings |
-| `disable_notifications` | bool | Disable toast and cloud notifications |
-| `disable_news_and_interests` | bool | Disable news and interests with the machine-scoped Windows policy |
-| `disable_error_reporting` | bool | Disable Windows Error Reporting |
-| `disable_windows_setup_prompt` | bool | Disable consumer and cloud-optimized Windows prompts |
-| `disable_app_restore_on_boot` | bool | Disable automatic restart sign-on after update reboots |
-| `disable_app_suggestions` | bool | Disable user-scoped consumer app suggestions and silent app installs |
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `user` | string | `""` | Windows user whose screen saver to configure |
+| `plan_name` | string | `Preflight Exhibit` | Managed power plan name |
+| `plan_base` | string | `balanced` | Plan alias or GUID to clone |
+| `activate_plan` | bool | `true` | Activate the managed plan |
+| `display_timeout_ac` | int | `0` | Display timeout on AC power, in minutes; `0` is never |
+| `display_timeout_dc` | int | `0` | Display timeout on battery, in minutes; `0` is never |
+| `sleep_timeout_ac` | int | `0` | Sleep timeout on AC power, in minutes; `0` is never |
+| `sleep_timeout_dc` | int | `0` | Sleep timeout on battery, in minutes; `0` is never |
+| `disable_screensaver` | bool | `true` | Disable the screen saver |
+| `disable_hibernation` | bool | `false` | Disable hibernation and remove `hiberfil.sys` |
 
-### `preflight/windows-update-lockdown`
+For a recurring reboot, use the `scheduled_task` module. See [Schedule a Windows reboot](../how-to/schedule-a-windows-reboot.md).
 
-Reduce background system changes driven by Windows Update and Microsoft Store policy.
+## `preflight/debloat`
 
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `disable_windows_update` | bool | Disable automatic Windows Update policy checks |
-| `disable_windows_update_service` | bool | Stop and disable Windows Update, Update Orchestrator, and Windows Update Medic services |
-| `disable_update_auto_reboot` | bool | Prevent Windows Update from rebooting while users are signed in |
-| `disable_store_auto_download` | bool | Disable Store app auto-download and update behavior |
+Removes built-in Microsoft and third-party Store apps, uninstalls the OneDrive desktop client, and disables telemetry, activity history, advertising ID, Copilot, Recall, Bing and Cortana search, delivery optimization, and Game DVR. App removal and machine policies are not user-scoped. For a custom app list, use the `remove_appx_packages` module.
 
-### `preflight/windows-power`
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `user` | string | `""` | Windows user for user-scoped privacy and taskbar settings |
 
-Manage named power plans and user-scoped screensaver defaults.
-
-When `user` is set, screen saver registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md).
-
-Screen saver changes are persisted immediately but may require sign-out or a new Explorer session before the shell reflects them.
-
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `user` | string | Optional Windows user for user-scoped screen saver preferences |
-| `plan_name` | string | Friendly name for the managed power plan |
-| `plan_base` | string | Base plan alias or GUID to clone |
-| `activate_plan` | bool | Activate the managed plan after applying it |
-| `display_timeout_ac` | int | AC display timeout in minutes |
-| `display_timeout_dc` | int | DC display timeout in minutes |
-| `sleep_timeout_ac` | int | AC sleep timeout in minutes |
-| `sleep_timeout_dc` | int | DC sleep timeout in minutes |
-| `disable_screensaver` | bool | Disable the screen saver |
-
-Use the `scheduled_task` module directly when a machine needs a recurring reboot. See [Schedule a Windows reboot](../how-to/schedule-a-windows-reboot.md).
-
-### `preflight/debloat`
-
-Remove common built-in Windows apps (Xbox, Cortana, News, Weather, Teams, Skype, OneDrive) and set privacy, Copilot, search, taskbar, and Game DVR policies.
-
-When `user` is set, user-scoped registry settings are written through the target user's profile hive. The profile is loaded on demand when that user is signed out; see [Configure another user's settings](../how-to/configure-another-users-settings.md). App removal and machine policy settings are not profile-scoped. Use `remove_appx_packages` directly if you need a custom app list.
-
-| Input | Type | Meaning |
-| --- | --- | --- |
-| `user` | string | Optional Windows user for user-scoped privacy and taskbar settings |
-
-## Related Docs
+## Related docs
 
 - [Built-in module reference](./modules.md)
 - [Playbook and action YAML reference](./playbooks.md)
-- [Execution model](../explanation/execution-model.md) — why the stdlib is
-  embedded and how action resolution works
+- [Execution model](../explanation/execution-model.md)
