@@ -153,10 +153,8 @@ func (r *Runner) analyzeStagePlan(ctx context.Context, plan *ExecutionPlan) (*st
 
 	usedRefs := make(map[string]struct{})
 	for _, task := range plan.Tasks {
-		if r.config.ModuleRegistry != nil {
-			if _, ok := r.config.ModuleRegistry[task.Module]; !ok {
-				return nil, fmt.Errorf("stage: task %q references unknown module %q", task.Name, task.Module)
-			}
+		if r.config.ModuleRegistry != nil && !target.IsKnownModule(task.Module, r.config.ModuleRegistry) {
+			return nil, fmt.Errorf("stage: task %q references unknown module %q", task.Name, task.Module)
 		}
 		preview, err := PreviewTask(task, r.config.TargetVars)
 		if err != nil {
@@ -321,10 +319,8 @@ func (r *Runner) stageModuleFiles(ctx context.Context, plan *ExecutionPlan, info
 			continue
 		}
 
-		if r.config.ModuleRegistry != nil {
-			if _, ok := r.config.ModuleRegistry[name]; !ok {
-				return nil, nil, fmt.Errorf("stage: task references unknown module %q", name)
-			}
+		if r.config.ModuleRegistry != nil && !target.IsKnownModule(name, r.config.ModuleRegistry) {
+			return nil, nil, fmt.Errorf("stage: task references unknown module %q", name)
 		}
 		modules = append(modules, bundle.ModuleInfo{
 			Name: name,

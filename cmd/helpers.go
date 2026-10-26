@@ -13,7 +13,6 @@ import (
 
 	"github.com/bluecadet/preflight/internal/action"
 	"github.com/bluecadet/preflight/internal/config"
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
 	"github.com/bluecadet/preflight/internal/runner"
@@ -212,7 +211,7 @@ func buildModuleRegistry(projectDir string, preferredPluginDirs ...string) (targ
 }
 
 func buildModuleRegistryWithOptions(projectDir string, exclusive bool, preferredPluginDirs ...string) (target.ModuleRegistry, []plugins.LoadedPlugin, error) {
-	return plugins.BuildRegistry(module.Registry(), plugins.Options{
+	return plugins.BuildRegistry(plugins.Options{
 		BinaryDir:              currentBinaryDir(),
 		WorkingDir:             projectDir,
 		PreferredDirs:          preferredPluginDirs,

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/bluecadet/preflight/internal/config"
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/target"
 	"github.com/bluecadet/preflight/internal/template"
@@ -34,7 +33,7 @@ func TestApplyWritesFileContentFromSecret(t *testing.T) {
 	}
 
 	dest := filepath.Join(dir, "out", "license.txt")
-	r := New(target.NewLocalTarget(module.Registry()), emptyResolver(), Config{
+	r := New(target.NewLocalTarget(nil), emptyResolver(), Config{
 		Secrets: secrets.NewResolver(map[string]secrets.Provider{
 			secrets.DefaultProviderName: provider,
 		}),
@@ -84,7 +83,7 @@ func TestApplyWritesFileContentTemplateWithSecret(t *testing.T) {
 	}
 
 	dest := filepath.Join(dir, "out", "app.ini")
-	r := New(target.NewLocalTarget(module.Registry()), emptyResolver(), Config{
+	r := New(target.NewLocalTarget(nil), emptyResolver(), Config{
 		Secrets: secrets.NewResolver(map[string]secrets.Provider{
 			secrets.DefaultProviderName: provider,
 		}),

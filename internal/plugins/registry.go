@@ -3,7 +3,6 @@ package plugins
 import (
 	"fmt"
 	"log/slog"
-	"maps"
 	"slices"
 
 	"github.com/bluecadet/preflight/internal/target"
@@ -26,11 +25,10 @@ type Options struct {
 	ExclusivePreferredDirs bool
 }
 
-// BuildRegistry merges built-in modules with discovered plugins. Plugin names
-// may not shadow built-ins and duplicate plugin names are rejected.
-func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegistry, []LoadedPlugin, error) {
-	registry := make(target.ModuleRegistry, len(base))
-	maps.Copy(registry, base)
+// BuildRegistry returns a registry of the discovered plugins. Plugin names may
+// not shadow built-in modules and duplicate plugin names are rejected.
+func BuildRegistry(opts Options) (target.ModuleRegistry, []LoadedPlugin, error) {
+	registry := make(target.ModuleRegistry)
 
 	discovered, err := sdk.Scan(sdk.DiscoveryOptions{
 		BinaryDir:           opts.BinaryDir,
@@ -45,10 +43,8 @@ func BuildRegistry(base target.ModuleRegistry, opts Options) (target.ModuleRegis
 	seenPlugins := make(map[string]string)
 	loaded := make([]LoadedPlugin, 0, len(discovered))
 	for _, plugin := range discovered {
-		if _, exists := registry[plugin.Name]; exists {
-			if _, builtin := base[plugin.Name]; builtin {
-				return nil, nil, fmt.Errorf("plugin %q conflicts with built-in module name", plugin.Name)
-			}
+		if target.CatalogKnownModule(plugin.Name) {
+			return nil, nil, fmt.Errorf("plugin %q conflicts with built-in module name", plugin.Name)
 		}
 		if existingPath, duplicate := seenPlugins[plugin.Name]; duplicate {
 			return nil, nil, fmt.Errorf("plugin %q discovered more than once (%s, %s)", plugin.Name, existingPath, plugin.Path)

@@ -21,12 +21,12 @@ That keeps the runner from caring whether the task runs:
 
 ## Local Target
 
-The local target executes modules in process using the module registry.
+The local target runs on Windows controllers only. It executes the same Windows PowerShell module implementations as the remote transports, by running `powershell.exe -EncodedCommand` on the local machine instead of sending scripts over a connection.
 
 Why it matters:
 
-- the fastest path for development
-- the reference execution model for built-in modules
+- one implementation per module, whether the target is local or remote
+- no connection setup, so it is the fastest path for development
 - the execution mode used when applying a staged bundle
 
 ## Default Transport

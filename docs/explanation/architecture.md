@@ -57,8 +57,7 @@ The codebase is intentionally split into a handful of major responsibilities:
 | `cmd/`| Cobra command surface and host orchestration |
 | `internal/runner/` | Planning, DAG building, staging, applying, state |
 | `internal/action/` | Playbook loading, action resolution, remote refs, lockfile |
-| `internal/module/` | Built-in module implementations |
-| `internal/target/` | Target interface plus local, WinRM, SSH, and plugin module adapters |
+| `internal/target/` | Target interface, the Windows PowerShell module registry, and local, WinRM, SSH, and plugin adapters |
 | `internal/template/` | Variable layering and template rendering |
 | `internal/inventory/` | Inventory parsing and selector resolution |
 | `internal/facts/` | Fact gathering and normalization |

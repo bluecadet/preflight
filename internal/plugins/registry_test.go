@@ -5,67 +5,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/bluecadet/preflight/internal/module"
 	"github.com/bluecadet/preflight/internal/plugins"
-	"github.com/bluecadet/preflight/internal/target"
 )
 
 func TestBuildRegistry_NoPlugins(t *testing.T) {
-	base := module.Registry()
-	binaryDir := t.TempDir()
-	workingDir := t.TempDir()
-	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
-
-	registry, loaded, err := plugins.BuildRegistry(base, plugins.Options{
-		BinaryDir:  binaryDir,
-		WorkingDir: workingDir,
-	})
-	if err != nil {
-		t.Fatalf("BuildRegistry returned error: %v", err)
-	}
-	if len(loaded) != 0 {
-		t.Fatalf("loaded plugins = %#v, want none", loaded)
-	}
-	if len(registry) != len(base) {
-		t.Fatalf("registry size = %d, want %d", len(registry), len(base))
-	}
-	for name, mod := range base {
-		got, ok := registry[name]
-		if !ok {
-			t.Fatalf("missing module %q in registry", name)
-		}
-		if got != mod {
-			t.Fatalf("registry[%q] changed module instance", name)
-		}
-	}
-}
-
-func TestBuildRegistry_PreservesBuiltins(t *testing.T) {
-	base := module.Registry()
 	t.Setenv("HOME", t.TempDir())
 
-	registry, loaded, err := plugins.BuildRegistry(base, plugins.Options{
-		BinaryDir:  t.TempDir(),
-		WorkingDir: t.TempDir(),
-	})
-	if err != nil {
-		t.Fatalf("BuildRegistry returned error: %v", err)
-	}
-	if len(loaded) != 0 {
-		t.Fatalf("loaded plugins = %#v, want none", loaded)
-	}
-	for name := range base {
-		if _, ok := registry[name]; !ok {
-			t.Fatalf("expected built-in module %q in registry", name)
-		}
-	}
-}
-
-func TestBuildRegistry_EmptyBase(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-
-	registry, loaded, err := plugins.BuildRegistry(target.ModuleRegistry{}, plugins.Options{
+	registry, loaded, err := plugins.BuildRegistry(plugins.Options{
 		BinaryDir:  t.TempDir(),
 		WorkingDir: t.TempDir(),
 	})
@@ -81,7 +27,6 @@ func TestBuildRegistry_EmptyBase(t *testing.T) {
 }
 
 func TestBuildRegistry_DiscoveryIsLazy(t *testing.T) {
-	base := module.Registry()
 	binaryDir := t.TempDir()
 	workingDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
@@ -91,7 +36,7 @@ func TestBuildRegistry_DiscoveryIsLazy(t *testing.T) {
 		t.Fatalf("WriteFile(%q): %v", pluginPath, err)
 	}
 
-	registry, loaded, err := plugins.BuildRegistry(base, plugins.Options{
+	registry, loaded, err := plugins.BuildRegistry(plugins.Options{
 		BinaryDir:  binaryDir,
 		WorkingDir: workingDir,
 	})
@@ -110,7 +55,6 @@ func TestBuildRegistry_DiscoveryIsLazy(t *testing.T) {
 }
 
 func TestBuildRegistry_DetectsDuplicatePlugins(t *testing.T) {
-	base := module.Registry()
 	binaryDir := t.TempDir()
 	workingDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
@@ -127,26 +71,22 @@ func TestBuildRegistry_DetectsDuplicatePlugins(t *testing.T) {
 		}
 	}
 
-	_, _, err := plugins.BuildRegistry(base, plugins.Options{BinaryDir: binaryDir, WorkingDir: workingDir})
+	_, _, err := plugins.BuildRegistry(plugins.Options{BinaryDir: binaryDir, WorkingDir: workingDir})
 	if err == nil {
 		t.Fatal("BuildRegistry returned nil error, want duplicate detection")
 	}
 }
 
 func TestBuildRegistry_DetectsBuiltinConflicts(t *testing.T) {
-	base := module.Registry()
 	binaryDir := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
 
-	for name := range base {
-		path := filepath.Join(binaryDir, exeName("preflight-plugin-"+name))
-		if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-			t.Fatalf("WriteFile(%q): %v", path, err)
-		}
-		break
+	path := filepath.Join(binaryDir, exeName("preflight-plugin-file"))
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
 	}
 
-	_, _, err := plugins.BuildRegistry(base, plugins.Options{BinaryDir: binaryDir, WorkingDir: t.TempDir()})
+	_, _, err := plugins.BuildRegistry(plugins.Options{BinaryDir: binaryDir, WorkingDir: t.TempDir()})
 	if err == nil {
 		t.Fatal("BuildRegistry returned nil error, want builtin conflict")
 	}
