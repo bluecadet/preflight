@@ -195,17 +195,12 @@ func getSSHConfigFromEnv() (*SSHConfig, bool) {
 }
 
 // sshConfigFromEnv reads SSH connection vars under the given env-var prefix
-// (e.g. "PREFLIGHT_TEST_SSH" or "PREFLIGHT_TEST_SSH_POSIX") and returns nil +
+// (e.g. "PREFLIGHT_TEST_SSH") and returns nil +
 // false when any required var is missing so callers can t.Skip cleanly.
 //
 // Required vars: <prefix>_HOST, <prefix>_USER, <prefix>_PASS.
 // Optional vars: <prefix>_PORT (default 22), <prefix>_KEY (private key file;
 // password auth is always attempted when <prefix>_PASS is set).
-//
-// The SSH-to-Windows vars (PREFLIGHT_TEST_SSH_*) and the SSH-to-POSIX vars
-// (PREFLIGHT_TEST_SSH_POSIX_*) share one implementation so the two suites can
-// be configured independently — a developer may have a Windows VM on one host
-// and a Linux container on another.
 func sshConfigFromEnv(prefix string) (*SSHConfig, bool) {
 	host := os.Getenv(prefix + "_HOST")
 	user := os.Getenv(prefix + "_USER")

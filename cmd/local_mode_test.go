@@ -23,6 +23,7 @@ import (
 )
 
 func TestRunPlaybookUsesInventoryTargets(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	tests := []struct {
@@ -125,6 +126,7 @@ func TestRunApplyReportsRunJSONWriteFailure(t *testing.T) {
 }
 
 func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	tests := []struct {
@@ -183,6 +185,7 @@ func TestRunPlaybookDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing
 }
 
 func TestRunPlanAllowsExplicitLocalTargetWhenInventoryAvailable(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath, _ := writeTestPlaybookWithInventory(t)
 
 	oldResolveHosts := resolveInventoryHosts
@@ -295,6 +298,7 @@ func TestRunFactsDefaultsToAllInventoryHostsWhenInventoryAvailable(t *testing.T)
 }
 
 func TestRunPlanAllowsConfiguredConcurrency(t *testing.T) {
+	requireWindowsLocal(t)
 	cmd := newTestCommand()
 	if err := cmd.Flags().Set("concurrency", "2"); err != nil {
 		t.Fatalf("Set concurrency: %v", err)
@@ -319,6 +323,7 @@ func TestRunPlanTimeoutReturnsDeadlineExceeded(t *testing.T) {
 }
 
 func TestRunStageWritesBundle(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath := writeTestPlaybook(t)
 	cmd := newTestCommand()
 	if err := runStage(cmd, []string{playbookPath}); err != nil {
@@ -373,6 +378,7 @@ inventory:
 }
 
 func TestRunApplyBundleRoundTrip(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath := writeTestPlaybook(t)
 	stageCmd := newTestCommand()
 	if err := runStage(stageCmd, []string{playbookPath}); err != nil {
@@ -405,6 +411,7 @@ func TestRunApplyBundleRoundTrip(t *testing.T) {
 }
 
 func TestRunApplyBundleEncryptedSecretsRequireIdentity(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath, _ := writeSecretBundleProject(t, false)
 	stageCmd := newTestCommand()
 	if err := runStage(stageCmd, []string{playbookPath}); err != nil {
@@ -422,6 +429,7 @@ func TestRunApplyBundleEncryptedSecretsRequireIdentity(t *testing.T) {
 }
 
 func TestRunApplyBundlePlaintextSecretsWithoutIdentity(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath, _ := writeSecretBundleProject(t, true)
 	stageCmd := newTestCommand()
 	if err := stageCmd.Flags().Set("allow-plaintext-secrets-in-bundle", "true"); err != nil {
@@ -467,6 +475,7 @@ func TestRunPlanDoesNotFetchRemoteActions(t *testing.T) {
 }
 
 func TestRunDiffFetchesRemoteActions(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath := writeRemoteActionPlaybook(t)
 	resolver := &testRemoteActionResolver{}
 
@@ -492,6 +501,7 @@ func TestRunDiffFetchesRemoteActions(t *testing.T) {
 }
 
 func TestRunDiffUsesResolvedHostContext(t *testing.T) {
+	requireWindowsLocal(t)
 	dir := t.TempDir()
 	playbookPath := filepath.Join(dir, "playbook.yml")
 	configPath := filepath.Join(dir, "preflight.yml")
@@ -681,6 +691,7 @@ inventory:
 // Expected totals: ok=1, changed=1, skipped=1, failed=1; target tallies
 // ok=1 (kiosk-a), failed=1 (kiosk-b).
 func TestRunApplyEmitsTrueRunSummaryCountsAcrossHosts(t *testing.T) {
+	requireWindowsLocal(t)
 	dir := t.TempDir()
 
 	sentinelPath := filepath.Join(dir, "sentinel.txt")

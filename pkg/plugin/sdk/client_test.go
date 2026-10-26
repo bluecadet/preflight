@@ -173,7 +173,7 @@ func TestClientStream_Apply(t *testing.T) {
 }
 
 func TestClientStream_HandleOpsRoundTrip(t *testing.T) {
-	info := TargetInfo{Family: "linux", Name: "ubuntu", RuntimeKind: "posix-sh"}
+	info := TargetInfo{Family: "windows", RuntimeKind: "windows-powershell"}
 	ops := &fakeHandleServer{
 		cmdStdout: "hello\n",
 		getData:   []byte("file-contents"),

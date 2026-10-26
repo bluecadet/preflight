@@ -39,6 +39,7 @@ func TestGetOutputFormatUsesAutoDetectWhenUnset(t *testing.T) {
 }
 
 func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
+	requireWindowsLocal(t)
 	playbookPath := writeTestPlaybook(t)
 	statePath := writeTestStateFile(t)
 

@@ -4,9 +4,7 @@ Use this guide when a target needs to clone or update a Git repository
 as part of a playbook run — for example, a museum kiosk pulling the
 latest exhibit content before it opens for the day. On Windows targets,
 the embedded `preflight/git-sync` action wraps the fetch, checkout,
-reset, and clean steps in a single idempotent task; on POSIX targets,
-run `git` through the `shell` module (see
-[Sync On A POSIX Target](#sync-on-a-posix-target)).
+reset, and clean steps in a single idempotent task.
 
 ## Prerequisites
 
@@ -108,33 +106,6 @@ running the sync — a common situation when provisioning runs as an
 administrator but the exhibit app runs under a kiosk account. Set
 `safe_directory: false` only if your environment already manages the
 `safe.directory` list another way.
-
-## Sync On A POSIX Target
-
-`preflight/git-sync` targets Windows. On a POSIX target over SSH, run
-`git` directly with the `shell` module, using `creates:` to make the
-clone idempotent:
-
-```yaml
-tasks:
-  - name: Clone content repository
-    shell:
-      cmd: git
-      args:
-        - clone
-        - https://github.com/example/content.git
-        - /opt/exhibits/content
-      creates: /opt/exhibits/content/.git
-
-  - name: Pull latest content
-    shell:
-      cmd: git
-      args: ["-C", "/opt/exhibits/content", "pull", "--ff-only"]
-```
-
-The pull task runs on every apply; that is a stated tradeoff of the
-manual pattern, not a bug. Wrap it in `when:` or a `powershell`
-`check_script` if the extra network call matters.
 
 ## Troubleshooting
 

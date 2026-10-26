@@ -34,7 +34,6 @@ func TestModuleSchemasMatchRuntimeRequiredParams(t *testing.T) {
 		"moduleService":            {types: []reflect.Type{reflect.TypeFor[module.ServiceParams]()}},
 		"moduleShell":              {types: []reflect.Type{reflect.TypeFor[module.ShellCheckParams](), reflect.TypeFor[module.ShellApplyParams]()}},
 		"moduleShortcut":           {types: []reflect.Type{reflect.TypeFor[module.ShortcutParams]()}},
-		"moduleSystemPackage":      {required: []string{"packages"}},
 		"moduleUser":               {types: []reflect.Type{reflect.TypeFor[module.UserParams]()}},
 		"moduleWait":               {types: []reflect.Type{reflect.TypeFor[module.WaitParams]()}},
 		"moduleWindowsFeature":     {types: []reflect.Type{reflect.TypeFor[module.WindowsFeatureParams]()}},

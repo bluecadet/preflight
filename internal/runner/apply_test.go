@@ -224,7 +224,7 @@ func TestApplyAcquireThenResolved(t *testing.T) {
 	tgt := &targettest.Fake{
 		InfoValue: target.TargetInfo{
 			Hostname:  "test-host",
-			OSFamily:  target.OSFamilyLinux,
+			OSFamily:  target.OSFamilyWindows,
 			Transport: target.TransportSSH,
 		},
 		Results: []target.Result{{Status: target.StatusOK}},

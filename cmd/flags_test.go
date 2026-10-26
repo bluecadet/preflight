@@ -143,6 +143,7 @@ tasks:
 }
 
 func TestRunCommandCreatesRunDir(t *testing.T) {
+	requireWindowsLocal(t)
 	dir := t.TempDir()
 	restore := chdirForTest(t, dir)
 	defer restore()
@@ -248,6 +249,7 @@ tasks:
 }
 
 func TestRunCommandWithRunID(t *testing.T) {
+	requireWindowsLocal(t)
 	// Test that --run-id overrides the auto-generated run ID.
 	dir := t.TempDir()
 	restore := chdirForTest(t, dir)

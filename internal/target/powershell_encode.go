@@ -22,14 +22,6 @@ func encodePowerShellScript(script string) string {
 	return base64.StdEncoding.EncodeToString(buf)
 }
 
-func shellDir(path string) string {
-	idx := strings.LastIndex(path, "/")
-	if idx <= 0 {
-		return "."
-	}
-	return path[:idx]
-}
-
 func shellQuoteExec(cmd string, args []string) string {
 	parts := make([]string, 0, len(args)+1)
 	parts = append(parts, fmt.Sprintf("%q", cmd))

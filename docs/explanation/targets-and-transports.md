@@ -65,24 +65,14 @@ CredSSP authentication (which preflight does not currently support) creates an i
 
 ## SSH Target
 
-SSH now auto-detects one of two runtimes on the remote host:
-
-- `windows-powershell` for Windows hosts that expose a usable PowerShell runtime over SSH
-- `posix-shell` for POSIX-style hosts
-
-That split matters:
+SSH requires the remote host to expose a usable Windows PowerShell runtime (`windows-powershell`); connecting to a host without one fails.
 
 - Windows-over-SSH uses the same built-in Windows module surface as WinRM.
-- POSIX-over-SSH focuses on `directory`, `file`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, and `powershell` when `pwsh` or `powershell` is installed. `service_running` and `reboot` require systemd; `reboot` also requires root.
 - Plugin modules run over SSH the same way they run locally and over WinRM: the plugin process runs controller-side and its target effects flow through the transport's handle ops. Nothing is ever delivered to the target.
 
 SSH is now the default and primary remote transport, including for Windows hosts; WinRM remains available and fully supported for hosts where SSH isn't an option.
 
 SSH is also the safer default to set up: it's encrypted out of the box, while the easy WinRM setup path (`winrm quickconfig`, HTTP with Basic auth) is not — credentials and command output travel unencrypted unless you configure a WinRM HTTPS listener yourself. See [Enable remote access on a Windows target](../how-to/enable-remote-access.md).
-
-### Capability-Based POSIX Support
-
-POSIX-over-SSH support is **capability-based, not a distro allowlist**. A host is supported when it provides the capabilities the modules rely on — POSIX `sh`, systemd where services matter, `apt`/`dnf` where packages matter — not when its distro name appears on a list. The docs may carry an informal "tested on" note, but that is not a contract. The concrete baseline, the official/best-effort tier split, and the consolidated list of POSIX limitations live in the [built-in module reference](../reference/modules.md#posix-capability-baseline-and-tiers).
 
 ### SSH Authentication
 

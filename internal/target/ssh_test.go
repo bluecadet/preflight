@@ -55,190 +55,6 @@ func (f *fakeSSHRunner) Run(ctx context.Context, command string, stdin []byte) (
 	return f.run(ctx, command, stdin)
 }
 
-func TestSSHTarget_ExecuteShellPOSIX(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, `"echo" "hello"`):
-				return "", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
-		"cmd":  "echo",
-		"args": []any{"hello"},
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected changed result, got %q", result.Status)
-	}
-}
-
-func TestSSHTarget_ExecuteShellPOSIXWithBecomeUser(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, stdin []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, "sudo -S -p '' -u 'appuser' /bin/sh -lc"):
-				if string(stdin) != "hunter2\n" {
-					t.Fatalf("unexpected stdin %q", string(stdin))
-				}
-				return "", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-1", "shell", map[string]any{
-		"cmd":  "echo",
-		"args": []any{"hello"},
-	}, ExecutionOptions{
-		Become: &BecomeOptions{
-			Enabled:  true,
-			User:     "appuser",
-			Password: "hunter2",
-		},
-	}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected changed result, got %q", result.Status)
-	}
-}
-
-func TestSSHTarget_POSIXRuntimeCachesDetection(t *testing.T) {
-	var detectionCount int
-
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, stdin []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				detectionCount++
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\neuid=1000\nsudo=1\n", "", 0, nil
-			case strings.HasPrefix(command, "mkdir -p"):
-				if decoded, err := base64.StdEncoding.DecodeString(string(stdin)); err != nil || string(decoded) != "hello" {
-					t.Fatalf("unexpected stdin %q err=%v", string(stdin), err)
-				}
-				return "", "", 0, nil
-			case strings.HasPrefix(command, "chmod "):
-				if !strings.Contains(command, "0644") {
-					t.Errorf("chmod called with unexpected mode: %q", command)
-				}
-				return "", "", 0, nil
-			case strings.HasPrefix(command, "base64 <"):
-				return base64.StdEncoding.EncodeToString([]byte("hello")), "", 0, nil
-			case command == "echo preflight":
-				return "preflight", "", 0, nil
-			case strings.Contains(command, "$(hostname)") && strings.Contains(command, "$(uname -s)") && strings.Contains(command, "$(uname -m)"):
-				return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\n", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	src := t.TempDir() + "/src.txt"
-	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	if err := tgt.CopyFile(context.Background(), src, "/tmp/dst.txt"); err != nil {
-		t.Fatalf("CopyFile returned error: %v", err)
-	}
-	data, err := tgt.ReadFile(context.Background(), "/tmp/dst.txt")
-	if err != nil {
-		t.Fatalf("ReadFile returned error: %v", err)
-	}
-	if string(data) != "hello" {
-		t.Fatalf("expected hello, got %q", string(data))
-	}
-
-	reachable, err := tgt.Reachable(context.Background())
-	if err != nil {
-		t.Fatalf("Reachable returned error: %v", err)
-	}
-	if !reachable {
-		t.Fatal("expected target to be reachable")
-	}
-
-	info, err := tgt.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info returned error: %v", err)
-	}
-	if info.Hostname != "kiosk-a" || info.OSVersion != "22.04" || info.Arch != "x86_64" || info.OSName != "ubuntu" || info.PackageManager != "apt" || info.Init != "systemd" || info.OSFamily != OSFamilyLinux {
-		t.Fatalf("unexpected info: %#v", info)
-	}
-
-	if detectionCount != 1 {
-		t.Fatalf("expected runtime detection to be cached, got %d probes", detectionCount)
-	}
-}
-
-// TestSSHTarget_POSIXProbeCachedAcrossInfoCalls asserts the one-probe-per-run
-// contract: the POSIX detection probe runs lazily on the first Info() call and
-// is cached so a second Info() call (and the facts gatherer) read the cached
-// result without re-running the probe script.
-func TestSSHTarget_POSIXProbeCachedAcrossInfoCalls(t *testing.T) {
-	var probeRuns int
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case strings.Contains(command, "os_name=") && strings.Contains(command, "package_manager="):
-				probeRuns++
-				return "hostname=kiosk-c\nkernel=Linux\narch=x86_64\nos_name=rocky\nos_version=9.3\npackage_manager=dnf\ninit=systemd\neuid=0\nsudo=1\n", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	for i := range 2 {
-		info, err := tgt.Info(context.Background())
-		if err != nil {
-			t.Fatalf("Info #%d returned error: %v", i, err)
-		}
-		if info.OSName != "rocky" || info.PackageManager != "dnf" || info.Init != "systemd" || info.OSVersion != "9.3" {
-			t.Fatalf("Info #%d unexpected: %#v", i, info)
-		}
-	}
-	if probeRuns != 1 {
-		t.Fatalf("expected POSIX probe to run once per target, got %d", probeRuns)
-	}
-}
 func TestSSHTarget_DetectsWindowsPowerShellRuntimeAndExecutesShell(t *testing.T) {
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 	tgt.runner = &fakeSSHRunner{
@@ -443,199 +259,6 @@ func TestSSHTarget_WindowsEnvironmentWaitRegistryAndReboot(t *testing.T) {
 	}
 }
 
-func TestSSHTarget_POSIXFileHashNoop(t *testing.T) {
-	src := t.TempDir() + "/src.txt"
-	if err := os.WriteFile(src, []byte("hello"), 0o644); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	expectedHash, err := hashLocalFile(src)
-	if err != nil {
-		t.Fatalf("hashLocalFile: %v", err)
-	}
-
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/dst.txt"):
-				return "file", "", 0, nil
-			case strings.HasPrefix(command, "sha256sum "):
-				return expectedHash + "  /tmp/dst.txt\n", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
-		"dest": "/tmp/dst.txt",
-		"src":  src,
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("expected no-op status, got %q", result.Status)
-	}
-}
-
-func TestSSHTarget_POSIXFileContentWritesStdin(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, stdin []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
-				return "missing", "", 0, nil
-			case strings.Contains(command, "cat > ") && strings.Contains(command, "/tmp/secret.txt"):
-				if string(stdin) != "secret\ncontent\n" {
-					t.Fatalf("unexpected file content stdin %q", string(stdin))
-				}
-				return "", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
-		"dest":    "/tmp/secret.txt",
-		"content": "secret\ncontent\n",
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected changed status, got %q", result.Status)
-	}
-}
-
-func TestSSHTarget_POSIXFileContentHashNoop(t *testing.T) {
-	content := "secret\ncontent\n"
-	expectedHash := hashBytes([]byte(content))
-
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, "printf missing") && strings.Contains(command, "/tmp/secret.txt"):
-				return "file", "", 0, nil
-			case strings.HasPrefix(command, "sha256sum "):
-				return expectedHash + "  /tmp/secret.txt\n", "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-file", "file", map[string]any{
-		"dest":    "/tmp/secret.txt",
-		"content": content,
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("expected no-op status, got %q", result.Status)
-	}
-}
-
-func TestSSHTarget_POSIXPowerShellModuleUsesRemoteBinary(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case !isEncodedPowerShellCommand(command):
-				if command == "printf preflight" {
-					return "preflight", "", 0, nil
-				}
-				if isPOSIXProbeCommand(command) {
-					return posixProbeOutput(), "", 0, nil
-				}
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			default:
-				decoded := decodeEncodedPowerShellCommand(t, command)
-				switch {
-				case strings.Contains(decoded, "preflight-nonwindows"):
-					return "preflight-nonwindows", "", 0, nil
-				case strings.Contains(decoded, "Write-Output 'applied'"):
-					return "applied", "", 0, nil
-				default:
-					t.Fatalf("unexpected powershell script %q", decoded)
-					return "", "", 0, nil
-				}
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
-		"script": "Write-Output 'applied'",
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusChanged {
-		t.Fatalf("expected changed result, got %q", result.Status)
-	}
-	if result.Message != "applied" {
-		t.Fatalf("expected apply output, got %q", result.Message)
-	}
-}
-
-func TestSSHTarget_POSIXWaitServiceRunning(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, "systemctl is-active --quiet"):
-				return "", "", 0, nil // active → exit 0
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	result, err := tgt.Execute(context.Background(), "task-wait", "wait", map[string]any{
-		"condition": "service_running",
-		"target":    "nginx",
-	}, ExecutionOptions{}, false, nil)
-	if err != nil {
-		t.Fatalf("Execute returned error: %v", err)
-	}
-	if result.Status != StatusOK {
-		t.Fatalf("expected status OK for an already-running service, got %q: %s", result.Status, result.Message)
-	}
-}
-
 func TestSSHTarget_PluginModulesRunOverSSH(t *testing.T) {
 	// Plugins execute controller-side with a target handle, so a plugin bound
 	// into the SSH target's registry is dispatched through executeModule like
@@ -647,17 +270,11 @@ func TestSSHTarget_PluginModulesRunOverSSH(t *testing.T) {
 	})
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
+			if isEncodedPowerShellCommand(command) && strings.Contains(decodeEncodedPowerShellCommand(t, command), "preflight-windows") {
+				return "preflight-windows", "", 0, nil
 			}
+			t.Fatalf("unexpected command %q", command)
+			return "", "", 0, nil
 		},
 	}
 
@@ -687,17 +304,11 @@ func TestSSHTarget_PluginBecomeRefused(t *testing.T) {
 	})
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
+			if isEncodedPowerShellCommand(command) && strings.Contains(decodeEncodedPowerShellCommand(t, command), "preflight-windows") {
+				return "preflight-windows", "", 0, nil
 			}
+			t.Fatalf("unexpected command %q", command)
+			return "", "", 0, nil
 		},
 	}
 
@@ -719,83 +330,21 @@ func TestSSHTarget_PluginBecomeRefused(t *testing.T) {
 	}
 }
 
-func TestSSHTarget_POSIXPowerShellRequiresRemoteBinary(t *testing.T) {
-	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-	tgt.runner = &fakeSSHRunner{
-		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			default:
-				t.Fatalf("unexpected command %q", command)
-				return "", "", 0, nil
-			}
-		},
-	}
-
-	_, err := tgt.Execute(context.Background(), "task-ps", "powershell", map[string]any{
-		"script": "Write-Output 'hi'",
-	}, ExecutionOptions{}, false, nil)
-	if err == nil || !strings.Contains(err.Error(), "requires pwsh or powershell") {
-		t.Fatalf("expected missing powershell error, got %v", err)
-	}
-}
-
-func TestSSHTarget_POSIXUnsupportedModuleReturnsError(t *testing.T) {
-	for _, module := range []string{"environment", "registry"} {
-		t.Run(module, func(t *testing.T) {
-			tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
-			tgt.runner = &fakeSSHRunner{
-				run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-					switch {
-					case isEncodedPowerShellCommand(command):
-						return "", "not found", 127, nil
-					case command == "printf preflight":
-						return "preflight", "", 0, nil
-					case isPOSIXProbeCommand(command):
-						return posixProbeOutput(), "", 0, nil
-					default:
-						t.Fatalf("unexpected command %q", command)
-						return "", "", 0, nil
-					}
-				},
-			}
-
-			_, err := tgt.Execute(context.Background(), "task-1", module, map[string]any{}, ExecutionOptions{}, false, nil)
-			if err == nil {
-				t.Fatalf("expected error for unsupported module %q on POSIX runtime, got nil", module)
-			}
-			if !strings.Contains(err.Error(), module) {
-				t.Fatalf("expected error to name the unsupported module %q, got: %v", module, err)
-			}
-		})
-	}
-}
-
 func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 	var detectionCount atomic.Int64
 
 	tgt := NewSSHTarget(SSHConfig{Host: "host", Username: "user"}, nil)
 	tgt.runner = &fakeSSHRunner{
 		run: func(_ context.Context, command string, _ []byte) (string, string, int, error) {
-			switch {
-			case isEncodedPowerShellCommand(command):
-				return "", "not found", 127, nil
-			case command == "printf preflight":
-				detectionCount.Add(1)
-				return "preflight", "", 0, nil
-			case isPOSIXProbeCommand(command):
-				return posixProbeOutput(), "", 0, nil
-			case strings.Contains(command, `"echo" "hello"`):
-				return "", "", 0, nil
-			default:
+			if !isEncodedPowerShellCommand(command) {
 				t.Errorf("unexpected command %q", command)
 				return "", "", 0, nil
 			}
+			if strings.Contains(decodeEncodedPowerShellCommand(t, command), "preflight-windows") {
+				detectionCount.Add(1)
+				return "preflight-windows", "", 0, nil
+			}
+			return "", "", 0, nil
 		},
 	}
 
@@ -824,21 +373,6 @@ func TestSSHTarget_ConcurrentRuntimeDetection(t *testing.T) {
 
 func isEncodedPowerShellCommand(command string) bool {
 	return strings.Contains(command, `"-EncodedCommand"`)
-}
-
-// isPOSIXProbeCommand reports whether command is the POSIX runtime detection
-// probe script (one id -u + command -v sudo round trip per target).
-func isPOSIXProbeCommand(command string) bool {
-	return strings.Contains(command, "$(hostname)") &&
-		strings.Contains(command, "$(uname -s)") &&
-		strings.Contains(command, "package_manager=")
-}
-
-// posixProbeOutput returns a probe response for an unprivileged session with
-// sudo available. Tests that need a different posture (root, no sudo) build
-// their own string.
-func posixProbeOutput() string {
-	return "hostname=kiosk-a\nkernel=Linux\narch=x86_64\nos_name=ubuntu\nos_version=22.04\npackage_manager=apt\ninit=systemd\neuid=1000\nsudo=1\n"
 }
 
 func decodeEncodedPowerShellCommand(t *testing.T, command string) string {

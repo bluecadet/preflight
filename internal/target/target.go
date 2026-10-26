@@ -112,8 +112,6 @@ type OSFamily string
 const (
 	OSFamilyUnknown OSFamily = "unknown"
 	OSFamilyWindows OSFamily = "windows"
-	OSFamilyLinux   OSFamily = "linux"
-	OSFamilyDarwin  OSFamily = "darwin"
 )
 
 // Platform identifies the operating system family and architecture a staged
@@ -141,25 +139,21 @@ func NormalizeArchitecture(raw string) string {
 
 // TargetInfo holds basic facts about a target machine.
 //
-// POSIX fields (OSName, PackageManager, Init) are populated by the cached
-// runtime detection probe and are empty on Windows. Plugins receive this
-// struct so they branch on enriched OS facts without re-detecting.
+// Plugins receive this struct so they branch on OS facts without
+// re-detecting.
 //
 // RuntimeKind is the resolved runtime the target's modules speak
-// (windows-powershell or posix-shell), set by every Info() implementation
+// (windows-powershell), set by every Info() implementation
 // after the runtime is probed. The apply-start support gate reads it to
 // validate every runnable task against the support matrix.
 type TargetInfo struct {
-	Hostname       string
-	OSVersion      string
-	OSBuild        string
-	OSName         string // os-release ID on POSIX; friendly name on Windows
-	Arch           string
-	OSFamily       OSFamily
-	PackageManager string // apt | dnf | "" (POSIX only)
-	Init           string // systemd | "" (POSIX only)
-	RuntimeKind    RuntimeKind
-	Transport      Transport
+	Hostname    string
+	OSVersion   string
+	OSBuild     string
+	Arch        string
+	OSFamily    OSFamily
+	RuntimeKind RuntimeKind
+	Transport   Transport
 }
 
 // IsLocal reports whether the target is the controller machine.

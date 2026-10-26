@@ -64,9 +64,8 @@ func NormalizeExecutionOptions(raw map[string]any) (ExecutionOptions, error) {
 		loadProfile = &flag
 	}
 
-	// A bare `become: {enabled: true}` with no user is allowed: on POSIX it means
-	// root (effectiveBecome defaults the user); Windows still requires an
-	// explicit user, enforced in effectiveBecome which knows the runtime kind.
+	// A bare `become: {enabled: true}` with no user is allowed here; the
+	// explicit-user requirement is enforced in effectiveBecome.
 
 	return ExecutionOptions{
 		Become: &BecomeOptions{

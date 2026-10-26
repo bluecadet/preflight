@@ -1,3 +1,5 @@
+//go:build windows || integration
+
 package target
 
 import (
@@ -9,13 +11,12 @@ import (
 // runOpsConformance is the shared ops-interface conformance suite every
 // transport implementation of TargetOps (Exec/PutFile/GetFile/Info) must
 // pass. It runs against the local target as a unit test and against each
-// remote transport (SSH-POSIX in CI; SSH-Windows and WinRM in the dev-only
+// remote transport (SSH-Windows and WinRM in the dev-only
 // suite) via the integration tests in ops_conformance_integration_test.go.
 //
 // newPath returns a fresh, unique path on the target's filesystem for the
 // PutFile/GetFile round trip. The suite picks shell-appropriate commands from
-// the RuntimeKind reported by Info, so the same assertions cover POSIX sh and
-// Windows PowerShell transports.
+// the RuntimeKind reported by Info.
 //
 // The suite asserts the contract, not transport performance: a non-zero exit is
 // a result (not an error), Info carries the resolved runtime, and a

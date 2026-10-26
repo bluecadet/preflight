@@ -19,8 +19,7 @@ const (
 	// the target's runtime. SupportedRuntimes lists where it does run.
 	ClassUnsupportedOnRuntime ModuleSupportClass = "unsupported_on_runtime"
 	// ClassMissingPrerequisite: the module is supported on this runtime in
-	// principle but an environment prerequisite is absent (e.g. no pwsh
-	// binary for the powershell module on posix-shell). Detail names it.
+	// principle but an environment prerequisite is absent (Detail names it).
 	ClassMissingPrerequisite ModuleSupportClass = "missing_prerequisite"
 	// ClassPluginBecome: a plugin module was invoked with become enabled;
 	// plugin+become is refused.
@@ -136,17 +135,13 @@ func classifyMissingModule(controllerRegistry ModuleRegistry, module string, kin
 }
 
 // ReasonCodeForError extracts a stable reason code from an error chain. It
-// recognizes *ModuleSupportError and *BecomeEnvError; other errors return the
+// recognizes *ModuleSupportError; other errors return the
 // empty string so callers can leave the reason field absent for untyped
 // failures.
 func ReasonCodeForError(err error) string {
 	var mse *ModuleSupportError
 	if errors.As(err, &mse) {
 		return mse.ReasonCode()
-	}
-	var be *BecomeEnvError
-	if errors.As(err, &be) {
-		return be.ReasonCode()
 	}
 	return ""
 }

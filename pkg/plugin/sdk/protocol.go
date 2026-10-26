@@ -149,19 +149,16 @@ func intersectCapabilities(a, b []string) map[string]struct{} {
 	return out
 }
 
-// TargetInfo is the enriched target context delivered to a plugin at
-// initialize. Absent signals are empty strings, never missing keys, so plugin
-// code can branch on them with simple equality. RuntimeKind tells the plugin
-// which shell RunCommand speaks (posix-sh or windows-powershell).
+// TargetInfo is the target context delivered to a plugin at initialize.
+// Absent signals are empty strings, never missing keys, so plugin code can
+// branch on them with simple equality. RuntimeKind tells the plugin which
+// shell RunCommand speaks (always windows-powershell).
 type TargetInfo struct {
-	Family         string `json:"family"`
-	Name           string `json:"name"`
-	Version        string `json:"version"`
-	Arch           string `json:"arch"`
-	Hostname       string `json:"hostname"`
-	PackageManager string `json:"package_manager"`
-	Init           string `json:"init"`
-	RuntimeKind    string `json:"runtime_kind"`
+	Family      string `json:"family"`
+	Version     string `json:"version"`
+	Arch        string `json:"arch"`
+	Hostname    string `json:"hostname"`
+	RuntimeKind string `json:"runtime_kind"`
 }
 
 // CommandResult is the outcome of a RunCommand handle op: the script runs in
@@ -237,12 +234,11 @@ type Handle interface {
 }
 
 // HandleServer is the host-side backend a Client binds to. Every transport
-// (Local, SSH-POSIX, SSH-Windows, WinRM) implements it; the Client dispatches
+// (Local, SSH, WinRM) implements it; the Client dispatches
 // plugin handle-op requests to it. Handle embeds this so the subset
 // relationship between handle ops and the full plugin Handle stays explicit.
 type HandleServer interface {
-	// RunCommand executes script in the target's native shell (POSIX sh or
-	// PowerShell per TargetInfo.RuntimeKind) and returns stdout, stderr, and
+	// RunCommand executes script in the target's native shell (PowerShell) and returns stdout, stderr, and
 	// the exit code. This is the batching lever for high-latency transports:
 	// prefer one script that does several things over several ops.
 	RunCommand(ctx context.Context, script string) (CommandResult, error)

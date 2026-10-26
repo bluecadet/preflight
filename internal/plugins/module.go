@@ -192,22 +192,13 @@ func (o *opsHandleServer) GetFile(ctx context.Context, path string) ([]byte, err
 }
 
 // toSDKTargetInfo converts the internal target.TargetInfo to the wire
-// TargetInfo delivered to a plugin at initialize. runtime_kind is derived from
-// the OS family (windows → windows-powershell, else posix-shell), matching the
-// transport runtime kinds. Absent POSIX signals stay empty strings.
+// TargetInfo delivered to a plugin at initialize.
 func toSDKTargetInfo(info target.TargetInfo) sdk.TargetInfo {
-	runtimeKind := "posix-shell"
-	if info.OSFamily == target.OSFamilyWindows {
-		runtimeKind = "windows-powershell"
-	}
 	return sdk.TargetInfo{
-		Family:         string(info.OSFamily),
-		Name:           info.OSName,
-		Version:        info.OSVersion,
-		Arch:           info.Arch,
-		Hostname:       info.Hostname,
-		PackageManager: info.PackageManager,
-		Init:           info.Init,
-		RuntimeKind:    runtimeKind,
+		Family:      string(info.OSFamily),
+		Version:     info.OSVersion,
+		Arch:        info.Arch,
+		Hostname:    info.Hostname,
+		RuntimeKind: "windows-powershell",
 	}
 }

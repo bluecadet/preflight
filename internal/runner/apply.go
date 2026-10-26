@@ -457,7 +457,11 @@ func (r *Runner) validatePlanTasks(tasks []*PlanTask) error {
 		if r.target == nil {
 			return nil
 		}
-		kind, kindKnown = target.PlanRuntimeForTransport(r.target.Transport())
+		var err error
+		kind, kindKnown, err = target.PlanRuntimeForTransport(r.target.Transport())
+		if err != nil {
+			return err
+		}
 	}
 	for _, pt := range tasks {
 		if err := target.ValidateModuleForPlan(pt.Module, kind, kindKnown, r.config.ModuleRegistry); err != nil {

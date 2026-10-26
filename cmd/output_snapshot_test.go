@@ -13,6 +13,7 @@ import (
 )
 
 func TestCommandTUISnapshots(t *testing.T) {
+	requireWindowsLocal(t)
 	tests := []struct {
 		name      string
 		run       func(*testing.T) string

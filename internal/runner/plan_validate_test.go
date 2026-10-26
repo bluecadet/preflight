@@ -25,6 +25,15 @@ func (t *planValidationTarget) Info(context.Context) (target.TargetInfo, error) 
 }
 func (t *planValidationTarget) Transport() target.Transport { return t.transport }
 
+// skipLocalOffWindows skips local-transport cases on non-Windows controllers,
+// where the local target refuses to plan.
+func skipLocalOffWindows(t *testing.T, transport target.Transport) {
+	t.Helper()
+	if transport == target.TransportLocal && runtime.GOOS != "windows" {
+		t.Skip("local target is Windows-only")
+	}
+}
+
 func singleTaskPlaybook(module string) *action.Playbook {
 	return &action.Playbook{
 		Name: "test",
@@ -41,6 +50,7 @@ func singleTaskPlaybook(module string) *action.Playbook {
 func TestPlan_UnknownModuleFailsForAllTransports(t *testing.T) {
 	for _, transport := range []target.Transport{target.TransportLocal, target.TransportWinRM, target.TransportSSH} {
 		t.Run(string(transport), func(t *testing.T) {
+			skipLocalOffWindows(t, transport)
 			r := New(&planValidationTarget{transport: transport}, action.Chain{}, Config{})
 			_, err := r.Plan(context.Background(), singleTaskPlaybook("totally_made_up"))
 			if err == nil {
@@ -54,9 +64,7 @@ func TestPlan_UnknownModuleFailsForAllTransports(t *testing.T) {
 	}
 }
 
-func TestPlan_RuntimeSupportViolationFailsForLocalAndWinRM(t *testing.T) {
-	// registry is Windows-only; on a posix-shell local target and on WinRM
-	// (windows-powershell) the outcome differs.
+func TestPlan_BuiltinsPlanOnLocalAndWinRM(t *testing.T) {
 	cases := []struct {
 		transport target.Transport
 		module    string
@@ -64,17 +72,11 @@ func TestPlan_RuntimeSupportViolationFailsForLocalAndWinRM(t *testing.T) {
 	}{
 		// On WinRM (windows-powershell) every catalog module is supported.
 		{target.TransportWinRM, "registry", false},
-		// On local POSIX, a Windows-only module is a runtime-support violation.
-		// (Skipped on Windows where local runtime is windows-powershell.)
-		{target.TransportLocal, "registry", runtime.GOOS != "windows"},
-		// A common module passes on local.
 		{target.TransportLocal, "file", false},
 	}
 	for _, tc := range cases {
 		t.Run(string(tc.transport)+"_"+tc.module, func(t *testing.T) {
-			if tc.transport == target.TransportLocal && runtime.GOOS == "windows" && tc.wantFail {
-				t.Skip("local runtime is windows-powershell on Windows hosts")
-			}
+			skipLocalOffWindows(t, tc.transport)
 			r := New(&planValidationTarget{transport: tc.transport}, action.Chain{}, Config{})
 			_, err := r.Plan(context.Background(), singleTaskPlaybook(tc.module))
 			if tc.wantFail && err == nil {
@@ -106,36 +108,13 @@ func TestPlan_SSHNameChecksOnly(t *testing.T) {
 	}
 }
 
-func TestPlan_StagePlatformOverridesTransportRuntime(t *testing.T) {
-	r := New(&planValidationTarget{transport: target.TransportWinRM}, action.Chain{}, Config{
-		Phase:         "stage",
-		StagePlatform: &target.Platform{OS: target.OSFamilyLinux, Arch: "amd64"},
-	})
-
-	_, err := r.Plan(context.Background(), singleTaskPlaybook("registry"))
-	if err == nil || !strings.Contains(err.Error(), "not supported on posix-shell") {
-		t.Fatalf("expected declared Linux platform to reject registry, got %v", err)
-	}
-}
-
-func TestPlan_StagePlatformValidatesWithoutTarget(t *testing.T) {
-	r := New(nil, action.Chain{}, Config{
-		Phase:         "stage",
-		StagePlatform: &target.Platform{OS: target.OSFamilyLinux, Arch: "amd64"},
-	})
-
-	_, err := r.Plan(context.Background(), singleTaskPlaybook("registry"))
-	if err == nil || !strings.Contains(err.Error(), "not supported on posix-shell") {
-		t.Fatalf("expected declared Linux platform to reject registry, got %v", err)
-	}
-}
-
 func TestPlan_PluginBypassesMatrix(t *testing.T) {
 	pluginReg := target.ModuleRegistry{
 		"custom": fakePluggable{path: "/tmp/custom"},
 	}
 	for _, transport := range []target.Transport{target.TransportLocal, target.TransportWinRM, target.TransportSSH} {
 		t.Run(string(transport), func(t *testing.T) {
+			skipLocalOffWindows(t, transport)
 			r := New(&planValidationTarget{transport: transport}, action.Chain{}, Config{
 				ModuleRegistry: pluginReg,
 			})

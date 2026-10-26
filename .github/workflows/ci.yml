@@ -54,43 +54,6 @@ jobs:
         # -race needs cgo and a C toolchain; windows-latest ships mingw.
         run: go test -race ./...
 
-  test-posix-integration:
-    name: POSIX Integration (${{ matrix.container }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - container: ubuntu
-            port: "2222"
-            service: ubuntu
-          - container: rocky
-            port: "2223"
-            service: rocky
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache-dependency-path: go.sum
-
-      - name: Build and start ${{ matrix.container }} container
-        working-directory: test/posix
-        run: docker compose up -d --build ${{ matrix.service }}
-
-      - name: Wait for sshd
-        working-directory: test/posix
-        run: sh wait-for-ssh.sh localhost ${{ matrix.port }} 90
-
-      - name: Run POSIX integration tests
-        env:
-          PREFLIGHT_TEST_SSH_POSIX_HOST: localhost
-          PREFLIGHT_TEST_SSH_POSIX_PORT: ${{ matrix.port }}
-          PREFLIGHT_TEST_SSH_POSIX_USER: pf-admin
-          PREFLIGHT_TEST_SSH_POSIX_PASS: preflight
-        run: go test -tags integration -count=1 -run TestIntegration_POSIX -v ./internal/target/
-
   lint:
     name: Lint
     runs-on: ubuntu-latest

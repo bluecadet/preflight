@@ -17,7 +17,6 @@ type RuntimeKind string
 
 const (
 	RuntimeKindWindowsPowerShell RuntimeKind = "windows-powershell"
-	RuntimeKindPOSIXShell        RuntimeKind = "posix-shell"
 )
 
 var knownRemoteModules = CatalogNames(CapabilityRemote)
@@ -26,7 +25,7 @@ var knownRemoteModuleSet = CatalogSet(CapabilityRemote)
 
 // moduleFuncs lets a Module be registered via function literals rather than
 // a concrete type. Used heavily by the remote runtime registries
-// (windows-powershell, posix-shell) where modules are defined as closures
+// (windows-powershell) where modules are defined as closures
 // over a transport backend. Implements both Module and EnsureModule; the
 // Ensure method returns ErrEnsureNotHandled when the ensure closure is nil
 // so callers fall back to the standard Check+Apply path.

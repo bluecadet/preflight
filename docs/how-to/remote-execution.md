@@ -45,9 +45,7 @@ inventory:
 
 See the [Inventory Reference](../reference/inventory.md) for every
 host, group, and jump-host field, transport defaults, and the
-`vars`/group/host precedence chain. On POSIX targets over SSH, prefer
-an unprivileged SSH user plus `become` for root-only tasks; see
-[Run tasks as another user](./run-tasks-as-another-user.md#posix-become-to-root-from-an-unprivileged-ssh-user).
+`vars`/group/host precedence chain.
 
 ## 2. Verify Host Resolution
 
@@ -129,17 +127,13 @@ plan against recorded state per host.
 This page only covers inventory and fan-out. For connection failures
 (WinRM auth, SSH host-key errors, timeouts), see
 [Troubleshoot remote connections](./troubleshoot-remote-connections.md).
-For the full list of typed error reason codes (including `become`/sudo
-failures on POSIX), see the [Error Reference](../reference/errors.md).
+For the full list of typed error reason codes , see the [Error Reference](../reference/errors.md).
 
 A handful of Windows operations (`windows_feature`, all-users
 `remove_appx_packages`, streamed `powershell` output) do not work over
 a plain WinRM session; see
 [WinRM session limitations](../reference/modules.md#winrm-session-limitations)
-for why and for the workarounds. POSIX-over-SSH support is
-capability-based rather than a distro allowlist; see the
-[POSIX capability baseline](../reference/modules.md#posix-capability-baseline-and-tiers)
-for what a host needs to provide.
+for why and for the workarounds.
 
 ## Related Docs
 

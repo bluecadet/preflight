@@ -3,7 +3,7 @@ package target
 import "context"
 
 // ExecResult is the outcome of a TargetOps.Exec call: the script runs in the
-// target's native shell (POSIX sh or PowerShell per TargetInfo.RuntimeKind)
+// target's native shell (PowerShell)
 // and returns separated stdout/stderr and the exit code.
 type ExecResult struct {
 	Stdout   string
@@ -12,7 +12,7 @@ type ExecResult struct {
 }
 
 // TargetOps is the backend a plugin handle binds to. Every transport
-// implements it (Local, SSH-POSIX, SSH-Windows, WinRM). The plugin's target
+// implements it (Local, SSH, WinRM). The plugin's target
 // effects all flow through it — including against the local target — so
 // plugins are brought in line with first-class modules. Info returns the same
 // enriched TargetInfo delivered to a plugin at initialize.

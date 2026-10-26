@@ -2,20 +2,24 @@ package target
 
 import (
 	"errors"
+	"runtime"
 	"testing"
 )
 
 func TestPlanRuntimeForTransport(t *testing.T) {
-	if kind, ok := PlanRuntimeForTransport(TransportWinRM); !ok || kind != RuntimeKindWindowsPowerShell {
-		t.Errorf("winrm: kind=%q ok=%v, want windows-powershell/true", kind, ok)
+	if kind, ok, err := PlanRuntimeForTransport(TransportWinRM); err != nil || !ok || kind != RuntimeKindWindowsPowerShell {
+		t.Errorf("winrm: kind=%q ok=%v err=%v, want windows-powershell/true/nil", kind, ok, err)
 	}
-	if kind, ok := PlanRuntimeForTransport(TransportLocal); !ok {
-		t.Errorf("local: ok=%v, want true", ok)
-	} else if kind != runtimeKindForLocal() {
-		t.Errorf("local: kind=%q, want %q", kind, runtimeKindForLocal())
+	kind, ok, err := PlanRuntimeForTransport(TransportLocal)
+	if runtime.GOOS == "windows" {
+		if err != nil || !ok || kind != RuntimeKindWindowsPowerShell {
+			t.Errorf("local: kind=%q ok=%v err=%v, want windows-powershell/true/nil", kind, ok, err)
+		}
+	} else if err == nil {
+		t.Errorf("local on %s: expected error, got kind=%q ok=%v", runtime.GOOS, kind, ok)
 	}
-	if _, ok := PlanRuntimeForTransport(TransportSSH); ok {
-		t.Error("ssh: expected ok=false (runtime needs a probe)")
+	if _, ok, err := PlanRuntimeForTransport(TransportSSH); ok || err != nil {
+		t.Errorf("ssh: ok=%v err=%v, want false/nil (runtime needs a probe)", ok, err)
 	}
 }
 
@@ -27,8 +31,6 @@ func TestPlatformRuntimeKind(t *testing.T) {
 		wantOK   bool
 	}{
 		{name: "windows", platform: Platform{OS: OSFamilyWindows, Arch: "amd64"}, want: RuntimeKindWindowsPowerShell, wantOK: true},
-		{name: "linux", platform: Platform{OS: OSFamilyLinux, Arch: "amd64"}, want: RuntimeKindPOSIXShell, wantOK: true},
-		{name: "darwin", platform: Platform{OS: OSFamilyDarwin, Arch: "arm64"}, want: RuntimeKindPOSIXShell, wantOK: true},
 		{name: "unknown", platform: Platform{OS: OSFamilyUnknown, Arch: "amd64"}, wantOK: false},
 	}
 
@@ -43,7 +45,7 @@ func TestPlatformRuntimeKind(t *testing.T) {
 }
 
 func TestValidateModuleForPlan_UnknownModuleFails(t *testing.T) {
-	err := ValidateModuleForPlan("nope", RuntimeKindPOSIXShell, true, nil)
+	err := ValidateModuleForPlan("nope", RuntimeKindWindowsPowerShell, true, nil)
 	var mse *ModuleSupportError
 	if !errors.As(err, &mse) || mse.Class != ClassUnknownModule {
 		t.Fatalf("expected unknown_module, got %v", err)
@@ -63,19 +65,7 @@ func TestValidateModuleForPlan_SSHNameChecksOnly(t *testing.T) {
 	}
 }
 
-func TestValidateModuleForPlan_RuntimeSupportViolationFails(t *testing.T) {
-	// A Windows-only built-in on posix-shell is a runtime-support violation.
-	err := ValidateModuleForPlan("registry", RuntimeKindPOSIXShell, true, nil)
-	var mse *ModuleSupportError
-	if !errors.As(err, &mse) || mse.Class != ClassUnsupportedOnRuntime {
-		t.Fatalf("expected unsupported_on_runtime, got %v", err)
-	}
-}
-
 func TestValidateModuleForPlan_SupportedModulePasses(t *testing.T) {
-	if err := ValidateModuleForPlan("file", RuntimeKindPOSIXShell, true, nil); err != nil {
-		t.Errorf("file on posix-shell: expected nil, got %v", err)
-	}
 	if err := ValidateModuleForPlan("registry", RuntimeKindWindowsPowerShell, true, nil); err != nil {
 		t.Errorf("registry on windows-powershell: expected nil, got %v", err)
 	}
@@ -86,9 +76,6 @@ func TestValidateModuleForPlan_PluginsBypassMatrix(t *testing.T) {
 		"custom": fakePluggableModule{path: "/tmp/custom-plugin"},
 	}
 	// A plugin is known and bypasses the runtime matrix on every runtime.
-	if err := ValidateModuleForPlan("custom", RuntimeKindPOSIXShell, true, reg); err != nil {
-		t.Errorf("plugin on posix-shell: expected nil, got %v", err)
-	}
 	if err := ValidateModuleForPlan("custom", RuntimeKindWindowsPowerShell, true, reg); err != nil {
 		t.Errorf("plugin on windows-powershell: expected nil, got %v", err)
 	}

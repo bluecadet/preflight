@@ -130,7 +130,7 @@ Implemented today:
 
 - Local execution and inventory-backed host selection
 - WinRM and SSH targets
-- Task-level `become` with inherited defaults and named-user execution via `runas` on Windows and `sudo -u` on POSIX
+- Task-level `become` with inherited defaults and named-user execution via `runas`
 - Embedded, local, cached, and Git-backed action resolution
 - Embedded Windows stdlib actions for machine, shell, input, quiet mode, updates, power, apps, and Git checkout sync
 - User-scoped shell and input stdlib actions apply to the current execution identity; use `become` when you need to target a different Windows user
@@ -141,7 +141,7 @@ Implemented today:
 
 Important current limits:
 
-- SSH auto-detects either a Windows PowerShell or POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports a narrower built-in set, and plugin modules run over every transport, including SSH. See the [module reference](docs/reference/modules.md#platform-and-transport-support) for the full per-module transport matrix.
+- SSH targets must expose a Windows PowerShell runtime and support the built-in Windows module set; plugin modules run over every transport, including SSH. See the [module reference](docs/reference/modules.md#platform-and-transport-support) for the full per-module transport matrix.
 
 ## Build And Test
 
