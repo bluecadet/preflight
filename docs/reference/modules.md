@@ -427,10 +427,10 @@ Manages a Windows Firewall rule, matched by display name.
 | Parameter | Type | Required | Default | Description |
 | --- | --- | --- | --- | --- |
 | `name` | string | yes | | Rule display name |
-| `direction` | `inbound`, `outbound` | no | | Direction |
-| `action` | `allow`, `block` | no | | Action |
-| `protocol` | `tcp`, `udp`, `any` | no | | Protocol |
-| `ports` | integer, string, or list | no | | Local ports; a list is joined with commas |
+| `direction` | `inbound`, `outbound` | no | `inbound` | Direction |
+| `action` | `allow`, `block` | no | `allow` | Action |
+| `protocol` | `tcp`, `udp`, `any` | no | `tcp` | Protocol |
+| `ports` | integer, string, or list | no | | Local ports; a list is passed as an array. Requires `protocol` `tcp` or `udp` |
 | `ensure` | `present`, `absent` | no | `present` | Desired state |
 
 ```yaml
@@ -443,7 +443,7 @@ Manages a Windows Firewall rule, matched by display name.
     ports: 8080
 ```
 
-When `direction` or `action` is unset, `Check()` reports a change on every run.
+Defaults are enforced on existing rules too: an existing rule with protocol `Any` is changed to `TCP` unless the task sets `protocol: any`.
 
 ### `powershell`
 

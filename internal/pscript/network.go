@@ -15,13 +15,14 @@ if ($null -eq $rule) {
 $directionMap = @{ inbound = 'Inbound'; outbound = 'Outbound' }
 $actionMap = @{ allow = 'Allow'; block = 'Block' }
 $protocolMap = @{ tcp = 'TCP'; udp = 'UDP'; any = 'Any' }
+$ports = @($params.ports | Where-Object { "$_" -ne '' })
 $portFilter = $rule | Get-NetFirewallPortFilter
 $needs = $rule.Direction -ne $directionMap[[string]$params.direction] -or $rule.Action -ne $actionMap[[string]$params.action]
 if ([string]$params.protocol) {
   $needs = $needs -or $portFilter.Protocol -ne $protocolMap[[string]$params.protocol]
 }
-if ([string]$params.ports) {
-  $needs = $needs -or [string]$portFilter.LocalPort -ne [string]$params.ports
+if ($ports.Count -gt 0) {
+  $needs = $needs -or (@($portFilter.LocalPort | Sort-Object) -join ',') -ne (@($ports | Sort-Object) -join ',')
 }
 Write-Output $needs
 `
@@ -36,6 +37,7 @@ if ($ensure -eq 'absent') {
 $directionMap = @{ inbound = 'Inbound'; outbound = 'Outbound' }
 $actionMap = @{ allow = 'Allow'; block = 'Block' }
 $protocolMap = @{ tcp = 'TCP'; udp = 'UDP'; any = 'Any' }
+$ports = @($params.ports | Where-Object { "$_" -ne '' })
 $existing = Get-NetFirewallRule -DisplayName $name -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($null -eq $existing) {
   $newParams = @{
@@ -44,14 +46,20 @@ if ($null -eq $existing) {
     Action = $actionMap[[string]$params.action]
     Protocol = $protocolMap[[string]$params.protocol]
   }
-  if ([string]$params.ports) {
-    $newParams['LocalPort'] = [string]$params.ports
+  if ($ports.Count -gt 0) {
+    $newParams['LocalPort'] = [string[]]$ports
   }
   New-NetFirewallRule @newParams | Out-Null
   exit 0
 }
-Set-NetFirewallRule -DisplayName $name -Direction $directionMap[[string]$params.direction] -Action $actionMap[[string]$params.action] | Out-Null
-if ([string]$params.protocol -or [string]$params.ports) {
-  Set-NetFirewallRule -DisplayName $name -Protocol $protocolMap[[string]$params.protocol] -LocalPort ([string]$params.ports) | Out-Null
+$setParams = @{
+  DisplayName = $name
+  Direction = $directionMap[[string]$params.direction]
+  Action = $actionMap[[string]$params.action]
+  Protocol = $protocolMap[[string]$params.protocol]
 }
+if ($ports.Count -gt 0) {
+  $setParams['LocalPort'] = [string[]]$ports
+}
+Set-NetFirewallRule @setParams | Out-Null
 `

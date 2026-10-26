@@ -2,7 +2,6 @@ package winutil
 
 import (
 	"fmt"
-	"strings"
 )
 
 // NormalizeWingetParams validates the canonical "packages" list form and
@@ -73,12 +72,33 @@ func NormalizePackageParams(params map[string]any) (map[string]any, error) {
 }
 
 // NormalizeFirewallPorts canonicalizes firewall port values into the string
-// format expected by the Windows firewall PowerShell cmdlets.
-func NormalizeFirewallPorts(value any) (string, error) {
+// list expected by the Windows firewall PowerShell cmdlets.
+func NormalizeFirewallPorts(value any) ([]string, error) {
 	if value == nil {
-		return "", nil
+		return nil, nil
 	}
+	if list, ok := value.([]any); ok {
+		ports := make([]string, 0, len(list))
+		for i, item := range list {
+			if item == nil {
+				return nil, fmt.Errorf("ports[%d] must not be null", i)
+			}
+			port, err := firewallPort(item)
+			if err != nil {
+				return nil, fmt.Errorf("ports[%d]: %w", i, err)
+			}
+			ports = append(ports, port)
+		}
+		return ports, nil
+	}
+	port, err := firewallPort(value)
+	if err != nil {
+		return nil, err
+	}
+	return []string{port}, nil
+}
 
+func firewallPort(value any) (string, error) {
 	switch typed := value.(type) {
 	case int:
 		return fmt.Sprintf("%d", typed), nil
@@ -88,19 +108,6 @@ func NormalizeFirewallPorts(value any) (string, error) {
 		return fmt.Sprintf("%g", typed), nil
 	case string:
 		return typed, nil
-	case []any:
-		parts := make([]string, 0, len(typed))
-		for i, item := range typed {
-			if item == nil {
-				return "", fmt.Errorf("ports[%d] must not be null", i)
-			}
-			text, err := NormalizeFirewallPorts(item)
-			if err != nil {
-				return "", fmt.Errorf("ports[%d]: %w", i, err)
-			}
-			parts = append(parts, text)
-		}
-		return strings.Join(parts, ","), nil
 	default:
 		return "", fmt.Errorf("ports must be a string, number, or list, got %T", value)
 	}

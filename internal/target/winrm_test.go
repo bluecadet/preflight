@@ -751,6 +751,13 @@ func TestWinRMTarget_ExecuteUserAbsentRemovesUser(t *testing.T) {
 	}
 }
 
+func TestNormalizeFirewallRuleParamsRejectsPortsWithAnyProtocol(t *testing.T) {
+	_, err := normalizeFirewallRuleParams(map[string]any{"name": "web", "protocol": "any", "ports": 80})
+	if err == nil || !strings.Contains(err.Error(), "ports require protocol tcp or udp") {
+		t.Fatalf("expected ports/protocol error, got %v", err)
+	}
+}
+
 func TestNormalizeFirewallRuleParamsCanonicalizesPorts(t *testing.T) {
 	normalized, err := normalizeFirewallRuleParams(map[string]any{
 		"name":  "HTTP",
@@ -759,8 +766,13 @@ func TestNormalizeFirewallRuleParamsCanonicalizesPorts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("normalizeFirewallRuleParams returned error: %v", err)
 	}
-	if normalized["ports"] != "80,443" {
+	if !reflect.DeepEqual(normalized["ports"], []string{"80", "443"}) {
 		t.Fatalf("expected normalized ports, got %#v", normalized["ports"])
+	}
+	for key, want := range map[string]string{"direction": "inbound", "action": "allow", "protocol": "tcp"} {
+		if normalized[key] != want {
+			t.Fatalf("expected default %s %q, got %#v", key, want, normalized[key])
+		}
 	}
 }
 
@@ -811,7 +823,7 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 	tgt := NewWinRMTarget(WinRMConfig{Host: "host", Username: "user", Password: "pass"}, nil)
 	tgt.client = &fakeWinRMClient{
 		runPS: func(_ context.Context, command string) (string, string, int, error) {
-			if commandContainsNormalizedPorts(command, "80,443") {
+			if commandContainsNormalizedPorts(command, `["80","443"]`) {
 				normalizedPortsObserved = true
 			}
 			call++
@@ -829,7 +841,7 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 				return "true", "", 0, nil
 			case 2:
 				for _, fragment := range []string{
-					"Set-NetFirewallRule -DisplayName $name -Direction",
+					"Set-NetFirewallRule @setParams",
 					"New-NetFirewallRule @newParams",
 				} {
 					if !strings.Contains(command, fragment) {
@@ -855,7 +867,7 @@ func TestWinRMTarget_ExecuteFirewallRuleDetectsDriftAndUpdatesRule(t *testing.T)
 		t.Fatalf("Execute returned error: %v", err)
 	}
 	if !normalizedPortsObserved {
-		t.Fatalf("expected generated PowerShell to contain normalized ports %q", "80,443")
+		t.Fatalf("expected generated PowerShell to contain normalized ports %q", `["80","443"]`)
 	}
 }
 

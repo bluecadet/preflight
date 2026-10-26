@@ -774,6 +774,14 @@ func normalizeFirewallRuleParams(params map[string]any) (map[string]any, error) 
 		return nil, fmt.Errorf("firewall_rule: %w", err)
 	}
 	normalized["ports"] = ports
+	for key, def := range map[string]string{"direction": "inbound", "action": "allow", "protocol": "tcp"} {
+		if v, _ := normalized[key].(string); v == "" {
+			normalized[key] = def
+		}
+	}
+	if len(ports) > 0 && normalized["protocol"] == "any" {
+		return nil, fmt.Errorf("firewall_rule: ports require protocol tcp or udp")
+	}
 	return normalized, nil
 }
 
