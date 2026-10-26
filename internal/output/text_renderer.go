@@ -118,8 +118,6 @@ func (r *TextRenderer) Emit(event Event) {
 		// TargetUnreachableEvent's own render-time output; no separate line.
 	case TargetUnreachableEvent:
 		r.emitTargetUnreachable(e)
-	case SupportGateEvent:
-		r.emitSupportGate(e)
 	case RunSummaryEvent:
 		r.emitRunSummary(e)
 	case TaskOutputEvent:
@@ -456,17 +454,6 @@ func (r *TextRenderer) writeLines(lines []string) {
 
 func (r *TextRenderer) writeBlank() {
 	r.writeLine("")
-}
-
-// emitSupportGate renders the apply-start support gate refusal: a summary
-// line (reusing the event's LogMessage so wording stays consistent across
-// sinks) colored red, then one line per violation naming the task and the
-// uniform module-by-runtime message.
-func (r *TextRenderer) emitSupportGate(e SupportGateEvent) {
-	r.writeLine(r.colorize(ansiRed, e.LogMessage()))
-	for _, v := range e.Violations {
-		r.writeLine(fmt.Sprintf("  %s: %s", v.TaskName, v.Message))
-	}
 }
 
 func (r *TextRenderer) writeOutputLines(lines []string, indent int) {

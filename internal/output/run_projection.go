@@ -236,8 +236,6 @@ func (p *RunProjection) applyEvent(event Event) []CommitDescriptor {
 		return p.applyTaskFailed(e)
 	case TargetUnreachableEvent:
 		return []CommitDescriptor{WarningDescriptor{Message: e.LogMessage()}}
-	case SupportGateEvent:
-		return []CommitDescriptor{WarningDescriptor{Message: e.LogMessage()}}
 	case WarningEvent:
 		p.WarningCount++
 		return []CommitDescriptor{WarningDescriptor(e)}

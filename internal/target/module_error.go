@@ -18,9 +18,6 @@ const (
 	// ClassUnsupportedOnRuntime: a catalog built-in that is not supported on
 	// the target's runtime. SupportedRuntimes lists where it does run.
 	ClassUnsupportedOnRuntime ModuleSupportClass = "unsupported_on_runtime"
-	// ClassMissingPrerequisite: the module is supported on this runtime in
-	// principle but an environment prerequisite is absent (Detail names it).
-	ClassMissingPrerequisite ModuleSupportClass = "missing_prerequisite"
 	// ClassPluginProtocol: a plugin failed the protocol handshake (version
 	// mismatch / pre-v1 plugin rejected).
 	ClassPluginProtocol ModuleSupportClass = "plugin_protocol"
@@ -55,16 +52,6 @@ func NewUnsupportedOnRuntimeError(module string, kind RuntimeKind) *ModuleSuppor
 	}
 }
 
-// NewMissingPrerequisiteError constructs a missing_prerequisite error.
-func NewMissingPrerequisiteError(module string, kind RuntimeKind, detail string) *ModuleSupportError {
-	return &ModuleSupportError{
-		Class:       ClassMissingPrerequisite,
-		Module:      module,
-		RuntimeKind: kind,
-		Detail:      detail,
-	}
-}
-
 // NewPluginProtocolError constructs a plugin_protocol error.
 func NewPluginProtocolError(module string, detail string) *ModuleSupportError {
 	return &ModuleSupportError{Class: ClassPluginProtocol, Module: module, Detail: detail}
@@ -86,9 +73,6 @@ func (e *ModuleSupportError) Error() string {
 				e.Module, e.RuntimeKind, joinRuntimeKinds(e.SupportedRuntimes))
 		}
 		return fmt.Sprintf("module %q is not supported on %s", e.Module, e.RuntimeKind)
-	case ClassMissingPrerequisite:
-		return fmt.Sprintf("module %q is missing a prerequisite on %s: %s",
-			e.Module, e.RuntimeKind, e.Detail)
 	case ClassPluginProtocol:
 		return fmt.Sprintf("plugin module %q: %s", e.Module, e.Detail)
 	default:
