@@ -1,37 +1,28 @@
-# Use Plugin Modules In Playbooks
+# Use plugin modules in playbooks
 
-Use this guide when you want a playbook or action to call an external executable plugin.
+Call an executable plugin from a playbook or action task.
 
 ## Prerequisites
 
-- A plugin executable named `preflight-plugin-<name>` available in a discovered plugin directory
-- A playbook or action that should call the plugin
+- A plugin executable named `preflight-plugin-<name>` (`.exe` on Windows) in one of the plugin directories (see [Discovery](../reference/plugins.md#discovery))
+- A playbook or action to call it from
 
-For the protocol details, see [Plugin reference](../reference/plugins.md).
+The plugin runs on the controller, the machine running `preflight`, and reaches the target through Preflight. It works the same over local, SSH, and WinRM targets.
 
-## How Plugins Run
+## 1. Confirm Preflight can start the plugin
 
-Plugins execute **controller-side**: the plugin process runs on the machine running `preflight`, not on the target. A plugin's `Check` and `Apply` receive a target handle and all target effects flow through it — including when the target is the local machine. A plugin therefore works the same way over local, SSH, and WinRM; you do not pick a transport-specific plugin path. (For the protocol details, see [Plugin reference](../reference/plugins.md).)
-
-## 1. Confirm Discovery And Initialization
-
-List discovered plugins:
+From the project root:
 
 ```bash
 preflight plugin list
-```
-
-Inspect one plugin:
-
-```bash
 preflight plugin info signage_sync
 ```
 
-Fix any initialization error here before you wire the plugin into YAML. Preflight discovers plugin executables lazily during normal startup, but `plugin list`, `plugin info`, staging, and first runtime use still initialize the plugin and will fail if startup is broken or the reported logical name does not match the discovered module name.
+`plugin info` starts the plugin and shows `Initialize:  ok` or the startup error. Fix any error before you use the plugin in YAML.
 
-## 2. Call The Plugin From A Task
+## 2. Call the plugin from a task
 
-Use the explicit `module` plus `params` task form:
+Use `module` and `params`:
 
 ```yaml
 tasks:
@@ -42,23 +33,9 @@ tasks:
       destination: "C:\\Signage"
 ```
 
-This works in both `playbook.yml` and `action.yml`.
+This form works in playbooks and actions. Plugins are discovered at runtime, so the YAML schema has no named key for them.
 
-Why the explicit form matters:
-
-- Plugin modules are discovered at runtime, so they are not part of the static YAML schema.
-- `module: <name>` keeps plugin invocation aligned with the same `Check()` then `Apply()` contract used by built-ins.
-
-## 3. Use Normal Task Controls
-
-Plugin-backed tasks still support the normal task-level controls:
-
-- `when`
-- `depends_on`
-- `ignore_errors`
-- `tags`
-
-Example:
+Plugin tasks accept the usual task fields, including `when`, `depends_on`, `ignore_errors`, and `tags`:
 
 ```yaml
 tasks:
@@ -71,40 +48,36 @@ tasks:
     tags: ["content"]
 ```
 
-## 4. Stage Plugin Tasks Into Offline Bundles
-
-If a staged plan references a plugin task, Preflight includes that plugin executable in the target-specific bundle automatically.
+## 3. Stage plugin tasks into offline bundles
 
 ```bash
 preflight stage playbooks/lobby.yml
 ```
 
-Staging only succeeds if the plugin can be initialized, reports the expected logical name, and can be copied during the stage step.
+Preflight copies each plugin the plan uses into the target's bundle. The target runs that executable during offline apply, so the plugin build must match the target's OS and architecture. Preflight rejects the bundle when the staging controller's OS or architecture differs from the target's. Because targets run Windows, stage plugin bundles on a Windows controller with the target's architecture.
 
-The staging controller and declared or discovered destination must have the
-same OS and architecture for plugin bundles. Cross-platform staging currently
-supports built-in modules only; stage a plugin bundle on a matching platform.
+Staging also fails if the plugin cannot start or reports a name other than its filename suffix.
 
 ## Troubleshooting
 
-### The task says the module is unknown
+### The module is unknown
 
-Use the logical name reported by:
+The `module:` value must equal the `<name>` in `preflight-plugin-<name>`, and the plugin must be in a plugin directory for the project. Run `preflight plugin list` from the project root to check.
 
-```bash
-preflight plugin info <name>
-```
+### `plugin "<name>" conflicts with built-in module name`
 
-That logical name must match the filename suffix, and it is what belongs in `module:`.
+Built-in module names are reserved. Rename the plugin executable and its reported name.
 
-### The plugin conflicts with a built-in module
+### `plugin "<name>" discovered more than once`
 
-Rename the plugin. Built-in names are reserved.
+The same plugin name exists in two plugin directories. Remove one copy.
 
-### The plugin works locally but not in a staged bundle
+### The plugin works online but not in a staged bundle
 
-Make sure the staged plan actually references the plugin task and that you are applying the bundle generated for that target. Offline apply only sees the plugin files embedded in the bundle.
+Apply the bundle staged for that target. Offline apply sees only the plugins inside the bundle, and only plugins the plan uses are bundled.
 
-Also compare the staging controller with the bundle destination. Preflight
-does not select a foreign plugin build: it rejects the bundle when their OS or
-architecture differs.
+## Related docs
+
+- [Write a plugin](./write-a-plugin.md)
+- [Plugin reference](../reference/plugins.md)
+- [Stage bundles for air-gapped deployment](./air-gapped-deployment.md)
