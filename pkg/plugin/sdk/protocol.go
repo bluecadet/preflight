@@ -6,22 +6,18 @@ import (
 	"time"
 )
 
-// ProtocolVersion is the highest wire-protocol version this SDK build speaks.
-// MinProtocolVersion is the lowest. Both host and plugin advertise this range
-// (plus a capability set) at initialize; negotiation picks the highest
-// version present in both ranges. A future additive change bumps
-// ProtocolVersion while leaving MinProtocolVersion where it is, so existing
-// binaries keep negotiating successfully instead of being hard-rejected.
+// ProtocolVersion is the wire-protocol version this SDK build speaks. Host
+// and plugin must report exactly this version at initialize; any other value
+// is rejected with a *ProtocolError.
 //
 // Version history:
 //   - v1 — initial handle-op protocol (run_command/put_file/get_file, output
 //     notifications).
 //   - v2 — adds the "cancel" notification and per-request context.Context
 //     cancellation.
-const (
-	ProtocolVersion    = 2
-	MinProtocolVersion = 2
-)
+//   - v3 — drops name, package_manager, and init from TargetInfo and
+//     requires an exact version match.
+const ProtocolVersion = 3
 
 // CancelGrace is the default window a peer waits, after sending a cancel
 // notification for an in-flight request, for that request to unwind and
@@ -41,27 +37,20 @@ type cancelParams struct {
 	ID int64 `json:"id"`
 }
 
-// protocolRange is one side's advertised wire-protocol support during the
-// initialize handshake: the inclusive [MinProtocolVersion, ProtocolVersion]
-// range of versions it can speak, plus the capability names it recognizes.
-// Both initializeParams and initializeResult embed it so host and plugin run
-// identical negotiation logic. Unrecognized peer fields are tolerated by
-// ordinary json.Unmarshal semantics.
-type protocolRange struct {
-	ProtocolVersion    int      `json:"protocol_version"`
-	MinProtocolVersion int      `json:"min_protocol_version"`
-	Capabilities       []string `json:"capabilities,omitempty"`
+// protocolHello is one side's advertisement during the initialize handshake:
+// its wire-protocol version plus the capability names it recognizes. Both
+// initializeParams and initializeResult embed it so host and plugin run
+// identical checks. Unrecognized peer fields are tolerated by ordinary
+// json.Unmarshal semantics.
+type protocolHello struct {
+	ProtocolVersion int      `json:"protocol_version"`
+	Capabilities    []string `json:"capabilities,omitempty"`
 }
 
-// localProtocolRange returns this SDK build's supported version range,
-// advertised to a peer at initialize. extra is appended to the capability
-// set advertised alongside it.
-func localProtocolRange(extra []string) protocolRange {
-	return protocolRange{
-		ProtocolVersion:    ProtocolVersion,
-		MinProtocolVersion: MinProtocolVersion,
-		Capabilities:       extra,
-	}
+// localHello returns this SDK build's advertisement for a peer at
+// initialize. extra is the capability set advertised alongside the version.
+func localHello(extra []string) protocolHello {
+	return protocolHello{ProtocolVersion: ProtocolVersion, Capabilities: extra}
 }
 
 // Negotiated is the outcome of the initialize handshake: the wire-protocol
@@ -71,7 +60,7 @@ func localProtocolRange(extra []string) protocolRange {
 // NegotiatedFromContext. Either way, callers branch on features at runtime
 // instead of gating them on a version bump.
 type Negotiated struct {
-	// Version is the highest protocol version present in both peers' ranges.
+	// Version is the protocol version both peers speak.
 	Version int
 	// capabilities is the set of capability names both sides advertised.
 	capabilities map[string]struct{}
@@ -116,22 +105,14 @@ func (n Negotiated) Capabilities() []string {
 	return out
 }
 
-// negotiateProtocol resolves the wire-protocol version and capability set
-// shared between a local and peer protocolRange. It succeeds when the two
-// version ranges overlap, selecting the highest mutually supported version;
-// otherwise it returns a *ProtocolError naming both sides' supported ranges.
-func negotiateProtocol(local, peer protocolRange) (Negotiated, error) {
-	lo := max(local.MinProtocolVersion, peer.MinProtocolVersion)
-	hi := min(local.ProtocolVersion, peer.ProtocolVersion)
-	if lo > hi {
-		return Negotiated{}, &ProtocolError{
-			LocalMin: local.MinProtocolVersion,
-			LocalMax: local.ProtocolVersion,
-			PeerMin:  peer.MinProtocolVersion,
-			PeerMax:  peer.ProtocolVersion,
-		}
+// negotiateProtocol checks that peer speaks exactly local's protocol version
+// and resolves the capability set both sides advertised. A version mismatch
+// returns a *ProtocolError naming both versions.
+func negotiateProtocol(local, peer protocolHello) (Negotiated, error) {
+	if local.ProtocolVersion != peer.ProtocolVersion {
+		return Negotiated{}, &ProtocolError{Local: local.ProtocolVersion, Peer: peer.ProtocolVersion}
 	}
-	return Negotiated{Version: hi, capabilities: intersectCapabilities(local.Capabilities, peer.Capabilities)}, nil
+	return Negotiated{Version: local.ProtocolVersion, capabilities: intersectCapabilities(local.Capabilities, peer.Capabilities)}, nil
 }
 
 // intersectCapabilities returns the capability names present in both a and b.
@@ -177,17 +158,17 @@ type getFileResult struct {
 }
 
 // initializeParams is sent by the host in the initialize request: its
-// supported protocol range and capabilities, plus the target it is running
+// protocol version and capabilities, plus the target it is running
 // against.
 type initializeParams struct {
-	protocolRange
+	protocolHello
 	Target TargetInfo `json:"target"`
 }
 
 // initializeResult is the plugin's initialize response: its supported
-// protocol range and capabilities, plus its self-reported name and version.
+// protocol version and capabilities, plus its self-reported name and version.
 type initializeResult struct {
-	protocolRange
+	protocolHello
 	Name    string `json:"name"`
 	Version string `json:"version"`
 }
@@ -250,44 +231,16 @@ type HandleServer interface {
 	GetFile(ctx context.Context, path string) ([]byte, error)
 }
 
-// noopHandleServer returns a typed error for every op. Used by inspection paths
-// (plugin list/info/staging) that have no target: a plugin inspected only for
-// its name/version never invokes handle ops, so this is never called in
-// practice, but it keeps the Client contract non-nil.
-type noopHandleServer struct{}
-
-func (noopHandleServer) RunCommand(context.Context, string) (CommandResult, error) {
-	return CommandResult{}, errHandleUnavailable
-}
-func (noopHandleServer) PutFile(context.Context, string, []byte) error {
-	return errHandleUnavailable
-}
-func (noopHandleServer) GetFile(context.Context, string) ([]byte, error) {
-	return nil, errHandleUnavailable
-}
-
-// NoopHandleServer returns a HandleServer whose methods report that no target
-// is bound. It is intended for plugin inspection (plugin list/info/staging)
-// where there is no target to operate against.
-func NoopHandleServer() HandleServer { return noopHandleServer{} }
-
-// ProtocolError reports a peer whose supported wire-protocol version range
-// does not overlap with this side's, so no version could be negotiated.
-// LocalMin/LocalMax and PeerMin/PeerMax are each inclusive version bounds,
-// letting callers report both sides' supported ranges.
+// ProtocolError reports a peer whose wire-protocol version differs from this
+// side's, so the handshake cannot proceed.
 type ProtocolError struct {
-	LocalMin, LocalMax int
-	PeerMin, PeerMax   int
+	Local, Peer int
 }
 
 // Error implements error.
 func (e *ProtocolError) Error() string {
-	peer := fmt.Sprintf("v%d-v%d", e.PeerMin, e.PeerMax)
-	if e.PeerMin == 0 && e.PeerMax == 0 {
-		peer = "no protocol_version reported (pre-negotiation plugin)"
+	if e.Peer == 0 {
+		return fmt.Sprintf("plugin protocol: peer reported no protocol_version (pre-negotiation plugin); this side requires v%d", e.Local)
 	}
-	return fmt.Sprintf(
-		"plugin protocol: no overlapping version range; this side supports v%d-v%d, peer supports %s",
-		e.LocalMin, e.LocalMax, peer,
-	)
+	return fmt.Sprintf("plugin protocol: version mismatch; this side requires v%d, peer reports v%d", e.Local, e.Peer)
 }

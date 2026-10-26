@@ -46,8 +46,8 @@ type ClientOptions struct {
 	// Info is the TargetInfo delivered to the plugin at initialize.
 	Info TargetInfo
 	// Ops answers the plugin's handle-op requests (RunCommand/PutFile/GetFile).
-	// A nil Ops behaves like NoopHandleServer(): every handle op fails with a
-	// "no target is bound" error.
+	// A nil Ops makes every handle op fail with a "no target is bound"
+	// error.
 	Ops HandleServer
 	// Capabilities are additional capability names this host advertises
 	// during the initialize handshake, beyond whatever the SDK itself
@@ -65,8 +65,8 @@ type ClientOptions struct {
 
 // NewClient connects a Client to a JSON-RPC plugin peer over the given
 // reader/writer pair and performs the initialize handshake: it sends this
-// side's protocol version range, capabilities, and TargetInfo, and requires
-// the peer's advertised range to overlap. If closeFn is non-nil it is invoked
+// side's protocol version, capabilities, and TargetInfo, and requires the
+// peer to report the same protocol version. If closeFn is non-nil it is invoked
 // exactly once from Close (and on initialize failure).
 //
 // ctx bounds the handshake only. It deliberately does not govern the peer's
@@ -85,20 +85,20 @@ func NewClient(ctx context.Context, r io.Reader, w io.Writer, closeFn func() err
 	return c, nil
 }
 
-// initialize sends the initialize request with this side's protocol range
-// and TargetInfo, and negotiates a version and capability set against the
-// peer's response. A peer whose range does not overlap is rejected with a
-// *ProtocolError naming both sides' supported ranges.
+// initialize sends the initialize request with this side's protocol version
+// and TargetInfo, and checks the version and negotiates a capability set
+// against the peer's response. A peer reporting a different version is
+// rejected with a *ProtocolError.
 func (c *Client) initialize(ctx context.Context, opts ClientOptions) error {
 	params := initializeParams{
-		protocolRange: localProtocolRange(opts.Capabilities),
+		protocolHello: localHello(opts.Capabilities),
 		Target:        opts.Info,
 	}
 	var res initializeResult
 	if err := c.codec.call(ctx, "initialize", params, &res); err != nil {
 		return fmt.Errorf("plugin initialize: %w", err)
 	}
-	negotiated, err := negotiateProtocol(params.protocolRange, res.protocolRange)
+	negotiated, err := negotiateProtocol(params.protocolHello, res.protocolHello)
 	if err != nil {
 		return err
 	}

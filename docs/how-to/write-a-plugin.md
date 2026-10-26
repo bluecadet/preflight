@@ -280,15 +280,13 @@ func (m myModule) Check(ctx context.Context, args map[string]any, h sdk.Handle) 
 
 v1 plugins are rejected with a clear `plugin_protocol` error. There is no compatibility mode — update and rebuild.
 
-### How Version Compatibility Works Now
+### Version Compatibility
 
-As a plugin author you do not set `protocol_version` yourself — the SDK you build against advertises it for you during `initialize`. What matters for forward compatibility is this: `initialize` no longer requires an exact version match. Host and plugin each advertise a `[min_protocol_version, protocol_version]` range, and the handshake succeeds as long as the two ranges overlap, negotiating down to the highest version both sides support. A future SDK release can widen its range to keep talking to plugins built against an older SDK, instead of hard-rejecting them the way the v1→v2 change above did.
-
-Rebuilding against the latest SDK is still the right move whenever you can — it is the only way to pick up new capabilities — but a plugin built against an older SDK release is no longer automatically dead on a version bump the way v1 plugins were.
+As a plugin author you do not set `protocol_version` yourself — the SDK you build against advertises it for you during `initialize`. The host and plugin must report exactly the same protocol version (currently 2); a plugin built against any other version is rejected with a `plugin_protocol` error naming both versions. Rebuild against the current SDK whenever the protocol version changes.
 
 ## Capabilities
 
-Capabilities are a second, independent extension point alongside the version range: a way for either side to advertise an optional feature by name instead of forcing a protocol version bump for every addition. The handshake is symmetric — both the host and the plugin advertise a set, and both sides see the intersection.
+Capabilities are a second, independent extension point alongside the protocol version: a way for either side to advertise an optional feature by name instead of forcing a protocol version bump for every addition. The handshake is symmetric — both the host and the plugin advertise a set, and both sides see the intersection.
 
 Advertise your plugin's capabilities in `ServeOptions`, passed to `Serve`:
 
@@ -315,7 +313,7 @@ A capability your plugin advertises but no current host checks for is not wasted
 
 Every handle op is a transport round trip. Over SSH and especially WinRM, round trips dominate runtime. Design your plugin to minimize them:
 
-- **One script, several actions.** Instead of `RunCommand` to check, `RunCommand` to create, `RunCommand` to set mode, write one script that does all three and reports the outcome. POSIX `sh` and PowerShell both let you branch on results within a single script.
+- **One script, several actions.** Instead of `RunCommand` to check, `RunCommand` to create, `RunCommand` to set mode, write one script that does all three and reports the outcome. PowerShell lets you branch on results within a single script.
 - **Avoid redundant `GetFile`.** If `RunCommand` can read what you need and include it in stdout, do that instead of a separate `GetFile` round trip.
 - **Cache `Info()` once.** Call `h.Info()` and keep the struct; do not re-fetch per op (it is in-memory, but the call pattern reads better).
 - **One in-flight op at a time.** The protocol allows one in-flight target op per session. Do not issue a second `RunCommand` before the first returns.

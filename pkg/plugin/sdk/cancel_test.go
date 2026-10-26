@@ -47,7 +47,7 @@ func (m *cancelAwareModule) Apply(ctx context.Context, _ map[string]any, _ Handl
 // be decorative.
 func TestCheck_CancelReachesPluginContext(t *testing.T) {
 	mod := newCancelAwareModule()
-	c := newClient(t, mod, TargetInfo{}, NoopHandleServer())
+	c := newClient(t, mod, TargetInfo{}, nil)
 	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,7 +84,7 @@ func TestCheck_CancelReachesPluginContext(t *testing.T) {
 // TestApply_CancelReachesPluginContext is the Apply-side counterpart.
 func TestApply_CancelReachesPluginContext(t *testing.T) {
 	mod := newCancelAwareModule()
-	c := newClient(t, mod, TargetInfo{}, NoopHandleServer())
+	c := newClient(t, mod, TargetInfo{}, nil)
 	defer func() { _ = c.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -218,7 +218,7 @@ func (stubbornModule) Apply(context.Context, map[string]any, Handle) (ApplyResul
 // not a promise: a plugin that ignores its context does not hold the host
 // hostage past cancelGrace.
 func TestCheck_CancelGraceIsBounded(t *testing.T) {
-	c := newClient(t, stubbornModule{}, TargetInfo{}, NoopHandleServer())
+	c := newClient(t, stubbornModule{}, TargetInfo{}, nil)
 	defer func() { _ = c.Close() }()
 
 	// Shrink the grace window before any call is in flight, so the only

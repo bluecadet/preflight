@@ -59,7 +59,7 @@ func runServeWithOptions(t *testing.T, m Module, reqJSON string, opts ServeOptio
 // initialize-completion gate before exercising check/apply/unknown-method
 // behavior. Its id (999000) is chosen well clear of the small hand-picked
 // ids (1-11) the tests in this file use for their own request under test.
-const initInitializeReq = `{"jsonrpc":"2.0","id":999000,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{}}}`
+const initInitializeReq = `{"jsonrpc":"2.0","id":999000,"method":"initialize","params":{"protocol_version":3,"target":{}}}`
 
 // initializedRunServeMulti is initializedRunServeMultiWithOptions with the
 // zero ServeOptions.
@@ -243,7 +243,7 @@ func TestServe_MalformedApplyParams(t *testing.T) {
 }
 
 func TestServe_Initialize(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{"family":"linux"}}}`
+	req := `{"jsonrpc":"2.0","id":5,"method":"initialize","params":{"protocol_version":3,"target":{"family":"windows"}}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
@@ -268,7 +268,7 @@ func TestServe_Initialize(t *testing.T) {
 // request carrying fields this SDK build does not recognize is accepted
 // rather than rejected — the mechanism additive protocol changes rely on.
 func TestServe_InitializeTolerantOfUnknownFields(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":7,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{"family":"linux"},"future_field":{"nested":true}}}`
+	req := `{"jsonrpc":"2.0","id":7,"method":"initialize","params":{"protocol_version":3,"target":{"family":"windows"},"future_field":{"nested":true}}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error for unknown field: %v", resp.Error)
@@ -281,7 +281,7 @@ func TestServe_InitializeTolerantOfUnknownFields(t *testing.T) {
 // regardless of ServeOptions, so a plugin author had no way to participate
 // in capability negotiation.
 func TestServe_InitializeAdvertisesCapabilities(t *testing.T) {
-	req := `{"jsonrpc":"2.0","id":8,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{}}}`
+	req := `{"jsonrpc":"2.0","id":8,"method":"initialize","params":{"protocol_version":3,"target":{}}}`
 	resp := runServeWithOptions(t, mockModule{}, req, ServeOptions{Capabilities: []string{"foo", "bar"}})
 	if resp.Error != nil {
 		t.Fatalf("unexpected rpc error: %v", resp.Error)
@@ -301,21 +301,17 @@ func TestServe_InitializeAdvertisesCapabilities(t *testing.T) {
 	}
 }
 
-// TestServe_InitializeRejectsNonOverlappingRange asserts that the plugin
-// side, not just the host, refuses a handshake whose ranges do not overlap.
-// A prior version silently echoed its own range and relied entirely on the
-// host to notice; here the plugin computes the same negotiateProtocol result
-// and fails the initialize call itself with a clear message naming both
-// sides' ranges.
-func TestServe_InitializeRejectsNonOverlappingRange(t *testing.T) {
-	// A future host whose entire range (v9-v9) sits above this SDK's (v2-v2).
-	req := `{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"protocol_version":9,"min_protocol_version":9,"target":{}}}`
+// TestServe_InitializeRejectsVersionMismatch asserts that the plugin side,
+// not just the host, refuses a handshake whose protocol version differs from
+// its own, failing the initialize call with a message naming both versions.
+func TestServe_InitializeRejectsVersionMismatch(t *testing.T) {
+	req := `{"jsonrpc":"2.0","id":9,"method":"initialize","params":{"protocol_version":9,"target":{}}}`
 	resp := runServe(t, mockModule{}, req)
 	if resp.Error == nil {
-		t.Fatal("expected rpc error for non-overlapping range, got nil")
+		t.Fatal("expected rpc error for version mismatch, got nil")
 	}
-	if !strings.Contains(resp.Error.Message, "v2-v2") || !strings.Contains(resp.Error.Message, "v9-v9") {
-		t.Errorf("error message %q does not name both sides' ranges", resp.Error.Message)
+	if !strings.Contains(resp.Error.Message, "v3") || !strings.Contains(resp.Error.Message, "v9") {
+		t.Errorf("error message %q does not name both versions", resp.Error.Message)
 	}
 }
 
@@ -356,7 +352,7 @@ func TestServe_RejectsMethodBeforeInitialize(t *testing.T) {
 // "always errors": that would reintroduce flakiness for a property (which
 // side wins a benign scheduling race) the fix was never meant to pin down.
 func TestServe_PipelinedCheckNeverRacesInitialize(t *testing.T) {
-	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":2,"min_protocol_version":2,"target":{}}}`
+	initReq := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocol_version":3,"target":{}}}`
 	checkReq := `{"jsonrpc":"2.0","id":2,"method":"check","params":{"args":{}}}`
 
 	lines := runServeMultiWithOptions(t, mockModule{}, []string{initReq, checkReq}, ServeOptions{})

@@ -138,11 +138,11 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 			return nil, &rpcError{Code: -32602, Message: "initialize params: " + err.Error()}
 		}
 	}
-	local := localProtocolRange(s.capabilities)
-	negotiated, err := negotiateProtocol(local, p.protocolRange)
+	local := localHello(s.capabilities)
+	negotiated, err := negotiateProtocol(local, p.protocolHello)
 	if err != nil {
 		// Symmetric with the host: negotiateProtocol is the same function
-		// over the same two ranges, so this fires exactly when the host's
+		// over the same two versions, so this fires exactly when the host's
 		// own negotiation would. Fail loudly here too, rather than silently
 		// answering and relying solely on the host to notice.
 		return nil, &rpcError{Code: -32010, Message: err.Error()}
@@ -154,7 +154,7 @@ func (s *server) handleInitialize(params json.RawMessage) (any, *rpcError) {
 	close(s.ready)
 
 	return initializeResult{
-		protocolRange: local,
+		protocolHello: local,
 		Name:          s.mod.Name(),
 		Version:       s.mod.Version(),
 	}, nil

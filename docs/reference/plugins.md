@@ -75,7 +75,7 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 
 | Method | Direction | Purpose |
 | --- | --- | --- |
-| `initialize` | host → plugin | Carry the host's protocol version range, capabilities, and the enriched `TargetInfo`; plugin responds with its own range, capabilities, and name/version |
+| `initialize` | host → plugin | Carry the host's protocol version, capabilities, and the enriched `TargetInfo`; plugin responds with its own protocol version, capabilities, and name/version |
 | `check` | host → plugin | Report whether change is needed; plugin may issue handle ops |
 | `apply` | host → plugin | Perform the change; plugin may issue handle ops |
 | `cancel` | both | Notification carrying the `id` of a request the sender is abandoning; no response |
@@ -86,9 +86,9 @@ The wire protocol is **bidirectional newline-delimited JSON-RPC 2.0** over the p
 
 ### Protocol Version Negotiation
 
-`initialize` carries `protocol_version` and `min_protocol_version` (both integers), the inclusive range of wire-protocol versions that side speaks, plus an optional `capabilities` array of feature strings. The peer responds with the same three fields for its own side. The handshake succeeds when the two ranges overlap; the negotiated version is the highest value present in both. This SDK build currently advertises `protocol_version: 2, min_protocol_version: 2` — a single-version range — but the mechanism means a future version bump can widen the range instead of hard-rejecting every previously built plugin.
+`initialize` carries `protocol_version` (an integer) plus an optional `capabilities` array of feature strings. The peer responds with the same two fields for its own side. The handshake succeeds only when both sides report exactly the same `protocol_version`; this SDK build speaks `protocol_version: 2`.
 
-A peer whose range does not overlap (including a plugin that reports no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both sides' supported ranges. Fields neither side recognizes are ignored rather than rejected, so additive wire changes stay backward compatible.
+A peer reporting a different version (including a plugin that reports no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both versions. Fields neither side recognizes are ignored rather than rejected, so additive wire changes stay backward compatible.
 
 Capabilities are a second, independent extension point: each side advertises the feature names it supports, and the negotiated capability set is whatever both sides listed. Negotiation is symmetric — the host reads it via `Client.HasCapability`/`Client.Capabilities`, and a plugin reads the same negotiated outcome from inside `Check`/`Apply` via `sdk.NegotiatedFromContext(ctx)`. This lets a future optional feature be detected at runtime on either side, without forcing a protocol version bump just to add it.
 
@@ -146,7 +146,7 @@ Protocol v2 carries a few deliberate limits, documented here so plugin authors c
 - **Cancellation is cooperative** — the host delivers `cancel` and waits a two-second grace window, but it cannot force a plugin that ignores its context to stop. Such a plugin is killed when the window closes.
 - **No plugin State plumbing** — a plugin's `Check`/`Apply` receive params and a context; there is no protocol-level state transfer between calls. A plugin that needs cross-call state must keep it in process memory for the run-scoped plugin lifetime, or round-trip it through the target handle.
 - **One in-flight target op per session** — the protocol allows one `run_command`/`put_file`/`get_file` in flight at a time; do not issue a second before the first returns. Batching guidance in [Write a plugin](../how-to/write-a-plugin.md) shows the script-shaped-exec pattern that keeps this from dominating latency.
-- **Protocol version ranges are negotiated, not pinned** — the host and plugin each advertise a `[min_protocol_version, protocol_version]` range and agree on the highest overlapping version; a plugin whose range does not overlap the host's (including one reporting no `protocol_version` at all) is rejected with a `plugin_protocol` error naming both ranges.
+- **Protocol version is pinned** — host and plugin must report exactly the same `protocol_version`; a plugin reporting a different one (including none at all) is rejected with a `plugin_protocol` error naming both versions. Rebuild plugins when the protocol version changes.
 - **`initialize` must complete before anything else** — a plugin refuses `check`, `apply`, or a second `initialize` arriving before the first `initialize` has finished, with a distinct `-32011` error; see [Message Ordering](#message-ordering-initialize-must-complete-first).
 
 ## Bundle Behavior
