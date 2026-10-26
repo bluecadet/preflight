@@ -19,18 +19,11 @@ import (
 //
 //	### `module_name`
 //
-//	**Supported runtimes:** `windows-powershell`, `posix-shell`
-//
-// or, for a module that requires root on POSIX:
-//
-//	### `module_name`
-//
-//	**Supported runtimes:** `posix-shell` · **requires root**
+//	**Supported runtimes:** `windows-powershell`
 //
 // Each catalog built-in module MUST carry exactly one "Supported runtimes:"
-// line. Runtime kinds are comma-separated backticked tokens. requires_root is
-// marked by a trailing `· **requires root**`. Plugins are not catalog built-ins
-// and have no matrix row.
+// line. Runtime kinds are comma-separated backticked tokens. Plugins are not
+// catalog built-ins and have no matrix row.
 
 // docsModulesPath resolves the modules reference relative to the test file.
 // Tests run with the package dir as CWD (internal/target), so the repo root is
@@ -45,22 +38,15 @@ func docsModulesPath(t *testing.T) string {
 }
 
 // parseDocsMatrix reads modules.md and returns, per module heading, the
-// supported runtimes and requires_root flag declared in its "Supported
-// runtimes" line. It t.Fatals on a catalog built-in missing the line or on a
+// supported runtimes declared in its "Supported runtimes" line. It t.Fatals on a catalog built-in missing the line or on a
 // malformed line so the drift is loud.
-func parseDocsMatrix(t *testing.T) map[string]struct {
-	runtimes     []string
-	requiresRoot bool
-} {
+func parseDocsMatrix(t *testing.T) map[string][]string {
 	t.Helper()
 	data, err := os.ReadFile(docsModulesPath(t))
 	if err != nil {
 		t.Fatalf("read modules.md: %v", err)
 	}
-	out := make(map[string]struct {
-		runtimes     []string
-		requiresRoot bool
-	})
+	out := make(map[string][]string)
 	lines := strings.Split(string(data), "\n")
 	var current string
 	for _, line := range lines {
@@ -79,10 +65,7 @@ func parseDocsMatrix(t *testing.T) map[string]struct {
 		if _, dup := out[current]; dup {
 			t.Fatalf("module %q: duplicate Supported runtimes line in modules.md", current)
 		}
-		out[current] = struct {
-			runtimes     []string
-			requiresRoot bool
-		}{runtimes: mods.runtimes, requiresRoot: mods.requiresRoot}
+		out[current] = mods
 		// A module's matrix line belongs to that module; reset current so a
 		// stray second line under the same heading is caught as a duplicate.
 		current = ""
@@ -104,29 +87,16 @@ func parseModuleHeading(line string) string {
 	return name
 }
 
-// supportedRuntimesRow is the parsed "Supported runtimes" line.
-type supportedRuntimesRow struct {
-	runtimes     []string
-	requiresRoot bool
-}
-
 // parseSupportedRuntimesLine parses a line of the form
-// "**Supported runtimes:** `a`, `b` · **requires root**" and returns nil if the
-// line is not that shape. The trailing "· **requires root**" marker is
-// optional.
-func parseSupportedRuntimesLine(line string) *supportedRuntimesRow {
+// "**Supported runtimes:** `a`, `b`" and returns nil if the line is not that
+// shape.
+func parseSupportedRuntimesLine(line string) []string {
 	s := strings.TrimSpace(line)
 	const prefix = "**Supported runtimes:**"
-	idx := strings.Index(s, prefix)
-	if idx != 0 {
+	if !strings.HasPrefix(s, prefix) {
 		return nil
 	}
 	rest := strings.TrimSpace(s[len(prefix):])
-	requiresRoot := false
-	if marker := " · **requires root**"; strings.HasSuffix(rest, marker) {
-		requiresRoot = true
-		rest = strings.TrimSpace(rest[:len(rest)-len(marker)])
-	}
 	var runtimes []string
 	for field := range strings.SplitSeq(rest, ",") {
 		field = strings.TrimSpace(field)
@@ -141,13 +111,12 @@ func parseSupportedRuntimesLine(line string) *supportedRuntimesRow {
 	if len(runtimes) == 0 {
 		return nil
 	}
-	return &supportedRuntimesRow{runtimes: runtimes, requiresRoot: requiresRoot}
+	return runtimes
 }
 
 // TestDocsMatrixMatchesCatalog is the drift guard. For every catalog built-in
 // module the docs must declare a Supported runtimes line whose set of runtime
-// kinds matches CatalogSupportedRuntimes, and whose requires_root marker
-// matches CatalogRequiresRoot. Docs-only modules (no catalog entry) are
+// kinds matches CatalogSupportedRuntimes. Docs-only modules (no catalog entry) are
 // ignored so the reference page may carry narrative for non-catalog names.
 func TestDocsMatrixMatchesCatalog(t *testing.T) {
 	docs := parseDocsMatrix(t)
@@ -155,17 +124,14 @@ func TestDocsMatrixMatchesCatalog(t *testing.T) {
 	// Every catalog built-in must appear in the docs matrix.
 	catalogNames := CatalogNames(CapabilityInline | CapabilityRemote)
 	for _, name := range catalogNames {
-		row, ok := docs[name]
+		runtimes, ok := docs[name]
 		if !ok {
 			t.Errorf("module %q: catalog built-in has no Supported runtimes line in modules.md", name)
 			continue
 		}
 		wantRuntimes := runtimeKindStrings(CatalogSupportedRuntimes(name))
-		if !sameSet(row.runtimes, wantRuntimes) {
-			t.Errorf("module %q: docs runtimes %v != catalog runtimes %v", name, row.runtimes, wantRuntimes)
-		}
-		if got, want := row.requiresRoot, CatalogRequiresRoot(name); got != want {
-			t.Errorf("module %q: docs requires_root=%v != catalog requires_root=%v", name, got, want)
+		if !sameSet(runtimes, wantRuntimes) {
+			t.Errorf("module %q: docs runtimes %v != catalog runtimes %v", name, runtimes, wantRuntimes)
 		}
 	}
 
@@ -174,27 +140,6 @@ func TestDocsMatrixMatchesCatalog(t *testing.T) {
 	for name := range docs {
 		if !CatalogKnownModule(name) {
 			t.Errorf("module %q: docs declare Supported runtimes but it is not a catalog built-in", name)
-		}
-	}
-}
-
-// TestDocsMatrixRequiresRootPlacedOnPOSIXOnly guards a structural invariant: a
-// requires_root marker only makes sense on a module that runs on posix-shell
-// (root is a POSIX concept). A marker on a Windows-only module is a docs bug.
-func TestDocsMatrixRequiresRootPlacedOnPOSIXOnly(t *testing.T) {
-	docs := parseDocsMatrix(t)
-	for name, row := range docs {
-		if !row.requiresRoot {
-			continue
-		}
-		hasPOSIX := false
-		for _, r := range row.runtimes {
-			if r == string(RuntimeKindPOSIXShell) {
-				hasPOSIX = true
-			}
-		}
-		if !hasPOSIX {
-			t.Errorf("module %q: docs mark requires_root but do not list %s as a supported runtime", name, RuntimeKindPOSIXShell)
 		}
 	}
 }

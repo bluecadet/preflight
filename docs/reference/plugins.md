@@ -116,7 +116,7 @@ The plugin process is deliberately **not** bound to the operation context. If it
 
 ### TargetInfo
 
-`initialize` delivers the enriched `TargetInfo` to the plugin: `{family, name, version, arch, hostname, package_manager, init, runtime_kind}`. Absent signals are empty strings, never missing keys. `runtime_kind` (`posix-shell` or `windows-powershell`) tells the plugin which shell `run_command` speaks; the plugin should not re-probe what the controller already cached.
+`initialize` delivers the `TargetInfo` to the plugin: `{family, version, arch, hostname, runtime_kind}`. Absent signals are empty strings, never missing keys. `runtime_kind` is always `windows-powershell`, the shell `run_command` speaks; the plugin should not re-probe what the controller already cached.
 
 The bundled Go SDK lives in [`pkg/plugin/sdk/`](https://github.com/bluecadet/preflight/tree/main/pkg/plugin/sdk).
 

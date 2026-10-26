@@ -85,34 +85,6 @@ func (m *mockSubprocessModule) Apply(_ context.Context, _ map[string]any, _ Outp
 	return ApplyResult{}, nil
 }
 
-func TestNewSubprocessBecomeRegistry_POSIX(t *testing.T) {
-	source := ModuleRegistry{
-		"shell":     &mockSubprocessModule{},
-		"directory": &mockSubprocessModule{},
-	}
-	become := &BecomeOptions{User: "testuser", Password: "testpass"}
-	reg, err := newSubprocessBecomeRegistry(source, RuntimeKindPOSIXShell, become)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if len(reg) != 2 {
-		t.Errorf("expected 2 modules, got %d", len(reg))
-	}
-	for name, mod := range reg {
-		sm, ok := mod.(*subprocessModule)
-		if !ok {
-			t.Errorf("module %q is not a subprocessModule", name)
-			continue
-		}
-		if sm.name != name {
-			t.Errorf("module name mismatch: %q vs %q", sm.name, name)
-		}
-		if _, ok := sm.elevation.(*posixSudoElevation); !ok {
-			t.Errorf("expected posixSudoElevation for module %q", name)
-		}
-	}
-}
-
 func TestNewSubprocessBecomeRegistry_Windows(t *testing.T) {
 	source := ModuleRegistry{
 		"registry": &mockSubprocessModule{},
@@ -132,13 +104,5 @@ func TestNewSubprocessBecomeRegistry_Windows(t *testing.T) {
 	}
 	if _, ok := sm.elevation.(*windowsCredentialElevation); !ok {
 		t.Fatal("expected windowsCredentialElevation")
-	}
-}
-
-func TestPosixSudoElevation_ArgsWithPassword(t *testing.T) {
-	e := &posixSudoElevation{user: "alice", password: "secret123"}
-	// Verify it constructs the -S flag when password is set (don't actually run sudo)
-	if e.password == "" {
-		t.Error("password should be set")
 	}
 }

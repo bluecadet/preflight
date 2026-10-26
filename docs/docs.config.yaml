@@ -127,7 +127,6 @@ sidebar:
   - label: Development
     items:
       - development/winrm-integration-testing
-      - development/posix-integration-testing
 
 toc:
   editLink: "https://github.com/bluecadet/preflight/edit/main/docs/{path}"

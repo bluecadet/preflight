@@ -51,33 +51,6 @@ func (m *subprocessModule) Apply(ctx context.Context, params map[string]any, out
 	return ApplyResult{Message: sdkRes.Message}, nil
 }
 
-// posixSudoElevation spawns: sudo -S -p ” -u <user> <binary> __module-exec <module>
-// feeding the password on stdin before the JSON-RPC frames.
-type posixSudoElevation struct {
-	user     string
-	password string
-}
-
-func (e *posixSudoElevation) Start(ctx context.Context, binary string, moduleName string) (*sdk.Client, error) {
-	var args []string
-	if e.password != "" {
-		args = []string{"-S", "-p", "", "-u", e.user, binary, "__module-exec", moduleName}
-	} else {
-		// No password supplied: require NOPASSWD. `sudo -n` makes a
-		// password-requiring sudo fail deterministically.
-		args = []string{"-n", "-u", e.user, binary, "__module-exec", moduleName}
-	}
-	// exec.Command, not exec.CommandContext: binding the elevated process to
-	// the operation context would kill it the instant the operation is
-	// cancelled, before the cancel notification could reach the module running
-	// inside it. Teardown is the caller's deferred Close.
-	cmd := exec.Command("sudo", args...)
-	if e.password != "" {
-		cmd.Stdin = strings.NewReader(e.password + "\n")
-	}
-	return sdk.NewClientFromCmd(ctx, cmd, sdk.ClientOptions{Ops: sdk.NoopHandleServer()})
-}
-
 // windowsCredentialElevation spawns the binary under a different user account
 // using System.Diagnostics.Process (not Start-Process) which supports
 // stdin/stdout redirection with credentials.
@@ -96,7 +69,7 @@ func (e *windowsCredentialElevation) Start(ctx context.Context, binary string, m
 	}
 
 	script := buildWindowsElevatedSubprocessWrapper(binary, moduleName, e.user, e.password, loadProfileStr)
-	// exec.Command, not exec.CommandContext: see posixSudoElevation.Start.
+	// exec.Command, not exec.CommandContext: binding the elevated process to the operation context would kill it before cancel could reach the module.
 	cmd := exec.Command("powershell.exe",
 		"-NoProfile",
 		"-NonInteractive",
@@ -152,11 +125,6 @@ func newSubprocessBecomeRegistry(source ModuleRegistry, kind RuntimeKind, become
 
 	var elevation elevationWrapper
 	switch kind {
-	case RuntimeKindPOSIXShell:
-		elevation = &posixSudoElevation{
-			user:     become.User,
-			password: become.Password,
-		}
 	case RuntimeKindWindowsPowerShell:
 		loadProfile := true
 		if become.LoadProfile != nil {

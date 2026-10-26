@@ -27,10 +27,10 @@ func (echoSecretTarget) Execute(_ context.Context, taskID, _ string, params map[
 }
 
 func (echoSecretTarget) Info(context.Context) (target.TargetInfo, error) {
-	return target.TargetInfo{}, nil
+	return target.TargetInfo{OSFamily: target.OSFamilyWindows, RuntimeKind: target.RuntimeKindWindowsPowerShell, Transport: target.TransportSSH}, nil
 }
 
-func (echoSecretTarget) Transport() target.Transport { return target.TransportLocal }
+func (echoSecretTarget) Transport() target.Transport { return target.TransportSSH }
 
 func TestRunApplyScrubsResolvedSecretsFromAllSinks(t *testing.T) {
 	const secret = "hunter2"
@@ -44,7 +44,7 @@ func TestRunApplyScrubsResolvedSecretsFromAllSinks(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			cfg = append(cfg, []byte("inventory:\n  hosts:\n    - name: box\n      transport: local\n")...)
+			cfg = append(cfg, []byte("inventory:\n  hosts:\n    - name: box\n      transport: ssh\n")...)
 			if err := os.WriteFile(cfgPath, cfg, 0o644); err != nil {
 				t.Fatal(err)
 			}

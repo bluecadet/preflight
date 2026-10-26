@@ -76,21 +76,16 @@ func (g *Gatherer) gatherOS(info target.TargetInfo, infoErr error) (OSFacts, err
 	}
 
 	f := OSFacts{
-		Version:        info.OSVersion,
-		Arch:           info.Arch,
-		Hostname:       info.Hostname,
-		Family:         string(info.OSFamily),
-		PackageManager: info.PackageManager,
-		Init:           info.Init,
+		Version:  info.OSVersion,
+		Arch:     info.Arch,
+		Hostname: info.Hostname,
+		Family:   string(info.OSFamily),
 	}
 
-	// Windows keeps deriving the friendly name and integer build from the
-	// version/build strings; POSIX uses the os-release ID from the probe and
-	// has no build (stays Windows-only).
+	// The friendly name and integer build are derived from the version/build
+	// strings.
 	if info.OSFamily == target.OSFamilyWindows {
 		f.Name, f.Build = parseOSVersion(info.OSVersion, info.OSBuild)
-	} else {
-		f.Name = info.OSName
 	}
 
 	return f, nil
@@ -141,9 +136,8 @@ func windowsBuildName(majorMinor string, build int) string {
 }
 
 // GatherDisks collects disk space facts.
-// Windows targets are queried through the target's PowerShell transport.
-// Local non-Windows hosts use the platform-specific syscall helper.
-// Other non-Windows targets currently return an empty list.
+// Windows targets are queried through the target's PowerShell transport;
+// other targets return an empty list.
 func (g *Gatherer) GatherDisks(ctx context.Context) ([]DiskFacts, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -161,10 +155,6 @@ func (g *Gatherer) gatherDisks(ctx context.Context, info target.TargetInfo, info
 
 	if info.IsWindows() {
 		return g.gatherWindowsDisks(ctx)
-	}
-
-	if info.IsLocal() {
-		return gatherLocalDisks()
 	}
 
 	return []DiskFacts{}, nil
@@ -194,8 +184,7 @@ func (g *Gatherer) gatherWindowsDisks(ctx context.Context) ([]DiskFacts, error) 
 }
 
 // gatherEnv collects environment variables from the target.
-// Windows targets use PowerShell. Local non-Windows hosts use the local
-// process environment. Remote non-Windows targets currently return an empty map.
+// Windows targets use PowerShell; other targets return an empty map.
 func (g *Gatherer) gatherEnv(ctx context.Context, info target.TargetInfo, infoErr error) (map[string]string, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -207,10 +196,6 @@ func (g *Gatherer) gatherEnv(ctx context.Context, info target.TargetInfo, infoEr
 
 	if info.IsWindows() {
 		return g.gatherWindowsEnv(ctx)
-	}
-
-	if info.IsLocal() {
-		return gatherLocalEnv(), nil
 	}
 
 	return map[string]string{}, nil

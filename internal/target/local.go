@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"sync"
 )
 
 // ModuleRegistry maps module names to their implementations.
@@ -23,9 +22,6 @@ func (r ModuleRegistry) Lookup(name string) (Module, bool) {
 // LocalTarget executes modules in-process on the local machine.
 type LocalTarget struct {
 	registry ModuleRegistry
-
-	probeMu sync.Mutex
-	probe   *Probe
 }
 
 // NewLocalTarget creates a LocalTarget backed by the given registry.
@@ -53,31 +49,19 @@ func NewLocalTarget(registry ModuleRegistry) *LocalTarget {
 func (t *LocalTarget) Transport() Transport { return TransportLocal }
 
 // Execute looks up the named module and dispatches through the unified
-// executeModule executor. Both the in-process registry path (no become) and
-// the become-via-subprocess path share one executor, since both produce
-// ModuleRegistry values whose entries satisfy the same Module interface.
+// executeModule executor. The local target is Windows-only.
 func (t *LocalTarget) Execute(ctx context.Context, taskID string, module string, params map[string]any, opts ExecutionOptions, dryRun bool, onOutput OutputFunc) (Result, error) {
-	kind := runtimeKindForLocal()
-	become, err := effectiveBecome(kind, opts)
+	if runtime.GOOS != "windows" {
+		err := errLocalRequiresWindows()
+		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
+	}
+	become, err := effectiveBecome(RuntimeKindWindowsPowerShell, opts)
 	if err != nil {
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
 
-	// POSIX privilege enforcement: fail the task before Check() when a
-	// requires_root module runs as a non-root effective user, or when become is
-	// enabled but sudo is missing. On Windows this is a no-op.
-	if kind == RuntimeKindPOSIXShell {
-		probe, err := t.ensureProbe(ctx)
-		if err != nil {
-			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-		}
-		if envErr := enforcePOSIXPrivilege(kind, module, become, probe); envErr != nil {
-			return Result{TaskID: taskID, Status: StatusFailed, Error: envErr}, envErr
-		}
-	}
-
 	if become != nil {
-		subReg, err := newSubprocessBecomeRegistry(t.registry, kind, become)
+		subReg, err := newSubprocessBecomeRegistry(t.registry, RuntimeKindWindowsPowerShell, become)
 		if err != nil {
 			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 		}
@@ -136,31 +120,10 @@ func (t *LocalTarget) PutFile(_ context.Context, path string, data []byte) error
 	return nil
 }
 
-// Exec implements TargetOps: runs script in the target's native shell (POSIX sh
-// or PowerShell per runtimeKindForLocal) and returns separated stdout/stderr
-// and the exit code.
+// Exec implements TargetOps: runs script in PowerShell and returns separated
+// stdout/stderr and the exit code.
 func (t *LocalTarget) Exec(ctx context.Context, script string) (ExecResult, error) {
-	if runtime.GOOS == "windows" {
-		return t.execPowerShell(ctx, script)
-	}
-	return t.execPOSIX(ctx, script)
-}
-
-func (t *LocalTarget) execPOSIX(ctx context.Context, script string) (ExecResult, error) {
-	cmd := exec.CommandContext(ctx, "sh", "-c", script)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
-	res := ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}
-	if exitErr := (*exec.ExitError)(nil); errors.As(err, &exitErr) {
-		res.ExitCode = exitErr.ExitCode()
-		return res, nil
-	}
-	if err != nil {
-		return res, wrapLocalTargetError("exec", err)
-	}
-	return res, nil
+	return t.execPowerShell(ctx, script)
 }
 
 func (t *LocalTarget) execPowerShell(ctx context.Context, script string) (ExecResult, error) {
@@ -187,32 +150,8 @@ func (t *LocalTarget) Reachable(_ context.Context) (bool, error) {
 	return true, nil
 }
 
-// Info returns basic facts about the local machine. On POSIX hosts the
-// cached runtime detection probe is used so Info() and the facts gatherer
-// share one detection path; on Windows the probe is not applicable and the
-// Go-runtime values are used directly.
-func (t *LocalTarget) Info(ctx context.Context) (TargetInfo, error) {
-	if runtime.GOOS == "windows" {
-		return t.windowsInfo(), nil
-	}
-	p, err := t.ensureProbe(ctx)
-	if err != nil {
-		return TargetInfo{}, err
-	}
-	return TargetInfo{
-		Hostname:       p.Hostname,
-		OSVersion:      p.OSVersion,
-		Arch:           p.Arch,
-		OSFamily:       normalizeOSFamily(p.Kernel),
-		OSName:         p.OSName,
-		PackageManager: p.PackageManager,
-		Init:           p.Init,
-		RuntimeKind:    RuntimeKindPOSIXShell,
-		Transport:      t.Transport(),
-	}, nil
-}
-
-func (t *LocalTarget) windowsInfo() TargetInfo {
+// Info returns basic facts about the local machine.
+func (t *LocalTarget) Info(_ context.Context) (TargetInfo, error) {
 	hostname, err := os.Hostname()
 	if err != nil {
 		hostname = ""
@@ -224,34 +163,7 @@ func (t *LocalTarget) windowsInfo() TargetInfo {
 		OSFamily:    normalizeOSFamily(runtime.GOOS),
 		RuntimeKind: RuntimeKindWindowsPowerShell,
 		Transport:   t.Transport(),
-	}
-}
-
-// ensureProbe runs the POSIX detection probe once per LocalTarget and caches
-// the result. On Windows this is never called.
-func (t *LocalTarget) ensureProbe(ctx context.Context) (Probe, error) {
-	t.probeMu.Lock()
-	defer t.probeMu.Unlock()
-	if t.probe != nil {
-		return *t.probe, nil
-	}
-	stdout, err := runLocalSh(ctx, posixProbeScript)
-	if err != nil {
-		return Probe{}, wrapLocalTargetError("probe", err)
-	}
-	p := parsePOSIXProbe(stdout)
-	t.probe = &p
-	return p, nil
-}
-
-// runLocalSh executes a POSIX shell script on the local machine and returns its
-// combined stdout/stderr. Used only by the local POSIX detection probe.
-func runLocalSh(ctx context.Context, script string) (string, error) {
-	out, err := exec.CommandContext(ctx, "sh", "-c", script).CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%w\noutput: %s", err, string(out))
-	}
-	return string(out), nil
+	}, nil
 }
 
 // RunPowerShell executes a PowerShell script on the local machine.

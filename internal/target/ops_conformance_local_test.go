@@ -1,3 +1,5 @@
+//go:build windows
+
 package target
 
 import (
@@ -6,8 +8,7 @@ import (
 )
 
 // TestOpsConformance_Local runs the shared ops-interface conformance suite
-// against the local target. On a POSIX controller (CI) this exercises the
-// POSIX-sh path; the SSH-POSIX, SSH-Windows, and WinRM variants live in
+// against the local target. The SSH and WinRM variants live in
 // ops_conformance_integration_test.go behind the integration build tag.
 func TestOpsConformance_Local(t *testing.T) {
 	tgt := NewLocalTarget(nil)

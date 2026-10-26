@@ -22,18 +22,18 @@ func TestModuleSupportError_EachClassMessageShape(t *testing.T) {
 		},
 		{
 			name: "unsupported_on_runtime",
-			err:  NewUnsupportedOnRuntimeError("registry", RuntimeKindPOSIXShell),
+			err:  NewUnsupportedOnRuntimeError("registry", RuntimeKind("other-shell")),
 			mustContain: []string{
-				`module "registry" is not supported on posix-shell`,
+				`module "registry" is not supported on other-shell`,
 				"supported: windows-powershell",
 			},
 			class: ClassUnsupportedOnRuntime,
 		},
 		{
 			name: "missing_prerequisite",
-			err:  NewMissingPrerequisiteError("powershell", RuntimeKindPOSIXShell, "pwsh or powershell binary not found"),
+			err:  NewMissingPrerequisiteError("powershell", RuntimeKind("other-shell"), "pwsh or powershell binary not found"),
 			mustContain: []string{
-				`module "powershell" is missing a prerequisite on posix-shell`,
+				`module "powershell" is missing a prerequisite on other-shell`,
 				"pwsh or powershell binary not found",
 			},
 			class: ClassMissingPrerequisite,
@@ -72,7 +72,7 @@ func TestModuleSupportError_EachClassMessageShape(t *testing.T) {
 
 func TestModuleSupportError_NoRemediationProse(t *testing.T) {
 	// The spec bans did-you-mean and remediation prose.
-	err := NewUnsupportedOnRuntimeError("registry", RuntimeKindPOSIXShell)
+	err := NewUnsupportedOnRuntimeError("registry", RuntimeKind("other-shell"))
 	msg := err.Error()
 	for _, banned := range []string{"did you mean", "use ", "instead", "consider", "try "} {
 		if strings.Contains(strings.ToLower(msg), banned) {
@@ -82,7 +82,7 @@ func TestModuleSupportError_NoRemediationProse(t *testing.T) {
 }
 
 func TestReasonCodeForError_ExtractsFromChain(t *testing.T) {
-	mse := NewUnsupportedOnRuntimeError("registry", RuntimeKindPOSIXShell)
+	mse := NewUnsupportedOnRuntimeError("registry", RuntimeKind("other-shell"))
 	wrapped := errors.Join(errors.New("context"), mse)
 	if got := ReasonCodeForError(wrapped); got != string(ClassUnsupportedOnRuntime) {
 		t.Errorf("ReasonCodeForError = %q, want %q", got, string(ClassUnsupportedOnRuntime))

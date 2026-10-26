@@ -16,7 +16,7 @@ cannot complete:
    built-in or a discovered plugin — fail for all targets.
    Runtime-support violations also fail where the transport implies a
    runtime offline: WinRM is always `windows-powershell`, the local target
-   is derived from the controller's OS, and staging uses an inventory host's
+   is Windows-only, and staging uses an inventory host's
    declared platform when present. SSH's runtime is only known after probing
    the remote host, so plan-time can only name-check SSH tasks when no staging
    platform is declared. Plan violations exit non-zero like any plan error.
@@ -29,8 +29,7 @@ cannot complete:
    (those tasks keep fail-and-continue at execution time). Gate refusal is
    its own run-log event, not synthetic task failures.
 3. **Per-task apply-time errors.** These remain only for environment
-   prerequisites the matrix cannot know — no systemd, no `apt`/`dnf`, no
-   `pwsh` binary, not root. They are probed inside module execution and
+   prerequisites the matrix cannot know. They are probed inside module execution and
    surface with the codes below.
 
 ## Reason Codes
@@ -39,11 +38,7 @@ cannot complete:
 | --- | --- |
 | `unknown_module` | the module name is neither a catalog built-in nor a discovered plugin |
 | `unsupported_on_runtime` | a catalog built-in that is not supported on the target's runtime; the message names the supporting runtimes |
-| `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent (no systemd, no `apt`/`dnf`, no `pwsh`); the detail names what was probed |
-| `requires-root-violation` | a `requires_root` module (`service`, `user`, `system_package`, `reboot`) ran as a non-root effective user |
-| `sudo-missing` | `become` is enabled on POSIX but the target has no `sudo` binary |
-| `sudo-password-required` | a no-password `sudo -n` run needed a password; supply `become.password` or configure `NOPASSWD` |
-| `sudo-auth-failed` | `sudo` rejected the supplied password |
+| `missing_prerequisite` | supported on this runtime in principle, but an environment prerequisite is absent; the detail names what was probed |
 | `plugin_become` | a plugin task had `become` enabled; plugin+`become` is refused in v1 |
 | `plugin_protocol` | a plugin failed the protocol handshake (version mismatch; plugins built against an older protocol are rejected) |
 
@@ -83,9 +78,7 @@ supporting runtimes. There is no did-you-mean and no remediation prose.
 Example shapes:
 
 ```text
-task "install tools": module "system_package" is not supported on windows-powershell (supported: posix-shell)
-gate: 2 task(s) cannot run on this target (posix-shell)
-  task "install tools": module "system_package" is not supported on posix-shell (supported: posix-shell)
+task "install tools": module "my_module" is not supported on windows-powershell (supported: <runtimes>)
 ```
 
 The support matrix source of truth is `internal/target/catalog.go`'s
@@ -125,8 +118,7 @@ part of the contract callers rely on to tell the two apart.
 ## Related Docs
 
 - [Built-in module reference](./modules.md) — per-module supported
-  runtimes and `requires_root` markers
-- [How `become` works](../explanation/become.md) — where the `sudo-*` and
-  `requires-root-violation` codes come from
+  runtimes
+- [How `become` works](../explanation/become.md)
 - [Targets, transports, and plugins](../explanation/targets-and-transports.md)
 - [Plugin reference](./plugins.md)

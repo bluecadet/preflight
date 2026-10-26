@@ -3,7 +3,6 @@ package target
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -104,7 +103,7 @@ func NewSSHTarget(cfg SSHConfig, registry ModuleRegistry) *SSHTarget {
 	}
 	// Each target binds plugins to its own ops backend so the plugin's target
 	// effects flow through the handle over SSH. *SSHTarget implements TargetOps
-	// by dispatching to the detected runtime (POSIX sh or Windows PowerShell).
+	// by dispatching to the detected runtime.
 	bound := make(ModuleRegistry, len(registry))
 	for name, mod := range registry {
 		if pluggable, ok := mod.(PluggableModule); ok {
@@ -136,24 +135,9 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 		return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
 	}
 
-	// POSIX privilege enforcement: fail the task before Check() when a
-	// requires_root module runs as a non-root effective user, or when become is
-	// enabled but sudo is missing. The probe is the cached runtime detection
-	// (one id -u + command -v sudo per target).
-	if rt, ok := runtime.(*sshPOSIXShellRuntime); ok {
-		probe, err := rt.ensureProbe(ctx)
-		if err != nil {
-			return Result{TaskID: taskID, Status: StatusFailed, Error: err}, err
-		}
-		if envErr := enforcePOSIXPrivilege(runtime.Kind(), module, become, probe); envErr != nil {
-			return Result{TaskID: taskID, Status: StatusFailed, Error: envErr}, envErr
-		}
-	}
-
 	registry := runtime.Registry()
 	if become != nil {
-		switch rt := runtime.(type) {
-		case *sshWindowsPowerShellRuntime:
+		if rt, ok := runtime.(*sshWindowsPowerShellRuntime); ok {
 			backend := &windowsTaskBackend{
 				run:       rt.RunPowerShellScript,
 				copyPlain: rt.CopyFile,
@@ -161,18 +145,6 @@ func (t *SSHTarget) Execute(ctx context.Context, taskID string, module string, p
 				become:    become,
 			}
 			registry = newWindowsPowerShellRegistry(backend)
-		case *sshPOSIXShellRuntime:
-			backend := &posixTaskBackend{
-				run:              rt.RunPOSIXCommand,
-				copyPlain:        rt.CopyFile,
-				readPlain:        rt.ReadFile,
-				powerShellBinary: rt.PowerShellBinary(),
-				probe:            rt.ensureProbe,
-				packageManager:   rt.PackageManager,
-				become:           become,
-				initSystem:       rt.InitSystem(),
-			}
-			registry = newPOSIXShellRegistry(backend)
 		}
 		// Plugins are deliberately NOT merged into the become registry:
 		// plugin+become is refused in v1, surfaced via the refusePluginBecome
@@ -229,8 +201,7 @@ func (t *SSHTarget) RunPowerShell(ctx context.Context, script string) (string, e
 	return runtime.RunPowerShellScript(ctx, script, nil)
 }
 
-// Exec implements TargetOps: runs script in the target's native shell (POSIX sh
-// or PowerShell per the detected runtime) and returns separated stdout/stderr
+// Exec implements TargetOps: runs script in the target's native shell (PowerShell) and returns separated stdout/stderr
 // and the exit code. A non-zero exit is a result, not an error.
 func (t *SSHTarget) Exec(ctx context.Context, script string) (ExecResult, error) {
 	runtime, err := t.runtimeForUse(ctx)
@@ -423,39 +394,16 @@ func isSSHConnectionError(err error) bool {
 }
 
 func (t *SSHTarget) detectRuntime(ctx context.Context) (sshRuntime, error) {
-	var posixPowerShellBinary string
 	for _, binary := range []string{"powershell.exe", "pwsh", "powershell"} {
 		available, isWindows, err := t.probePowerShellBinary(ctx, binary)
 		if err != nil {
 			return nil, err
 		}
-		if !available {
-			continue
-		}
-		if isWindows {
+		if available && isWindows {
 			return &sshWindowsPowerShellRuntime{target: t, binary: binary}, nil
 		}
-		if posixPowerShellBinary == "" {
-			posixPowerShellBinary = binary
-		}
 	}
-
-	stdout, stderr, code, err := t.run(ctx, "printf preflight", nil)
-	if err != nil {
-		return nil, err
-	}
-	if code == 0 && strings.TrimSpace(stdout) == "preflight" {
-		return &sshPOSIXShellRuntime{target: t, powerShellBinary: posixPowerShellBinary}, nil
-	}
-
-	message := strings.TrimSpace(stderr)
-	if message == "" {
-		message = strings.TrimSpace(stdout)
-	}
-	if message == "" {
-		message = "no supported remote shell runtime detected"
-	}
-	return nil, wrapSSHTargetError("detect runtime", fmt.Errorf("unable to detect a supported remote runtime: %s", message))
+	return nil, wrapSSHTargetError("detect runtime", errors.New("unable to detect a supported remote runtime: no Windows PowerShell found (only Windows hosts are supported)"))
 }
 
 func (t *SSHTarget) probePowerShellBinary(ctx context.Context, binary string) (bool, bool, error) {

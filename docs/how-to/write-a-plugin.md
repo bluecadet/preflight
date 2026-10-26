@@ -59,7 +59,7 @@ func (markerFileModule) Check(ctx context.Context, args map[string]any, h sdk.Ha
 
 	// Probe the target through the handle — never the local filesystem — and
 	// pass ctx so the op can be interrupted.
-	res, err := h.RunCommand(ctx, "test -f "+shellQuote(path)+" && echo yes || echo no")
+	res, err := h.RunCommand(ctx, "if (Test-Path -LiteralPath "+psQuote(path)+" -PathType Leaf) { 'yes' } else { 'no' }")
 	if err != nil {
 		return sdk.CheckResult{}, err
 	}
@@ -69,7 +69,7 @@ func (markerFileModule) Check(ctx context.Context, args map[string]any, h sdk.Ha
 
 func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Handle) (sdk.ApplyResult, error) {
 	path, _ := args["path"].(string)
-	script := "printf 'managed by preflight plugin\\n' > " + shellQuote(path)
+	script := "Set-Content -LiteralPath " + psQuote(path) + " -Value 'managed by preflight plugin'"
 	if _, err := h.RunCommand(ctx, script); err != nil {
 		return sdk.ApplyResult{}, err
 	}
@@ -80,7 +80,7 @@ func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Ha
 	// protocol version, so a host that does not know about "checksum" yet
 	// still works with this plugin unchanged.
 	if neg, ok := sdk.NegotiatedFromContext(ctx); ok && neg.HasCapability("marker_file/checksum") {
-		sum, err := h.RunCommand(ctx, "sha256sum "+shellQuote(path)+" | cut -d ' ' -f1")
+		sum, err := h.RunCommand(ctx, "(Get-FileHash -LiteralPath "+psQuote(path)+" -Algorithm SHA256).Hash")
 		if err == nil {
 			msg += ", sha256=" + strings.TrimSpace(sum.Stdout)
 		}
@@ -88,9 +88,9 @@ func (markerFileModule) Apply(ctx context.Context, args map[string]any, h sdk.Ha
 	return sdk.ApplyResult{Message: msg}, nil
 }
 
-// shellQuote wraps s in POSIX single quotes so it is safe to interpolate.
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+// psQuote wraps s in PowerShell single quotes so it is safe to interpolate.
+func psQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
 
 func main() {
@@ -125,15 +125,15 @@ res, err := h.RunCommand(ctx, script)
 // res.Stdout, res.Stderr, res.ExitCode
 ```
 
-`script` runs in the target's native shell: POSIX `sh` when `TargetInfo.RuntimeKind` is `posix-shell`, PowerShell when it is `windows-powershell`. Branch on `h.Info().RuntimeKind` (or `h.Info().Family`) to write portable plugins.
+`script` runs as PowerShell on the target.
 
 **RunCommand is the batching lever.** Each handle op is a transport round trip; over SSH or WinRM that round trip has real latency. Prefer one script that does several things over several `RunCommand` calls. For example, check a file, write it if missing, and set its mode in a single script instead of three.
 
 ### PutFile / GetFile
 
 ```go
-err := h.PutFile(ctx, "/tmp/config", []byte("contents"))
-data, err := h.GetFile(ctx, "/etc/hostname")
+err := h.PutFile(ctx, `C:\Exhibits\config.txt`, []byte("contents"))
+data, err := h.GetFile(ctx, `C:\Exhibits\config.txt`)
 ```
 
 `PutFile` takes raw bytes; the host handles chunking for high-latency transports, so the plugin sees a single call regardless of transport. `GetFile` returns the file's bytes.
@@ -142,19 +142,15 @@ data, err := h.GetFile(ctx, "/etc/hostname")
 
 ```go
 info := h.Info()
-// info.Family (windows|linux|darwin)
-// info.Name, info.Version, info.Arch, info.Hostname
-// info.PackageManager (apt|dnf|"" on POSIX; "" on Windows)
-// info.Init (systemd|"" on POSIX; "" on Windows)
-// info.RuntimeKind (posix-shell|windows-powershell)
+// info.Family (windows)
+// info.Version, info.Arch, info.Hostname
+// info.RuntimeKind (windows-powershell)
 ```
 
 `Info()` returns the `TargetInfo` delivered at `initialize`. Absent signals are empty strings, never missing keys, so you can branch with simple equality:
 
 ```go
-if h.Info().Family == "windows" { ... }
-if h.Info().PackageManager == "apt" { ... }
-if h.Info().Init == "systemd" { ... }
+if h.Info().Arch == "amd64" { ... }
 ```
 
 Do not re-probe what the controller already cached — `Info()` is the authoritative view.

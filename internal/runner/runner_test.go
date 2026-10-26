@@ -500,7 +500,7 @@ func TestApplyPassesRenderedExecutionOptionsToTarget(t *testing.T) {
 	tgt := &targettest.Fake{
 		InfoValue: target.TargetInfo{
 			Hostname:  "remote-linux",
-			OSFamily:  target.OSFamilyLinux,
+			OSFamily:  target.OSFamilyWindows,
 			Transport: target.TransportSSH,
 		},
 		Results: []target.Result{{Status: target.StatusChanged}},
@@ -1739,9 +1739,9 @@ func TestRunStageProbesTargetWithoutDeclaredPlatform(t *testing.T) {
 }
 
 func TestStageRejectsPluginForForeignPlatform(t *testing.T) {
-	foreignOS := target.OSFamilyWindows
-	if runtime.GOOS == "windows" {
-		foreignOS = target.OSFamilyLinux
+	foreignArch := "arm64"
+	if runtime.GOARCH == "arm64" {
+		foreignArch = "amd64"
 	}
 	tests := map[string]struct {
 		target   target.Target
@@ -1749,12 +1749,12 @@ func TestStageRejectsPluginForForeignPlatform(t *testing.T) {
 	}{
 		"declared": {
 			target:   &targettest.Fake{InfoErr: errors.New("must not probe")},
-			platform: &target.Platform{OS: foreignOS, Arch: runtime.GOARCH},
+			platform: &target.Platform{OS: target.OSFamilyWindows, Arch: foreignArch},
 		},
 		"probed": {
 			target: &targettest.Fake{InfoValue: target.TargetInfo{
-				OSFamily: foreignOS,
-				Arch:     runtime.GOARCH,
+				OSFamily: target.OSFamilyWindows,
+				Arch:     foreignArch,
 			}},
 		},
 	}

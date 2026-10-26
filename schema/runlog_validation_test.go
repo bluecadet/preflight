@@ -174,7 +174,7 @@ func runLogFixtureCases() []struct {
 		},
 		{
 			name:  "support-gate",
-			jsonl: `{"seq":49,"ts":"2026-06-24T14:13:09.000Z","type":"support_gate","level":"error","run_id":"r01","target":"posix-host","task_id":null,"msg":"gate: 1 task(s) cannot run on this target (posix-shell)","runtime":"posix-shell","reason":"unsupported_on_runtime","violations":[{"task":"install tools","module":"registry","reason":"unsupported_on_runtime","message":"module \"registry\" is not supported on posix-shell (supported: windows-powershell)"}]}`,
+			jsonl: `{"seq":49,"ts":"2026-06-24T14:13:09.000Z","type":"support_gate","level":"error","run_id":"r01","target":"win-host","task_id":null,"msg":"gate: 1 task(s) cannot run on this target (windows-powershell)","runtime":"windows-powershell","reason":"unsupported_on_runtime","violations":[{"task":"install tools","module":"custom","reason":"unsupported_on_runtime","message":"module \"custom\" is not supported on windows-powershell (supported: none)"}]}`,
 		},
 		{
 			name:  "target-complete-ok",

@@ -8,7 +8,7 @@ import (
 )
 
 func TestBuildRemoteModuleRegistryFillsUnsupportedModules(t *testing.T) {
-	registry := buildRemoteModuleRegistry(RuntimeKindPOSIXShell, ModuleRegistry{
+	registry := buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, ModuleRegistry{
 		"shell": moduleFuncs{
 			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
 				return CheckResult{}, nil
@@ -38,7 +38,7 @@ func TestBuildRemoteModuleRegistryPanicsOnUnknownModule(t *testing.T) {
 		}
 	}()
 
-	buildRemoteModuleRegistry(RuntimeKindPOSIXShell, ModuleRegistry{
+	buildRemoteModuleRegistry(RuntimeKindWindowsPowerShell, ModuleRegistry{
 		"not-a-real-module": moduleFuncs{
 			check: func(context.Context, map[string]any, OutputFunc) (CheckResult, error) {
 				return CheckResult{}, nil

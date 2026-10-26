@@ -163,7 +163,7 @@
       "properties": {
         "os": {
           "type": "string",
-          "enum": ["windows", "linux", "darwin"],
+          "enum": ["windows"],
           "description": "Destination operating system family"
         },
         "arch": {

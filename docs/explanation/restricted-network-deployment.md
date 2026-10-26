@@ -63,12 +63,7 @@ That means your inventory entry points at the forwarded endpoint rather than the
   private_key: secret:signage-key
 ```
 
-This pattern is useful when outbound SSH is approved and the target fits one of the supported SSH runtimes:
-
-- Windows hosts with a usable PowerShell runtime over SSH can use the built-in Windows module set.
-- POSIX hosts are limited to the narrower POSIX-over-SSH built-in set. See the [module reference](../reference/modules.md#platform-and-transport-support) for which built-ins that covers.
-
-That is still the important limit. Reverse SSH tunneling can make SSH reachable, and plugin modules run over SSH like any other transport, but it does not expand POSIX SSH into the full Windows management surface. If the environment cannot provide the right SSH runtime, use WinRM from a reachable controller or switch to bundle-based local execution.
+This pattern is useful when outbound SSH is approved and the Windows target exposes a usable PowerShell runtime over SSH; it can then use the full built-in Windows module set. Plugin modules run over SSH like any other transport. If the environment cannot provide that runtime, use WinRM from a reachable controller or switch to bundle-based local execution.
 
 For the operational detail this section only sketches — hardening a shared bastion, scoping one key per target so machines can't reach each other's tunnels, and the manual-trigger model that keeps a tunnel from outliving the person who opened it — see [Set up a reverse-tunnel bastion](../how-to/set-up-a-tunnel-bastion.md) and [Onboard a target through a reverse-tunnel bastion](../how-to/onboard-a-target-through-a-bastion.md).
 
@@ -100,7 +95,7 @@ The main tradeoffs are operational:
 | Pattern | Best when | Strengths | Limits |
 | --- | --- | --- | --- |
 | Run Preflight inside the secure network with WinRM | A controller or bastion can reach Windows hosts | Full Windows module support with the normal remote model | Requires a trusted machine inside the environment or another approved path to WinRM |
-| Direct SSH or reverse-tunneled SSH | Outbound SSH is allowed and the target matches a supported SSH runtime | Useful for Windows built-ins over PowerShell or portable tasks over POSIX without direct inbound access, and plugin modules run over SSH | POSIX-over-SSH remains a narrower built-in module runtime than Windows-over-SSH or WinRM |
+| Direct SSH or reverse-tunneled SSH | Outbound SSH is allowed and the target exposes PowerShell over SSH | Useful for Windows built-ins over PowerShell without direct inbound access, and plugin modules run over SSH | Requires PowerShell on the target |
 | Stage bundles and apply locally | No live inbound management path can be approved | No remote transport during apply and full local module behavior | Requires bundle transfer plus local execution on each target |
 
 ## Practical Recommendation

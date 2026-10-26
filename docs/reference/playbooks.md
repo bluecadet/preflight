@@ -150,7 +150,7 @@ defaults:
   become:
     enabled: true
     user: exhibit
-    method: sudo
+    method: runas
 ```
 
 Task defaults are inherited into child tasks. `become` precedence is:
@@ -170,7 +170,7 @@ If a `become` object is present and omits `enabled`, Preflight treats it as enab
 | `enabled` | bool | Enable alternate-user execution |
 | `user` | string | Target user to execute as |
 | `password` | string | Optional password or secret reference |
-| `method` | string | Runtime method (`runas` on Windows, `sudo` on POSIX by default) |
+| `method` | string | Runtime method (`runas`, the default) |
 | `load_profile` | bool | Windows-focused profile loading hint |
 
 Example:

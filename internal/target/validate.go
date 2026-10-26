@@ -1,5 +1,10 @@
 package target
 
+import (
+	"fmt"
+	"runtime"
+)
+
 // RuntimeKind derives the module runtime used by a declared destination
 // platform. Inventory schema validation keeps declarations within the known
 // OS families; false protects programmatic callers from an unknown value.
@@ -7,8 +12,6 @@ func (p Platform) RuntimeKind() (RuntimeKind, bool) {
 	switch p.OS {
 	case OSFamilyWindows:
 		return RuntimeKindWindowsPowerShell, true
-	case OSFamilyLinux, OSFamilyDarwin:
-		return RuntimeKindPOSIXShell, true
 	default:
 		return "", false
 	}
@@ -16,18 +19,26 @@ func (p Platform) RuntimeKind() (RuntimeKind, bool) {
 
 // PlanRuntimeForTransport returns the runtime kind a transport implies at plan
 // time, before any remote probe. WinRM is always windows-powershell and local
-// is GOOS-derived; both are knowable offline. SSH returns ok=false because its
-// runtime is only known after probing the remote host — plan-time can only
+// is windows-powershell on a Windows controller; both are knowable offline.
+// Local on any other controller OS is an error. SSH returns ok=false because
+// its runtime is only known after probing the remote host — plan-time can only
 // name-check SSH tasks.
-func PlanRuntimeForTransport(t Transport) (RuntimeKind, bool) {
+func PlanRuntimeForTransport(t Transport) (RuntimeKind, bool, error) {
 	switch t {
 	case TransportWinRM:
-		return RuntimeKindWindowsPowerShell, true
+		return RuntimeKindWindowsPowerShell, true, nil
 	case TransportLocal:
-		return runtimeKindForLocal(), true
+		if runtime.GOOS != "windows" {
+			return "", false, errLocalRequiresWindows()
+		}
+		return RuntimeKindWindowsPowerShell, true, nil
 	default:
-		return "", false
+		return "", false, nil
 	}
+}
+
+func errLocalRequiresWindows() error {
+	return fmt.Errorf("local target is only supported on Windows (controller OS is %s); use an ssh or winrm target", runtime.GOOS)
 }
 
 // IsKnownModule reports whether name is a catalog built-in or present in the

@@ -12,7 +12,6 @@ Modules on this page:
 [`file`](#file) ·
 [`directory`](#directory) ·
 [`package`](#package) ·
-[`system_package`](#system_package) ·
 [`winget_package`](#winget_package) ·
 [`remove_appx_packages`](#remove_appx_packages) ·
 [`shortcut`](#shortcut) ·
@@ -64,36 +63,13 @@ or as explicit modules:
 
 ## Platform And Transport Support
 
-| Module | Local target | WinRM target | SSH target |
-| --- | --- | --- | --- |
-| `file` | Yes | Yes | Yes |
-| `directory` | Yes | Yes | Yes |
-| `shell` | Yes | Yes | Yes |
-| `powershell` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH when `pwsh` or `powershell` is installed |
-| `environment` | Yes | Yes | Windows-over-SSH only |
-| `wait` | Yes | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH (`file_exists`, `port_open`, `service_running`) |
-| `reboot` | Yes | Yes | Windows-over-SSH; POSIX-over-SSH (systemd) |
-| `registry` | Windows only | Yes | Windows-over-SSH only |
-| `service` | Windows only | Yes | Yes on Windows-over-SSH; on POSIX-over-SSH over systemd (**requires root**) |
-| `package` | Windows only | Yes | Windows-over-SSH only |
-| `winget_package` | Windows only | Yes | Windows-over-SSH only |
-| `remove_appx_packages` | Windows only | Yes* | Windows-over-SSH only |
-| `shortcut` | Windows only | Yes | Windows-over-SSH only |
-| `scheduled_task` | Windows only | Yes | Windows-over-SSH only |
-| `user` | Windows only | Yes | Yes (Windows-over-SSH; POSIX-over-SSH, requires root) |
-| `power_plan` | Windows only | Yes | Windows-over-SSH only |
-| `windows_feature` | Windows only | Yes* | Windows-over-SSH only |
-| `firewall_rule` | Windows only | Yes | Windows-over-SSH only |
-| `system_package` | POSIX only | No | POSIX-over-SSH only (apt or dnf) |
+Every built-in runs on the local, WinRM, and SSH targets. All targets must be Windows.
 
 Notes:
 
 - \*`windows_feature` and `remove_appx_packages` are registered over WinRM but cannot complete their changes over a basic WinRM session. See [WinRM session limitations](#winrm-session-limitations).
-- On non-Windows local runs, Windows-only built-ins are still registered but fail fast with a Windows-only error.
-- SSH auto-detects `windows-powershell` or `posix-shell` at connection time.
-- Windows-over-SSH shares the built-in Windows module surface with WinRM.
-- POSIX-over-SSH currently supports `file`, `directory`, `shell`, `wait` (`file_exists`, `port_open`, `service_running`), `reboot`, `powershell` when a remote PowerShell binary is available, `user` (requires root), `system_package` on targets with apt or dnf, and `service` over systemd (requires root).
-- Plugin modules run over every transport — local, SSH (POSIX and Windows), and WinRM — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See the [plugin reference](./plugins.md#execution-model).
+- The local target is only supported when the controller itself runs Windows. SSH targets must provide Windows PowerShell; connection fails otherwise.
+- Plugin modules run over every transport (local, SSH, and WinRM) — because the plugin process runs controller-side and its target effects flow through the transport's handle ops. See the [plugin reference](./plugins.md#execution-model).
 
 Unsupported module usage is caught before the task runs and returns a
 clear, typed error; there is no silent fallback. See the
@@ -136,56 +112,6 @@ When you need these operations:
 - for live streaming specifically, use **Windows-over-SSH**, where output
   is delivered incrementally.
 
-## POSIX Capability Baseline And Tiers
-
-POSIX-over-SSH support is **capability-based, not a distro allowlist**. A
-host is supported when it provides the capabilities the modules rely on,
-not when its distro name appears on a list.
-
-Capability baseline (Linux, the official tier):
-
-- **Shell** — strict POSIX `sh`. Modules and stdlib actions never assume
-  Bash.
-- **Core utilities** — the standard POSIX toolset plus `base64` (already
-  assumed for file transfer). `sha256sum`/`shasum` are probed with a
-  read-and-hash-locally fallback, so neither is required.
-- **Init system** — systemd, for `service`, `wait`'s `service_running`,
-  and `reboot`'s `if_needed` probe. Hosts without systemd fail those tasks
-  with a typed `missing_prerequisite` error naming what was probed;
-  everything else still works.
-- **Package managers** — `apt` and `dnf` officially, for `system_package`.
-  Other managers are a stated limitation with the `shell` module as the
-  escape hatch.
-- **`sudo`** — required only when `become` is used (see
-  [How `become` works](../explanation/become.md)).
-
-Tiers:
-
-- **Official** — any Linux meeting the baseline. Static binaries mean
-  musl/Alpine works; Alpine's OpenRC and `apk` fall under the stated
-  limitations below.
-- **Best-effort** — macOS and other POSIX systems (BSDs, illumos). They
-  may work via the same capability baseline, but there are no version
-  claims, no CI, and no required builds. `family=darwin` with empty distro
-  facts is the expected shape, not a bug.
-
-## Consolidated POSIX Limitations
-
-These are documented, not coded around; the per-module notes below
-colocate each one with the module it limits.
-
-- `environment` is unsupported on POSIX-over-SSH — ambient env is
-  login-shell plumbing with no faithful analog; per-service env belongs in
-  unit files (`file` + `service`).
-- `user` sets a password on creation only; an existing user's password is
-  never reset, even when `password` is supplied and `Apply` runs for
-  another reason. Managed POSIX hosts authenticate by SSH key.
-- Non-`apt`/`dnf` package managers and non-systemd init are unsupported;
-  the `shell` module is the escape hatch.
-- The real `reboot` + reconnect path is unit-tested against fakes only and
-  is not exercised end-to-end in CI.
-- macOS/BSD is best-effort, as above.
-
 ## Module Fields
 
 ### `registry`
@@ -227,10 +153,9 @@ Use `patch` when a Windows setting is stored inside an existing binary registry 
 
 ### `service`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
+**Supported runtimes:** `windows-powershell`
 
-Manage services. Same schema on Windows and POSIX; the runtime implementation
-is per-platform (Windows SCM on Windows, `systemctl` on POSIX-over-SSH).
+Manage Windows services.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -238,37 +163,9 @@ is per-platform (Windows SCM on Windows, `systemctl` on POSIX-over-SSH).
 | `state` | `running`, `stopped`, or `disabled` | Desired service state |
 | `startup_type` | `automatic`, `manual`, or `disabled` | Startup behavior |
 
-**POSIX-over-SSH (systemd).** The target must run systemd (probed via
-`/run/systemd/system`); a host without systemd fails the task with a typed
-`missing_prerequisite` error naming what was probed. The module is
-`requires root`: run the session as root or set `become: {enabled: true}` to
-escalate (see [Become](../explanation/become.md)).
-
-`state` maps to `systemctl` active state:
-
-- `running` → the unit is active (`systemctl start`)
-- `stopped` → the unit is inactive (`systemctl stop`)
-- `disabled` → stop **and** mask in one step (`systemctl stop` + `systemctl
-  mask`), short-circuiting `startup_type` just like the Windows apply. Windows'
-  *disabled* service state corresponds to systemd *masked* (a unit that cannot
-  be started).
-
-`startup_type` maps to `systemctl` enable state:
-
-- `automatic` → `enabled` (`systemctl enable`)
-- `manual` → `disabled` (`systemctl disable`)
-- `disabled` → `masked` (`systemctl mask`)
-
-Enabling or disabling first unmasks the unit (a no-op when it is not masked)
-so a previously masked unit can transition back to `enabled` or `disabled`.
-
-The local POSIX target does not implement the service module; manage POSIX
-services over SSH. The `shell` module is the escape hatch for
-non-systemd init systems.
-
 ### `file`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell`
+**Supported runtimes:** `windows-powershell`
 
 Manage files.
 
@@ -307,7 +204,7 @@ the rendered file body.
 
 ### `directory`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell`
+**Supported runtimes:** `windows-powershell`
 
 Manage directories.
 
@@ -343,37 +240,6 @@ Manage local MSI or EXE installations on Windows.
 | `ensure` | `present` or `absent` | Desired state (default: `present`) |
 
 Use `package` when you already have a staged or local installer path. Use `winget_package` for package-manager-driven installs.
-
-### `system_package`
-
-**Supported runtimes:** `posix-shell` · **requires root**
-
-Manage repo packages through `apt` or `dnf` on POSIX targets.
-
-```yaml
-- name: Install packages
-  system_package:
-    packages:
-      - name: tree
-      - name: jq
-        version: "1.6-2.1"
-      - name: legacy-tool
-        ensure: absent
-```
-
-The `packages` list is the primary interface. Each entry supports:
-
-| Field | Type | Meaning |
-| --- | --- | --- |
-| `name` | string (required) | Package name as known to the detected package manager |
-| `version` | string | Pin to an exact version, in the native manager format |
-| `ensure` | `present` or `absent` | Desired state (default: `present`) |
-
-`system_package` autodetects `apt` or `dnf` from the target's cached detection facts (`facts.os.package_manager`) and is POSIX-only. It mirrors the `winget_package` list shape but uses `name` instead of `id`. A task whose target has neither manager fails with a per-task environment-prerequisite error before `Check()` runs.
-
-`version` is compared as an exact string against the native version string: `dpkg-query ${Version}` for apt, and `rpm %{VERSION}-%{RELEASE}` for dnf. Supply the full native version string the manager reports, including epoch or release where relevant. Targets with a package manager other than `apt` or `dnf` are not supported; use the `shell` module as an escape hatch.
-
-`system_package` requires root. Run as root or set `become: {enabled: true}` to escalate to root; a non-root run fails with a `requires-root-violation` before `Check()`.
 
 ### `winget_package`
 
@@ -473,7 +339,7 @@ Manage Windows scheduled tasks.
 
 ### `user`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
+**Supported runtimes:** `windows-powershell`
 
 Manage local users.
 
@@ -489,19 +355,6 @@ user without a password if the account does not already exist. If the user
 already exists, omitting `password` leaves the current password unchanged.
 Requested `groups` are additive and ensure membership in those groups without
 removing other existing memberships.
-
-**POSIX (requires root).** Over SSH-POSIX the same schema drives
-`useradd`/`userdel`. `ensure: present` creates a missing user with `useradd`
-and, when a `password` is supplied, sets it via `chpasswd` **on creation only**.
-Group membership is additive (`usermod -aG`) and never strips existing
-memberships. `ensure: absent` runs `userdel`.
-
-*Known limitation — POSIX password drift.* The password of an existing user is
-never reset, even when `password` is supplied and `Apply` runs for another
-reason (for example, to add a group). Managed POSIX hosts authenticate by
-SSH key, so password drift on existing accounts is documented rather than
-corrected. To force a password change, manage the password out of band (for
-example, via a `shell` task running `chpasswd`).
 
 ### `power_plan`
 
@@ -543,8 +396,6 @@ Manage Windows optional features.
 
 Manage environment variables.
 
-*Known limitation — POSIX.* `environment` is unsupported over POSIX-over-SSH: ambient environment is login-shell plumbing with no faithful analog, and per-service environment belongs in unit files (managed with `file` + `service`). The local POSIX target registers an `os.Setenv`-backed implementation that only affects the preflight process, which is rarely what you want; for managed endpoints use `file` + `service` instead.
-
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | Variable name |
@@ -569,7 +420,7 @@ Manage Windows firewall rules.
 
 ### `powershell`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell`
+**Supported runtimes:** `windows-powershell`
 
 Run PowerShell.
 
@@ -594,7 +445,7 @@ When `working_dir` is set, relative `creates` paths are checked from that direct
 
 ### `shell`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell`
+**Supported runtimes:** `windows-powershell`
 
 Run a shell command.
 
@@ -610,7 +461,7 @@ When `working_dir` is set, relative `creates` paths are checked from that direct
 
 ### `reboot`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell` · **requires root**
+**Supported runtimes:** `windows-powershell`
 
 Request a reboot.
 
@@ -619,18 +470,9 @@ Request a reboot.
 | `condition` | `always` or `if_needed` | Reboot policy (default: `if_needed`) |
 | `timeout` | integer | Reconnect-wait timeout in seconds (default: `300`) |
 
-On POSIX-over-SSH (systemd hosts), `condition: always` issues `systemctl reboot`
-and waits for the SSH connection to re-establish within `timeout`. `condition:
-if_needed` probes the distro reboot-required signal: `/var/run/reboot-required`
-(the apt convention, also honored as a plantable marker on any distro) and
-`needs-restarting -r` (dnf). When neither signal is available, no reboot is
-needed and the task output says so. `reboot` requires root on POSIX — run as
-root or with `become`. The real reboot+reconnect path is unit-tested against
-fakes only and is a stated limitation: it is not exercised end-to-end in CI.
-
 ### `wait`
 
-**Supported runtimes:** `windows-powershell`, `posix-shell`
+**Supported runtimes:** `windows-powershell`
 
 Wait for a condition to be met before continuing.
 
@@ -646,11 +488,7 @@ The `target` field is required and interpreted per condition:
 | --- | --- | --- |
 | `port_open` | `address:port` TCP endpoint | `"localhost:8080"` |
 | `file_exists` | File system path | `"C:\\Exhibits\\ready.txt"` |
-| `service_running` | Windows service name or systemd unit name | `"W32Time"`, `"nginx.service"` |
-
-On POSIX-over-SSH, `service_running` probes `systemctl is-active --quiet`. It
-requires systemd; a host with no init system detected fails the task with the
-typed environment-prerequisite error (`missing_prerequisite`).
+| `service_running` | Windows service name | `"W32Time"` |
 
 ## Related Docs
 

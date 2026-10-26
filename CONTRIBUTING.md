@@ -137,18 +137,6 @@ VM setup, bootstrap scripts, `.env.test` configuration, test anatomy, and
 troubleshooting:
 [docs/development/winrm-integration-testing.md](docs/development/winrm-integration-testing.md).
 
-**POSIX (SSH against Docker containers)** — runs against two disposable
-systemd-enabled containers (Ubuntu/apt and Rocky/dnf); requires Docker and
-runs in CI on every PR touching Go code:
-
-```bash
-make test-integration-posix
-```
-
-Containers, the three-user `become` matrix, environment variables, and
-adding new tests:
-[docs/development/posix-integration-testing.md](docs/development/posix-integration-testing.md).
-
 ---
 
 ## Architecture

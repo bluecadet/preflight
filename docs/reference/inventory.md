@@ -86,13 +86,12 @@ Both fields are required when the block is present:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `os` | enum | `windows`, `linux`, or `darwin` |
+| `os` | enum | `windows` |
 | `arch` | enum | `amd64` or `arm64` |
 
 When a host declares `platform`, staging validates modules against that
 platform and writes it into the bundle without connecting to the host.
-Windows maps to the `windows-powershell` runtime; Linux and Darwin map to
-`posix-shell`.
+Windows maps to the `windows-powershell` runtime.
 
 Without `platform`, staging preserves the live-discovery behavior: it probes
 the selected host for its OS and architecture. The declaration affects only
@@ -191,7 +190,7 @@ Inventory-backed applies default to `state/targets/<host>.json`.
 - `winrm` is the full Windows-native transport and supports all built-in modules.
 - For new WinRM hosts, validate the connection with a temporary `preflight.yml` before you commit the entry to your project config. See [Troubleshoot remote connections](../how-to/troubleshoot-remote-connections.md) for a concrete validation flow.
 - The current WinRM path is easiest to use with a local Windows account. If a host answers on `5985` but `preflight facts` still returns `401`, check the remote host's WinRM auth settings before changing inventory structure.
-- `ssh` auto-detects either a Windows PowerShell runtime or a POSIX shell runtime. Windows-over-SSH supports the built-in Windows module set; POSIX-over-SSH supports a narrower built-in set. See the [module reference](./modules.md#platform-and-transport-support) for the current per-module transport matrix.
+- `ssh` requires a Windows PowerShell runtime on the host and supports the built-in Windows module set. See the [module reference](./modules.md#platform-and-transport-support) for the current per-module transport matrix.
 - `local` still participates in inventory selection, but execution happens on the initiating machine.
 - For locked-down environments where targets cannot accept controller-initiated access, see [Deploy across restricted networks](../explanation/restricted-network-deployment.md).
 

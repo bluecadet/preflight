@@ -1,3 +1,5 @@
+//go:build windows
+
 package plugins_test
 
 import (
@@ -6,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -36,13 +37,6 @@ func buildPlugin(t *testing.T, dir string) string {
 		t.Fatalf("build test plugin %s: %v\n%s", dir, err, out)
 	}
 	return out
-}
-
-func exeName(name string) string {
-	if runtime.GOOS == "windows" {
-		return name + ".exe"
-	}
-	return name
 }
 
 // localTargetWithPlugin builds a controller registry containing the test plugin
