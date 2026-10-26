@@ -199,6 +199,48 @@ tasks:
         - id: 7zip.7zip
 ```
 
+## `preflight/chocolatey`
+
+Installs Chocolatey and configures its package sources, so `choco_package` works. The transport account must be an administrator.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `version` | string | `""` | Chocolatey version to install, 2.0 or later because `choco_package` rejects 1.x; empty installs the latest |
+| `sources` | list | `[]` | Sources to add or update. Each entry has `name` and `url` |
+| `remove_default_source` | bool | `false` | Remove the community source named `chocolatey` |
+
+The action runs two tasks:
+
+1. Install Chocolatey: when `choco.exe` is missing, downloads `install.ps1` from `community.chocolatey.org` and runs it.
+2. Configure Chocolatey sources: adds each source in `sources`, or updates its URL and enables it, then removes the `chocolatey` source when `remove_default_source` is set.
+
+- The target needs internet access to `community.chocolatey.org` for the install.
+- `version` applies only to the install. An existing Chocolatey is not upgraded or downgraded.
+- Sources that are not listed are left alone, except `chocolatey` with `remove_default_source`.
+- Sources with credentials, priorities, or certificates aren't supported. Add them with a `powershell` task.
+- `preflight check` on a target without Chocolatey reports later `choco_package` tasks as failed, because the bootstrap has not run yet.
+
+Known limitations:
+
+- A partial `ProgramData\chocolatey` directory without `bin\choco.exe` makes the Chocolatey installer refuse to run, which blocks the bootstrap. Remove the directory first.
+- Pinning `version` below 2.0 installs a Chocolatey that `choco_package` then rejects. The input has no schema check for this.
+- Updating a source relies on `choco source add` replacing an existing source of the same name in place.
+
+```yaml
+tasks:
+  - name: Chocolatey
+    uses: preflight/chocolatey
+    with:
+      sources:
+        - name: internal
+          url: https://nuget.example.com/chocolatey/
+      remove_default_source: true
+  - name: Tools
+    choco_package:
+      packages:
+        - id: 7zip
+```
+
 ## Related docs
 
 - [Built-in module reference](./modules.md)
