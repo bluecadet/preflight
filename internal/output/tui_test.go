@@ -14,6 +14,7 @@ func TestNewTUIRenderer_NoPanel(t *testing.T) {
 	r := NewTUIRenderer(&buf)
 	if r == nil {
 		t.Fatal("NewTUIRenderer returned nil")
+		return
 	}
 	if r.program == nil {
 		t.Error("expected program to be non-nil")
@@ -256,6 +257,7 @@ func TestTUIModel_MultiTargetTaskFinished(t *testing.T) {
 	}
 	if fixture == nil {
 		t.Fatal("shared fixture 'two-targets-task-finished' not found")
+		return
 	}
 
 	savedS := S

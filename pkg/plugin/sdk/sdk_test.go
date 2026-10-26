@@ -382,6 +382,7 @@ func TestServe_PipelinedCheckNeverRacesInitialize(t *testing.T) {
 	}
 	if checkResp == nil {
 		t.Fatalf("no response for check request (id 2) among: %v", lines)
+		return
 	}
 
 	switch {

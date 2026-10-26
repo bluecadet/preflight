@@ -285,6 +285,7 @@ func TestSaveFile_NilConfig(t *testing.T) {
 	}
 	if cfg == nil {
 		t.Fatal("expected non-nil config")
+		return
 	}
 	if cfg.Vars == nil {
 		t.Fatal("Vars is nil")

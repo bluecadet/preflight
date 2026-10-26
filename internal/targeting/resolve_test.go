@@ -232,6 +232,7 @@ hosts:
 	jump := sshTgt.Config().Jump
 	if jump == nil {
 		t.Fatal("expected SSHConfig.Jump to be populated")
+		return
 	}
 	if jump.Host != "bastion.example.com" {
 		t.Errorf("Jump.Host: got %q, want %q", jump.Host, "bastion.example.com")
@@ -327,6 +328,7 @@ hosts:
 	jump := sshTgt.Config().Jump
 	if jump == nil {
 		t.Fatal("expected SSHConfig.Jump to be populated")
+		return
 	}
 	if jump.Password != "hunter2" {
 		t.Errorf("Jump.Password: got %q, want resolved secret %q", jump.Password, "hunter2")
@@ -372,6 +374,7 @@ hosts:
 	jump := sshTgt.Config().Jump
 	if jump == nil {
 		t.Fatal("expected SSHConfig.Jump to be populated")
+		return
 	}
 	if jump.PrivateKey != "-----BEGIN JUMP KEY-----" {
 		t.Errorf("Jump.PrivateKey: got %q, want resolved secret", jump.PrivateKey)
@@ -418,6 +421,7 @@ hosts:
 	jump := sshTgt.Config().Jump
 	if jump == nil {
 		t.Fatal("expected SSHConfig.Jump to be populated")
+		return
 	}
 	if jump.Password != "plain-pass" {
 		t.Errorf("Jump.Password: got %q, want %q", jump.Password, "plain-pass")
