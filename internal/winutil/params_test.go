@@ -1,6 +1,7 @@
 package winutil
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -329,13 +330,14 @@ func TestNormalizeFirewallPorts(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   any
-		want    string
+		want    []string
 		wantErr string
 	}{
-		{name: "nil", input: nil, want: ""},
-		{name: "int", input: 80, want: "80"},
-		{name: "string", input: "443", want: "443"},
-		{name: "list", input: []any{80, "443", 8080}, want: "80,443,8080"},
+		{name: "nil", input: nil, want: nil},
+		{name: "int", input: 80, want: []string{"80"}},
+		{name: "string", input: "443", want: []string{"443"}},
+		{name: "range string", input: "8000-8010", want: []string{"8000-8010"}},
+		{name: "list", input: []any{80, "443", 8080}, want: []string{"80", "443", "8080"}},
 		{name: "list with nil", input: []any{80, nil}, wantErr: "ports[1] must not be null"},
 		{name: "invalid", input: true, wantErr: "ports must be a string, number, or list"},
 	}
@@ -352,7 +354,7 @@ func TestNormalizeFirewallPorts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if got != tt.want {
+			if !reflect.DeepEqual(got, tt.want) {
 				t.Fatalf("NormalizeFirewallPorts(%#v) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
