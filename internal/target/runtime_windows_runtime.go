@@ -426,30 +426,35 @@ func applyWindowsShell(ctx context.Context, backend windowsPowerShellBackend, pa
 	if err != nil {
 		return ApplyResult{}, err
 	}
+	var body string
 	if workingDir == "" {
-		output, err := backend.RunPowerShellScript(ctx, script+`
-`+psArgs+`
-`+wd+`
+		body = script + `
+` + psArgs + `
+` + wd + `
 if ($workingDir) {
   Set-Location -LiteralPath $workingDir
 }
 $global:LASTEXITCODE = 0
 & $cmd @args
 if ($LASTEXITCODE) { throw "$cmd exited with code $LASTEXITCODE" }
-`, nil)
-		return applyStreamed(output, out), err
-	}
-	taskScript := script + `
+`
+	} else {
+		body = script + `
 ` + psArgs + `
 $global:LASTEXITCODE = 0
 & $cmd @args
 if ($LASTEXITCODE) { throw "$cmd exited with code $LASTEXITCODE" }
 `
-	taskScript, err = wrapPowerShellWorkingDir(map[string]any{"working_dir": workingDir}, taskScript)
+		body, err = wrapPowerShellWorkingDir(map[string]any{"working_dir": workingDir}, body)
+		if err != nil {
+			return ApplyResult{}, err
+		}
+	}
+	body, err = wrapPowerShellEnv(params, body)
 	if err != nil {
 		return ApplyResult{}, err
 	}
-	output, err := backend.RunPowerShellScript(ctx, taskScript, nil)
+	output, err := backend.RunPowerShellScript(ctx, body, nil)
 	return applyStreamed(output, out), err
 }
 
