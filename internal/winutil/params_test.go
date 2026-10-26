@@ -78,8 +78,8 @@ func TestNormalizeRegistryParams_BoolStringValues(t *testing.T) {
 	}
 }
 
-func TestNormalizeWingetParams_Args(t *testing.T) {
-	params, err := NormalizeWingetParams(map[string]any{
+func TestNormalizeManagerPackages_Args(t *testing.T) {
+	params, err := NormalizeManagerPackages("winget_package", map[string]any{
 		"packages": []any{
 			map[string]any{
 				"id":   "Microsoft.VisualStudio.2022.Community",

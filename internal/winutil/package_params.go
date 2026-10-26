@@ -4,20 +4,21 @@ import (
 	"fmt"
 )
 
-// NormalizeWingetParams validates the canonical "packages" list form and
-// returns a params map with a clean "packages" key.
-func NormalizeWingetParams(params map[string]any) (map[string]any, error) {
+// NormalizeManagerPackages validates the "packages" list shared by
+// package-manager modules (winget_package, ...) and returns a params map with
+// a clean "packages" key.
+func NormalizeManagerPackages(module string, params map[string]any) (map[string]any, error) {
 	list, ok := params["packages"].([]any)
 	if !ok {
-		return nil, fmt.Errorf("winget_package: 'packages' is required and must be a list")
+		return nil, fmt.Errorf("%s: 'packages' is required and must be a list", module)
 	}
 	for i, item := range list {
 		m, ok := item.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("winget_package: packages[%d] must be an object", i)
+			return nil, fmt.Errorf("%s: packages[%d] must be an object", module, i)
 		}
 		if id, _ := m["id"].(string); id == "" {
-			return nil, fmt.Errorf("winget_package: packages[%d].id is required", i)
+			return nil, fmt.Errorf("%s: packages[%d].id is required", module, i)
 		}
 	}
 	return map[string]any{"packages": list}, nil

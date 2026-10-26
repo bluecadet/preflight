@@ -156,14 +156,7 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 				return applyWindowsUser(ctx, backend, params, out)
 			},
 		},
-		"winget_package": moduleFuncs{
-			check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
-				return checkWindowsWingetPackage(ctx, backend, params)
-			},
-			apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
-				return applyWindowsWingetPackage(ctx, backend, params, out)
-			},
-		},
+		"winget_package": managerPackageModule(backend, "winget_package", wingetPackageCheckScript, wingetPackageApplyScript),
 		"remove_appx_packages": moduleFuncs{
 			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, out)
@@ -648,21 +641,26 @@ func applyWindowsReboot(ctx context.Context, backend windowsPowerShellBackend, p
 	return err
 }
 
-func checkWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any) (CheckResult, error) {
-	normalized, err := winutil.NormalizeWingetParams(params)
-	if err != nil {
-		return CheckResult{}, err
+// managerPackageModule wires a package-manager module (winget_package, ...)
+// to its shared-engine check and apply scripts.
+func managerPackageModule(backend windowsPowerShellBackend, module, checkScript, applyScript string) moduleFuncs {
+	return moduleFuncs{
+		check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
+			normalized, err := winutil.NormalizeManagerPackages(module, params)
+			if err != nil {
+				return CheckResult{}, err
+			}
+			return checkWindowsBooleanScript(ctx, backend, normalized, checkScript)
+		},
+		apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
+			normalized, err := winutil.NormalizeManagerPackages(module, params)
+			if err != nil {
+				return ApplyResult{}, err
+			}
+			output, err := windowsRunScript(ctx, backend, normalized, applyScript)
+			return applyStreamed(output, out), err
+		},
 	}
-	return checkWindowsBooleanScript(ctx, backend, normalized, wingetPackageCheckScript)
-}
-
-func applyWindowsWingetPackage(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, out OutputFunc) (ApplyResult, error) {
-	normalized, err := winutil.NormalizeWingetParams(params)
-	if err != nil {
-		return ApplyResult{}, err
-	}
-	output, err := windowsRunScript(ctx, backend, normalized, wingetPackageApplyScript)
-	return applyStreamed(output, out), err
 }
 
 func checkWindowsRemoveAppxPackagesWithOutput(ctx context.Context, backend windowsPowerShellBackend, params map[string]any, onOutput OutputFunc) (CheckResult, error) {
