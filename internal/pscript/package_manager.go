@@ -1,6 +1,6 @@
 package pscript
 
-// Package-manager modules (winget_package, ...) share one diff-and-act
+// Package-manager modules (winget_package, choco_package) share one diff-and-act
 // skeleton: setup + adapter + check or apply tail. Each adapter defines:
 //
 //	Get-PmInstalled                          returns manager state, read once
@@ -183,7 +183,99 @@ function Invoke-PmChange {
 }
 `
 
+// chocoAdapter reads installed packages from choco list. Chocolatey keeps one
+// version per package, so a pinned change goes through upgrade
+// --allow-downgrade, which also installs a missing package. choco.exe is
+// resolved from the machine environment because a session opened before
+// Chocolatey was installed has a stale PATH and ChocolateyInstall.
+const chocoAdapter = `
+$chocoRoot = [Environment]::GetEnvironmentVariable('ChocolateyInstall', 'Machine')
+if (-not $chocoRoot) { $chocoRoot = Join-Path $env:ProgramData 'chocolatey' }
+$chocoExe = Join-Path $chocoRoot 'bin\choco.exe'
+if (-not (Test-Path -LiteralPath $chocoExe)) {
+  throw "choco.exe was not found at $chocoExe. Add a task with 'uses: preflight/chocolatey' before this one."
+}
+# Chocolatey 1.x choco list searches the remote source, which would make every
+# package look installed, so an unreadable version fails closed too.
+$chocoVersion = (& $chocoExe --version 2>&1 | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $chocoVersion -notmatch '^(\d+)\.') {
+  throw "could not read the Chocolatey version from $chocoExe (got '$chocoVersion'); choco_package requires Chocolatey 2.0 or later."
+}
+if ([int]$Matches[1] -lt 2) {
+  throw "choco_package requires Chocolatey 2.0 or later, found $chocoVersion."
+}
+# Exit codes Chocolatey treats as success; 1641 and 3010 also mean a reboot is pending.
+$chocoSuccessCodes = @(0, 1605, 1614, 1641, 3010)
+function Invoke-Choco {
+  param(
+    [string[]]$Arguments
+  )
+  $output = & $chocoExe @Arguments 2>&1
+  return [pscustomobject]@{
+    ExitCode = $LASTEXITCODE
+    Text = ($output | Out-String).Trim()
+  }
+}
+# ConvertTo-ChocoVersion makes 1.6, 1.6.0 and 01.6.0.0 compare equal.
+function ConvertTo-ChocoVersion {
+  param([string]$Version)
+  $numeric, $suffix = $Version -split '-', 2
+  $parts = [System.Collections.Generic.List[string]]@(foreach ($part in $numeric.Split('.')) {
+    $trimmed = $part.TrimStart('0')
+    if ($trimmed) { $trimmed } else { '0' }
+  })
+  while ($parts.Count -gt 1 -and $parts[$parts.Count - 1] -eq '0') { $parts.RemoveAt($parts.Count - 1) }
+  $normalized = $parts -join '.'
+  if ($suffix) { $normalized += '-' + $suffix }
+  return $normalized.ToLowerInvariant()
+}
+function Get-PmInstalled {
+  $result = Invoke-Choco -Arguments @('list', '--limit-output')
+  if ($result.ExitCode -ne 0) {
+    throw ("choco list failed with exit code $($result.ExitCode)" + [Environment]::NewLine + $result.Text)
+  }
+  $installedMap = @{}
+  foreach ($line in ($result.Text -split '\r?\n')) {
+    $id, $version = $line.Split('|')
+    if ($id -and $version) { $installedMap[$id.ToLowerInvariant()] = $version.Trim() }
+  }
+  return $installedMap
+}
+function Test-PmPresent {
+  param($Spec, $Installed)
+  $current = $Installed[([string]$Spec.id).ToLowerInvariant()]
+  if ($null -eq $current) { return $false }
+  if ($Spec.version) { return (ConvertTo-ChocoVersion $current) -eq (ConvertTo-ChocoVersion ([string]$Spec.version)) }
+  return $true
+}
+function Invoke-PmChange {
+  param($Spec, [string]$Ensure, $Installed)
+  $id = [string]$Spec.id
+  if ($Ensure -eq 'absent') {
+    $chocoArgs = @('uninstall', $id, '-y', '--no-progress')
+  } else {
+    if ($Spec.version) {
+      $chocoArgs = @('upgrade', $id, '--version', [string]$Spec.version, '--allow-downgrade', '-y', '--no-progress')
+    } else {
+      $chocoArgs = @('install', $id, '-y', '--no-progress')
+    }
+    if ($Spec.source) { $chocoArgs += @('--source', [string]$Spec.source) }
+    if ($Spec.params) { $chocoArgs += ('--params=' + [string]$Spec.params) }
+  }
+  foreach ($arg in @($Spec.args)) { if ($null -ne $arg) { $chocoArgs += [string]$arg } }
+  $result = Invoke-Choco -Arguments $chocoArgs
+  if ($chocoSuccessCodes -notcontains $result.ExitCode) {
+    throw ("choco $($chocoArgs[0]) failed for '$id' with exit code $($result.ExitCode)" + [Environment]::NewLine + $result.Text)
+  }
+  if ($result.ExitCode -eq 1641 -or $result.ExitCode -eq 3010) {
+    Write-Output "choco $($chocoArgs[0]) $id succeeded; a reboot is required to finish it (exit code $($result.ExitCode))"
+  }
+}
+`
+
 const (
 	WingetPackageCheckScript = managerPackageSetup + wingetAdapter + managerPackageCheckTail
 	WingetPackageApplyScript = managerPackageSetup + wingetAdapter + managerPackageApplyTail
+	ChocoPackageCheckScript  = managerPackageSetup + chocoAdapter + managerPackageCheckTail
+	ChocoPackageApplyScript  = managerPackageSetup + chocoAdapter + managerPackageApplyTail
 )

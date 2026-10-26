@@ -6,7 +6,7 @@ import (
 )
 
 // NormalizeManagerPackages validates the "packages" list shared by
-// package-manager modules (winget_package, ...) and returns a params map with
+// package-manager modules (winget_package, choco_package) and returns a params map with
 // a clean "packages" key. Package IDs are case-insensitive and may appear once.
 func NormalizeManagerPackages(module string, params map[string]any) (map[string]any, error) {
 	list, ok := params["packages"].([]any)

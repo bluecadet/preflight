@@ -7,6 +7,7 @@ Modules:
 [`directory`](#directory),
 [`package`](#package),
 [`winget_package`](#winget_package),
+[`choco_package`](#choco_package),
 [`remove_appx_packages`](#remove_appx_packages),
 [`shortcut`](#shortcut),
 [`scheduled_task`](#scheduled_task),
@@ -244,6 +245,49 @@ Each entry:
       - id: Microsoft.VisualStudio.2022.Community
         args: ["--override", "--quiet --wait --norestart"]
       - id: OldApp
+        ensure: absent
+```
+
+### `choco_package`
+
+Installs or removes packages with Chocolatey.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `packages` | list | yes | Package entries |
+
+Each entry:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | yes | | Chocolatey package ID, matched case-insensitively |
+| `version` | string | no | | Exact version to install |
+| `source` | string | no | | Source name or URL to install from |
+| `params` | string | no | | Package parameters, passed as `--params` |
+| `args` | string[] | no | | Extra `choco` arguments for this package |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+- Without `version`, an installed package satisfies `present`. With `version`, the installed version must match. Versions compare after dropping trailing zero parts, so `1.6` matches `1.6.0`.
+- Each `id` may appear once. Chocolatey keeps one version of each package.
+- Installs run `choco install <id> -y --no-progress`. With `version`, the task runs `choco upgrade <id> --version <version> --allow-downgrade -y --no-progress` instead, which installs, upgrades, or downgrades. Removals run `choco uninstall <id> -y --no-progress`. `source`, `params`, and `args` apply to installs and upgrades; `args` also applies to removals.
+- Exit codes 0, 1605, 1614, 1641, and 3010 succeed. For 1641 and 3010 the task prints that a reboot is required; add a [`reboot`](#reboot) task if the package needs one.
+- After making changes, the task reads installed packages again and fails if any changed entry still isn't in its desired state.
+- Chocolatey installs machine-wide, so there is no `scope`.
+- The task runs `choco.exe` from the machine's `ChocolateyInstall` directory. If Chocolatey isn't installed, the task fails and asks for a [`preflight/chocolatey`](./stdlib-actions.md#preflightchocolatey) task first.
+- Double quotes inside `params` are removed before Chocolatey sees them. Quote values with single quotes, such as `/Dir:'C:\Program Files\App'`.
+- Requires Chocolatey 2.0 or later. The task fails on 1.x, and when it can't read the Chocolatey version, because 1.x `choco list` searches the remote source instead of listing installed packages.
+- Known limitation: single quotes inside a `params` value aren't escaped, so a value can't contain a literal `'`.
+
+```yaml
+- name: Install tools
+  choco_package:
+    packages:
+      - id: 7zip
+      - id: jq
+        version: "1.7.1"
+      - id: vlc
+        params: "/Language:en"
+      - id: oldapp
         ensure: absent
 ```
 

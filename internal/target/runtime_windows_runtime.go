@@ -157,6 +157,7 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 			},
 		},
 		"winget_package": managerPackageModule(backend, "winget_package", wingetPackageCheckScript, wingetPackageApplyScript),
+		"choco_package":  managerPackageModule(backend, "choco_package", chocoPackageCheckScript, chocoPackageApplyScript),
 		"remove_appx_packages": moduleFuncs{
 			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, out)
@@ -641,7 +642,7 @@ func applyWindowsReboot(ctx context.Context, backend windowsPowerShellBackend, p
 	return err
 }
 
-// managerPackageModule wires a package-manager module (winget_package, ...)
+// managerPackageModule wires a package-manager module (winget_package, choco_package)
 // to its shared-engine check and apply scripts.
 func managerPackageModule(backend windowsPowerShellBackend, module, checkScript, applyScript string) moduleFuncs {
 	return moduleFuncs{

@@ -22,6 +22,10 @@ const wingetPackageCheckScript = pscript.WingetPackageCheckScript
 
 const wingetPackageApplyScript = pscript.WingetPackageApplyScript
 
+const chocoPackageCheckScript = pscript.ChocoPackageCheckScript
+
+const chocoPackageApplyScript = pscript.ChocoPackageApplyScript
+
 const userCheckScript = pscript.UserCheckScript
 
 const userApplyScript = pscript.UserApplyScript
