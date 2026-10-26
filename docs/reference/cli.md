@@ -59,11 +59,10 @@ Command-specific flags:
 | --- | --- |
 | `--bundle` | Apply a staged bundle zip instead of a playbook |
 | `--secret-identity` | Path to an age identity file for decrypting bundle secrets (requires `--bundle`) |
-| `--state-file` | Override the state file path |
 
 ### `preflight check <playbook>`
 
-Run the same execution pipeline as `apply`, but stop after `Check()` paths and report what would change.
+Run the same execution pipeline as `apply`, but stop after `Check()` paths and report what would change. Use it to detect drift on a target.
 
 ```bash
 preflight check playbooks/lobby.yml
@@ -237,40 +236,12 @@ Command-specific flags:
 
 Overrides are rejected when specific secret names are supplied, because `secrets.recipients` and `secrets.identity` are project-wide defaults.
 
-## `state` Commands
-
-### `preflight state show`
-
-Show the selected state file through the chosen output renderer.
-
-### `preflight state diff <playbook>`
-
-Compare the current plan to the selected state file.
-
-```bash
-preflight state diff playbooks/lobby.yml
-preflight state diff playbooks/lobby.yml --target lobby-pc-01
-```
-
-Command-specific flags:
-
-| Flag | Meaning |
-| --- | --- |
-| `--state-file` | Override the state file path |
-
-Behavior notes:
-
-- Local applies default to `state/provision.json`.
-- Inventory-backed applies write `state/targets/<host>.json`.
-- Inventory-backed diffs should pass the same `--target` context used for the host being compared.
-- When multiple hosts resolve and `--state-file` is not set, the command prints one section per host and reads each host's default state file.
-
 ## Output Formats
 
 | Value | Behavior |
 | --- | --- |
 | `text` | Plain human-readable renderer |
-| `tui` | Interactive terminal UI renderer with richer layouts for run, plan, facts, state, validate, and action inspection commands |
+| `tui` | Interactive terminal UI renderer with richer layouts for run, plan, facts, validate, and action inspection commands |
 | `json` | Newline-delimited JSON events |
 
 When a task streams output during `apply`, the `json` renderer emits `task_output` events keyed by `task_id` and `target`, with the streamed lines in `lines`. Failed `task_result` events may also include an `output` array containing the captured task output block.

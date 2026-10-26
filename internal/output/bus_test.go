@@ -222,7 +222,6 @@ func allEventTypes() []Event {
 		ActivityResultEvent{},
 		FactsEvent{},
 		PlanEvent{},
-		StateEvent{},
 		ValidationEvent{},
 		ActionCatalogEvent{},
 		ActionInfoEvent{},

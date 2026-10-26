@@ -79,19 +79,16 @@ type applyAccumulator struct {
 	changedCount int
 	failedCount  int
 	skippedCount int
-	state        *State
 	failed       map[string]bool
 }
 
 func newApplyAccumulator() *applyAccumulator {
 	return &applyAccumulator{
-		state:  &State{Tasks: make(map[string]TaskSnapshot)},
 		failed: make(map[string]bool),
 	}
 }
 
-func (acc *applyAccumulator) recordTask(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) {
-	acc.state.RecordTask(newTaskSnapshot(pt, taskName, sourceParams, params, status, message, dag))
+func (acc *applyAccumulator) recordTask(status target.Status) {
 	switch status {
 	case target.StatusOK:
 		acc.okCount++
@@ -105,12 +102,6 @@ func (acc *applyAccumulator) recordTask(pt *PlanTask, taskName string, sourcePar
 }
 
 func (r *Runner) finalizeApply(acc *applyAccumulator) error {
-	acc.state.LastApplied = time.Now()
-	if !r.config.DryRun && r.config.StatePath != "" {
-		if err := acc.state.Save(r.config.StatePath); err != nil {
-			return fmt.Errorf("apply: save state: %w", err)
-		}
-	}
 	if acc.failedCount > 0 {
 		return fmt.Errorf("apply: %d task(s) failed", acc.failedCount)
 	}
@@ -140,7 +131,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "tag-filtered",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "tag-filtered", nil)
+		acc.recordTask(target.StatusSkipped)
 		return nil
 	}
 
@@ -163,7 +154,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "dependency-failed",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", nil)
+		acc.recordTask(target.StatusSkipped)
 		return nil
 	}
 
@@ -180,7 +171,7 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 			TaskName: pt.Name,
 			Reason:   "when-condition-false",
 		})
-		acc.recordTask(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "when-condition-false", nil)
+		acc.recordTask(target.StatusSkipped)
 		return nil
 	}
 
@@ -232,14 +223,14 @@ func (r *Runner) executeTask(ctx context.Context, pt *PlanTask, rt *template.Run
 				Summary: execErr.Error(),
 				Source:  pt.Module,
 			})
-			acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, target.StatusFailed, execErr.Error(), dag)
+			acc.recordTask(target.StatusFailed)
 			acc.failed[pt.ID] = true
 			return errHalt
 		}
 		result = target.Result{Status: target.StatusOK, Message: execErr.Error(), Output: result.Output}
 	}
 
-	acc.recordTask(pt, bound.Name, bound.SourceParams, bound.Params, result.Status, result.Message, dag)
+	acc.recordTask(result.Status)
 
 	switch result.Status {
 	case target.StatusOK:
@@ -324,35 +315,6 @@ func (r *Runner) taskMatchesTags(pt *PlanTask) bool {
 	}
 
 	return true
-}
-
-func newTaskSnapshot(pt *PlanTask, taskName string, sourceParams, params map[string]any, status target.Status, message string, dag *DAG) TaskSnapshot {
-	dependsOn := []string(nil)
-	if dag != nil {
-		dependsOn, _ = dag.DependencyIDs(pt)
-	}
-
-	paramHash := StateParamHash(sourceParams, params)
-	summary := StateParamSummary(sourceParams, params)
-
-	return TaskSnapshot{
-		TaskKey:      pt.ID,
-		TaskName:     taskName,
-		Module:       pt.Module,
-		DependsOn:    dependsOn,
-		ParamHash:    paramHash,
-		ParamSummary: summary,
-		TaskHash: hashValue(map[string]any{
-			"task_key":   pt.ID,
-			"task_name":  taskName,
-			"module":     pt.Module,
-			"depends_on": dependsOn,
-			"param_hash": paramHash,
-		}),
-		Status:    status,
-		Message:   message,
-		Timestamp: time.Now(),
-	}
 }
 
 // buildExecutionContext connects to the live target, gathers facts, and

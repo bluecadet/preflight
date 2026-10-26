@@ -19,9 +19,8 @@ type BoundTask struct {
 // resolved task ready to execute, plus a pre-resolution copy of its params for
 // state hashing.
 type BoundTaskResult struct {
-	Name         string
-	Params       map[string]any
-	SourceParams map[string]any // pre-secret-resolution copy for state
+	Name   string
+	Params map[string]any
 }
 
 // evaluateTaskWhen renders the task's when condition against the RuntimeContext.
@@ -77,16 +76,13 @@ func bindAndResolveTask(ctx context.Context, task *PlanTask, rt *template.Runtim
 		return nil, err
 	}
 
-	sourceParams := cloneMap(bound.Params)
-
 	if err := bound.resolveSecrets(ctx, resolver); err != nil {
 		return nil, err
 	}
 
 	return &BoundTaskResult{
-		Name:         bound.Name,
-		Params:       bound.Params,
-		SourceParams: sourceParams,
+		Name:   bound.Name,
+		Params: bound.Params,
 	}, nil
 }
 

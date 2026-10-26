@@ -74,29 +74,6 @@ func renderTextPlan(e PlanEvent) []string {
 	return b.values()
 }
 
-func renderTextState(e StateEvent) []string {
-	var b textBlockBuilder
-	if e.PlaybookName != "" {
-		b.linef("State diff for playbook: %s", e.PlaybookName)
-	}
-	if e.Target != "" {
-		b.linef("Target: %s", e.Target)
-	}
-	b.linef("State file: %s", e.StatePath)
-	b.linef("Last applied: %s", e.LastApplied)
-	if len(e.Comparisons) == 0 {
-		return b.values()
-	}
-
-	b.blank()
-	b.line(AlignLeft("STATUS", 12) + " " + AlignLeft("TASK", 28) + " " + AlignLeft("MODULE", 16) + " " + "RECORDED STATUS")
-	b.line(AlignLeft("------------", 12) + " " + AlignLeft("----------------------------", 28) + " " + AlignLeft("----------------", 16) + " " + "---------------")
-	for _, comparison := range e.Comparisons {
-		b.line(AlignLeft(comparison.Status, 12) + " " + AlignLeft(comparison.TaskName, 28) + " " + AlignLeft(comparison.Module, 16) + " " + comparison.RecordedStatus)
-	}
-	return b.values()
-}
-
 func renderTextValidation(e ValidationEvent) []string {
 	var b textBlockBuilder
 	name := e.PlaybookName

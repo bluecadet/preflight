@@ -285,23 +285,6 @@ func tsRenderBulletList(items []string, numbered bool) string {
 	return strings.Join(lines, "\n")
 }
 
-func tsDecorateStateStatus(status string) string {
-	switch strings.ToUpper(status) {
-	case "UNCHANGED":
-		return S.OK.Render("✓ unchanged")
-	case "CHANGED":
-		return S.Changed.Render("◆ changed")
-	case "NEW":
-		return S.Changed.Render("+ new")
-	case "MISSING":
-		return S.Failed.Render("– missing")
-	case "RECORDED":
-		return S.Muted.Render("• recorded")
-	default:
-		return status
-	}
-}
-
 func tsDashCells(widths []int) []string {
 	cells := make([]string, len(widths))
 	for i, width := range widths {

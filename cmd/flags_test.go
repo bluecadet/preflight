@@ -18,7 +18,6 @@ var reportSubCommands = map[string][]string{
 	"plugin":    {"list"},
 	"inventory": {"list"},
 	"secret":    {"list"},
-	"state":     {"show", "diff"},
 }
 
 // reportTopLevelNames are standalone report commands.

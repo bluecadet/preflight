@@ -32,9 +32,6 @@ type jsonEvent struct {
 	Output          []string               `json:"output,omitempty"`
 	Facts           map[string]any         `json:"facts,omitempty"`
 	Tasks           []PlanTaskEntry        `json:"tasks,omitempty"`
-	StatePath       string                 `json:"state_path,omitempty"`
-	LastApplied     string                 `json:"last_applied,omitempty"`
-	Comparisons     []StateComparison      `json:"comparisons,omitempty"`
 	Targets         []string               `json:"targets,omitempty"`
 	VisitedRefs     int                    `json:"visited_refs,omitempty"`
 	ResolvedRefs    []string               `json:"resolved_refs,omitempty"`
@@ -151,9 +148,6 @@ func (r *JSONRenderer) Emit(event Event) {
 	case PlanEvent:
 		je.Type = EventPlan
 		je.Target, je.PlayName, je.Tasks = e.Target, e.PlaybookName, e.Tasks
-	case StateEvent:
-		je.Type = EventState
-		je.Target, je.PlayName, je.StatePath, je.LastApplied, je.Comparisons = e.Target, e.PlaybookName, e.StatePath, e.LastApplied, e.Comparisons
 	case ValidationEvent:
 		je.Type = EventValidate
 		je.PlayName, je.PlaybookPath, je.TaskCount, je.VisitedRefs, je.ResolvedRefs, je.ErrorCount = e.PlaybookName, e.PlaybookPath, e.TaskCount, e.VisitedRefCount, e.ResolvedRefs, e.ErrorCount

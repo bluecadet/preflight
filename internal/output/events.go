@@ -12,7 +12,6 @@ const (
 	EventWarning       EventType = "warning"
 	EventFacts         EventType = "facts"
 	EventPlan          EventType = "plan"
-	EventState         EventType = "state"
 	EventValidate      EventType = "validate"
 	EventActionList    EventType = "action_list"
 	EventActionInfo    EventType = "action_info"
@@ -127,23 +126,6 @@ type PlanEvent struct {
 	Tasks        []PlanTaskEntry
 }
 
-// StateEvent carries the state comparison data for a single target.
-type StateEvent struct {
-	Target       string
-	PlaybookName string
-	StatePath    string
-	LastApplied  string
-	Comparisons  []StateComparison
-}
-
-// StateComparison is a single row in the state diff table.
-type StateComparison struct {
-	Status         string
-	TaskName       string
-	Module         string
-	RecordedStatus string
-}
-
 // ValidationEvent carries the results of a validate command run.
 type ValidationEvent struct {
 	PlaybookPath    string
@@ -235,7 +217,6 @@ func (ActivityStartEvent) Type() EventType     { return EventActivityStart }
 func (ActivityResultEvent) Type() EventType    { return EventActivityResult }
 func (FactsEvent) Type() EventType             { return EventFacts }
 func (PlanEvent) Type() EventType              { return EventPlan }
-func (StateEvent) Type() EventType             { return EventState }
 func (ValidationEvent) Type() EventType        { return EventValidate }
 func (ActionCatalogEvent) Type() EventType     { return EventActionList }
 func (ActionInfoEvent) Type() EventType        { return EventActionInfo }
@@ -272,7 +253,6 @@ func (e ActivityStartEvent) CorrelationIDs() (string, string)     { return e.Tar
 func (e ActivityResultEvent) CorrelationIDs() (string, string)    { return e.Target, "" }
 func (e FactsEvent) CorrelationIDs() (string, string)             { return e.Target, "" }
 func (e PlanEvent) CorrelationIDs() (string, string)              { return e.Target, "" }
-func (e StateEvent) CorrelationIDs() (string, string)             { return e.Target, "" }
 
 // Leveled implementations.
 
@@ -334,7 +314,6 @@ func (e ActivityStartEvent) LogMessage() string  { return e.Message }
 func (e ActivityResultEvent) LogMessage() string { return e.Message }
 func (e FactsEvent) LogMessage() string          { return "" }
 func (e PlanEvent) LogMessage() string           { return "" }
-func (e StateEvent) LogMessage() string          { return "" }
 func (e ValidationEvent) LogMessage() string     { return "" }
 func (e ActionCatalogEvent) LogMessage() string  { return "" }
 func (e ActionInfoEvent) LogMessage() string     { return "" }
@@ -403,15 +382,6 @@ func (e PlanEvent) Redact(secrets []string) Event {
 	e.Target = scrubString(e.Target, secrets)
 	e.PlaybookName = scrubString(e.PlaybookName, secrets)
 	// Tasks []PlanTaskEntry is a struct slice — its fields are not individually scrubbed.
-	return e
-}
-
-func (e StateEvent) Redact(secrets []string) Event {
-	e.Target = scrubString(e.Target, secrets)
-	e.PlaybookName = scrubString(e.PlaybookName, secrets)
-	e.StatePath = scrubString(e.StatePath, secrets)
-	e.LastApplied = scrubString(e.LastApplied, secrets)
-	// Comparisons []StateComparison is a struct slice.
 	return e
 }
 
@@ -706,7 +676,6 @@ func (ActivityStartEvent) isEvent()     {}
 func (ActivityResultEvent) isEvent()    {}
 func (FactsEvent) isEvent()             {}
 func (PlanEvent) isEvent()              {}
-func (StateEvent) isEvent()             {}
 func (ValidationEvent) isEvent()        {}
 func (ActionCatalogEvent) isEvent()     {}
 func (ActionInfoEvent) isEvent()        {}

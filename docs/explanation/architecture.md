@@ -30,7 +30,6 @@ That is not just a stylistic choice. It is the foundation for:
 
 - dry-run mode without a parallel simulation engine
 - safe repeated applies
-- meaningful state snapshots
 - predictable plugin behavior
 
 The runner does not assume that applying twice is harmless. Instead, it requires each module to tell the truth about whether work is needed before it mutates anything.

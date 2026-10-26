@@ -81,7 +81,6 @@ preflight validate playbooks/lobby.yml
 preflight plan playbooks/lobby.yml
 preflight check playbooks/lobby.yml
 preflight apply playbooks/lobby.yml
-preflight state diff playbooks/lobby.yml
 preflight plugin list
 preflight action list
 ```

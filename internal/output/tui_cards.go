@@ -79,41 +79,6 @@ func renderPlanCard(e PlanEvent) string {
 	return card.render()
 }
 
-func renderStateCard(e StateEvent) string {
-	title := "◫ State Snapshot"
-	if e.PlaybookName != "" {
-		title = "◫ State Diff"
-	}
-
-	card := newTUICard(title)
-	rows := [][2]string{
-		{"State file", e.StatePath},
-		{"Last applied", e.LastApplied},
-	}
-	if e.Target != "" {
-		rows = append([][2]string{{"Target", e.Target}}, rows...)
-	}
-	if e.PlaybookName != "" {
-		rows = append([][2]string{{"Playbook", e.PlaybookName}}, rows...)
-	}
-	card.add(tsRenderPairs(rows))
-
-	if len(e.Comparisons) > 0 {
-		tableRows := make([][]string, 0, len(e.Comparisons))
-		for _, comparison := range e.Comparisons {
-			tableRows = append(tableRows, []string{
-				tsDecorateStateStatus(comparison.Status),
-				comparison.TaskName,
-				comparison.Module,
-				comparison.RecordedStatus,
-			})
-		}
-		card.add(tsRenderSimpleTable([]string{"STATUS", "TASK", "MODULE", "RECORDED"}, tableRows))
-	}
-
-	return card.render()
-}
-
 func renderValidationCard(e ValidationEvent) string {
 	card := newTUICard("◇ Validate")
 	name := e.PlaybookName

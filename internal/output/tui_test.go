@@ -338,20 +338,6 @@ func TestTUIModel_CardSnapshots(t *testing.T) {
 				},
 			},
 		},
-		{
-			name: "state-card",
-			evt: StateEvent{
-				Target:       "kiosk-01",
-				PlaybookName: "kiosk-provision",
-				StatePath:    "/var/lib/preflight/kiosk-provision.json",
-				LastApplied:  "2026-07-01T12:00:00Z",
-				Comparisons: []StateComparison{
-					{Status: "UNCHANGED", TaskName: "install display drivers", Module: "command", RecordedStatus: "ok"},
-					{Status: "CHANGED", TaskName: "configure autologin", Module: "registry", RecordedStatus: "changed"},
-					{Status: "NEW", TaskName: "copy wallpaper", Module: "file", RecordedStatus: "ok"},
-				},
-			},
-		},
 	}
 
 	for _, tc := range tests {

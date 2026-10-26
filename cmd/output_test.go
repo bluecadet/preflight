@@ -2,14 +2,10 @@ package cmd
 
 import (
 	"io"
-	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/bluecadet/preflight/internal/output"
-	"github.com/bluecadet/preflight/internal/runner"
-	"github.com/bluecadet/preflight/internal/target"
 )
 
 func TestGetOutputFormatHonorsExplicitText(t *testing.T) {
@@ -41,7 +37,6 @@ func TestGetOutputFormatUsesAutoDetectWhenUnset(t *testing.T) {
 func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 	requireWindowsLocal(t)
 	playbookPath := writeTestPlaybook(t)
-	statePath := writeTestStateFile(t)
 
 	tests := []struct {
 		name        string
@@ -116,46 +111,6 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 			},
 			expectInOut: "localhost",
 		},
-		{
-			name: "state show",
-			run: func(t *testing.T, outFmt string) string {
-				cmd := newTestCommand()
-				if err := cmd.Flags().Set("output", outFmt); err != nil {
-					t.Fatalf("Set output: %v", err)
-				}
-				if err := cmd.Flags().Set("state-file", statePath); err != nil {
-					t.Fatalf("Set state-file: %v", err)
-				}
-				out, err := captureStdout(t, func() error {
-					return runStateShow(cmd, nil)
-				})
-				if err != nil {
-					t.Fatalf("runStateShow: %v", err)
-				}
-				return out
-			},
-			expectInOut: "echo",
-		},
-		{
-			name: "state diff",
-			run: func(t *testing.T, outFmt string) string {
-				cmd := newTestCommand()
-				if err := cmd.Flags().Set("output", outFmt); err != nil {
-					t.Fatalf("Set output: %v", err)
-				}
-				if err := cmd.Flags().Set("state-file", statePath); err != nil {
-					t.Fatalf("Set state-file: %v", err)
-				}
-				out, err := captureStdout(t, func() error {
-					return runDiff(cmd, []string{playbookPath})
-				})
-				if err != nil {
-					t.Fatalf("runDiff: %v", err)
-				}
-				return out
-			},
-			expectInOut: "echo",
-		},
 	}
 
 	for _, tc := range tests {
@@ -168,28 +123,4 @@ func TestRendererBackedCommandsRenderTextAndTUI(t *testing.T) {
 			})
 		}
 	}
-}
-
-func writeTestStateFile(t *testing.T) string {
-	t.Helper()
-
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-	state := &runner.State{
-		LastApplied: time.Date(2026, 4, 9, 17, 0, 0, 0, time.UTC),
-		Tasks: map[string]runner.TaskSnapshot{
-			"echo": {
-				TaskKey:   "echo",
-				TaskName:  "echo",
-				Module:    "shell",
-				TaskHash:  "task-hash",
-				ParamHash: "param-hash",
-				Status:    target.StatusOK,
-			},
-		},
-	}
-	if err := state.Save(path); err != nil {
-		t.Fatalf("Save state: %v", err)
-	}
-	return path
 }

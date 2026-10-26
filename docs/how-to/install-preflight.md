@@ -113,7 +113,7 @@ your user `PATH` (the installer added it):
 Remove-Item -Recurse -Force "$env:LOCALAPPDATA\preflight"
 ```
 
-Projects you created (playbooks, `preflight.yml`, `state/`, `secrets/`)
+Projects you created (playbooks, `preflight.yml`, `secrets/`)
 live in your own repositories and are untouched by an uninstall. The
 action cache, if you fetched remote actions, lives at
 `~/.preflight/actions` and can be deleted too.

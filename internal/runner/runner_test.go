@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"filippo.io/age"
 
@@ -1199,51 +1198,6 @@ func TestApplyResolvesSecretsBeforeExecute(t *testing.T) {
 	}
 }
 
-func TestStateRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "state.json")
-
-	s := &State{
-		LastApplied: time.Now().Truncate(time.Second),
-		Tasks:       make(map[string]TaskSnapshot),
-	}
-	s.RecordTask(TaskSnapshot{
-		TaskKey:   "task-0",
-		TaskName:  "run echo",
-		Status:    target.StatusOK,
-		Timestamp: time.Now().Truncate(time.Second),
-		ParamHash: "abc123",
-		TaskHash:  hashValue(map[string]any{"task_key": "task-0", "task_name": "run echo", "param_hash": "abc123"}),
-	})
-
-	if err := s.Save(path); err != nil {
-		t.Fatalf("Save error: %v", err)
-	}
-
-	if _, err := os.Stat(path); err != nil {
-		t.Fatalf("state file not written: %v", err)
-	}
-
-	loaded, err := LoadState(path)
-	if err != nil {
-		t.Fatalf("LoadState error: %v", err)
-	}
-
-	if len(loaded.Tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(loaded.Tasks))
-	}
-	got := loaded.Tasks["task-0"]
-	if got.TaskKey != "task-0" {
-		t.Errorf("task key mismatch: got %q", got.TaskKey)
-	}
-	if got.Status != target.StatusOK {
-		t.Errorf("status mismatch: got %q", got.Status)
-	}
-	if got.ParamHash != "abc123" {
-		t.Errorf("param hash mismatch: got %q", got.ParamHash)
-	}
-}
-
 type staticResolver struct {
 	action *action.Action
 }
@@ -1252,222 +1206,6 @@ func (r *staticResolver) Resolve(_ context.Context, _ string) (*action.Action, e
 	return r.action, nil
 }
 func (r *staticResolver) Name() string { return "static" }
-
-func TestLoadStateMissing(t *testing.T) {
-	s, err := LoadState("/nonexistent/path/state.json")
-	if err != nil {
-		t.Fatalf("expected no error for missing file, got: %v", err)
-	}
-	if s == nil {
-		t.Fatal("expected non-nil State")
-	}
-	if len(s.Tasks) != 0 {
-		t.Errorf("expected empty Tasks, got %d", len(s.Tasks))
-	}
-}
-
-func TestComparePlannedTasksNoStateMarksAllNew(t *testing.T) {
-	comparisons := ComparePlannedTasks([]PlannedTaskState{
-		{TaskKey: "task-a", TaskName: "one", ParamHash: "a", TaskHash: "hash-a"},
-		{TaskKey: "task-b", TaskName: "two", ParamHash: "b", TaskHash: "hash-b"},
-	}, &State{Tasks: map[string]TaskSnapshot{}})
-
-	if len(comparisons) != 2 {
-		t.Fatalf("expected 2 comparisons, got %d", len(comparisons))
-	}
-	for i, comparison := range comparisons {
-		if comparison.Status != ComparisonStatusNew {
-			t.Fatalf("comparison %d: expected NEW, got %s", i, comparison.Status)
-		}
-	}
-}
-
-func TestComparePlannedTasksMarksKnownChangedAndRemoved(t *testing.T) {
-	state := &State{
-		Tasks: map[string]TaskSnapshot{
-			"task-0": {TaskKey: "task-0", TaskName: "known task", ParamHash: "same", TaskHash: "same", Status: target.StatusOK},
-			"task-1": {TaskKey: "task-1", TaskName: "changed task", ParamHash: "old", TaskHash: "old", Status: target.StatusChanged},
-			"task-2": {TaskKey: "task-2", TaskName: "removed task", ParamHash: "gone", TaskHash: "gone", Status: target.StatusFailed},
-		},
-	}
-
-	comparisons := ComparePlannedTasks([]PlannedTaskState{
-		{TaskKey: "task-0", TaskName: "known task", ParamHash: "same", TaskHash: "same"},
-		{TaskKey: "task-1", TaskName: "changed task", ParamHash: "new", TaskHash: "new"},
-	}, state)
-
-	if len(comparisons) != 3 {
-		t.Fatalf("expected 3 comparisons, got %d", len(comparisons))
-	}
-	if comparisons[0].Status != ComparisonStatusUnchanged {
-		t.Fatalf("expected first comparison to be UNCHANGED, got %s", comparisons[0].Status)
-	}
-	if comparisons[1].Status != ComparisonStatusChanged {
-		t.Fatalf("expected second comparison to be CHANGED, got %s", comparisons[1].Status)
-	}
-	if comparisons[2].Status != ComparisonStatusRemoved {
-		t.Fatalf("expected third comparison to be REMOVED, got %s", comparisons[2].Status)
-	}
-	if comparisons[2].RecordedStatus != target.StatusFailed {
-		t.Fatalf("expected removed task to keep recorded status, got %s", comparisons[2].RecordedStatus)
-	}
-}
-
-func TestBuildPlannedTaskStateRendersExecutionTimeTemplates(t *testing.T) {
-	plan := &ExecutionPlan{
-		PlaybookName: "rendered-state",
-		Tasks: []*PlanTask{{
-			ID:     "task-0",
-			Name:   "echo {{ target.name }} on {{ facts.os.name }}",
-			Module: "shell",
-			Scope:  template.NewScope(),
-			Params: map[string]any{
-				"cmd":  "echo",
-				"args": []any{"{{ env.SITE }}", "{{ target.address }}", "{{ facts.os.build }}"},
-			},
-		}},
-	}
-
-	planned, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{
-		Target: map[string]any{
-			"name":    "kiosk-a",
-			"address": "10.0.0.1",
-		},
-		Facts: map[string]any{
-			"os": map[string]any{
-				"name":  "Windows 11",
-				"build": 22631,
-			},
-		},
-		Env: map[string]string{
-			"SITE": "lobby",
-		},
-	}, nil)
-	if err != nil {
-		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
-	}
-	if len(planned) != 1 {
-		t.Fatalf("expected 1 planned task, got %d", len(planned))
-	}
-	if planned[0].TaskName != "echo kiosk-a on Windows 11" {
-		t.Fatalf("expected rendered task name, got %q", planned[0].TaskName)
-	}
-	wantHash := ParamHash(map[string]any{
-		"cmd":  "echo",
-		"args": []any{"lobby", "10.0.0.1", "22631"},
-	})
-	if planned[0].ParamHash != wantHash {
-		t.Fatalf("expected rendered param hash %q, got %q", wantHash, planned[0].ParamHash)
-	}
-}
-
-func TestBuildPlannedTaskStateResolvesDependenciesByRawTaskName(t *testing.T) {
-	plan := &ExecutionPlan{
-		PlaybookName: "dep-state",
-		Tasks: []*PlanTask{
-			{
-				ID:     "task-0",
-				Name:   "prepare {{ target.name }}",
-				Ref:    "prepare",
-				Module: "shell",
-				Params: map[string]any{"cmd": "echo"},
-				Scope:  template.NewScope(),
-			},
-			{
-				ID:        "task-1",
-				Name:      "apply",
-				Module:    "shell",
-				DependsOn: []string{"prepare"},
-				Params:    map[string]any{"cmd": "echo"},
-				Scope:     template.NewScope(),
-			},
-		},
-	}
-
-	planned, err := BuildPlannedTaskState(context.Background(), plan, &template.RuntimeContext{
-		Target: map[string]any{"name": "kiosk-a"},
-	}, nil)
-	if err != nil {
-		t.Fatalf("BuildPlannedTaskState returned error: %v", err)
-	}
-	if len(planned) != 2 {
-		t.Fatalf("expected 2 planned tasks, got %d", len(planned))
-	}
-	if len(planned[1].DependsOn) != 1 || planned[1].DependsOn[0] != "task-0" {
-		t.Fatalf("expected dependency on task-0, got %#v", planned[1].DependsOn)
-	}
-}
-
-func TestApplySavesStateWithStableDependsOnKeys(t *testing.T) {
-	dir := t.TempDir()
-	statePath := filepath.Join(dir, "state", "provision.json")
-	mt := &mockTarget{results: []target.Result{{Status: target.StatusChanged}, {Status: target.StatusChanged}}}
-	r := New(mt, emptyResolver(), Config{StatePath: statePath})
-	plan := &ExecutionPlan{
-		PlaybookName: "state-save",
-		Tasks: []*PlanTask{{
-			ID:     "task-0",
-			Name:   "prepare",
-			Ref:    "prepare",
-			Module: "shell",
-			Params: map[string]any{"cmd": "echo"},
-			Scope:  template.NewScope(),
-		}, {
-			ID:        "task-1",
-			Name:      "apply",
-			Module:    "shell",
-			DependsOn: []string{"prepare"},
-			Params:    map[string]any{"cmd": "echo"},
-			Scope:     template.NewScope(),
-		}},
-	}
-
-	if err := r.Apply(context.Background(), plan); err != nil {
-		t.Fatalf("Apply returned error: %v", err)
-	}
-
-	state, err := LoadState(statePath)
-	if err != nil {
-		t.Fatalf("LoadState returned error: %v", err)
-	}
-	recorded := state.Tasks["task-1"]
-	if len(recorded.DependsOn) != 1 || recorded.DependsOn[0] != "task-0" {
-		t.Fatalf("expected saved depends_on to use stable task keys, got %#v", recorded.DependsOn)
-	}
-}
-
-func TestApplySavesStateWithParamHashes(t *testing.T) {
-	dir := t.TempDir()
-	statePath := filepath.Join(dir, "state", "provision.json")
-	mt := &mockTarget{results: []target.Result{{Status: target.StatusChanged}}}
-	r := New(mt, emptyResolver(), Config{StatePath: statePath})
-	plan := &ExecutionPlan{
-		PlaybookName: "state-save",
-		Tasks: []*PlanTask{{
-			ID:     "task-0",
-			Name:   "shell task",
-			Module: "shell",
-			Params: map[string]any{"cmd": "echo"},
-			Scope:  template.NewScope(),
-		}},
-	}
-
-	if err := r.Apply(context.Background(), plan); err != nil {
-		t.Fatalf("Apply returned error: %v", err)
-	}
-
-	state, err := LoadState(statePath)
-	if err != nil {
-		t.Fatalf("LoadState returned error: %v", err)
-	}
-	recorded := state.Tasks["task-0"]
-	if recorded.ParamHash == "" {
-		t.Fatal("expected saved state to include param hash")
-	}
-	if recorded.ParamHash != ParamHash(plan.Tasks[0].Params) {
-		t.Fatalf("expected param hash %q, got %q", ParamHash(plan.Tasks[0].Params), recorded.ParamHash)
-	}
-}
 
 func TestRunFetchAndStagePhases(t *testing.T) {
 	playbook := newShellPlaybook("phase-test")
@@ -2211,12 +1949,9 @@ func TestRunFetchesRemoteDepsNestedUnderStdlibAction(t *testing.T) {
 
 func TestRunPlanPhaseStopsBeforeApply(t *testing.T) {
 	mt := &mockTarget{}
-	stateDir := t.TempDir()
-	statePath := filepath.Join(stateDir, "state.json")
 
 	r := New(mt, emptyResolver(), Config{
-		Phase:     "plan",
-		StatePath: statePath,
+		Phase: "plan",
 	})
 	pb := newShellPlaybook("plan-only")
 	if err := r.Run(context.Background(), pb); err != nil {
@@ -2224,9 +1959,6 @@ func TestRunPlanPhaseStopsBeforeApply(t *testing.T) {
 	}
 	if len(mt.calls) != 0 {
 		t.Fatalf("expected no target execution during plan phase, got %#v", mt.calls)
-	}
-	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
-		t.Fatalf("expected no state file to be written during plan phase, but stat returned: %v", err)
 	}
 }
 
@@ -2261,47 +1993,5 @@ func TestTargetNameFallsBackToTargetVars(t *testing.T) {
 	r2 := &Runner{config: Config{TargetVars: map[string]any{"hostname": "gallery-01"}}}
 	if got := r2.targetName(); got != "gallery-01" {
 		t.Errorf("targetName() = %q, want %q", got, "gallery-01")
-	}
-}
-
-func TestNewTaskSnapshotNilDAGProducesEmptyDependsOn(t *testing.T) {
-	pt := &PlanTask{
-		ID:        "task-1",
-		Name:      "dependent task",
-		Module:    "shell",
-		DependsOn: []string{"failing task"},
-		Params:    map[string]any{"cmd": "echo"},
-	}
-
-	snap := newTaskSnapshot(pt, pt.Name, pt.Params, pt.Params, target.StatusSkipped, "dependency-failed", nil)
-	if len(snap.DependsOn) != 0 {
-		t.Fatalf("expected empty DependsOn when dag=nil, got %v", snap.DependsOn)
-	}
-	if snap.Status != target.StatusSkipped {
-		t.Fatalf("expected StatusSkipped, got %v", snap.Status)
-	}
-	if snap.Message != "dependency-failed" {
-		t.Fatalf("expected message %q, got %q", "dependency-failed", snap.Message)
-	}
-}
-
-func TestNewTaskSnapshotWithDAGResolvesDependencyIDs(t *testing.T) {
-	taskA := &PlanTask{ID: "task-0", Name: "failing task", Module: "shell"}
-	taskB := &PlanTask{
-		ID:        "task-1",
-		Name:      "dependent task",
-		Module:    "shell",
-		DependsOn: []string{"failing task"},
-		Params:    map[string]any{"cmd": "echo"},
-	}
-
-	dag, err := BuildDAG([]*PlanTask{taskA, taskB})
-	if err != nil {
-		t.Fatalf("BuildDAG error: %v", err)
-	}
-
-	snap := newTaskSnapshot(taskB, taskB.Name, taskB.Params, taskB.Params, target.StatusOK, "", dag)
-	if len(snap.DependsOn) != 1 || snap.DependsOn[0] != "task-0" {
-		t.Fatalf("expected DependsOn=[task-0], got %v", snap.DependsOn)
 	}
 }

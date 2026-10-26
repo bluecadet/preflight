@@ -52,10 +52,6 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	defer func() { _ = renderer.Close() }()
 
 	concurrency, _ := cmd.Flags().GetInt("concurrency")
-	statePath, err := stateFilePath(cmd)
-	if err != nil {
-		return fmt.Errorf("facts: %w", err)
-	}
 	projectDir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("facts: get working directory: %w", err)
@@ -72,14 +68,14 @@ func runFacts(cmd *cobra.Command, args []string) error {
 	var hosts []targeting.ResolvedHost
 	switch {
 	case selectorsAreLocal(selectors):
-		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}
+		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry)}
 	case projectCfg.Inventory == nil:
 		if len(selectors) > 0 {
 			return fmt.Errorf("facts: no inventory configured in preflight.yml")
 		}
-		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry, statePath)}
+		hosts = []targeting.ResolvedHost{targeting.ResolveLocalHost(registry)}
 	default:
-		hosts, err = resolveInventoryHosts(ctx, projectCfg.Inventory, selectors, registry, buildSecretsResolver(projectDir, projectCfg), statePath)
+		hosts, err = resolveInventoryHosts(ctx, projectCfg.Inventory, selectors, registry, buildSecretsResolver(projectDir, projectCfg))
 		if err != nil {
 			return fmt.Errorf("facts: %w", err)
 		}
