@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/bluecadet/preflight/internal/output"
-	"github.com/bluecadet/preflight/pkg/plugin/sdk"
+	"github.com/bluecadet/preflight/internal/plugins"
 )
 
 var pluginCmd = &cobra.Command{
@@ -37,7 +37,7 @@ func init() {
 }
 
 func runPluginList(cmd *cobra.Command, _ []string) error {
-	plugins, err := sdk.Inspect(commandContextOrBackground(cmd), sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
+	plugins, err := plugins.Inspect(commandContextOrBackground(cmd), plugins.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin list: %w", err)
 	}
@@ -71,7 +71,7 @@ func runPluginList(cmd *cobra.Command, _ []string) error {
 }
 
 func runPluginInfo(cmd *cobra.Command, args []string) error {
-	plugins, err := sdk.Inspect(commandContextOrBackground(cmd), sdk.DiscoveryOptions{BinaryDir: currentBinaryDir()})
+	plugins, err := plugins.Inspect(commandContextOrBackground(cmd), plugins.DiscoveryOptions{BinaryDir: currentBinaryDir()})
 	if err != nil {
 		return fmt.Errorf("plugin info: %w", err)
 	}
