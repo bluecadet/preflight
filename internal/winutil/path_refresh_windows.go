@@ -35,7 +35,7 @@ func readRegistryEnv(root registry.Key, path, name string) string {
 	if err != nil {
 		return ""
 	}
-	defer k.Close()
+	defer func() { _ = k.Close() }()
 	val, _, err := k.GetStringValue(name)
 	if err != nil {
 		return ""
