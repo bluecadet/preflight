@@ -198,14 +198,14 @@ func getSSHConfigFromEnv() (*SSHConfig, bool) {
 // (e.g. "PREFLIGHT_TEST_SSH") and returns nil +
 // false when any required var is missing so callers can t.Skip cleanly.
 //
-// Required vars: <prefix>_HOST, <prefix>_USER, <prefix>_PASS.
-// Optional vars: <prefix>_PORT (default 22), <prefix>_KEY (private key file;
-// password auth is always attempted when <prefix>_PASS is set).
+// Required vars: <prefix>_HOST, <prefix>_USER.
+// Optional vars: <prefix>_PORT (default 22), <prefix>_PASS, <prefix>_KEY
+// (private key file). With neither _PASS nor _KEY set, auth falls back to the
+// SSH agent and default keys under ~/.ssh.
 func sshConfigFromEnv(prefix string) (*SSHConfig, bool) {
 	host := os.Getenv(prefix + "_HOST")
 	user := os.Getenv(prefix + "_USER")
-	pass := os.Getenv(prefix + "_PASS")
-	if host == "" || user == "" || pass == "" {
+	if host == "" || user == "" {
 		return nil, false
 	}
 	// Verify the host resolves before attempting an SSH connection. This
@@ -226,7 +226,7 @@ func sshConfigFromEnv(prefix string) (*SSHConfig, bool) {
 		Host:     host,
 		Port:     port,
 		Username: user,
-		Password: pass,
+		Password: os.Getenv(prefix + "_PASS"),
 		// Test-target host keys rotate whenever the VM or container is rebuilt,
 		// and the default accept-new policy would pin them into the developer's
 		// real ~/.ssh/known_hosts. Skip verification for sacrificial test
@@ -262,7 +262,7 @@ func forEachTransport(t *testing.T, fn func(t *testing.T, runner PowerShellRunne
 	t.Run("ssh", func(t *testing.T) {
 		cfg, ok := getSSHConfigFromEnv()
 		if !ok {
-			t.Skip("PREFLIGHT_TEST_SSH_HOST / _USER / _PASS not set")
+			t.Skip("PREFLIGHT_TEST_SSH_HOST / _USER not set")
 		}
 		tgt := NewSSHTarget(*cfg, nil)
 		t.Cleanup(func() { _ = tgt.Close() })

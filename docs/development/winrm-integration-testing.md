@@ -102,9 +102,9 @@ iex ((New-Object System.Net.WebClient).DownloadString(
 ```
 
 Installs OpenSSH Server, starts `sshd`, and opens the firewall for port 22.
-Preflight authenticates over SSH with password auth by default (the same
-`pf-test` password), so no key generation is required — key auth is optional
-via `PREFLIGHT_TEST_SSH_KEY`.
+SSH accepts the same `pf-test` password, so no key generation is required.
+Key auth works too: set `PREFLIGHT_TEST_SSH_KEY`, or leave both `_PASS` and
+`_KEY` unset to use your SSH agent and default keys under `~/.ssh`.
 
 ## 3. Set The Environment Variables
 
@@ -122,8 +122,8 @@ PREFLIGHT_TEST_WINRM_PASS=YourStrongPassword123!
 PREFLIGHT_TEST_SSH_HOST=192.168.x.x
 PREFLIGHT_TEST_SSH_PORT=22
 PREFLIGHT_TEST_SSH_USER=pf-test
-PREFLIGHT_TEST_SSH_PASS=YourStrongPassword123!
-# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa  # optional, password auth is default
+PREFLIGHT_TEST_SSH_PASS=YourStrongPassword123!  # optional with key auth
+# PREFLIGHT_TEST_SSH_KEY=/path/to/id_rsa  # optional; agent and ~/.ssh keys otherwise
 ```
 
 `PREFLIGHT_TEST_WINRM_PORT` and `PREFLIGHT_TEST_SSH_PORT` default to 5985
@@ -205,7 +205,7 @@ unset, its subtest skips cleanly:
     integration_registry_test.go:XX: PREFLIGHT_TEST_WINRM_HOST / _USER / _PASS not set
 --- SKIP: TestIntegration_Registry/winrm (0.00s)
 === RUN   TestIntegration_Registry/ssh
-    integration_registry_test.go:XX: PREFLIGHT_TEST_SSH_HOST / _USER / _PASS not set
+    integration_registry_test.go:XX: PREFLIGHT_TEST_SSH_HOST / _USER not set
 --- SKIP: TestIntegration_Registry/ssh (0.00s)
 --- SKIP: TestIntegration_Registry (0.00s)
 ```
@@ -231,7 +231,7 @@ the test hard-skips with a loud message instead of mutating the target:
 same body function once per configured transport:
 
 1. **Gate per transport**: Skips the transport subtest when its env vars are
-   unset (HOST/USER/PASS independently per transport)
+   unset (WinRM: HOST/USER/PASS; SSH: HOST/USER)
 2. **Sentinel guard**: Asserts `HKLM\SOFTWARE\PreflightTest\IsSacrificial=1`
    via the `PowerShellRunner` interface
 3. **Cleanup**: `t.Cleanup` removes the per-run registry key regardless of
