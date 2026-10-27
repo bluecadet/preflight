@@ -1,6 +1,9 @@
 package output
 
-import "strings"
+import (
+	"strings"
+	"unicode/utf8"
+)
 
 // Column helpers for pad-to-width, left/right alignment, and truncation.
 //
@@ -24,13 +27,14 @@ func PadLine(left, right string, width int) string {
 	return left + strings.Repeat(" ", spaces) + right
 }
 
-// AlignLeft pads s with spaces on the right so that the byte length
-// equals width. If s is already longer, it is returned unchanged.
+// AlignLeft pads s with spaces on the right so that its rune count equals
+// width. If s is already longer, it is returned unchanged.
 func AlignLeft(s string, width int) string {
-	if len(s) >= width {
+	n := utf8.RuneCountInString(s)
+	if n >= width {
 		return s
 	}
-	return s + strings.Repeat(" ", width-len(s))
+	return s + strings.Repeat(" ", width-n)
 }
 
 // Truncate shortens s to at most max runes (not bytes), appending "…" when

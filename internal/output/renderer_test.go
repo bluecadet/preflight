@@ -561,3 +561,47 @@ func TestTextRenderer_HostColorDisabledWhenColorOff(t *testing.T) {
 		t.Errorf("expected plain [host-a] badge, got: %q", out)
 	}
 }
+
+func TestTextRenderer_ActionInfoAlignsLongInputNames(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(ActionInfoEvent{
+		Name: "preflight/chocolatey",
+		Inputs: []ActionInputEntry{
+			{Name: "remove_default_source", Description: "Remove the default source"},
+			{Name: "sources", Description: "Sources to add"},
+		},
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"  remove_default_source: Remove the default source",
+		"  sources:               Sources to add",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestTextRenderer_ActionInfoAlignsMultibyteInputNames(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(ActionInfoEvent{
+		Name: "preflight/example",
+		Inputs: []ActionInputEntry{
+			{Name: "héllo_wörld_très_long", Description: "Long"},
+			{Name: "ab", Description: "Short"},
+		},
+	})
+
+	out := buf.String()
+	for _, want := range []string{
+		"  héllo_wörld_très_long: Long",
+		"  ab:                    Short",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}

@@ -4,7 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
+
+// inputNameMinWidth is the minimum width of the input-name column in
+// action info output.
+const inputNameMinWidth = 20
 
 type textBlockBuilder struct {
 	lines []string
@@ -124,6 +129,10 @@ func renderTextActionInfo(e ActionInfoEvent) []string {
 	if len(e.Inputs) > 0 {
 		b.blank()
 		b.line("Inputs:")
+		width := inputNameMinWidth
+		for _, input := range e.Inputs {
+			width = max(width, utf8.RuneCountInString(input.Name)+2)
+		}
 		for _, input := range e.Inputs {
 			required := ""
 			if input.Required {
@@ -133,7 +142,7 @@ func renderTextActionInfo(e ActionInfoEvent) []string {
 			if input.Default != "" {
 				defaultValue = " [default: " + input.Default + "]"
 			}
-			b.line("  " + AlignLeft(input.Name+":", 20) + input.Description + required + defaultValue)
+			b.line("  " + AlignLeft(input.Name+":", width) + input.Description + required + defaultValue)
 		}
 	}
 

@@ -11,8 +11,8 @@
   NAME      TYPE    REQUIRED  DEFAULT  DESCRIPTION
   ────────  ──────  ────────  ───────  ──────────────────────────────────────
   domain    string  optional  .        Domain name (use . for local accounts)
-  password  string  optional  —      Password for the auto-login user
-  username  string  required  —      Username to auto-login as
+  password  string  optional  —        Password for the auto-login user
+  username  string  required  —        Username to auto-login as
 
   Tasks
   1. Enable auto-login
