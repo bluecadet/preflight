@@ -605,3 +605,80 @@ func TestTextRenderer_ActionInfoAlignsMultibyteInputNames(t *testing.T) {
 		}
 	}
 }
+
+func TestTextRenderer_RecapFailsForUnreachableTarget(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(TargetStartEvent{Target: "down", Transport: "ssh"})
+	r.Emit(TargetUnreachableEvent{Target: "down", Reason: "connection refused"})
+	r.Emit(TargetCompleteEvent{Target: "down", Outcome: "failed", Error: "connection refused"})
+	r.Emit(RunSummaryEvent{Status: "failed", TargetTallies: TargetCounts{Failed: 1}})
+
+	out := buf.String()
+	for _, want := range []string{
+		"x Apply failed",
+		"  targets: 0 ok, 1 failed",
+		"Needs attention",
+		"down: target failed before its tasks finished (connection refused)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "Apply complete") {
+		t.Errorf("unreachable target must not report a complete run, got:\n%s", out)
+	}
+}
+
+func TestTextRenderer_RecapPlanFailureIncludesReason(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(TargetStartEvent{Target: "gallery-01", Transport: "local"})
+	r.Emit(TargetCompleteEvent{Target: "gallery-01", Outcome: "failed", Error: "plan: dependency cycle: a -> b -> a"})
+	r.Emit(RunSummaryEvent{Status: "failed", TargetTallies: TargetCounts{Failed: 1}})
+
+	out := buf.String()
+	for _, want := range []string{
+		"x Apply failed",
+		"Needs attention",
+		"gallery-01: target failed before its tasks finished (plan: dependency cycle: a -> b -> a)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestTextRenderer_RecapMultiTargetHostLabels(t *testing.T) {
+	var buf bytes.Buffer
+	r := newTextRenderer(&buf)
+	r.Emit(RunStartEvent{PlaybookName: "deploy", Targets: []string{"host-a", "host-b", "host-c"}})
+	for _, h := range []string{"host-a", "host-b", "host-c"} {
+		r.Emit(TargetStartEvent{Target: h, Transport: "ssh"})
+	}
+	r.Emit(TaskFailedEvent{Target: "host-a", TaskID: "t1", TaskName: "sync", FailMessage: "boom"})
+	r.Emit(TargetCompleteEvent{Target: "host-a", Outcome: "failed"})
+	r.Emit(TargetUnreachableEvent{Target: "host-b", Reason: "connection refused"})
+	r.Emit(TargetCompleteEvent{Target: "host-b", Outcome: "failed", Error: "connection refused"})
+	r.Emit(TargetCompleteEvent{Target: "host-c", Outcome: "ok"})
+	r.Emit(RunSummaryEvent{Status: "failed", TargetTallies: TargetCounts{OK: 1, Failed: 2}})
+
+	_, recap, ok := strings.Cut(buf.String(), "Needs attention")
+	if !ok {
+		t.Fatalf("expected Needs attention section, got:\n%s", buf.String())
+	}
+	for _, want := range []string{
+		"host-b: target failed before its tasks finished (connection refused)",
+		"[host-a] sync",
+	} {
+		if !strings.Contains(recap, want) {
+			t.Errorf("expected %q in recap, got:\n%s", want, recap)
+		}
+	}
+	if strings.Contains(recap, "host-c") {
+		t.Errorf("healthy host-c must not appear in recap, got:\n%s", recap)
+	}
+	if !strings.Contains(buf.String(), "  targets: 1 ok, 2 failed") {
+		t.Errorf("expected targets line, got:\n%s", buf.String())
+	}
+}

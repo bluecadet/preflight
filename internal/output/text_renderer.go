@@ -481,7 +481,7 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 	modeTitle := titleRunMode(r.projection.Mode)
 	statusGlyph := r.colorize(ansiGreen, "✓")
 	statusWord := "complete"
-	if r.projection.FailedCount > 0 {
+	if r.projection.RunFailed() {
 		statusGlyph = r.colorize(ansiRed, "x")
 		statusWord = "failed"
 	}
@@ -494,10 +494,16 @@ func (r *TextRenderer) emitRunSummary(e RunSummaryEvent) {
 		{ok: r.projection.OkCount, changed: r.projection.ChangedCount, failed: r.projection.FailedCount, skipped: r.projection.SkippedCount},
 	})
 	r.writeLine("  tasks: " + renderTaskTotals(totals, r.projection.IsCheckMode(), r.projection.WarningCount))
+	if line := r.projection.TargetTotalsLine(); line != "" {
+		r.writeLine(line)
+	}
 
-	if r.projection.FailedCount > 0 {
+	if r.projection.RunFailed() {
 		r.writeLine("")
 		r.writeLine("Needs attention")
+		for _, f := range r.projection.FailedTargetsWithoutTasks() {
+			r.writeLine("  " + r.coloredTarget(f.Target) + ": " + f.Message)
+		}
 		showTarget := r.shouldShowHostLabels()
 		for _, failed := range r.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)

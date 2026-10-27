@@ -357,7 +357,7 @@ func (m tuiModel) renderRunningLeft(task *activeTask, spin, name, timer string) 
 }
 
 func (m tuiModel) renderFinalSummary() string {
-	if len(m.projection.FailedTasks()) == 0 && m.projection.Total() == 0 {
+	if !m.projection.RunFailed() && m.projection.Total() == 0 {
 		return ""
 	}
 
@@ -370,7 +370,7 @@ func (m tuiModel) renderFinalSummary() string {
 
 	overallIcon := S.OK.Render("✓")
 	statusWord := "complete"
-	if m.projection.FailedCount > 0 {
+	if m.projection.RunFailed() {
 		overallIcon = S.Failed.Render("x")
 		statusWord = "failed"
 	}
@@ -382,10 +382,16 @@ func (m tuiModel) renderFinalSummary() string {
 		{ok: m.projection.OkCount, changed: m.projection.ChangedCount, failed: m.projection.FailedCount, skipped: m.projection.SkippedCount},
 	})
 	b.WriteString("  tasks: " + renderTaskTotals(totals, m.projection.IsCheckMode(), m.projection.WarningCount) + "\n")
+	if line := m.projection.TargetTotalsLine(); line != "" {
+		b.WriteString(line + "\n")
+	}
 
-	if m.projection.FailedCount > 0 {
+	if m.projection.RunFailed() {
 		b.WriteByte('\n')
 		b.WriteString("Needs attention\n")
+		for _, f := range m.projection.FailedTargetsWithoutTasks() {
+			b.WriteString("  " + m.targetBadge(f.Target) + " " + f.Message + "\n")
+		}
 		for _, failed := range m.projection.FailedTasks() {
 			path := renderTaskFailurePath(failed.actionPath, failed.name)
 			prefix := "  "

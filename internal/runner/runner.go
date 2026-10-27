@@ -114,7 +114,11 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 
 	// Emit target complete.
 	elapsedMs := time.Since(targetStartTime).Milliseconds()
-	r.emitTargetComplete(targetName, elapsedMs, hasFailure)
+	reason := ""
+	if applyErr != nil && !isApplyTaskFailureSummary(applyErr) {
+		reason = failureReason(applyErr)
+	}
+	r.emitTargetComplete(targetName, elapsedMs, hasFailure, reason)
 
 	if applyErr != nil {
 		if !isApplyTaskFailureSummary(applyErr) {
@@ -142,6 +146,13 @@ func (r *Runner) applyRecovered(ctx context.Context, plan *ExecutionPlan) (err e
 	return r.apply(ctx, plan)
 }
 
+// failureReason returns the first line of err, so a recovered panic's stack
+// does not land in the recap.
+func failureReason(err error) string {
+	first, _, _ := strings.Cut(err.Error(), "\n")
+	return first
+}
+
 func isApplyTaskFailureSummary(err error) bool {
 	return err != nil && strings.HasPrefix(err.Error(), "apply: ") && strings.Contains(err.Error(), " task(s) failed")
 }
@@ -159,7 +170,7 @@ func (r *Runner) emitTargetStart(targetName string) {
 }
 
 // emitTargetComplete emits a target-level complete event.
-func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool) {
+func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool, reason string) {
 	outcome := "ok"
 	if hasFailure {
 		outcome = "failed"
@@ -171,6 +182,7 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 	r.emit(output.TargetCompleteEvent{
 		Target:          targetName,
 		Outcome:         outcome,
+		Error:           reason,
 		ElapsedMs:       elapsedMs,
 		WinRMRoundTrips: winrmRoundTrips,
 	})
@@ -188,7 +200,7 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 // alongside it — or the target would be double-counted.
 func (r *Runner) planFailed(targetName string, cause error) error {
 	r.emitTargetStart(targetName)
-	r.emitTargetComplete(targetName, 0, true)
+	r.emitTargetComplete(targetName, 0, true, failureReason(cause))
 	return cause
 }
 
