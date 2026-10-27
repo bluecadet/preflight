@@ -121,7 +121,9 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	r.emitTargetComplete(targetName, elapsedMs, hasFailure, reason)
 
 	if applyErr != nil {
-		if !isApplyTaskFailureSummary(applyErr) {
+		// Task failures and unreachable targets already reported
+		// themselves through renderer events.
+		if !isApplyTaskFailureSummary(applyErr) && !target.IsUnreachable(applyErr) {
 			slog.Error("apply phase failed", "error", applyErr)
 		}
 		return applyErr

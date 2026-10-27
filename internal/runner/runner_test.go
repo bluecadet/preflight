@@ -3,6 +3,8 @@ package runner
 import (
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"maps"
 	"os"
 	"path/filepath"
@@ -17,6 +19,7 @@ import (
 	"github.com/bluecadet/preflight/internal/config"
 	"github.com/bluecadet/preflight/internal/output"
 	"github.com/bluecadet/preflight/internal/plugins"
+	"github.com/bluecadet/preflight/internal/preflighterr"
 	"github.com/bluecadet/preflight/internal/secrets"
 	"github.com/bluecadet/preflight/internal/stdlib"
 	"github.com/bluecadet/preflight/internal/target"
@@ -1745,5 +1748,61 @@ func TestTargetNameFallsBackToTargetVars(t *testing.T) {
 	r2 := &Runner{config: Config{TargetVars: map[string]any{"hostname": "gallery-01"}}}
 	if got := r2.targetName(); got != "gallery-01" {
 		t.Errorf("targetName() = %q, want %q", got, "gallery-01")
+	}
+}
+
+func TestRunDoesNotLogUnreachableTargetTwice(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	fake := &targettest.Fake{
+		InfoErr: fmt.Errorf("%w: dial tcp 127.0.0.1:1: connect: connection refused", preflighterr.ErrUnreachable),
+	}
+	renderer := &recordingRenderer{}
+	r := New(fake, emptyResolver(), Config{Renderer: renderer})
+
+	if err := r.Run(context.Background(), newShellPlaybook("unreachable host")); err == nil {
+		t.Fatal("Run() error = nil, want unreachable error")
+	}
+	var reported bool
+	for _, e := range renderer.events {
+		if _, ok := e.(output.TargetUnreachableEvent); ok {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Fatal("expected a TargetUnreachableEvent")
+	}
+	if logged := buf.String(); logged != "" {
+		t.Fatalf("expected no log output, got: %s", logged)
+	}
+}
+
+func TestRunLogsNonUnreachableApplyError(t *testing.T) {
+	var buf strings.Builder
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	fake := &targettest.Fake{InfoErr: errors.New("info exploded")}
+	renderer := &recordingRenderer{}
+	r := New(fake, emptyResolver(), Config{Renderer: renderer})
+
+	if err := r.Run(context.Background(), newShellPlaybook("broken host")); err == nil {
+		t.Fatal("Run() error = nil, want apply error")
+	}
+	if logged := buf.String(); !strings.Contains(logged, "apply phase failed") || !strings.Contains(logged, "info exploded") {
+		t.Fatalf("expected apply error to be logged, got: %q", logged)
+	}
+	var complete *output.TargetCompleteEvent
+	for _, e := range renderer.events {
+		if c, ok := e.(output.TargetCompleteEvent); ok {
+			complete = &c
+		}
+	}
+	if complete == nil || complete.Outcome != "failed" || !strings.Contains(complete.Error, "info exploded") {
+		t.Fatalf("expected failed TargetCompleteEvent carrying the error, got: %+v", complete)
 	}
 }
