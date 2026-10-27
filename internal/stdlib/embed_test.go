@@ -24,6 +24,7 @@ func TestAllStdlibActions(t *testing.T) {
 		"chocolatey",
 		"debloat",
 		"git-sync",
+		"scoop",
 		"windows-input",
 		"windows-machine",
 		"windows-power",

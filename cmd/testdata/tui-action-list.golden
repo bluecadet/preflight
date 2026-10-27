@@ -3,7 +3,7 @@
 ────────────────────────
   Namespace  preflight/
   Local dir  <cwd>/actions
-  Embedded   11
+  Embedded   12
   Local      0
 
   Embedded actions
@@ -11,6 +11,7 @@
   • preflight/chocolatey
   • preflight/debloat
   • preflight/git-sync
+  • preflight/scoop
   • preflight/windows-input
   • preflight/windows-machine
   • preflight/windows-power
