@@ -121,6 +121,86 @@ func TestNormalizeManagerPackages_RejectsDuplicateIDs(t *testing.T) {
 	}
 }
 
+func TestNormalizeScoopPackages_OrdersActiveLast(t *testing.T) {
+	params, err := NormalizeScoopPackages(map[string]any{
+		"packages": []any{
+			map[string]any{"id": "nodejs", "version": "22.11.0", "active": true},
+			map[string]any{"id": "jq", "version": "1.7.1"},
+			map[string]any{"id": "main/nodejs", "version": "20.18.0"},
+			map[string]any{"id": "git"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	var got []string
+	for _, item := range params["packages"].([]any) {
+		m := item.(map[string]any)
+		got = append(got, fmt.Sprintf("%v@%v active=%v", m["id"], m["version"], m["active"]))
+	}
+	want := []string{
+		"main/nodejs@20.18.0 active=<nil>",
+		"git@<nil> active=<nil>",
+		"nodejs@22.11.0 active=true",
+		"jq@1.7.1 active=true",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestNormalizeScoopPackages_Errors(t *testing.T) {
+	tests := []struct {
+		name     string
+		packages []any
+		want     string
+	}{
+		{
+			name:     "absent with version",
+			packages: []any{map[string]any{"id": "jq", "version": "1.7.1", "ensure": "absent"}},
+			want:     `scoop_package: packages[0] sets version with ensure: absent; Scoop can only remove every version of "jq"`,
+		},
+		{
+			name:     "non-string version",
+			packages: []any{map[string]any{"id": "nodejs", "version": 22}},
+			want:     `scoop_package: packages[0].version must be a string, got int`,
+		},
+		{
+			name:     "non-bool active",
+			packages: []any{map[string]any{"id": "nodejs", "version": "22", "active": "yes"}},
+			want:     `scoop_package: packages[0].active must be a boolean, got string`,
+		},
+		{
+			name:     "repeat without version",
+			packages: []any{map[string]any{"id": "jq", "version": "1.7.1", "active": true}, map[string]any{"id": "main/jq"}},
+			want:     `scoop_package: packages[1].id "main/jq" repeats packages[0]; repeated apps need a version on every entry`,
+		},
+		{
+			name:     "same version twice",
+			packages: []any{map[string]any{"id": "jq", "version": "1.7.1", "active": true}, map[string]any{"id": "JQ", "version": "1.7.1"}},
+			want:     `scoop_package: packages[1] duplicates packages[0] (jq 1.7.1)`,
+		},
+		{
+			name:     "no active entry",
+			packages: []any{map[string]any{"id": "jq", "version": "1.7.1"}, map[string]any{"id": "jq", "version": "1.8.2"}},
+			want:     `scoop_package: "jq" is listed 2 times; exactly one entry needs active: true`,
+		},
+		{
+			name:     "two active entries",
+			packages: []any{map[string]any{"id": "jq", "version": "1.7.1", "active": true}, map[string]any{"id": "jq", "version": "1.8.2", "active": true}},
+			want:     `scoop_package: "jq" is listed 2 times; exactly one entry needs active: true`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NormalizeScoopPackages(map[string]any{"packages": tc.packages})
+			if err == nil || err.Error() != tc.want {
+				t.Fatalf("got %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeRegistryParams_TypedSpecList(t *testing.T) {
 	typed, err := NormalizeRegistryParams(map[string]any{
 		"values": []any{

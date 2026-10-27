@@ -16,6 +16,7 @@ var catalogModules = []string{
 	"user",
 	"winget_package",
 	"choco_package",
+	"scoop_package",
 	"remove_appx_packages",
 	"power_plan",
 	"windows_feature",

@@ -87,6 +87,9 @@
         "choco_package": {
           "$ref": "#/$defs/moduleChocoPackage"
         },
+        "scoop_package": {
+          "$ref": "#/$defs/moduleScoopPackage"
+        },
         "remove_appx_packages": {
           "$ref": "#/$defs/moduleRemoveAppxPackages"
         },
@@ -687,6 +690,87 @@
                   "absent"
                 ],
                 "default": "present"
+              }
+            }
+          }
+        }
+      }
+    },
+    "moduleScoopPackage": {
+      "type": "object",
+      "description": "Manage Scoop apps for the connecting account",
+      "additionalProperties": false,
+      "required": [
+        "packages"
+      ],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "description": "List of apps to manage",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "App name, optionally prefixed with its bucket (bucket/app)"
+              },
+              "version": {
+                "type": "string",
+                "description": "Exact version to install; Scoop keeps it beside other versions of the app"
+              },
+              "active": {
+                "type": "boolean",
+                "description": "Make this version current. Defaults to true for a versioned app listed once; exactly one entry needs it when an app is listed more than once"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Additional scoop command arguments"
+              },
+              "ensure": {
+                "type": "string",
+                "enum": [
+                  "present",
+                  "absent"
+                ],
+                "default": "present"
+              }
+            },
+            "dependentRequired": {
+              "active": [
+                "version"
+              ]
+            },
+            "if": {
+              "properties": {
+                "ensure": {
+                  "const": "absent"
+                }
+              },
+              "required": [
+                "ensure"
+              ]
+            },
+            "then": {
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "active"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "version"
+                    ]
+                  }
+                ]
               }
             }
           }

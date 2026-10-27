@@ -26,6 +26,10 @@ const chocoPackageCheckScript = pscript.ChocoPackageCheckScript
 
 const chocoPackageApplyScript = pscript.ChocoPackageApplyScript
 
+const scoopPackageCheckScript = pscript.ScoopPackageCheckScript
+
+const scoopPackageApplyScript = pscript.ScoopPackageApplyScript
+
 const userCheckScript = pscript.UserCheckScript
 
 const userApplyScript = pscript.UserApplyScript

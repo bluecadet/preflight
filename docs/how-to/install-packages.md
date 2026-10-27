@@ -1,6 +1,6 @@
 # Install packages with a package manager
 
-Install software on a Windows target with WinGet or Chocolatey, including targets where the package manager isn't installed yet.
+Install software on a Windows target with WinGet, Chocolatey, or Scoop, including targets where the package manager isn't installed yet.
 
 ## Prerequisites
 
@@ -65,6 +65,25 @@ tasks:
 ```
 
 Chocolatey installs machine-wide for every account. To install from an internal feed, list it in the bootstrap's `sources` and set `source` on the package entry. See [`preflight/chocolatey`](../reference/stdlib-actions.md#preflightchocolatey) and [`choco_package`](../reference/modules.md#choco_package).
+
+## Use Scoop instead
+
+Scoop installs apps per account. Bootstrap it with `preflight/scoop`, then manage apps with `scoop_package`:
+
+```yaml
+tasks:
+  - name: Scoop
+    uses: preflight/scoop
+    with:
+      buckets: [versions]
+  - name: Tools
+    scoop_package:
+      packages:
+        - id: jq
+        - id: versions/python310
+```
+
+Apps go to the transport account's profile. To keep two versions of one app, see [`scoop_package`](../reference/modules.md#scoop_package).
 
 ## Related docs
 

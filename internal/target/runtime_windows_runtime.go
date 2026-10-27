@@ -156,8 +156,9 @@ func newWindowsPowerShellRegistry(backend windowsPowerShellBackend) ModuleRegist
 				return applyWindowsUser(ctx, backend, params, out)
 			},
 		},
-		"winget_package": managerPackageModule(backend, "winget_package", wingetPackageCheckScript, wingetPackageApplyScript),
-		"choco_package":  managerPackageModule(backend, "choco_package", chocoPackageCheckScript, chocoPackageApplyScript),
+		"winget_package": managerPackageModule(backend, normalizeUniquePackages("winget_package"), wingetPackageCheckScript, wingetPackageApplyScript),
+		"choco_package":  managerPackageModule(backend, normalizeUniquePackages("choco_package"), chocoPackageCheckScript, chocoPackageApplyScript),
+		"scoop_package":  managerPackageModule(backend, winutil.NormalizeScoopPackages, scoopPackageCheckScript, scoopPackageApplyScript),
 		"remove_appx_packages": moduleFuncs{
 			check: func(ctx context.Context, params map[string]any, out OutputFunc) (CheckResult, error) {
 				return checkWindowsRemoveAppxPackagesWithOutput(ctx, backend, params, out)
@@ -642,25 +643,32 @@ func applyWindowsReboot(ctx context.Context, backend windowsPowerShellBackend, p
 	return err
 }
 
-// managerPackageModule wires a package-manager module (winget_package, choco_package)
-// to its shared-engine check and apply scripts.
-func managerPackageModule(backend windowsPowerShellBackend, module, checkScript, applyScript string) moduleFuncs {
+// managerPackageModule wires a package-manager module to its shared-engine
+// check and apply scripts.
+func managerPackageModule(backend windowsPowerShellBackend, normalize func(map[string]any) (map[string]any, error), checkScript, applyScript string) moduleFuncs {
 	return moduleFuncs{
 		check: func(ctx context.Context, params map[string]any, _ OutputFunc) (CheckResult, error) {
-			normalized, err := winutil.NormalizeManagerPackages(module, params)
+			normalized, err := normalize(params)
 			if err != nil {
 				return CheckResult{}, err
 			}
 			return checkWindowsBooleanScript(ctx, backend, normalized, checkScript)
 		},
 		apply: func(ctx context.Context, params map[string]any, out OutputFunc) (ApplyResult, error) {
-			normalized, err := winutil.NormalizeManagerPackages(module, params)
+			normalized, err := normalize(params)
 			if err != nil {
 				return ApplyResult{}, err
 			}
 			output, err := windowsRunScript(ctx, backend, normalized, applyScript)
 			return applyStreamed(output, out), err
 		},
+	}
+}
+
+// normalizeUniquePackages normalizes a module whose package IDs may appear once.
+func normalizeUniquePackages(module string) func(map[string]any) (map[string]any, error) {
+	return func(params map[string]any) (map[string]any, error) {
+		return winutil.NormalizeManagerPackages(module, params)
 	}
 }
 

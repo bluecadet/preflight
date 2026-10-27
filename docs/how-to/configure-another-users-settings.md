@@ -76,7 +76,7 @@ The task runs with an interactive logon, so it runs only while that user is sign
 
 ## Limitations
 
-- `winget_package` with `scope: user` and `remove_appx_packages` with `scope: current_user` act on the transport account, not another user.
+- `winget_package` with `scope: user`, `scoop_package`, and `remove_appx_packages` with `scope: current_user` act on the transport account, not another user.
 - `user` covers registry-backed settings only. It does not reach a user's files, `APPDATA`, or running session.
 
 ## Troubleshooting
