@@ -434,3 +434,18 @@ func TestTUIModel_Snapshots(t *testing.T) {
 		})
 	}
 }
+
+func TestTUIModel_FinalSummaryFailsForUnreachableTarget(t *testing.T) {
+	events := make(chan Event, 1)
+	m := newTUIModel(events)
+	m, _ = m.applyEvent(TargetStartEvent{Target: "down", Transport: "ssh"})
+	m, _ = m.applyEvent(TargetUnreachableEvent{Target: "down", Reason: "connection refused"})
+	m, _ = m.applyEvent(TargetCompleteEvent{Target: "down", Outcome: "failed", Error: "connection refused"})
+
+	out := m.renderFinalSummary()
+	for _, want := range []string{"Apply failed", "targets: 0 ok, 1 failed", "Needs attention", "target failed before its tasks finished (connection refused)"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in final summary, got:\n%s", want, out)
+		}
+	}
+}

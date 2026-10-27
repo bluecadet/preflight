@@ -1,6 +1,7 @@
 package output
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -31,6 +32,7 @@ type activeActivity struct {
 type targetOutcome struct {
 	target  string
 	outcome string
+	reason  string
 	failed  bool
 }
 
@@ -300,6 +302,51 @@ func (p *RunProjection) TargetCounts() (done, failed int) {
 	return done, failed
 }
 
+// TargetFailure is a failed target that has no failed task, such as an
+// unreachable target or one whose plan failed. Its failure is not in the
+// task tallies.
+type TargetFailure struct {
+	Target  string
+	Message string
+}
+
+// FailedTargetsWithoutTasks returns the failed targets that have no failed
+// task, each with a self-contained message for the "Needs attention" recap.
+func (p *RunProjection) FailedTargetsWithoutTasks() []TargetFailure {
+	withTask := make(map[string]bool)
+	for _, f := range p.FailedTasks() {
+		withTask[f.target] = true
+	}
+	var failures []TargetFailure
+	for _, oc := range p.targetOutcomes {
+		if !oc.failed || withTask[oc.target] {
+			continue
+		}
+		msg := "target failed before its tasks finished"
+		if oc.reason != "" {
+			msg += " (" + oc.reason + ")"
+		}
+		failures = append(failures, TargetFailure{Target: oc.target, Message: msg})
+	}
+	return failures
+}
+
+// TargetTotalsLine returns the recap's "targets:" line, or "" when no
+// target failed.
+func (p *RunProjection) TargetTotalsLine() string {
+	tc := p.Tallies()
+	if tc.Failed == 0 {
+		return ""
+	}
+	return fmt.Sprintf("  targets: %d ok, %d failed", tc.OK, tc.Failed)
+}
+
+// RunFailed reports whether any task or target failed.
+func (p *RunProjection) RunFailed() bool {
+	_, failed := p.TargetCounts()
+	return p.FailedCount > 0 || failed > 0
+}
+
 // Tallies buckets the per-target outcomes reported via TargetCompleteEvent
 // into a TargetCounts, keyed off the Outcome string ("ok" or "failed"). Any
 // other or empty outcome value is counted as ok, matching TargetCounts's
@@ -486,6 +533,7 @@ func (p *RunProjection) applyTargetComplete(e TargetCompleteEvent) {
 	p.targetOutcomes = append(p.targetOutcomes, targetOutcome{
 		target:  e.Target,
 		outcome: e.Outcome,
+		reason:  e.Error,
 		failed:  e.Outcome == "failed",
 	})
 }

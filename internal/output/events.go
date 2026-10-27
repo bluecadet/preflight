@@ -433,6 +433,7 @@ func (e TargetStartEvent) Redact(secrets []string) Event {
 func (e TargetCompleteEvent) Redact(secrets []string) Event {
 	e.Target = scrubString(e.Target, secrets)
 	e.Outcome = scrubString(e.Outcome, secrets)
+	e.Error = scrubString(e.Error, secrets)
 	return e
 }
 
@@ -509,6 +510,7 @@ type TargetStartEvent struct {
 type TargetCompleteEvent struct {
 	Target          string
 	Outcome         string
+	Error           string // why a failed target stopped without a failed task; empty otherwise
 	OKCount         int
 	ChangedCount    int
 	FailedCount     int

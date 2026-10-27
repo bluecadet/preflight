@@ -15,6 +15,7 @@ x app-01 — failed (see above)
 Recap
 x Apply failed
   tasks: 0 ok, 0 changed, 0 skipped, 1 failed
+  targets: 0 ok, 1 failed
 
 Needs attention
   [app-01] apps > deploy > install .NET runtime

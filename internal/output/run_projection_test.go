@@ -768,3 +768,64 @@ func TestRunProjection_HostColorIndex_BeforeRunStart(t *testing.T) {
 		t.Errorf("HostColorIndex before RunStart = %d, want -1", got)
 	}
 }
+
+func TestRunProjection_FailedTargetsWithoutTasks(t *testing.T) {
+	p := NewRunProjection()
+	p.Apply(TargetCompleteEvent{Target: "down", Outcome: "failed", Error: "connection refused"})
+	p.Apply(TargetCompleteEvent{Target: "up", Outcome: "ok"})
+	p.Apply(TaskFailedEvent{Target: "broken", TaskName: "t", FailMessage: "boom"})
+	p.Apply(TargetCompleteEvent{Target: "broken", Outcome: "failed"})
+
+	got := p.FailedTargetsWithoutTasks()
+	want := TargetFailure{Target: "down", Message: "target failed before its tasks finished (connection refused)"}
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("FailedTargetsWithoutTasks() = %+v, want [%+v]", got, want)
+	}
+	if !p.RunFailed() {
+		t.Fatal("RunFailed() = false, want true")
+	}
+	if got, want := p.TargetTotalsLine(), "  targets: 1 ok, 2 failed"; got != want {
+		t.Fatalf("TargetTotalsLine() = %q, want %q", got, want)
+	}
+}
+
+func TestRunProjection_TargetTotalsLine(t *testing.T) {
+	tests := []struct {
+		name   string
+		events []Event
+		want   string
+	}{
+		{
+			name:   "all ok",
+			events: []Event{TargetCompleteEvent{Target: "a", Outcome: "ok"}},
+			want:   "",
+		},
+		{
+			name: "failed target with failed task",
+			events: []Event{
+				TaskFailedEvent{Target: "broken", TaskName: "t", FailMessage: "boom"},
+				TargetCompleteEvent{Target: "broken", Outcome: "failed"},
+			},
+			want: "  targets: 0 ok, 1 failed",
+		},
+		{
+			name: "failed target without task",
+			events: []Event{
+				TargetCompleteEvent{Target: "a", Outcome: "ok"},
+				TargetCompleteEvent{Target: "down", Outcome: "failed"},
+			},
+			want: "  targets: 1 ok, 1 failed",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := NewRunProjection()
+			for _, e := range tt.events {
+				p.Apply(e)
+			}
+			if got := p.TargetTotalsLine(); got != tt.want {
+				t.Fatalf("TargetTotalsLine() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
