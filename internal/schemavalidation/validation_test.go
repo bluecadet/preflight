@@ -1019,3 +1019,32 @@ func TestValidateYAML_UnderlyingValidationErrorAccessibleViaErrorsAs(t *testing.
 		t.Error("expected the unwrapped ValidationError to carry a SchemaURL")
 	}
 }
+
+func TestValidateYAML_ScoopPackageEntries(t *testing.T) {
+	tests := map[string]struct {
+		packages string
+		wantErr  string
+	}{
+		"versioned active":       {packages: "[{id: nodejs, version: '22.11.0', active: true}]"},
+		"unversioned":            {packages: "[{id: git}]"},
+		"absent":                 {packages: "[{id: git, ensure: absent}]"},
+		"active without version": {packages: "[{id: nodejs, active: true}]", wantErr: "/tasks/0/scoop_package/packages/0"},
+		"absent with active":     {packages: "[{id: nodejs, version: '22', active: true, ensure: absent}]", wantErr: "/tasks/0/scoop_package/packages/0"},
+		"absent with version":    {packages: "[{id: nodejs, version: '22', ensure: absent}]", wantErr: "/tasks/0/scoop_package/packages/0"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			data := "name: p\ntasks:\n  - name: t\n    scoop_package:\n      packages: " + tt.packages + "\n"
+			err := schemavalidation.ValidateYAML([]byte(data), playbookSchemaURL)
+			if tt.wantErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("error = %v, want it to reference %q", err, tt.wantErr)
+			}
+		})
+	}
+}

@@ -377,6 +377,8 @@ func TestManagerPackageScriptsParse(t *testing.T) {
 		"winget apply": WingetPackageApplyScript,
 		"choco check":  ChocoPackageCheckScript,
 		"choco apply":  ChocoPackageApplyScript,
+		"scoop check":  ScoopPackageCheckScript,
+		"scoop apply":  ScoopPackageApplyScript,
 	} {
 		cmd := exec.Command(pwsh, "-NoProfile", "-NonInteractive", "-Command",
 			"$errs = $null; [void][System.Management.Automation.Language.Parser]::ParseInput([Console]::In.ReadToEnd(), [ref]$null, [ref]$errs); $errs | ForEach-Object { $_.Message }")
@@ -572,6 +574,141 @@ func TestChocoAdapterPointsAtBootstrap(t *testing.T) {
 	}
 	out, err := execManagerScript(t, ChocoPackageCheckScript, map[string]any{"packages": []any{}}, "ProgramData="+t.TempDir(), "ChocolateyInstall=")
 	if err == nil || !strings.Contains(out, "Add a task with 'uses: preflight/chocolatey' before this one.") {
+		t.Fatalf("expected the bootstrap hint, got %v:\n%s", err, out)
+	}
+}
+
+// fakeScoop stands in for scoop.cmd and keeps Scoop's layout: version
+// directories with scoop-install.json and a current link. Installing makes a
+// version current. The app named nope has no manifest, and like Scoop the
+// fake still exits 0.
+const fakeScoop = `#!/bin/sh
+root="$(cd "$(dirname "$0")/.." && pwd)"
+echo "$*" >> "$root/log"
+cmd="$1"; target="$2"
+app="${target##*/}"; app="${app%@*}"
+case "$target" in *@*) ver="${target##*@}" ;; *) ver=9.9.9 ;; esac
+case "$cmd" in
+  install)
+    if [ "$app" = nope ]; then echo "Couldn't find manifest for 'nope'."; exit 0; fi
+    mkdir -p "$root/apps/$app/$ver" && touch "$root/apps/$app/$ver/scoop-install.json"
+    ln -sfn "$root/apps/$app/$ver" "$root/apps/$app/current" ;;
+  reset) ln -sfn "$root/apps/$app/$ver" "$root/apps/$app/current" ;;
+  uninstall) rm -rf "$root/apps/$app" ;;
+esac
+`
+
+// runFakeScoop runs a scoop_package script with fakeScoop installed in a
+// temporary profile. installed maps app to versions; the last is current.
+func runFakeScoop(t *testing.T, script string, installed map[string][]string, packages ...any) (string, []string, error) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("needs a POSIX shell script standing in for scoop.cmd, and Windows reads the user-scope SCOOP")
+	}
+	profile := t.TempDir()
+	root := filepath.Join(profile, "scoop")
+	if err := os.MkdirAll(filepath.Join(root, "shims"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "shims", "scoop.cmd"), []byte(fakeScoop), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for app, versions := range installed {
+		for _, v := range versions {
+			dir := filepath.Join(root, "apps", app, v)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "scoop-install.json"), []byte("{}"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		current := filepath.Join(root, "apps", app, "current")
+		if err := os.Symlink(filepath.Join(root, "apps", app, versions[len(versions)-1]), current); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out, err := execManagerScript(t, script, map[string]any{"packages": packages}, "USERPROFILE="+profile, "SCOOP=")
+	return out, readCalls(root), err
+}
+
+func readCalls(root string) []string {
+	logData, _ := os.ReadFile(filepath.Join(root, "log"))
+	var calls []string
+	for line := range strings.SplitSeq(strings.TrimSpace(string(logData)), "\n") {
+		if line != "" {
+			calls = append(calls, line)
+		}
+	}
+	return calls
+}
+
+func TestScoopAdapterCheck(t *testing.T) {
+	installed := map[string][]string{"jq": {"1.8.2", "1.7.1"}}
+	tests := []struct {
+		name     string
+		packages []any
+		want     string
+	}{
+		{"versions installed, active is current", []any{map[string]any{"id": "jq", "version": "1.8.2"}, map[string]any{"id": "jq", "version": "1.7.1", "active": true}}, "false"},
+		{"active is not current", []any{map[string]any{"id": "jq", "version": "1.7.1"}, map[string]any{"id": "jq", "version": "1.8.2", "active": true}}, "true"},
+		{"bucket prefix and case", []any{map[string]any{"id": "main/JQ"}}, "false"},
+		{"missing app", []any{map[string]any{"id": "git"}}, "true"},
+		{"missing version", []any{map[string]any{"id": "jq", "version": "1.6"}}, "true"},
+		{"installed app marked absent", []any{map[string]any{"id": "jq", "ensure": "absent"}}, "true"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			out, calls, err := runFakeScoop(t, ScoopPackageCheckScript, installed, tc.packages...)
+			if err != nil {
+				t.Fatalf("check failed: %v\n%s", err, out)
+			}
+			if got := strings.TrimSpace(out); got != tc.want {
+				t.Fatalf("check = %q, want %q", got, tc.want)
+			}
+			if len(calls) != 0 {
+				t.Fatalf("check must not run scoop, got calls %q", calls)
+			}
+		})
+	}
+}
+
+func TestScoopAdapterApply(t *testing.T) {
+	// The inactive install makes 1.7.1 current, so the active entry, listed
+	// last, has to reset 1.8.2 even though it was current at the start.
+	out, calls, err := runFakeScoop(t, ScoopPackageApplyScript, map[string][]string{"jq": {"1.8.2"}, "old": {"1.0"}},
+		map[string]any{"id": "main/git", "args": []any{"--no-update-scoop"}},
+		map[string]any{"id": "old", "ensure": "absent"},
+		map[string]any{"id": "jq", "version": "1.7.1"},
+		map[string]any{"id": "jq", "version": "1.8.2", "active": true},
+	)
+	if err != nil {
+		t.Fatalf("apply failed: %v\n%s", err, out)
+	}
+	want := []string{
+		"install main/git --no-update-scoop",
+		"uninstall old",
+		"install jq@1.7.1",
+		"reset jq@1.8.2",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("calls =\n%s\nwant\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestScoopAdapterFailsOnUnknownApp(t *testing.T) {
+	out, _, err := runFakeScoop(t, ScoopPackageApplyScript, nil, map[string]any{"id": "nope"})
+	if err == nil || !strings.Contains(out, "scoop install nope failed") || !strings.Contains(out, "Couldn't find manifest") {
+		t.Fatalf("expected install failure, got %v:\n%s", err, out)
+	}
+}
+
+func TestScoopAdapterPointsAtBootstrap(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("a Windows host reads the user-scope SCOOP, which may be a real install")
+	}
+	out, err := execManagerScript(t, ScoopPackageCheckScript, map[string]any{"packages": []any{}}, "USERPROFILE="+t.TempDir(), "SCOOP=")
+	if err == nil || !strings.Contains(out, "Add a task with 'uses: preflight/scoop' before this one.") {
 		t.Fatalf("expected the bootstrap hint, got %v:\n%s", err, out)
 	}
 }

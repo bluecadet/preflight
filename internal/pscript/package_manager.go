@@ -1,6 +1,6 @@
 package pscript
 
-// Package-manager modules (winget_package, choco_package) share one diff-and-act
+// Package-manager modules (winget_package, choco_package, scoop_package) share one diff-and-act
 // skeleton: setup + adapter + check or apply tail. Each adapter defines:
 //
 //	Get-PmInstalled                          returns manager state, read once
@@ -273,9 +273,103 @@ function Invoke-PmChange {
 }
 `
 
+// scoopAdapter manages Scoop apps for the transport account. State comes from
+// the apps directory, because Scoop exits 0 for unknown apps and its export
+// lists only the current version. Each app keeps version directories plus a
+// current junction; specs arrive with active set and ordered by
+// NormalizeScoopPackages. Invoke-PmChange updates $Installed so a later
+// active entry sees which version an earlier install made current.
+const scoopAdapter = `
+$scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+$scoopCmd = Join-Path $scoopDir 'shims\scoop.cmd'
+if (-not (Test-Path -LiteralPath $scoopCmd)) {
+  throw "Scoop was not found for $env:USERNAME at $scoopDir. Add a task with 'uses: preflight/scoop' before this one."
+}
+function Invoke-Scoop {
+  param(
+    [string[]]$Arguments
+  )
+  # scoop.cmd, not scoop.ps1, which the execution policy may block.
+  $output = & $scoopCmd @Arguments 2>&1
+  $text = ($output | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $text -match "(?m)^ERROR|Couldn't find manifest") {
+    throw ("scoop $($Arguments -join ' ') failed with exit code $LASTEXITCODE" + [Environment]::NewLine + $text)
+  }
+}
+function Get-ScoopApp {
+  param($Spec)
+  return (([string]$Spec.id) -split '/')[-1].ToLowerInvariant()
+}
+function Get-PmInstalled {
+  $installedMap = @{}
+  $appsDir = Join-Path $scoopDir 'apps'
+  if (-not (Test-Path -LiteralPath $appsDir)) { return $installedMap }
+  foreach ($app in @(Get-ChildItem -LiteralPath $appsDir -Directory)) {
+    $versions = [System.Collections.Generic.List[string]]::new()
+    foreach ($dir in @(Get-ChildItem -LiteralPath $app.FullName -Directory)) {
+      if ($dir.Name -eq 'current' -or $dir.Name.StartsWith('_')) { continue }
+      # A version is installed once Scoop wrote its install record.
+      if ((Test-Path -LiteralPath (Join-Path $dir.FullName 'scoop-install.json')) -or (Test-Path -LiteralPath (Join-Path $dir.FullName 'install.json'))) {
+        $versions.Add($dir.Name.ToLowerInvariant())
+      }
+    }
+    if ($versions.Count -eq 0) { continue }
+    $current = $null
+    $link = Get-Item -LiteralPath (Join-Path $app.FullName 'current') -ErrorAction SilentlyContinue
+    if ($link -and $link.Target) { $current = (Split-Path -Leaf @($link.Target)[0]).ToLowerInvariant() }
+    $installedMap[$app.Name.ToLowerInvariant()] = [pscustomobject]@{ Versions = $versions; Current = $current }
+  }
+  return $installedMap
+}
+function Test-PmPresent {
+  param($Spec, $Installed)
+  $state = $Installed[(Get-ScoopApp $Spec)]
+  if ($null -eq $state) { return $false }
+  if (-not $Spec.version) { return $true }
+  $version = ([string]$Spec.version).ToLowerInvariant()
+  if (-not $state.Versions.Contains($version)) { return $false }
+  if ($Spec.active) { return $state.Current -eq $version }
+  return $true
+}
+function Invoke-PmChange {
+  param($Spec, [string]$Ensure, $Installed)
+  $app = Get-ScoopApp $Spec
+  $extra = @(@($Spec.args) | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ })
+  if ($Ensure -eq 'absent') {
+    Invoke-Scoop -Arguments (@('uninstall', $app) + $extra)
+    $Installed.Remove($app)
+    return
+  }
+  if (-not $Spec.version) {
+    Invoke-Scoop -Arguments (@('install', [string]$Spec.id) + $extra)
+    return
+  }
+  $version = ([string]$Spec.version).ToLowerInvariant()
+  $state = $Installed[$app]
+  $installedNow = $null -eq $state -or -not $state.Versions.Contains($version)
+  if ($installedNow) {
+    # Scoop installs a pinned version beside the ones already installed.
+    Invoke-Scoop -Arguments (@('install', "$($Spec.id)@$($Spec.version)") + $extra)
+  }
+  # An install makes its version current, so only an already installed version needs a reset.
+  if ($Spec.active -and -not $installedNow -and $state.Current -ne $version) {
+    Invoke-Scoop -Arguments @('reset', "$app@$($Spec.version)")
+  }
+  if ($null -eq $state) {
+    $state = [pscustomobject]@{ Versions = [System.Collections.Generic.List[string]]::new(); Current = $null }
+    $Installed[$app] = $state
+  }
+  if ($installedNow) { $state.Versions.Add($version) }
+  if ($installedNow -or $Spec.active) { $state.Current = $version }
+}
+`
+
 const (
 	WingetPackageCheckScript = managerPackageSetup + wingetAdapter + managerPackageCheckTail
 	WingetPackageApplyScript = managerPackageSetup + wingetAdapter + managerPackageApplyTail
 	ChocoPackageCheckScript  = managerPackageSetup + chocoAdapter + managerPackageCheckTail
 	ChocoPackageApplyScript  = managerPackageSetup + chocoAdapter + managerPackageApplyTail
+	ScoopPackageCheckScript  = managerPackageSetup + scoopAdapter + managerPackageCheckTail
+	ScoopPackageApplyScript  = managerPackageSetup + scoopAdapter + managerPackageApplyTail
 )

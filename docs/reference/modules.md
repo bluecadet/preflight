@@ -8,6 +8,7 @@ Modules:
 [`package`](#package),
 [`winget_package`](#winget_package),
 [`choco_package`](#choco_package),
+[`scoop_package`](#scoop_package),
 [`remove_appx_packages`](#remove_appx_packages),
 [`shortcut`](#shortcut),
 [`scheduled_task`](#scheduled_task),
@@ -289,6 +290,46 @@ Each entry:
         params: "/Language:en"
       - id: oldapp
         ensure: absent
+```
+
+### `scoop_package`
+
+Installs or removes Scoop apps for the transport account.
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `packages` | list | yes | App entries |
+
+Each entry:
+
+| Field | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | yes | | App name, optionally with its bucket, such as `extras/vscode`. Matched case-insensitively, without the bucket |
+| `version` | string | no | | Exact version to install |
+| `active` | bool | no | `true` for a versioned app listed once | Make this version current |
+| `args` | string[] | no | | Extra `scoop` arguments for this app |
+| `ensure` | `present`, `absent` | no | `present` | Desired state |
+
+- Without `version`, an installed app satisfies `present`. With `version`, that version must be installed, and if the entry is active, current.
+- Scoop keeps several versions of an app side by side. To keep more than one, list the app once per version and set `active: true` on exactly one entry. Older versions stay installed until they are removed with `ensure: absent`.
+- `ensure: absent` removes every version, so it can't be combined with `version`.
+- Installs run `scoop install <id>` or `scoop install <id>@<version>`, then `scoop reset <app>@<version>` when the active version isn't current. Removals run `scoop uninstall <app>`.
+- Pinned versions need the app's bucket to be a git clone. `preflight/scoop` sets that up.
+- Scoop exits 0 for some failures. The task fails when Scoop prints an error, and after making changes it reads installed apps again and fails if any changed entry still isn't in its desired state.
+- Apps install for the transport account only; there is no machine-wide scope. To install for another account, connect as that account.
+- The task finds Scoop through the user-scope `SCOOP` environment variable, or `%USERPROFILE%\scoop`. A machine-scope `SCOOP` isn't supported.
+- If Scoop isn't installed for the transport account, the task fails and asks for a [`preflight/scoop`](./stdlib-actions.md#preflightscoop) task first.
+
+```yaml
+- name: Node toolchain
+  scoop_package:
+    packages:
+      - id: nodejs
+        version: "22.11.0"
+        active: true
+      - id: nodejs
+        version: "20.18.0"
+      - id: versions/python310
 ```
 
 ### `remove_appx_packages`
