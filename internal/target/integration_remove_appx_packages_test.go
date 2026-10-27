@@ -28,7 +28,8 @@ func TestIntegration_RemoveAppxPackages(t *testing.T) {
 		fixtureName, fixtureFamilyName := findAppxFixture(t, runner)
 		if fixtureName == "" {
 			t.Skip("no suitable AppX test fixture found on target; " +
-				"target has no packages matching known-benign patterns (VCLibs, UI.Xaml, .NET Native, WinJS)")
+				"target has no packages matching known-benign patterns (VCLibs, UI.Xaml, .NET Native, WinJS) " +
+				"that no other installed package depends on")
 		}
 		t.Logf("using AppX fixture: Name=%s FamilyName=%s", fixtureName, fixtureFamilyName)
 
@@ -194,9 +195,13 @@ $patterns = @(
   'Microsoft.NET.Native*',
   'Microsoft.WinJS*'
 )
-$candidates = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue | Where-Object {
+$all = @(Get-AppxPackage -AllUsers -ErrorAction SilentlyContinue)
+# Windows refuses to remove a framework another installed package depends on.
+$dependedOn = @($all | ForEach-Object { $_.Dependencies.Name } | Where-Object { $_ })
+$candidates = @($all | Where-Object {
   $pkg = $_
   -not ($null -ne $pkg.PSObject.Properties['NonRemovable'] -and [bool]$pkg.NonRemovable) -and
+  ($dependedOn -notcontains $pkg.Name) -and
   ($patterns | Where-Object { $pkg.Name -like $_ } | Select-Object -First 1)
 })
 if ($candidates.Count -gt 0) {
