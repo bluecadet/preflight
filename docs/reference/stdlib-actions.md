@@ -241,6 +241,38 @@ tasks:
         - id: 7zip
 ```
 
+## `preflight/scoop`
+
+Installs Scoop, git, and buckets for the transport account, so `scoop_package` works.
+
+| Input | Type | Default | Description |
+| --- | --- | --- | --- |
+| `buckets` | list | `[]` | Buckets to add besides `main`. Each entry is a known bucket name, such as `extras` or `versions`, or an object with `name` and `url` |
+
+The action runs three tasks:
+
+1. Install Scoop: when `scoop.cmd` is missing from the account's Scoop directory, downloads the installer from `get.scoop.sh` and runs it, with `-RunAsAdmin` when the account is an administrator.
+2. Install git for Scoop: when `git.exe` isn't on the machine or user `PATH`, runs `scoop install git`.
+3. Add Scoop buckets: adds `main` and each bucket in `buckets` unless it is already a git clone. `main` is removed and added again when its directory isn't a git clone, which happens after an install without git. Any other bucket directory that isn't a git clone makes the add fail; delete it by hand.
+
+- The Scoop directory is `%USERPROFILE%\scoop`, or the user's `SCOOP` environment variable when set. Only the user-scope `SCOOP` is honored; a machine-scope `SCOOP` isn't supported.
+- The target needs internet access to `get.scoop.sh` and GitHub.
+- Changing the `url` of an existing bucket has no effect. Remove the bucket first.
+- The Scoop installer refuses to run when `C:\ProgramData\scoop` exists and is not empty, which happens once any account installs a global app. Preflight doesn't install global apps.
+- `preflight check` on a target without Scoop reports later `scoop_package` tasks as failed, because the bootstrap has not run yet.
+
+```yaml
+tasks:
+  - name: Scoop
+    uses: preflight/scoop
+    with:
+      buckets: [extras, versions]
+  - name: Tools
+    scoop_package:
+      packages:
+        - id: extras/vscode
+```
+
 ## Related docs
 
 - [Built-in module reference](./modules.md)

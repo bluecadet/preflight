@@ -1,0 +1,98 @@
+name: preflight/scoop
+version: "1.0.0"
+description: Install Scoop, git, and buckets for the connecting user
+author: preflight
+
+inputs:
+  buckets:
+    type: list
+    default: []
+    description: Buckets to add besides main; each is a known bucket name, or an object with name and url
+
+tasks:
+  - name: Install Scoop
+    powershell:
+      check_script: |
+        $scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+        if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+        return (-not (Test-Path -LiteralPath (Join-Path $scoopDir 'shims\scoop.cmd')))
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+        if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+        $installer = Join-Path $env:TEMP ('preflight-scoop-' + [guid]::NewGuid().ToString('N') + '.ps1')
+        try {
+          Invoke-WebRequest 'https://get.scoop.sh' -OutFile $installer -UseBasicParsing
+          $installArgs = @('-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $installer)
+          $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
+          if ($principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { $installArgs += '-RunAsAdmin' }
+          # A child process, because the execution policy may block running the file here.
+          $output = & powershell.exe @installArgs 2>&1
+          $exitCode = $LASTEXITCODE
+        } finally {
+          Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
+        }
+        if ($exitCode -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $scoopDir 'shims\scoop.cmd'))) {
+          throw ("Scoop install failed with exit code $exitCode" + [Environment]::NewLine + ($output | Out-String))
+        }
+        Write-Output "installed Scoop in $scoopDir"
+
+  - name: Install git for Scoop
+    powershell:
+      check_script: |
+        $env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { $_ }) -join ';'
+        return ($null -eq (Get-Command git.exe -ErrorAction SilentlyContinue))
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+        if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+        $output = & (Join-Path $scoopDir 'shims\scoop.cmd') install git 2>&1
+        $text = ($output | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $text -match '(?m)^ERROR') { throw ("scoop install git failed with exit code $LASTEXITCODE" + [Environment]::NewLine + $text) }
+        Write-Output 'installed git'
+
+  - name: Add Scoop buckets
+    powershell:
+      check_script: |
+        $buckets = @'
+        {{ toJSON(vars.buckets) }}
+        '@ | ConvertFrom-Json
+        $names = @('main') + @(@($buckets | Where-Object { $null -ne $_ }) | ForEach-Object { if ($_ -is [string]) { $_ } else { [string]$_.name } })
+        $scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+        if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+        foreach ($name in $names) {
+          # Scoop installed without git leaves main as a plain directory, which can't install pinned versions.
+          if (-not (Test-Path -LiteralPath (Join-Path $scoopDir "buckets\$name\.git"))) { return $true }
+        }
+        return $false
+      script: |
+        $ErrorActionPreference = 'Stop'
+        $buckets = @'
+        {{ toJSON(vars.buckets) }}
+        '@ | ConvertFrom-Json
+        $env:Path = (@([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User')) | Where-Object { $_ }) -join ';'
+        $scoopDir = [Environment]::GetEnvironmentVariable('SCOOP', 'User')
+        if (-not $scoopDir) { $scoopDir = Join-Path $env:USERPROFILE 'scoop' }
+        $scoopCmd = Join-Path $scoopDir 'shims\scoop.cmd'
+        function Invoke-ScoopBucket {
+          param([string[]]$Arguments)
+          $output = & $scoopCmd bucket @Arguments 2>&1
+          $text = ($output | Out-String).Trim()
+          if ($LASTEXITCODE -ne 0 -or $text -match '(?m)^ERROR') { throw ("scoop bucket $($Arguments -join ' ') failed with exit code $LASTEXITCODE" + [Environment]::NewLine + $text) }
+        }
+        $wanted = @([pscustomobject]@{ name = 'main'; url = '' }) + @(@($buckets | Where-Object { $null -ne $_ }) | ForEach-Object {
+          if ($_ -is [string]) { [pscustomobject]@{ name = $_; url = '' } } else { [pscustomobject]@{ name = [string]$_.name; url = [string]$_.url } }
+        })
+        foreach ($bucket in $wanted) {
+          if (-not $bucket.name) { throw 'each entry in buckets needs a name' }
+          $dir = Join-Path $scoopDir "buckets\$($bucket.name)"
+          if (Test-Path -LiteralPath (Join-Path $dir '.git')) { continue }
+          # Only main is known to be a plain directory (Scoop installed without git); leave other buckets for the add to report.
+          if ($bucket.name -eq 'main' -and (Test-Path -LiteralPath $dir)) { Invoke-ScoopBucket -Arguments @('rm', $bucket.name) }
+          $addArgs = @('add', $bucket.name)
+          if ($bucket.url) { $addArgs += $bucket.url }
+          Invoke-ScoopBucket -Arguments $addArgs
+          Write-Output "added bucket $($bucket.name)"
+        }
