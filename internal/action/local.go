@@ -46,7 +46,7 @@ func (r *LocalResolver) Resolve(ctx context.Context, ref string) (*Action, error
 
 	// Skip refs that look like remote hostnames (contain a '.' in the first path
 	// segment) or contain '@' version specifiers.
-	first := strings.SplitN(ref, "/", 2)[0]
+	first, _, _ := strings.Cut(ref, "/")
 	if strings.Contains(first, ".") || strings.Contains(ref, "@") {
 		return nil, nil
 	}

@@ -359,7 +359,7 @@ func collectPrintedMessages(msg tea.Msg) []string {
 	if rt.PkgPath() == "github.com/charmbracelet/bubbletea" && rt.Name() == "sequenceMsg" && rv.Kind() == reflect.Slice {
 		var blocks []string
 		for i := 0; i < rv.Len(); i++ {
-			if cmd, ok := rv.Index(i).Interface().(tea.Cmd); ok {
+			if cmd, ok := reflect.TypeAssert[tea.Cmd](rv.Index(i)); ok {
 				blocks = append(blocks, collectPrintedBlocks(cmd)...)
 			}
 		}

@@ -11,8 +11,7 @@ func wrapTargetError(transport Transport, op string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var targetErr *preflighterr.TargetError
-	if errors.As(err, &targetErr) {
+	if _, ok := errors.AsType[*preflighterr.TargetError](err); ok {
 		return err
 	}
 	return &preflighterr.TargetError{Transport: string(transport), Op: op, Err: err}
