@@ -1,5 +1,75 @@
 # Changelog
 
+## [2.0.0](https://github.com/bluecadet/preflight/compare/v1.0.1...v2.0.0) (2026-10-29)
+
+
+### ⚠ BREAKING CHANGES
+
+* **winget_package:** a winget_package list that repeats an id (case-insensitive) fails validation; keep one entry per id.
+* **firewall_rule:** an existing rule with protocol Any is narrowed to TCP unless the task sets protocol: any.
+* **reboot:** reboot no longer accepts condition. It was never applied; remove it from playbooks.
+* **plugin:** the plugin protocol is now v3; rebuild plugins against this SDK. initialize no longer carries min_protocol_version and ProtocolError exposes Local/Peer instead of ranges; sdk.MinProtocolVersion and sdk.NoopHandleServer are removed.
+* **plugin:** pkg/plugin/sdk no longer exports Scan, Inspect, InspectPlugin, DiscoveryOptions, DiscoveredPlugin or PluginStatus.
+* **runner:** the `support_gate` run-log event and the `missing_prerequisite` reason code are removed.
+* `preflight state show`, `preflight state diff`, and `--state-file` are removed. Apply no longer writes state files, and the `state` event is no longer emitted in text, TUI, JSON, or run logs.
+* become and defaults are no longer accepted in playbooks or actions. Target.Execute no longer takes execution options.
+* POSIX-over-SSH, the local target on non-Windows controllers, the system_package module, sudo become, platform.os linux/darwin, and the facts.os.package_manager and facts.os.init keys are removed.
+
+### New Features
+
+* **action:** add list input type ([6133e4a](https://github.com/bluecadet/preflight/commit/6133e4a7f0c68fdfbf77314a4a2fa0fc7cb970f7))
+* **choco_package:** add Chocolatey package module ([2557eef](https://github.com/bluecadet/preflight/commit/2557eef2fb0391dd01878380acde31e4007df76c))
+* drop POSIX targets ([56fce72](https://github.com/bluecadet/preflight/commit/56fce729e5f80dc8c3ec00a240a3f5c2ee6224e5))
+* remove state subsystem ([888951c](https://github.com/bluecadet/preflight/commit/888951ca10a84bb56a59ef7a21ddc1f19d8a61b3))
+* replace become with profile targeting ([52280cd](https://github.com/bluecadet/preflight/commit/52280cdb9038e7318b19cf9dc1b5da63bd1f480a))
+* **scoop_package:** add Scoop package module ([0dca2aa](https://github.com/bluecadet/preflight/commit/0dca2aaa98bf24ec42718806f4321f7f1ec9cef4))
+* **stdlib:** add preflight/chocolatey bootstrap action ([8082bb4](https://github.com/bluecadet/preflight/commit/8082bb4ac4fafab54cee7e727b580a9061be89ed))
+* **stdlib:** add preflight/scoop bootstrap action ([127ce8c](https://github.com/bluecadet/preflight/commit/127ce8c10df6ae6a5652881ac785339778c528f7))
+* **stdlib:** add preflight/winget bootstrap action ([16e5d63](https://github.com/bluecadet/preflight/commit/16e5d6335068640021730caeb8d7d31609ce7f6e)), closes [#83](https://github.com/bluecadet/preflight/issues/83)
+* **user:** load profile hive on demand for registry and environment ([5faf737](https://github.com/bluecadet/preflight/commit/5faf7375b12398d6c0aac42caabffebd0258ffa8))
+* **winget_package:** reject duplicate package IDs ([2206451](https://github.com/bluecadet/preflight/commit/2206451086f5bbb5bb00a3694d362638eb124d52))
+
+
+### Bug Fixes
+
+* **action:** fetch uses project root for preflight.lock ([966c43b](https://github.com/bluecadet/preflight/commit/966c43b7a5a2115176e6dc5d10b0224eaf3ad583))
+* **action:** make cache-miss message command-neutral ([d02e9cb](https://github.com/bluecadet/preflight/commit/d02e9cb7489d76cd6a82fc050bbdabe4b122b813))
+* **autologin:** default password to empty string ([1ca7fb2](https://github.com/bluecadet/preflight/commit/1ca7fb2816a68db68035fd1e05a279cf6dff6693))
+* **ci:** update modernize patterns and docs dependency ([eb532ab](https://github.com/bluecadet/preflight/commit/eb532abafdcba16395e5a18323e8054357b87d01))
+* correct target counts and SDK test ordering ([73e6696](https://github.com/bluecadet/preflight/commit/73e6696ddea16c7ee73a0759e13ad263f1406f6e))
+* **firewall_rule:** pass ports as array; apply default direction/action/protocol ([75b9115](https://github.com/bluecadet/preflight/commit/75b9115370473e7c78b0187e1d5d7b123a796d9f))
+* **output:** align long action input names ([6a71aa2](https://github.com/bluecadet/preflight/commit/6a71aa2212a3fdd8c245bac63752013a9beb3298))
+* **output:** fail recap when a target fails before tasks ([10ffe22](https://github.com/bluecadet/preflight/commit/10ffe221d93ba549b21bb2064912a53c6aa061a9))
+* **output:** scrub resolved secrets from all sinks ([5fd12fd](https://github.com/bluecadet/preflight/commit/5fd12fdcf319b397ffca7fe20a74c4ce1c207db8))
+* **reboot:** drop unused condition param ([06ead32](https://github.com/bluecadet/preflight/commit/06ead328980fc512ff659c39641e032e4d8bb913))
+* **registry:** range-check byte and integer data ([5c1bb1d](https://github.com/bluecadet/preflight/commit/5c1bb1def4830f0bf0cbb1d3255f5d6e4f8d9fb9))
+* **runner:** skip error log for unreachable targets ([8221f32](https://github.com/bluecadet/preflight/commit/8221f329d1362468dd2a58d85e00c8b0302fb8bb))
+* **secret:** default editor to notepad on Windows ([c9e7f88](https://github.com/bluecadet/preflight/commit/c9e7f88ee37237619eca7d03ea5be5f5fa21d8a5))
+* **shell:** apply env to command ([588afe0](https://github.com/bluecadet/preflight/commit/588afe0c2aaa0b734de462f700106a1366906799))
+* **shell:** fail on non-zero exit code ([99b4808](https://github.com/bluecadet/preflight/commit/99b480823495c8f44df60207c949d31b814be9ee))
+* **stdlib:** embed only action manifests ([3388f9d](https://github.com/bluecadet/preflight/commit/3388f9d4091e94868aa8ef17a71b5e96c91dc747))
+* **wait:** rename $host in port_open check ([54a3589](https://github.com/bluecadet/preflight/commit/54a3589f38bbbdcceae7cb071c4cf29d68fad6d5))
+* **winget_package:** fail when a change doesn't converge ([6d2e89e](https://github.com/bluecadet/preflight/commit/6d2e89e0c11a358ff9606458ad1e6cbe7f3b6b26))
+* **winget_package:** point at preflight/winget when winget isn't ready ([3ccec2d](https://github.com/bluecadet/preflight/commit/3ccec2d903c37646f22ec8d14ccac274f22c19db)), closes [#83](https://github.com/bluecadet/preflight/issues/83)
+
+
+### Maintenance
+
+* **apply:** drop unreachable plaintext-secrets flag guards ([b01c4cb](https://github.com/bluecadet/preflight/commit/b01c4cb688ebacfe41b76bafbf4752be0431025e))
+* **cmd:** drop validateLocalOnlyRunFlags and rename local_mode files ([dea61b1](https://github.com/bluecadet/preflight/commit/dea61b1667d0038de692fdc8611248d0ec9cc61d))
+* **plugin:** move plugin discovery out of the SDK ([7839084](https://github.com/bluecadet/preflight/commit/78390842ca070252b826da2a89dc25d4b54ea553))
+* **plugin:** require exact protocol version ([58c496a](https://github.com/bluecadet/preflight/commit/58c496aee1bbdae9aff737f561cf98c1076e1f91))
+* replace cloneMap copies with maps.Clone ([e1d02cc](https://github.com/bluecadet/preflight/commit/e1d02cceb95f0edb3305b582a11926ba63f2c518))
+* **runner:** drop unused phase, fetch, and concurrency config ([147b306](https://github.com/bluecadet/preflight/commit/147b3066ee0fd2b382d3fc70a6d4fbdff6920b1b))
+* **runner:** remove apply-start support gate ([8d28a85](https://github.com/bluecadet/preflight/commit/8d28a85b7a9f5965e562980f7c3d402840bf8d0a))
+* **schema:** share task and module defs across action and playbook ([fbb9c0d](https://github.com/bluecadet/preflight/commit/fbb9c0d5fbbd1429c3a81b45be283d70c0cb5746))
+* **secrets:** collapse resolver to its single provider ([9e1d3f9](https://github.com/bluecadet/preflight/commit/9e1d3f97f6a23b0c9185be60beadba59324eaef5))
+* **target:** derive module lists from a single catalog ([9fe4744](https://github.com/bluecadet/preflight/commit/9fe47447818d0ba6ab39f616b90ddfc91dab534e))
+* **target:** drop Ensure fast path ([8048411](https://github.com/bluecadet/preflight/commit/8048411d138b4001dbf4feb5e8be83fdc0a49a08))
+* **target:** move PowerShell encoding helpers to own file ([a871c5d](https://github.com/bluecadet/preflight/commit/a871c5de6c5be565792c7c3f5db414d8eeb60d02))
+* **target:** run local modules through shared PowerShell registry ([59bb4a1](https://github.com/bluecadet/preflight/commit/59bb4a12961ee216eef9699bdc02e25c7f0522e3))
+* **winget_package:** extract shared package-manager engine ([bcc83a1](https://github.com/bluecadet/preflight/commit/bcc83a1aa25d6466076aad1bb3e09c896f97ae49))
+
 ## [1.0.1](https://github.com/bluecadet/preflight/compare/v1.0.0...v1.0.1) (2026-10-21)
 
 
