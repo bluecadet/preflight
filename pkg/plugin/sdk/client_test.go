@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // mockModule is a simple in-process module used across tests.
@@ -231,26 +232,130 @@ func TestClientStream_StreamingApply(t *testing.T) {
 	}
 }
 
-// rawFrameServer is a minimal hand-rolled server used to test protocol-version
-// rejection: it can emit an initialize response that omits protocol_version,
-// simulating a pre-v1 plugin that the real v1 SDK could never produce.
+// rawFrameServer is a minimal hand-rolled server for capability negotiation
+// and protocol rejection tests. Its raw initialize result may deliberately
+// omit protocol_version, unlike responses produced by the real SDK.
 func rawFrameServer(t *testing.T, initResp string) (r io.Reader, w io.Writer, closeFn func() error) {
 	t.Helper()
 	srvRead, clientWrite := io.Pipe()
 	clientRead, srvWrite := io.Pipe()
+	done := make(chan struct{})
 	go func() {
-		// Read and discard the initialize request, then send the canned response.
-		go func() { _, _ = io.Copy(io.Discard, srvRead) }()
-		_ = json.NewEncoder(srvWrite).Encode(map[string]any{
+		defer close(done)
+		defer func() { _ = srvRead.Close() }()
+		defer func() { _ = srvWrite.Close() }()
+
+		// Await a complete initialize before replying. An unsolicited response
+		// can otherwise arrive before NewClient has registered its pending call
+		// and be discarded. Correlate with the actual request, not an assumed ID.
+		var request frame
+		if err := json.NewDecoder(srvRead).Decode(&request); err != nil {
+			return
+		}
+		if request.Method != "initialize" || request.ID <= 0 {
+			return
+		}
+		if err := json.NewEncoder(srvWrite).Encode(map[string]any{
 			"jsonrpc": "2.0",
-			"id":      json.Number("1"),
+			"id":      request.ID,
 			"result":  json.RawMessage(initResp),
-		})
+		}); err != nil {
+			return
+		}
+		// Continue consuming later requests/notifications until client teardown.
+		// Keep this in the tracked server goroutine so cleanup also joins it.
+		_, _ = io.Copy(io.Discard, srvRead)
 	}()
-	return clientRead, clientWrite, func() error {
+
+	// Bound the transport itself: a context alone cannot interrupt a blocked
+	// io.Pipe write (including a cancellation notification after init times out).
+	const timeout = 5 * time.Second
+	timer := time.AfterFunc(timeout, func() {
+		_ = clientWrite.CloseWithError(context.DeadlineExceeded)
+		_ = clientRead.CloseWithError(context.DeadlineExceeded)
+	})
+	closeFn = func() error {
+		timer.Stop()
 		_ = clientWrite.Close()
 		_ = clientRead.Close()
-		return nil
+		select {
+		case <-done:
+			return nil
+		case <-time.After(timeout):
+			return errors.New("timed out stopping raw frame server")
+		}
+	}
+	t.Cleanup(func() {
+		if err := closeFn(); err != nil {
+			t.Error(err)
+		}
+	})
+	return clientRead, clientWrite, closeFn
+}
+
+func TestRawFrameServer_InitializeOrderingAndID(t *testing.T) {
+	// Closing an absent or incomplete request makes the ordering assertion
+	// deterministic: neither case may elicit a response, regardless of scheduling.
+	// A non-default ID also catches helpers that hard-code the first client ID.
+	for _, tt := range []struct {
+		name    string
+		request string
+		wantID  int64
+	}{
+		{name: "no request"},
+		{name: "incomplete request", request: `{"jsonrpc":"2.0","id":42,"method":"initialize","params":`},
+		{name: "complete request", request: `{"jsonrpc":"2.0","id":42,"method":"initialize","params":{}}` + "\n", wantID: 42},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// Deliberately retain a pre-v1 payload: the helper must not normalize
+			// protocol fixtures while correlating the response envelope.
+			const initResp = `{"name":"old","version":"0.1.0"}`
+			r, w, _ := rawFrameServer(t, initResp)
+
+			type exchangeResult struct {
+				response frame
+				err      error
+			}
+			done := make(chan exchangeResult, 1)
+			go func() {
+				if _, err := io.WriteString(w, tt.request); err != nil {
+					done <- exchangeResult{err: err}
+					return
+				}
+				if tt.wantID == 0 {
+					_ = w.(io.Closer).Close()
+				}
+				var response frame
+				err := json.NewDecoder(r).Decode(&response)
+				if err == nil && tt.wantID != 0 {
+					// The server must keep draining after its canned response, e.g.
+					// so a later cancellation notification cannot block the client.
+					_, err = io.WriteString(w, `{"jsonrpc":"2.0","method":"cancel","params":{"id":42}}`+"\n")
+				}
+				done <- exchangeResult{response: response, err: err}
+			}()
+
+			select {
+			case got := <-done:
+				if tt.wantID == 0 {
+					if !errors.Is(got.err, io.EOF) {
+						t.Fatalf("response before a complete initialize: frame=%+v, err=%v; want EOF", got.response, got.err)
+					}
+					return
+				}
+				if got.err != nil {
+					t.Fatalf("initialize exchange: %v", got.err)
+				}
+				if got.response.JSONRPC != "2.0" || got.response.ID != tt.wantID {
+					t.Errorf("response envelope = %+v, want JSON-RPC 2.0 with ID %d", got.response, tt.wantID)
+				}
+				if string(got.response.Result) != initResp {
+					t.Errorf("result = %s, want unchanged fixture %s", got.response.Result, initResp)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for initialize exchange")
+			}
+		})
 	}
 }
 

@@ -24,7 +24,7 @@ func (r *Runner) emit(evt output.Event) {
 
 // apply executes the task graph against the target. It acquires the runtime
 // context from the live target, then delegates to the pure applyResolved loop.
-func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
+func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan, acc *applyAccumulator) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -39,7 +39,7 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 		return err
 	}
 
-	return r.applyResolved(ctx, dag, rt)
+	return r.applyResolved(ctx, dag, rt, acc)
 }
 
 // applyResolved is the pure orchestration loop. It receives an already-built
@@ -47,9 +47,8 @@ func (r *Runner) apply(ctx context.Context, plan *ExecutionPlan) error {
 // dependency checks, when-condition evaluation, binding, execution, and state
 // accumulation. The loop is self-contained so tests can inject a fake target
 // and a synthetic RuntimeContext without a live connection.
-func (r *Runner) applyResolved(ctx context.Context, dag *DAG, rt *template.RuntimeContext) error {
+func (r *Runner) applyResolved(ctx context.Context, dag *DAG, rt *template.RuntimeContext, acc *applyAccumulator) error {
 	ordered := dag.TopologicalOrder()
-	acc := newApplyAccumulator()
 
 	for _, pt := range ordered {
 		if err := r.executeTask(ctx, pt, rt, dag, acc); err != nil {

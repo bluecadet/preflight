@@ -207,7 +207,7 @@ func TestApplyResolved(t *testing.T) {
 			}
 
 			r := New(tt.fake, emptyResolver(), tt.cfg)
-			err = r.applyResolved(context.Background(), dag, tt.rt)
+			err = r.applyResolved(context.Background(), dag, tt.rt, newApplyAccumulator())
 			if (err != nil) != tt.wantErr {
 				t.Errorf("applyResolved() error = %v, wantErr = %v", err, tt.wantErr)
 			}
@@ -293,7 +293,7 @@ func TestApplyResolvedSkippedByDependencyFailure(t *testing.T) {
 		},
 	}
 	r := New(fake, emptyResolver(), Config{Tags: []string{"all"}})
-	err = r.applyResolved(context.Background(), dag, &template.RuntimeContext{})
+	err = r.applyResolved(context.Background(), dag, &template.RuntimeContext{}, newApplyAccumulator())
 	if err == nil {
 		t.Fatal("expected applyResolved to return an error on failure")
 	}

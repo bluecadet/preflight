@@ -107,7 +107,10 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	var hasFailure bool
 
 	slog.Debug("starting phase", "phase", "apply")
-	applyErr := r.applyRecovered(ctx, plan)
+	// Keep counts outside the recovered apply call so partial task outcomes
+	// survive early returns and panics. Each Run owns its own accumulator.
+	acc := newApplyAccumulator()
+	applyErr := r.applyRecovered(ctx, plan, acc)
 	if applyErr != nil {
 		hasFailure = true
 	}
@@ -118,7 +121,7 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 	if applyErr != nil && !isApplyTaskFailureSummary(applyErr) {
 		reason = failureReason(applyErr)
 	}
-	r.emitTargetComplete(targetName, elapsedMs, hasFailure, reason)
+	r.emitTargetComplete(targetName, elapsedMs, hasFailure, reason, acc)
 
 	if applyErr != nil {
 		// Task failures and unreachable targets already reported
@@ -139,13 +142,13 @@ func (r *Runner) Run(ctx context.Context, playbook *action.Playbook) (err error)
 // target as "failed" (preserving the TargetStartEvent/TargetCompleteEvent
 // pairing the rest of Run depends on), and the error is returned to the
 // caller for the run summary and exit status.
-func (r *Runner) applyRecovered(ctx context.Context, plan *ExecutionPlan) (err error) {
+func (r *Runner) applyRecovered(ctx context.Context, plan *ExecutionPlan, acc *applyAccumulator) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			err = fmt.Errorf("apply: panic: %v\n%s", rec, debug.Stack())
 		}
 	}()
-	return r.apply(ctx, plan)
+	return r.apply(ctx, plan, acc)
 }
 
 // failureReason returns the first line of err, so a recovered panic's stack
@@ -172,7 +175,7 @@ func (r *Runner) emitTargetStart(targetName string) {
 }
 
 // emitTargetComplete emits a target-level complete event.
-func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool, reason string) {
+func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailure bool, reason string, acc *applyAccumulator) {
 	outcome := "ok"
 	if hasFailure {
 		outcome = "failed"
@@ -185,6 +188,10 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 		Target:          targetName,
 		Outcome:         outcome,
 		Error:           reason,
+		OKCount:         acc.okCount,
+		ChangedCount:    acc.changedCount,
+		FailedCount:     acc.failedCount,
+		SkippedCount:    acc.skippedCount,
 		ElapsedMs:       elapsedMs,
 		WinRMRoundTrips: winrmRoundTrips,
 	})
@@ -202,7 +209,7 @@ func (r *Runner) emitTargetComplete(targetName string, elapsedMs int64, hasFailu
 // alongside it — or the target would be double-counted.
 func (r *Runner) planFailed(targetName string, cause error) error {
 	r.emitTargetStart(targetName)
-	r.emitTargetComplete(targetName, 0, true, failureReason(cause))
+	r.emitTargetComplete(targetName, 0, true, failureReason(cause), &applyAccumulator{})
 	return cause
 }
 
@@ -248,5 +255,5 @@ func (r *Runner) Stage(ctx context.Context, plan *ExecutionPlan) (err error) {
 
 func (r *Runner) Apply(ctx context.Context, plan *ExecutionPlan) (err error) {
 	defer func() { err = errors.Join(err, r.closeTarget()) }()
-	return r.apply(ctx, plan)
+	return r.apply(ctx, plan, newApplyAccumulator())
 }

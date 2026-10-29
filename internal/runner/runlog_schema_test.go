@@ -142,7 +142,7 @@ func TestRunLogSchema_RealApplyOutputValidatesAgainstSchema(t *testing.T) {
 	// The ignored task still fails (ignore_errors only exempts it from
 	// halting the loop), so applyResolved still reports the run as failed
 	// overall — see TestApplyIgnoreErrorsContinuesToLaterTasks.
-	applyErr := r.applyResolved(context.Background(), dag, rt)
+	applyErr := r.applyResolved(context.Background(), dag, rt, newApplyAccumulator())
 	if applyErr == nil {
 		t.Fatal("expected applyResolved to report the ignored failure")
 	}
@@ -248,7 +248,7 @@ func TestRunLogSchema_TargetUnreachableValidatesAgainstSchema(t *testing.T) {
 	r := New(fake, emptyResolver(), Config{Renderer: sink})
 	plan := &ExecutionPlan{PlaybookName: "unreachable-target", Tasks: []*PlanTask{}}
 
-	if err := r.apply(context.Background(), plan); err == nil {
+	if err := r.apply(context.Background(), plan, newApplyAccumulator()); err == nil {
 		t.Fatal("expected apply to fail when the target is unreachable")
 	}
 
