@@ -110,8 +110,7 @@ func parseSSHPrivateKey(keyOrPath, passphrase string) (ssh.Signer, error) {
 		}
 	}
 	if err != nil {
-		var missing *ssh.PassphraseMissingError
-		if errors.As(err, &missing) {
+		if _, ok := errors.AsType[*ssh.PassphraseMissingError](err); ok {
 			return nil, fmt.Errorf("ssh: private key is encrypted: set private_key_passphrase")
 		}
 		return nil, fmt.Errorf("ssh: parse private key: %w", err)

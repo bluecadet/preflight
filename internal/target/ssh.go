@@ -352,12 +352,10 @@ func isSSHConnectionError(err error) bool {
 	if errors.Is(err, io.EOF) {
 		return true
 	}
-	var netErr *net.OpError
-	if errors.As(err, &netErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return true
 	}
-	var missing *ssh.ExitMissingError
-	if errors.As(err, &missing) {
+	if _, ok := errors.AsType[*ssh.ExitMissingError](err); ok {
 		return true
 	}
 	msg := err.Error()

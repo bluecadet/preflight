@@ -95,8 +95,7 @@ func classifyMissingModule(controllerRegistry ModuleRegistry, module string, kin
 // empty string so callers can leave the reason field absent for untyped
 // failures.
 func ReasonCodeForError(err error) string {
-	var mse *ModuleSupportError
-	if errors.As(err, &mse) {
+	if mse, ok := errors.AsType[*ModuleSupportError](err); ok {
 		return mse.ReasonCode()
 	}
 	return ""
