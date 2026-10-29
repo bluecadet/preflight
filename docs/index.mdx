@@ -4,7 +4,6 @@ description: "For kiosks, signage, and exhibit PCs: no runtime dependencies."
 ---
 
 import {
-  StatStrip, Stat,
   TerminalBand,
   Features, Feature,
   GlyphList, GlyphItem,
@@ -32,12 +31,6 @@ import {
     <HeroNote>No control plane: the CLI connects over SSH or WinRM.</HeroNote>
   </HeroNotes>
 </Hero>
-
-<StatStrip>
-  <Stat value="4" label="phases: fetch, plan, stage, apply" />
-  <Stat value="1" label="static binary, no runtime deps" />
-  <Stat value="0" label="modules that skip Check() before Apply()" />
-</StatStrip>
 
 <TerminalBand cast="/header.cast" />
 
